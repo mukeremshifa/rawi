@@ -1,6 +1,6 @@
 # Rawi delivery plan
 
-This is the implementation source of truth. Research informs decisions; this file defines work order. No implementation ticket is complete yet. One outcome per task, with small changes that can be demonstrated and reviewed.
+This is the implementation source of truth. Research informs decisions; this file defines work order. R01's local implementation is delivered, with browser acceptance still outstanding; R02 is partly implemented. See STATUS.md and NEXT_STEPS.md for verified progress. One outcome per task, with small changes that can be demonstrated and reviewed.
 
 ## Calendar and effort
 
@@ -24,8 +24,8 @@ Statuses: `ready`, `waiting on dependency`, `in progress`, `in review`, `done`. 
 | ID | Outcome and scope | Depends on | Acceptance evidence |
 |---|---|---|---|
 | R00 | Choose one shared UAE course; identify adult recruits and content reviewer | Founder interviews; can run beside R01 | Course decision, learner problems, source permissions, reviewer and baseline task recorded |
-| R01 | Local React/TypeScript/Vite app and lightweight Worker API skeleton; one original demo lesson | None; **ready** | Fresh setup and documented commands; mobile/keyboard demo; local build; fixture flow clearly labeled |
-| R02 | Typed learning model, learn/practice/check transitions, assistance tracking | R01 | Refresh/double-submit/mode-switch invariants tested; complete local journey |
+| R01 | Local React/TypeScript/Vite app and lightweight Worker API skeleton; one original demo lesson | Local implementation delivered; browser acceptance open | Setup, unit/API tests and build verified; complete mobile/keyboard browser walkthrough during R02B |
+| R02 | Complete existing typed learning model and strengthen transitions/assistance; R02A then R02B per NEXT_STEPS.md | R01 implementation; **partly implemented, next** | Atomic concurrent updates, stale/invalid-command handling, immutable replay results, stable initial due date, correct assistance labels, check-to-help/fresh-check flow, browser refresh/retry/keyboard journey |
 | R03 | Supabase schema, auth, enrollment, private progress; repository migrations | R02 | Two ordinary non-team test identities complete Google OAuth or another verified no-paid-email flow; access isolation through API and direct permitted DB access; server-only check answers; Free plans verified; no exposed secrets |
 | R04 | One model adapter, validated tutor response, atomic budget reservation, usage ledger | R02; R03 before hosted usage | Reviewed eval cases, cost/latency report, synthetic-data restricted Free-runtime smoke/profile including auth, validation and streaming within Worker CPU limits; malformed/refusal/timeout handling; paid requests disabled without configured budget/key |
 | R05 | Reviewed course pack and source navigation; scoped retrieval with a lexical baseline | R00, R03, R04 | Each explanation resolves to authorized source/version; missing evidence path; held-out retrieval checks |

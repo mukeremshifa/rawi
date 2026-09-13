@@ -30,9 +30,12 @@ Last updated: 13 September 2026.
 
 ## Current work
 
-R00: ready for founder discovery. R01: **done** (see handoff log). R02 is the next
-implementation ticket and is now unblocked. R03–R10: waiting on their listed
-dependencies. Optional R07 may be deferred.
+R00: ready for founder discovery; no completed interviews or selected course recorded.
+R01: local implementation delivered (see handoff log), with browser acceptance still
+outstanding. R02: partly implemented; next is **R02A — reliable learning state**,
+then R02B help/recovery and browser verification. R03–R10 wait on their listed
+dependencies. Optional R07 may be deferred. See [NEXT_STEPS.md](NEXT_STEPS.md) for
+the GitHub snapshot, verified gaps and ready-to-use next session brief.
 
 ## Decisions to resolve
 
@@ -118,7 +121,32 @@ wall time and production CPU time are different quantities. R04 must profile pro
    no test on a real device or UAE network. DELIVERY.md places the end-to-end suite
    later; these remain open for the readiness gates.
 
-**Next ticket.** R02 — typed learning model with learn/practice/check transitions and
-assistance tracking. The invariants and their tests already exist in
-`src/server/learning.ts` and `learning.test.ts`; R02 extends them to multiple concepts
-and a complete journey, and should keep the rules in that one module.
+**Next ticket.** R02 — complete and strengthen the existing learning model and
+assistance tracking. The functions and sequential tests already exist in
+`src/server/learning.ts` and `learning.test.ts`. The status review below identifies
+remaining concurrency, transition, evidence and recovery work. Multiple-concept
+expansion is not required to close R02 and should follow R00 course selection.
+
+### GitHub status review — 13 September 2026
+
+GitHub `main` and the initially clean local checkout both matched
+[`5a79f26`](https://github.com/mukeremshifa/rawi/commit/5a79f26bec7a3bdce8ab68d797fb48548671deda).
+The repository has two commits, one branch, no PRs/open issues, no Actions workflows
+or runs, and no commit checks. There are no releases or GitHub deployment records;
+external hosting was not inspected.
+
+Fresh local verification: `npm test` passed all 32 tests, `npm run lint` passed,
+and `npm run build` passed typechecking and Vite production build. The prior 24
+Workers-runtime assertions and browser/device claims were not rerun in this review.
+
+Targeted in-memory API/function probes reproduced two gaps beyond the sequential
+test coverage: a delayed submission can overwrite an overlapping answer reveal
+and receive independent credit; the same recorded check's due date advances by
+one day when read one day later. A direct diagnostic-to-check stage mutation was
+also accepted without a declared transition policy. Code inspection found incorrect
+assistance labels and the missing check-to-help recovery flow.
+
+The earlier R01 assistance guarantee is therefore verified for sequential paths,
+not conflicting requests. [NEXT_STEPS.md](NEXT_STEPS.md) separates reproduced
+behavior from inspection findings and defines R02A/R02B. This review changed only
+planning/status documentation; no application fixes or GitHub changes were made.

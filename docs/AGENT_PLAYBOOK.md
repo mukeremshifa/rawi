@@ -33,7 +33,14 @@ Explain the main tradeoff and one implementation detail I should understand.
 
 This is a reusable template; the backlog supplies ticket-specific acceptance criteria. If a packet cannot fit a reviewable change, split it into smaller outcomes and preserve its dependency gate.
 
-## First implementation session
+## Next implementation session
+
+R01 has been implemented. Use **R02A — reliable learning state** in
+[NEXT_STEPS.md](NEXT_STEPS.md) for the next session; it identifies the existing
+work, reproduced gaps and acceptance criteria. The R01 brief below is historical
+context, not an instruction to re-scaffold the repository.
+
+## R01 implementation brief (completed local implementation)
 
 ```text
 Start Rawi R01 in D:\rawi. Read AGENTS.md, docs/STATUS.md,

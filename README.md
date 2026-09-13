@@ -33,7 +33,7 @@ Two processes in development; in production the Worker serves the built assets, 
 
 1. Read the [research and product strategy](research/REPORT.md) for the recommendation, evidence, tradeoffs and costs.
 2. Use the [product specification](docs/PRODUCT.md) and [delivery backlog](docs/DELIVERY.md) for implementation scope.
-3. Start the first implementation session with the ready-to-paste brief in the [agent playbook](docs/AGENT_PLAYBOOK.md).
+3. Read the [GitHub status and next steps](docs/NEXT_STEPS.md), then use its R02A implementation brief. The [agent playbook](docs/AGENT_PLAYBOOK.md) covers session workflow.
 4. Run founder discovery alongside development using the [interview and pilot protocol](docs/DISCOVERY.md).
 
 ## Working constraints
@@ -49,6 +49,7 @@ Two processes in development; in production the Worker serves the built assets, 
 | Document | Purpose |
 |---|---|
 | [Current status](docs/STATUS.md) | Confirmed constraints, open decisions and actual progress |
+| [Next steps](docs/NEXT_STEPS.md) | GitHub snapshot, reproduced gaps and next implementation brief |
 | [Product](docs/PRODUCT.md) | Learner flow, modes, content rules and pilot metrics |
 | [Delivery](docs/DELIVERY.md) | Tickets, dependencies, estimates and readiness gates |
 | [Agent playbook](docs/AGENT_PLAYBOOK.md) | Implementation and review session prompts |
@@ -59,4 +60,4 @@ Two processes in development; in production the Worker serves the built assets, 
 | [Architecture](research/architecture.md) | Free-tier design, AI costs, evaluation and recovery |
 | [Source index](research/SOURCES.md) | External references used across the pack |
 
-Implementation sessions follow [AGENTS.md](AGENTS.md). Begin with R01; R00 founder discovery runs alongside it. Update status with verified outcomes rather than treating planned features as completed work.
+Implementation sessions follow [AGENTS.md](AGENTS.md). R01's local implementation is delivered; continue with R02A, then R02B, while R00 founder discovery runs alongside them. Update status with verified outcomes rather than treating planned features as completed work.
