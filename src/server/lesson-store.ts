@@ -19,6 +19,12 @@
  * requests cannot both act on the same old state. Each write bumps a version,
  * which is what R03 will compare in a transactional UPDATE ... WHERE version =
  * $n. See docs/NEXT_STEPS.md gap 1.
+ *
+ * R02B adds:
+ *  - activeCheckId in the projected view (so the client detects item replacement)
+ *  - checkConverted / checkBankExhausted flags
+ *  - questionForStage uses state.activeCheckId for the check stage
+ *  - item-identity validation inside the critical section
  */
 import type {
   PublicQuestion,
@@ -28,6 +34,7 @@ import type {
 import type { AuthoredLesson, AuthoredQuestion } from '../content/demo-lesson.js';
 import {
   evidenceState,
+  isCheckBankExhausted,
   nextReviewDue,
   questionState,
   type SessionState,
@@ -127,18 +134,29 @@ export function updateSession(
   return { ok: true, state: committed };
 }
 
-/** The question the learner is looking at, given the stage. */
+/**
+ * The question the learner is looking at, given the stage.
+ *
+ * R02B: for the check stage, returns the item currently selected in
+ * state.activeCheckId, not always lesson.check. This way a stale request
+ * carrying the old item ID will be caught by the item-identity guard in the
+ * handler before it can act on the wrong question.
+ */
 export function questionForStage(
   lesson: AuthoredLesson,
   stage: Stage,
+  state?: SessionState,
 ): AuthoredQuestion | undefined {
   switch (stage) {
     case 'diagnose':
       return lesson.diagnostic;
     case 'practice':
       return lesson.practice;
-    case 'check':
-      return lesson.check;
+    case 'check': {
+      if (!state) return lesson.check;
+      const allItems = [lesson.check, ...lesson.checkBank];
+      return allItems.find((q) => q.id === state.activeCheckId);
+    }
     case 'learn':
     case 'summary':
       return undefined;
@@ -168,12 +186,15 @@ function toPublicQuestion(question: AuthoredQuestion): PublicQuestion {
  * date drift every day the learner reloaded. The date is now anchored on the
  * attempt (learning.ts invariant 6), so projection needs no clock at all - and
  * a function with no clock cannot reintroduce that class of bug.
+ *
+ * R02B: exposes activeCheckId, checkConverted, checkBankExhausted so the client
+ * can render the exhaustion state and detect item replacement.
  */
 export function toSessionView(
   state: SessionState,
   lesson: AuthoredLesson,
 ): SessionView {
-  const question = questionForStage(lesson, state.stage);
+  const question = questionForStage(lesson, state.stage, state);
   const qState = question ? questionState(state, question.id) : undefined;
 
   // Hints are sliced to the number actually requested: the browser never
@@ -185,7 +206,17 @@ export function toSessionView(
   const showAnswer =
     question && qState && (qState.assistance === 'revealed' || qState.submitted);
 
+  const allCheckIds = [lesson.check, ...lesson.checkBank].map((q) => q.id);
   const attempts = state.attempts;
+
+  // R02B: determine converted and exhausted states for the active check item.
+  const activeCheckQState = questionState(state, state.activeCheckId);
+  // A check item is "converted" when it was revealed without being submitted —
+  // that is the explicit help conversion path. Once submitted it is answered,
+  // not just converted.
+  const checkConverted =
+    activeCheckQState.assistance === 'revealed' && !activeCheckQState.submitted;
+  const checkBankExhausted = isCheckBankExhausted(state, lesson);
 
   return {
     sessionId: state.sessionId,
@@ -196,6 +227,9 @@ export function toSessionView(
     mode: stageToMode(state.stage),
     stage: state.stage,
     question: question ? toPublicQuestion(question) : undefined,
+    activeCheckId: state.activeCheckId,
+    checkConverted,
+    checkBankExhausted,
     revealedHints,
     hintsAvailable: question ? question.hints.length : 0,
     revealedAnswer: showAnswer && question ? question.answerExplanation : undefined,
@@ -208,9 +242,9 @@ export function toSessionView(
     evidence: {
       conceptId: lesson.conceptId,
       conceptName: lesson.conceptName,
-      state: evidenceState(attempts, lesson.check.id),
+      state: evidenceState(attempts, allCheckIds),
       attempts,
-      nextReviewDue: nextReviewDue(attempts, lesson.check.id),
+      nextReviewDue: nextReviewDue(attempts, allCheckIds),
     },
     fixtureData: true,
   };

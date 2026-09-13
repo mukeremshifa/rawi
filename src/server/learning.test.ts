@@ -153,7 +153,7 @@ describe('invariant 3: a revealed question cannot become independent evidence', 
     expect(result.assistance).toBe('revealed');
     expect(result.countsAsIndependent).toBe(false);
     // And the concept must not be promoted on the strength of it.
-    expect(evidenceState(after.attempts, demoLesson.check.id)).toBe('practicing');
+    expect(evidenceState(after.attempts, [demoLesson.check.id])).toBe('practicing');
   });
 });
 
@@ -205,7 +205,7 @@ describe('invariant 4: submission is idempotent', () => {
 
 describe('evidence and review scheduling', () => {
   it('starts at not-checked', () => {
-    expect(evidenceState([], demoLesson.check.id)).toBe('not-checked');
+    expect(evidenceState([], [demoLesson.check.id])).toBe('not-checked');
   });
 
   it('reaches independent-once only through an unaided correct check', () => {
@@ -217,7 +217,7 @@ describe('evidence and review scheduling', () => {
       demoLesson.check.correctOptionId,
       NOW,
     ).state;
-    expect(evidenceState(state.attempts, demoLesson.check.id)).toBe(
+    expect(evidenceState(state.attempts, [demoLesson.check.id])).toBe(
       'independent-once',
     );
   });
@@ -232,11 +232,11 @@ describe('evidence and review scheduling', () => {
       NOW,
     ).state;
     // Correct and unaided, but it is not the independent check item.
-    expect(evidenceState(state.attempts, demoLesson.check.id)).toBe('practicing');
+    expect(evidenceState(state.attempts, [demoLesson.check.id])).toBe('practicing');
   });
 
   it('schedules review seven days out, and not before evidence exists', () => {
-    expect(nextReviewDue([], demoLesson.check.id)).toBeUndefined();
+    expect(nextReviewDue([], [demoLesson.check.id])).toBeUndefined();
 
     let state = advanceTo(freshSession(), 'check');
     state = submitAttempt(
@@ -246,7 +246,7 @@ describe('evidence and review scheduling', () => {
       demoLesson.check.correctOptionId,
       NOW,
     ).state;
-    expect(nextReviewDue(state.attempts, demoLesson.check.id)).toBe(
+    expect(nextReviewDue(state.attempts, [demoLesson.check.id])).toBe(
       '2026-09-20',
     );
   });
@@ -261,7 +261,7 @@ describe('evidence and review scheduling', () => {
       demoLesson.check.correctOptionId,
       lateInMonth,
     ).state;
-    expect(nextReviewDue(state.attempts, demoLesson.check.id)).toBe(
+    expect(nextReviewDue(state.attempts, [demoLesson.check.id])).toBe(
       '2026-10-05',
     );
   });

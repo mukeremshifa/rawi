@@ -15,6 +15,13 @@
  *     applied to a different question (docs/NEXT_STEPS.md gap 1).
  *  6. A recorded attempt is immutable, including the review date anchored to
  *     it. Reading the same evidence on a later day does not move it (gap 2).
+ *  7. (R02B) Commands that target a specific check item carry its ID. A stale
+ *     request for a replaced item is rejected, even if both items are at stage
+ *     "check". Duplicate conversion requests are idempotent.
+ *  8. (R02B) Conversion records the event without inventing a graded answer or
+ *     rewriting any previously submitted result. A converted item is retired
+ *     from independent use within the session. Exhausting the bank is an honest
+ *     terminal state; the server never recycles a converted item as "fresh".
  *
  * The functions are pure: they take a state and return the next state. The
  * store (lesson-store.ts) decides where that state lives and serialises the
@@ -53,6 +60,19 @@ export interface SessionState {
   readonly lastResult?: AttemptResult;
   /** Set when the learner has seen the teaching explanation. */
   readonly explanationSeen: boolean;
+  /**
+   * ID of the check question currently selected for independent assessment.
+   * Starts as the lesson's primary check. When the learner converts it, the
+   * server selects the next unexposed bank item and updates this field.
+   * Undefined only before the check stage is first reached.
+   */
+  readonly activeCheckId: string;
+  /**
+   * IDs of all check items that have been exposed to this session: the active
+   * one plus any that were converted. A converted item may still be practiced
+   * but is never selected again as the "fresh" independent check.
+   */
+  readonly exposedCheckIds: readonly string[];
 }
 
 const ASSISTANCE_RANK: Record<AssistanceLevel, number> = {
@@ -92,6 +112,8 @@ export function createSession(
     },
     attempts: [],
     explanationSeen: false,
+    activeCheckId: lesson.check.id,
+    exposedCheckIds: [lesson.check.id],
   };
 }
 
@@ -225,6 +247,93 @@ export function submitAttempt(
 }
 
 /**
+ * Convert the active check item to help/practice.
+ *
+ * Invariant 8: marks the active item as converted (via assistance = 'revealed'
+ * to permanently retire it from independent credit) without inventing a graded
+ * answer. The server then selects the next unexposed bank item as the new
+ * active check. If no unexposed item exists, the bank is exhausted.
+ *
+ * Idempotent when called with the same item ID that is still active AND the
+ * bank is NOT exhausted — returns state unchanged. If the bank is already
+ * exhausted (all items exposed and the active one is already converted), returns
+ * state unchanged so the caller (route handler) can detect exhaustion and reject.
+ *
+ * The caller is responsible for rejecting:
+ *   - wrong itemId → 'item_replaced'
+ *   - already exhausted (no progress made) → the handler detects by comparing
+ *     pre/post state
+ */
+export function convertCheck(
+  state: SessionState,
+  lesson: AuthoredLesson,
+  itemId: string,
+): SessionState {
+  if (state.activeCheckId !== itemId) {
+    // Stale request — the item has already been replaced. This is not an error:
+    // the caller (store) will reject it as a stale-item conflict.
+    return state;
+  }
+
+  const current = questionState(state, itemId);
+
+  // Idempotent: already converted means assistance is 'revealed'. If there is
+  // no replacement available (bank exhausted), return unchanged so the route
+  // handler can detect no-op on an already-exhausted bank.
+  if (current.assistance === 'revealed') {
+    return state;
+  }
+
+  // Mark the item as assisted-revealed, permanently retiring it from
+  // independent use. We do NOT record a graded attempt.
+  const retired = withQuestion(state, {
+    ...current,
+    assistance: raiseAssistance(current.assistance, 'revealed'),
+  });
+
+  // Select the next unexposed bank item.
+  const allItems = [lesson.check, ...lesson.checkBank];
+  const nextItem = allItems.find(
+    (q) => !retired.exposedCheckIds.includes(q.id) && q.id !== itemId,
+  );
+
+  if (!nextItem) {
+    // Bank exhausted — no replacement available. Return retired state (active
+    // item is now revealed, no new activeCheckId). The route handler detects
+    // exhaustion by checking isCheckBankExhausted after conversion.
+    return retired;
+  }
+
+  // Register the new item as exposed and initialise its question state.
+  const newExposed = [...retired.exposedCheckIds, nextItem.id];
+  const withNewItem = withQuestion(retired, emptyQuestionState(nextItem.id));
+
+  return {
+    ...withNewItem,
+    activeCheckId: nextItem.id,
+    exposedCheckIds: newExposed,
+  };
+}
+
+/**
+ * True when every item in the bank (including the primary check) has been
+ * either submitted or converted to help within this session.
+ */
+export function isCheckBankExhausted(
+  state: SessionState,
+  lesson: AuthoredLesson,
+): boolean {
+  const allItems = [lesson.check, ...lesson.checkBank];
+  const unexposed = allItems.filter((q) => !state.exposedCheckIds.includes(q.id));
+  if (unexposed.length > 0) return false;
+
+  // All items are exposed. Exhausted means the active one was also converted
+  // (revealed) and there is no unexposed replacement.
+  const activeState = questionState(state, state.activeCheckId);
+  return activeState.assistance === 'revealed' && !activeState.submitted;
+}
+
+/**
  * Stage transitions the learner may actually make (invariant 5).
  *
  * This is a product rule, written down rather than implied. The path forward is
@@ -240,7 +349,7 @@ const ALLOWED_TRANSITIONS: Readonly<Record<Stage, readonly Stage[]>> = {
   diagnose: ['learn'],
   learn: ['diagnose', 'practice'],
   practice: ['learn', 'check'],
-  check: ['summary'],
+  check: ['summary', 'practice'],
   summary: ['learn', 'practice'],
 };
 
@@ -271,13 +380,15 @@ export function setStage(
  * Note what is absent: no model output, no confidence score, and no way for a
  * caller to set this directly. PRODUCT.md requires progress to be descriptive
  * and derived from actual independent performance.
+ *
+ * R02B: any check bank item counts for promotion, not just the primary check.
  */
 export function evidenceState(
   attempts: readonly RecordedAttempt[],
-  checkQuestionId: string,
+  checkItemIds: readonly string[],
 ): EvidenceState {
   const independentCheck = attempts.some(
-    (a) => a.questionId === checkQuestionId && a.countsAsIndependent,
+    (a) => checkItemIds.includes(a.questionId) && a.countsAsIndependent,
   );
   if (independentCheck) return 'independent-once';
 
@@ -301,13 +412,15 @@ export function addDays(from: Date, days: number): string {
  * recomputing it from the current clock. Projection is now a pure read of
  * recorded evidence, so the same attempt shows the same date on any later day.
  * R06 owns the full queue and any subsequent scheduling policy.
+ *
+ * R02B: any check bank item qualifies.
  */
 export function nextReviewDue(
   attempts: readonly RecordedAttempt[],
-  checkQuestionId: string,
+  checkItemIds: readonly string[],
 ): string | undefined {
   const qualifying = attempts.find(
-    (a) => a.questionId === checkQuestionId && a.countsAsIndependent,
+    (a) => checkItemIds.includes(a.questionId) && a.countsAsIndependent,
   );
   return qualifying?.reviewDue;
 }

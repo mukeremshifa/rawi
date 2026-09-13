@@ -77,9 +77,46 @@ export function submitAttempt(
   stage: Stage,
   optionId: string,
   explanation?: string,
+  itemId?: string,
 ): Promise<SessionView> {
   return request(`/api/sessions/${encodeURIComponent(sessionId)}/attempt`, {
     method: 'POST',
-    body: JSON.stringify({ stage, optionId, explanation }),
+    body: JSON.stringify({ stage, optionId, explanation, itemId }),
+  });
+}
+
+export function requestHintWithItem(
+  sessionId: string,
+  stage: Stage,
+  itemId?: string,
+): Promise<SessionView> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/hint`, {
+    method: 'POST',
+    body: JSON.stringify({ stage, itemId }),
+  });
+}
+
+export function revealAnswerWithItem(
+  sessionId: string,
+  stage: Stage,
+  itemId?: string,
+): Promise<SessionView> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/reveal`, {
+    method: 'POST',
+    body: JSON.stringify({ stage, itemId }),
+  });
+}
+
+/**
+ * Convert the active check item to help/practice.
+ * itemId must match the server's active check item; stale requests get 409.
+ */
+export function convertCheck(
+  sessionId: string,
+  itemId: string,
+): Promise<SessionView> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/convert`, {
+    method: 'POST',
+    body: JSON.stringify({ itemId }),
   });
 }

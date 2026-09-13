@@ -66,6 +66,16 @@ export interface AttemptResult {
   readonly feedback: string;
 }
 
+/**
+ * Commands that act on a specific check item carry this identity so the server
+ * can reject a request built against a replaced or stale item even when both
+ * occupy the same stage.
+ */
+export interface ItemRef {
+  /** The question ID the client believes is active. */
+  readonly itemId: string;
+}
+
 /** The learner-visible state of a lesson session, owned by the server. */
 export interface SessionView {
   readonly sessionId: string;
@@ -77,6 +87,21 @@ export interface SessionView {
   readonly stage: Stage;
   /** The question currently in front of the learner, if the stage has one. */
   readonly question?: PublicQuestion;
+  /**
+   * ID of the check question currently selected for independent assessment.
+   * Exposed so the client can detect item replacement (same stage, new item).
+   */
+  readonly activeCheckId?: string;
+  /**
+   * True when the active check has been explicitly converted to help/practice.
+   * The server never issues a graded result for a converted item.
+   */
+  readonly checkConverted?: boolean;
+  /**
+   * True when all check bank items have been exposed, converted, or retired.
+   * The server will honestly decline to provide a fresh check.
+   */
+  readonly checkBankExhausted?: boolean;
   /** Hints already unlocked, in order. Never includes unrequested hints. */
   readonly revealedHints: readonly string[];
   /** Total hints available for the current question. */

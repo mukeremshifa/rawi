@@ -1,7 +1,7 @@
 # Rawi GitHub status and next steps
 
-Checked on 13 September 2026. This is the latest local review and handoff;
-historical review evidence remains in STATUS.md and Git history.
+Checked on 14 September 2026. R02B delivered on main. This is the latest local
+review and handoff; historical review evidence remains in STATUS.md and Git history.
 
 ## Verified repository state
 
@@ -98,7 +98,69 @@ Code references at the reviewed merge: [stage command](https://github.com/mukere
 No new evidence-corruption blocker was found within R02A's documented fixture
 scope. These follow-ups belong in R02B before adding replacement checks.
 
-## Next implementation: R02B — help and recovery
+## R02B — delivered 14 September 2026
+
+All nine acceptance criteria met within the fixture scope.
+
+| Check | Result |
+| ----- | ------ |
+| `npm test` | 55 passed (21 learning, 19 API, 15 R02B) |
+| `npm run lint` | Passed |
+| `npm run build` | Passed; 156.90 kB JS / 50.35 kB gzip |
+| `npm run acceptance` | 8/8 fetch-based paths passed |
+| Answer-key absence | `correctOptionId` and `answerExplanation` absent from built bundle |
+
+**What was delivered.**
+
+- Explicit `POST /api/sessions/:id/convert` route with item-identity guard.
+  Body carries `itemId`; server atomically retires the item and selects the next
+  unexposed bank item. Exhaustion returns `check_bank_exhausted` (409).
+- Three original replacement check questions in `demo-lesson.ts checkBank`.
+- Item-identity guard in `activeQuestion()` for hint, reveal and attempt at the
+  check stage. A stale `itemId` returns `item_replaced` (409).
+- `convertCheck()` in `learning.ts` marks the item `assistance: 'revealed'`
+  without inventing a graded answer. Duplicate/idempotent behavior defined.
+- Correct labels: `independent` / `helpUsed` / `incorrectUnaided` rendered
+  separately in Result and EvidencePanel (3-badge system).
+- Honest reload in App.tsx: 409 tries to reload; shows one of
+  `staleRefreshed`, `staleRefreshFailed`, `staleSessionGone`, or
+  `itemReplacedRefreshFailed` — never claims the view is current before reload succeeds.
+- `previousCheckId` ref resets selection and moves focus when `activeCheckId`
+  changes, including same-stage item replacement.
+
+**Open limitations (carried to R03 and beyond).**
+
+- Keyboard-only walkthrough not run in a real browser.
+- Screen-reader pass not performed.
+- Narrow-screen (< 52 rem) layout not tested on a real device.
+- UAE device and network conditions not tested.
+- Workers-runtime probe not rerun after R02B changes.
+
+## Next implementation: R03 — identity and durable data
+
+**Outcome:** two test identities can authenticate (Google OAuth or verified
+no-paid-email flow), complete a lesson, and have their progress survive a Worker
+restart. Access isolation: neither identity can read the other's session.
+
+Key requirements before any learner-facing deployment:
+
+1. Supabase Free — verify plan limits; no paid upgrade.
+2. Body-size limits before JSON parsing (see `NEXT_STEPS.md` note).
+3. Transactional writes with `UPDATE ... WHERE version = $n` replacing the
+   in-memory Map.
+4. Per-learner ownership scoping on all session endpoints.
+5. Durable `exposedCheckIds` so a bank item conversion is not lost on a Worker restart.
+6. No exposed secrets in the bundle or version control.
+
+## Parallel and subsequent sessions
+
+| Order | Owner/session | Outcome |
+|---|---|---|
+| Now | R03 identity and durable data | Authorized ownership, durable exposure, transactional writes and isolated test identities on verified free plans |
+| In parallel | Repository verification owner | Reproducible install and offline CI for lint/tests/build + acceptance |
+| In parallel | Founder R00 discovery | Select shared course, reviewer and permitted materials from actual conversations |
+| After R03 | R04 bounded AI | One adapter, configured cost ceiling, usage accounting, evaluated tutoring and failure handling |
+| After foundations | R05–R10 | Per roadmap in DELIVERY.md |
 
 **Demonstrable outcome:** a learner gets stuck on a check, explicitly switches to
 help, practices that item, and then attempts a distinct unexposed check. The

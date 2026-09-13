@@ -5,6 +5,10 @@
  * percentage (PRODUCT.md: "Do not turn a model's confidence into a precise
  * mastery percentage"). Each attempt is labelled independent or assisted so the
  * learner can see exactly what the state is based on.
+ *
+ * R02B: correctness and help-used are now rendered as two independent facts per
+ * attempt. A wrong unaided attempt gets its own badge (neither "independent"
+ * nor "assisted") so it is never confused with an assisted attempt.
  */
 import type { EvidenceSummary } from '../shared/types.js';
 import { messages } from './messages.js';
@@ -30,23 +34,45 @@ export function EvidencePanel(props: {
         <p className="muted">{messages.evidence.noAttempts}</p>
       ) : (
         <ol className="attempts">
-          {evidence.attempts.map((attempt) => (
-            <li key={`${attempt.questionId}-${attempt.at}`}>
-              <span className="attempt-stage">
-                {messages.stage[attempt.stage]}
-              </span>
-              <span className={attempt.correct ? 'ok' : 'no'}>
-                {attempt.correct
-                  ? messages.feedback.correct
-                  : messages.feedback.incorrect}
-              </span>
-              <span className="badge">
-                {attempt.countsAsIndependent
-                  ? messages.evidence.independentBadge
-                  : messages.evidence.assistedBadge}
-              </span>
-            </li>
-          ))}
+          {evidence.attempts.map((attempt) => {
+            /**
+             * R02B badge logic — three distinct states:
+             *  - independent: correct AND no help used (countsAsIndependent true)
+             *  - assisted: help was used (regardless of correctness)
+             *  - wrong, no help: wrong AND no help used
+             *
+             * The old code used only countsAsIndependent, which mapped both
+             * "wrong unaided" and "assisted correct" to the same "assisted" badge,
+             * making the history unreadable for learners trying to understand why
+             * their evidence state has not advanced.
+             */
+            let badge: string;
+            let badgeClass: string;
+            if (attempt.countsAsIndependent) {
+              badge = messages.evidence.independentBadge;
+              badgeClass = 'badge badge-independent';
+            } else if (attempt.assistance !== 'none') {
+              badge = messages.evidence.assistedBadge;
+              badgeClass = 'badge badge-assisted';
+            } else {
+              badge = messages.evidence.wrongUnaidedBadge;
+              badgeClass = 'badge badge-wrong-unaided';
+            }
+
+            return (
+              <li key={`${attempt.questionId}-${attempt.at}`}>
+                <span className="attempt-stage">
+                  {messages.stage[attempt.stage]}
+                </span>
+                <span className={attempt.correct ? 'ok' : 'no'}>
+                  {attempt.correct
+                    ? messages.feedback.correct
+                    : messages.feedback.incorrect}
+                </span>
+                <span className={badgeClass}>{badge}</span>
+              </li>
+            );
+          })}
         </ol>
       )}
 

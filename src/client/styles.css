@@ -329,6 +329,38 @@ button:focus-visible {
   color: var(--ink-soft);
 }
 
+.badge-independent {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.badge-assisted {
+  color: var(--ink-soft);
+}
+
+.badge-wrong-unaided {
+  color: var(--no);
+  border-color: var(--no);
+}
+
+/* R02B: wrong + unaided label in result card */
+.wrong-unaided {
+  color: var(--no);
+}
+
+/* R02B: check stage help/exhaustion notices */
+.check-exhausted,
+.check-converted {
+  padding: 0.8rem;
+  background: var(--warn-bg);
+  border-radius: var(--radius);
+  border-inline-start: 3px solid var(--warn-ink);
+}
+
+.check-help-warning {
+  margin-block-start: 0.6rem;
+}
+
 .review-due time {
   font-weight: 600;
 }

@@ -39,8 +39,19 @@ export interface AuthoredLesson {
   readonly explanation: Explanation;
   /** Guided practice, where hints are expected and recorded. */
   readonly practice: AuthoredQuestion;
-  /** Fresh independent check. Distinct item, not a repeat of practice. */
+  /**
+   * Primary independent check (first item selected). Distinct from practice.
+   * When a learner converts it to help, the server selects from checkBank.
+   */
   readonly check: AuthoredQuestion;
+  /**
+   * Additional independent check items. Used when the primary check (or a
+   * previous bank item) is converted to help. The server tracks which items
+   * have been exposed; a converted item is never reused as a fresh check.
+   * Bank items must be distinct in prompt and correct answer from each other
+   * and from `check`.
+   */
+  readonly checkBank: readonly AuthoredQuestion[];
 }
 
 const source: SourceExcerpt = {
@@ -151,4 +162,81 @@ export const demoLesson: AuthoredLesson = {
     ],
     reviewedBy: 'Pending subject-reviewer sign-off (R00)',
   },
+
+  /**
+   * Replacement check items. The server selects the next unexposed item when
+   * the learner converts their active check to help. Items are original content
+   * written for Rawi. None may recycle the same prompt or correct option as
+   * check or each other. correctOptionId and answerExplanation are server-only.
+   */
+  checkBank: [
+    {
+      id: 'q-check-b1',
+      prompt:
+        'Bus and train travel are substitutes. Train fares fall. ' +
+        'Nothing else changes. In the market for bus travel, what happens?',
+      options: [
+        { id: 'a', label: 'The demand curve for bus travel shifts right' },
+        { id: 'b', label: 'Movement along the existing demand curve for bus travel' },
+        { id: 'c', label: 'The demand curve for bus travel shifts left' },
+        { id: 'd', label: 'No change to the demand curve for bus travel' },
+      ],
+      correctOptionId: 'c',
+      answerExplanation:
+        'Train fares fell, making train travel cheaper relative to buses. ' +
+        'Buyers now want less bus travel at every bus price because a substitute ' +
+        'became more attractive \u2014 the bus demand curve shifts left.',
+      hints: [
+        'The bus price did not change. So is this a movement or a shift?',
+        'Train travel is a substitute. Cheaper train fares make people want fewer bus trips at any price.',
+      ],
+      reviewedBy: 'Pending subject-reviewer sign-off (R00)',
+    },
+    {
+      id: 'q-check-b2',
+      prompt:
+        'A government report finds that eating red meat raises health risks. ' +
+        'Consumer tastes shift away from red meat. In the market for red meat, ' +
+        'what happens?',
+      options: [
+        { id: 'a', label: 'Movement along the demand curve for red meat' },
+        { id: 'b', label: 'The demand curve for red meat shifts left' },
+        { id: 'c', label: 'The demand curve for red meat shifts right' },
+        { id: 'd', label: 'The price of red meat changes but not the curve' },
+      ],
+      correctOptionId: 'b',
+      answerExplanation:
+        'Tastes changed \u2014 a buyer characteristic, not the price of red meat ' +
+        'itself. A change in tastes shifts the whole curve; at every price, buyers ' +
+        'now want less red meat, so the curve shifts left.',
+      hints: [
+        'Did the price of red meat change, or did something else change?',
+        'Tastes are one of the factors that can shift the demand curve.',
+      ],
+      reviewedBy: 'Pending subject-reviewer sign-off (R00)',
+    },
+    {
+      id: 'q-check-b3',
+      prompt:
+        'Buyers of smartphones expect that next month\'s models will be ' +
+        'significantly better and cheaper. Nothing else changes this month. ' +
+        'In the current market for smartphones, what most likely happens?',
+      options: [
+        { id: 'a', label: 'The demand curve shifts right: people buy more now' },
+        { id: 'b', label: 'Movement along the existing demand curve' },
+        { id: 'c', label: 'The demand curve shifts left: people wait and buy less now' },
+        { id: 'd', label: 'No change; expectations do not affect demand' },
+      ],
+      correctOptionId: 'c',
+      answerExplanation:
+        'Buyers\u2019 expectations about future prices are one of the demand-shift ' +
+        'factors. Expecting a cheaper, better product next month, rational buyers ' +
+        'postpone purchases, so demand for current models falls \u2014 the curve shifts left.',
+      hints: [
+        'Did the current price of smartphones change, or did something about buyers\u2019 expectations change?',
+        'Expectations about future prices are one of the factors listed that shifts a demand curve.',
+      ],
+      reviewedBy: 'Pending subject-reviewer sign-off (R00)',
+    },
+  ],
 };

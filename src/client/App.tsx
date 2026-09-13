@@ -5,6 +5,16 @@
  * client-side grading, no local assistance flag and no optimistic progress:
  * every transition is a request, and the response replaces the view. That is
  * why a refresh or a second tab cannot un-do a revealed answer.
+ *
+ * R02B changes:
+ *  - Conflict refresh: 409 tries to reload; distinguishes confirmed, failed and
+ *    session-gone outcomes. Does NOT claim the view is current before the reload
+ *    succeeds.
+ *  - Item-replacement: 409 with error 'item_replaced' has the same reload
+ *    behaviour, but shows a distinct message.
+ *  - Get help button in the check stage; shows exhaustion state honestly.
+ *  - Focus and selection reset when activeCheckId changes (same stage, new item).
+ *  - Correctness and help-used are rendered separately in Result.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SessionView, Stage } from '../shared/types.js';
@@ -25,6 +35,29 @@ export function App() {
   // screen-reader users are not left at the top of the document.
   const stageHeadingRef = useRef<HTMLHeadingElement>(null);
   const previousStage = useRef<Stage | null>(null);
+  // R02B: also track the active check ID so that a same-stage item replacement
+  // triggers focus and selection reset.
+  const previousCheckId = useRef<string | null>(null);
+
+  /**
+   * Attempt a reload after a conflict. Returns one of three outcomes:
+   *  'refreshed' — reload succeeded; caller should show confirmed-refresh message
+   *  'session-gone' — 404; session no longer exists
+   *  'failed' — network or other error; caller should show unavailable-refresh message
+   */
+  const tryReload = useCallback(
+    async (sessionId: string): Promise<'refreshed' | 'session-gone' | 'failed'> => {
+      try {
+        setSession(await api.loadSession(sessionId));
+        return 'refreshed';
+      } catch (caught) {
+        const err = caught as api.ApiError;
+        if (err.status === 404) return 'session-gone';
+        return 'failed';
+      }
+    },
+    [],
+  );
 
   const run = useCallback(
     async (action: () => Promise<SessionView>) => {
@@ -40,18 +73,40 @@ export function App() {
           setError(messages.error.sessionLost);
         } else if (err.status === 409) {
           // The server refused a command that did not match the session as it
-          // actually was - a stale tab, a double submit, or a request built
-          // against a screen the learner has left. Nothing was written, so the
-          // recovery is to show the authoritative state rather than the
-          // learner's assumption of it.
-          setError(messages.error.stale);
+          // actually was. Try to reload to show the authoritative current state.
           const saved = window.localStorage.getItem(SESSION_KEY);
+          const isItemReplaced = err.code === 'item_replaced';
+
           if (saved) {
-            try {
-              setSession(await api.loadSession(saved));
-            } catch {
-              // Leave the existing view in place; the message already explains.
+            const outcome = await tryReload(saved);
+            if (outcome === 'refreshed') {
+              setError(
+                isItemReplaced
+                  ? messages.error.itemReplaced
+                  : messages.error.staleRefreshed,
+              );
+            } else if (outcome === 'session-gone') {
+              window.localStorage.removeItem(SESSION_KEY);
+              setSession(null);
+              setError(
+                isItemReplaced
+                  ? messages.error.staleSessionGone
+                  : messages.error.staleSessionGone,
+              );
+            } else {
+              // Reload failed — do NOT claim the view is current.
+              setError(
+                isItemReplaced
+                  ? messages.error.itemReplacedRefreshFailed
+                  : messages.error.staleRefreshFailed,
+              );
             }
+          } else {
+            setError(
+              isItemReplaced
+                ? messages.error.itemReplacedRefreshFailed
+                : messages.error.staleRefreshFailed,
+            );
           }
         } else {
           setError(err.code === 'network' ? messages.error.network : err.message);
@@ -60,7 +115,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [],
+    [tryReload],
   );
 
   // Resume an existing session on load, so a refresh keeps the learner's place
@@ -75,8 +130,17 @@ export function App() {
   }, [session]);
 
   useEffect(() => {
-    if (session && session.stage !== previousStage.current) {
+    if (!session) return;
+
+    const stageChanged = session.stage !== previousStage.current;
+    // R02B: detect item replacement — same stage but different activeCheckId.
+    const checkItemChanged =
+      session.activeCheckId !== undefined &&
+      session.activeCheckId !== previousCheckId.current;
+
+    if (stageChanged || checkItemChanged) {
       previousStage.current = session.stage;
+      previousCheckId.current = session.activeCheckId ?? null;
       setChoice('');
       setReasoning('');
       stageHeadingRef.current?.focus();
@@ -219,15 +283,54 @@ function StageBody(props: StageBodyProps) {
     event.preventDefault();
     if (!choice || busy || answered) return;
     void run(() =>
-      api.submitAttempt(sessionId, stage, choice, reasoning || undefined),
+      api.submitAttempt(
+        sessionId,
+        stage,
+        choice,
+        reasoning || undefined,
+        // R02B: pass the item ID at check stage for stale-item detection.
+        stage === 'check' ? (session.activeCheckId ?? question.id) : undefined,
+      ),
     );
   };
+
+  // R02B: show the exhaustion message instead of the question at check stage.
+  if (stage === 'check' && session.checkBankExhausted) {
+    return (
+      <div className="check-exhausted" role="note">
+        <p className="warn">{messages.check.bankExhausted}</p>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void run(() => api.setStage(sessionId, 'practice'))}
+        >
+          {messages.actions.toPractice}
+        </button>
+      </div>
+    );
+  }
+
+  // R02B: show the converted state — question has been converted to practice.
+  if (stage === 'check' && session.checkConverted) {
+    return (
+      <div className="check-converted" role="note">
+        <p>{messages.check.converted}</p>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void run(() => api.setStage(sessionId, 'practice'))}
+        >
+          {messages.actions.toPractice}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <>
       {/* stage is narrowed to a question stage here: learn and summary
           returned earlier. */}
-      <p className="mode-note">{messages.modeNote[stage]}</p>
+      <p className="mode-note">{messages.modeNote[stage as keyof typeof messages.modeNote]}</p>
 
       <form onSubmit={submit}>
         <fieldset disabled={busy || answered}>
@@ -271,21 +374,50 @@ function StageBody(props: StageBodyProps) {
               <button
                 type="button"
                 disabled={busy || hintsLeft <= 0}
-                onClick={() => void run(() => api.requestHint(sessionId, stage))}
+                onClick={() =>
+                  void run(() =>
+                    api.requestHintWithItem(sessionId, stage),
+                  )
+                }
               >
                 {messages.actions.hint}
               </button>
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => void run(() => api.revealAnswer(sessionId, stage))}
+                onClick={() =>
+                  void run(() => api.revealAnswerWithItem(sessionId, stage))
+                }
               >
                 {messages.actions.reveal}
               </button>
             </>
           )}
+
+          {/* R02B: Get help button in the check stage, only before submission. */}
+          {stage === 'check' && !answered && (
+            <button
+              type="button"
+              disabled={busy}
+              className="ghost help-check"
+              onClick={() =>
+                void run(() =>
+                  api.convertCheck(
+                    sessionId,
+                    session.activeCheckId ?? question.id,
+                  ),
+                )
+              }
+            >
+              {messages.actions.getHelp}
+            </button>
+          )}
         </div>
       </form>
+
+      {stage === 'check' && !answered && (
+        <p className="warn check-help-warning">{messages.check.getHelpWarning}</p>
+      )}
 
       {!answered && stage === 'practice' && hintsLeft > 0 && (
         <p className="warn">{messages.hints.usingHintWarning}</p>
@@ -343,15 +475,39 @@ function Result(props: {
         ? messages.actions.toCheck
         : messages.actions.finish;
 
+  /**
+   * R02B: render correctness and help-used as two independent facts.
+   *
+   * The old code derived both from `countsAsIndependent`, which conflated
+   * "correct" with "no help used". A wrong unaided answer would show the same
+   * label as an assisted correct answer ("assisted"), which is misleading —
+   * they describe completely different events.
+   *
+   * New rule:
+   *  - countsAsIndependent true  → "Recorded as independent"
+   *  - assistance !== 'none'     → "Recorded as assisted: help was used"
+   *  - correct false, no help    → "Not recorded as independent: wrong"
+   */
+  let helpLabel: string;
+  if (result.countsAsIndependent) {
+    helpLabel = messages.feedback.independent;
+  } else if (result.assistance !== 'none') {
+    helpLabel = messages.feedback.helpUsed;
+  } else {
+    helpLabel = messages.feedback.incorrectUnaided;
+  }
+
+  const helpClass = result.countsAsIndependent
+    ? 'independent'
+    : result.assistance !== 'none'
+      ? 'assisted'
+      : 'wrong-unaided';
+
   return (
     <section className="result" aria-live="polite">
       <h3>{result.correct ? messages.feedback.correct : messages.feedback.incorrect}</h3>
       <p>{result.feedback}</p>
-      <p className={result.countsAsIndependent ? 'independent' : 'assisted'}>
-        {result.countsAsIndependent
-          ? messages.feedback.independent
-          : messages.feedback.assisted}
-      </p>
+      <p className={helpClass}>{helpLabel}</p>
       {next && (
         <button
           type="button"

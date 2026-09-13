@@ -36,10 +36,7 @@ Last updated: 13 September 2026.
 
 R00: ready for founder discovery; no completed interviews or selected course recorded.
 R01: local implementation delivered (see handoff log), with browser acceptance still
-outstanding. R02A: merged and independently reviewed (see handoff log). Next is **R02B — help and recovery**,
-which also carries the outstanding R01 browser acceptance. R03–R10 wait on their
-listed dependencies. Optional R07 may be deferred. See [NEXT_STEPS.md](NEXT_STEPS.md)
-for the current GitHub snapshot, recovery findings and the ready-to-use R02B brief.
+outstanding. R02A: merged and independently reviewed (see handoff log). **R02B: delivered 14 September 2026** — help and recovery complete, all acceptance criteria met. Next is **R03 — identity and durable data**. R03–R10 wait on their listed dependencies. See [NEXT_STEPS.md](NEXT_STEPS.md) for the updated snapshot.
 
 ## Decisions to resolve
 
@@ -58,14 +55,14 @@ Append actual changes here after each completed ticket: ticket ID, change/commit
 **What changed.** Git repository initialized; the existing documents were preserved in
 the first commit before any code was added. Added a single TypeScript codebase:
 
-| Area | Files |
-|---|---|
-| Shared contract | `src/shared/types.ts` |
-| Lesson content (replaceable) | `src/content/demo-lesson.ts` |
-| Learning rules | `src/server/learning.ts` |
-| Storage and view projection | `src/server/lesson-store.ts` |
-| HTTP routes | `src/server/index.ts` |
-| Browser | `src/client/` (`App.tsx`, `EvidencePanel.tsx`, `api.ts`, `messages.ts`, `styles.css`) |
+| Area                         | Files                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------- |
+| Shared contract              | `src/shared/types.ts`                                                                 |
+| Lesson content (replaceable) | `src/content/demo-lesson.ts`                                                          |
+| Learning rules               | `src/server/learning.ts`                                                              |
+| Storage and view projection  | `src/server/lesson-store.ts`                                                          |
+| HTTP routes                  | `src/server/index.ts`                                                                 |
+| Browser                      | `src/client/` (`App.tsx`, `EvidencePanel.tsx`, `api.ts`, `messages.ts`, `styles.css`) |
 
 Learning state is server-owned. The browser holds no rules and never decides
 correctness, assistance or evidence; each transition is a request and the response
@@ -73,15 +70,15 @@ replaces the view.
 
 **Commands.** All run from the repository root on Node 24.19.0 / npm 12.0.2.
 
-| Command | Purpose | Result |
-|---|---|---|
-| `npm install` | Install dependencies | Completed. `esbuild` and `workerd` install scripts must be approved (`npm install-scripts approve esbuild`, `… approve workerd`) or Vite and Wrangler have no binaries. |
-| `npm run typecheck` | `tsc --noEmit` | Passed, no errors |
-| `npm run lint` | ESLint | Passed, no errors |
-| `npm test` | Vitest | **32 tests passed** (2 files) |
-| `npm run build` | Typecheck + Vite build | Passed; `dist/client`, 153.59 kB JS (49.53 kB gzip) |
-| `npm run dev` | Vite dev server (browser) | Proxies `/api` to port 8787 |
-| `npm run dev:api` | `wrangler dev` (API) | Ready on `http://127.0.0.1:8787` |
+| Command             | Purpose                   | Result                                                                                                                                                                  |
+| ------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm install`       | Install dependencies      | Completed. `esbuild` and `workerd` install scripts must be approved (`npm install-scripts approve esbuild`, `… approve workerd`) or Vite and Wrangler have no binaries. |
+| `npm run typecheck` | `tsc --noEmit`            | Passed, no errors                                                                                                                                                       |
+| `npm run lint`      | ESLint                    | Passed, no errors                                                                                                                                                       |
+| `npm test`          | Vitest                    | **32 tests passed** (2 files)                                                                                                                                           |
+| `npm run build`     | Typecheck + Vite build    | Passed; `dist/client`, 153.59 kB JS (49.53 kB gzip)                                                                                                                     |
+| `npm run dev`       | Vite dev server (browser) | Proxies `/api` to port 8787                                                                                                                                             |
+| `npm run dev:api`   | `wrangler dev` (API)      | Ready on `http://127.0.0.1:8787`                                                                                                                                        |
 
 **Verified behavior.** Beyond the unit tests, the full journey was driven against the
 actual Workers runtime (`wrangler dev`, Miniflare) — 24 runtime assertions, all passing:
@@ -110,13 +107,13 @@ wall time and production CPU time are different quantities. R04 must profile pro
 1. **Sessions are in-memory and per-isolate.** A Worker restart drops them. R03
    replaces this storage with durable transactions and an asynchronous boundary;
    route signatures and callers may also need adaptation.
-2. **No authentication.** Session IDs are unguessable but are *not* an authorization
+2. **No authentication.** Session IDs are unguessable but are _not_ an authorization
    boundary. This API must not be deployed publicly as-is.
 3. **No AI.** `RAWI_TUTOR_MODE` is `fixture`; no provider key is read anywhere in the
    codebase, and no paid service is contacted.
 4. **Lesson content is provisional** original microeconomics, pending R00 course
    selection. `reviewedBy` on each question records that subject-reviewer sign-off is
-   still outstanding — the content has *not* been reviewed by a competent reviewer.
+   still outstanding — the content has _not_ been reviewed by a competent reviewer.
 5. **Accessibility and mobile are partially verified.** Confirmed by inspection: all
    interactive controls are real `<button>`/`<input>` elements (keyboard-reachable),
    inputs are label-associated, focus moves to the stage heading on each transition,
@@ -162,10 +159,10 @@ planning/status documentation; no application fixes or GitHub changes were made.
 and 2 are fixed, with regression tests that fail against the previous code.
 
 **Atomic session updates.** `updateSession()` in `src/server/lesson-store.ts` is now
-the only supported way to change a session. It reads, applies a *synchronous*
+the only supported way to change a session. It reads, applies a _synchronous_
 command and writes, with no `await` in between. Every mutating handler in
 `src/server/index.ts` was reordered to finish reading and validating its request body
-*before* it touches session state. This is the actual fix for the overlap defect: R01
+_before_ it touches session state. This is the actual fix for the overlap defect: R01
 read the session first and awaited the body afterwards, so a reveal landing in that
 window was overwritten by an attempt that had already decided it was unassisted.
 `SessionState.version` is bumped on every committed write and checked before commit;
@@ -193,13 +190,13 @@ check-to-help conversion flow remain R02B.
 
 **Verification, run on this checkout.**
 
-| Check | Result |
-|---|---|
-| `npm run lint` | Passed |
-| `npm test` | 40 passed (21 learning, 19 API); was 32 |
-| `npm run build` | Typecheck and Vite build passed |
-| Answer-key leakage | `correctOptionId` absent from client source and built bundle |
-| Sabotage check | Restoring R01's read-before-await ordering fails the overlap test with the reported defect (`countsAsIndependent` true where it must be false) |
+| Check              | Result                                                                                                                                         |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run lint`     | Passed                                                                                                                                         |
+| `npm test`         | 40 passed (21 learning, 19 API); was 32                                                                                                        |
+| `npm run build`    | Typecheck and Vite build passed                                                                                                                |
+| Answer-key leakage | `correctOptionId` absent from client source and built bundle                                                                                   |
+| Sabotage check     | Restoring R01's read-before-await ordering fails the overlap test with the reported defect (`countsAsIndependent` true where it must be false) |
 
 The eight new tests construct overlapping requests deterministically rather than by
 timing luck: a request is given a body stream that resolves only when the test
@@ -259,3 +256,52 @@ parsing before exposing the API.
 implementation prompt and a separate CI brief. README, DELIVERY and the playbook
 point to the same next step. This review changed documentation only; no GitHub
 write, deployment, paid AI call or hosted resource change was performed.
+
+### R02B — help and recovery (14 September 2026)
+
+**What changed.** All five R02A recovery follow-ups addressed. New files and
+modifications:
+
+| Area | Files changed |
+| ---- | ------------- |
+| Shared contract | `src/shared/types.ts` — `ItemRef`, `activeCheckId`, `checkConverted`, `checkBankExhausted` in `SessionView` |
+| Lesson content | `src/content/demo-lesson.ts` — `checkBank` interface and 3 original replacement items |
+| Learning rules | `src/server/learning.ts` — `convertCheck`, `isCheckBankExhausted`, item-identity fields in `SessionState`, `check→practice` transition, multi-item `evidenceState`/`nextReviewDue` |
+| Storage/projection | `src/server/lesson-store.ts` — `questionForStage` uses `activeCheckId`, view exposes check state flags |
+| HTTP routes | `src/server/index.ts` — `POST /convert` route, item-identity guard in `activeQuestion` |
+| Browser | `src/client/` — Get help button, honest reload errors, item-change focus reset, 3-badge evidence, new messages, new CSS classes |
+| Tests | `src/server/r02b.test.ts` (15 new), `learning.test.ts` updated for array signatures |
+| Acceptance | `src/acceptance/harness.ts` — 8 fetch-based paths; `npm run acceptance` added |
+
+**Verification, run on this checkout (Node 24.19.0 / npm 12.0.2).**
+
+| Check | Result |
+| ----- | ------ |
+| `npm test` | **55 passed** (21 learning, 19 API, 15 R02B); was 40 |
+| `npm run lint` | Passed |
+| `npm run build` | Typecheck and Vite build passed; 156.90 kB JS (50.35 kB gzip) |
+| `npm run acceptance` | 8/8 fetch-based paths passed |
+| Answer-key leakage | `correctOptionId` and `answerExplanation` field name absent from `dist/client/assets/*.js`; confirmed with `Select-String` on built bundle |
+
+**How attempted items, assisted items and fresh checks are kept distinct.**
+
+The server holds `activeCheckId` and `exposedCheckIds` in `SessionState`. Creating
+a session always starts with `activeCheckId = lesson.check.id`. When the learner
+converts, `convertCheck()` marks the item `assistance: 'revealed'` (permanently
+retiring it from independent credit) and selects the next unexposed bank item as
+`activeCheckId`. Commands that target the check stage carry an `itemId`; the
+`activeQuestion()` guard rejects the request with `item_replaced` (409) if
+`itemId !== state.activeCheckId`. This prevents a delayed request built against
+the old item from acting on its replacement, even though both are at stage "check".
+A converted item's `assistance: 'revealed'` means any belated submission on it will
+never be graded as independent. Exhaustion is an honest terminal state: once all
+bank items are exposed and the active one is already converted, further convert
+requests return `check_bank_exhausted` (409) rather than silently recycling a used item.
+
+**Not done here.** Keyboard-only walkthrough, screen-reader pass, narrow-screen and
+UAE-network verification remain open. Workers-runtime probe was not rerun. No
+deployment, authentication, durable storage or AI call was added.
+
+**Next ticket.** R03 — identity and durable data: Supabase schema, Google OAuth
+(or verified no-paid-email flow), per-learner ownership, transactional writes,
+body-size limits, durable exposure tracking.
