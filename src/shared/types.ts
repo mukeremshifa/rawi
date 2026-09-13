@@ -105,7 +105,10 @@ export interface EvidenceSummary {
   readonly state: EvidenceState;
   /** Attempts recorded across the session, newest last. */
   readonly attempts: readonly RecordedAttempt[];
-  /** ISO date the next review is due, once independent evidence exists. */
+  /**
+   * ISO date the next review is due, once independent evidence exists. Read
+   * from the qualifying attempt; never recomputed from the current clock.
+   */
   readonly nextReviewDue?: string;
 }
 
@@ -116,4 +119,11 @@ export interface RecordedAttempt {
   readonly assistance: AssistanceLevel;
   readonly countsAsIndependent: boolean;
   readonly at: string;
+  /**
+   * ISO date (YYYY-MM-DD) this attempt schedules the next review for, set only
+   * when the attempt counted as independent. Anchored to the attempt rather
+   * than recomputed at read time, so the date a learner is shown does not move
+   * when they reload on a later day.
+   */
+  readonly reviewDue?: string;
 }

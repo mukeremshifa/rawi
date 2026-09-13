@@ -8,7 +8,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import app, { clearSessions } from './index.js';
 import { demoLesson } from '../content/demo-lesson.js';
-import type { SessionView } from '../shared/types.js';
+import type { SessionView, Stage } from '../shared/types.js';
 
 const env = { RAWI_TUTOR_MODE: 'fixture' };
 
@@ -35,6 +35,30 @@ function post(path: string, payload?: unknown): Promise<{ status: number; body: 
 async function newSession(): Promise<SessionView> {
   const { body } = await post('/api/sessions');
   return body as SessionView;
+}
+
+/**
+ * Walk a session to `stage` through the declared transitions.
+ *
+ * R02A refuses stage jumps, so a test that wants to be "at the check" has to
+ * get there the way a learner does. Tests assert on the walk succeeding, so a
+ * transition rule change cannot quietly leave a test asserting nothing.
+ */
+async function advanceTo(id: string, stage: Stage): Promise<SessionView> {
+  const path: Record<Stage, readonly Stage[]> = {
+    diagnose: [],
+    learn: ['learn'],
+    practice: ['learn', 'practice'],
+    check: ['learn', 'practice', 'check'],
+    summary: ['learn', 'practice', 'check', 'summary'],
+  };
+  let view: SessionView | undefined;
+  for (const step of path[stage]) {
+    const res = await post(`/api/sessions/${id}/stage`, { stage: step });
+    expect(res.status).toBe(200);
+    view = res.body as SessionView;
+  }
+  return view ?? ((await call(`/api/sessions/${id}`)).body as SessionView);
 }
 
 beforeEach(() => clearSessions());
@@ -66,7 +90,7 @@ describe('session lifecycle', () => {
 
   it('re-reads the same state on a refresh', async () => {
     const session = await newSession();
-    await post(`/api/sessions/${session.sessionId}/stage`, { stage: 'practice' });
+    await advanceTo(session.sessionId, 'practice');
     await post(`/api/sessions/${session.sessionId}/reveal`, { stage: 'practice' });
 
     const { body: reloaded } = await call(`/api/sessions/${session.sessionId}`);
@@ -104,6 +128,9 @@ describe('input validation', () => {
 
   it('rejects a hint request at a stage with no question', async () => {
     const session = await newSession();
+    // Reach summary legitimately, so the request fails for the reason under
+    // test rather than for being addressed to an inactive stage.
+    await advanceTo(session.sessionId, 'summary');
     const { status, body } = await post(
       `/api/sessions/${session.sessionId}/hint`,
       { stage: 'summary' },
@@ -135,6 +162,7 @@ describe('a complete learner journey', () => {
 
     // Practice: take a hint, then answer correctly. Assisted, by design.
     await post(`/api/sessions/${id}/stage`, { stage: 'practice' });
+
     const hinted = (await post(`/api/sessions/${id}/hint`, { stage: 'practice' }))
       .body as SessionView;
     expect(hinted.revealedHints).toHaveLength(1);
@@ -163,7 +191,7 @@ describe('a complete learner journey', () => {
     const session = await newSession();
     const id = session.sessionId;
 
-    await post(`/api/sessions/${id}/stage`, { stage: 'check' });
+    await advanceTo(id, 'check');
     // Reveal is not offered in the check UI, but the API must refuse to treat
     // a revealed answer as independent even if the route is called directly.
     await post(`/api/sessions/${id}/reveal`, { stage: 'check' });
@@ -182,7 +210,7 @@ describe('a complete learner journey', () => {
   it('ignores a double-submitted answer', async () => {
     const session = await newSession();
     const id = session.sessionId;
-    await post(`/api/sessions/${id}/stage`, { stage: 'check' });
+    await advanceTo(id, 'check');
 
     const payload = {
       stage: 'check',
@@ -193,5 +221,237 @@ describe('a complete learner journey', () => {
       .body as SessionView;
 
     expect(second.evidence.attempts).toHaveLength(1);
+  });
+});
+
+/**
+ * R02A regression tests: overlapping requests.
+ *
+ * These are the tests that would have caught the defect documented in
+ * docs/NEXT_STEPS.md gap 1. They do not simulate concurrency loosely - they
+ * construct it deterministically, by giving one request a body the server has
+ * to await while another request runs to completion in that window.
+ */
+describe('overlapping requests cannot lose recorded assistance', () => {
+  /**
+   * A Request whose body resolves only when `release()` is called.
+   *
+   * This is the precise shape of the original bug: the handler suspends at
+   * `await req.json()`. Anything that ran in R01 between the session read and
+   * the write was silently discarded. Holding the body open lets a test place
+   * a second request exactly in that window, every run, with no timing luck.
+   */
+  function deferredBody(payload: unknown): {
+    request: Request;
+    release: () => void;
+  } {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const stream = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        await gate;
+        controller.enqueue(new TextEncoder().encode(JSON.stringify(payload)));
+        controller.close();
+      },
+    });
+    const request = new Request('http://localhost/placeholder', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: stream,
+      // Required when the body is a stream.
+      duplex: 'half',
+    } as RequestInit);
+    return { request, release };
+  }
+
+  function slowPost(
+    path: string,
+    payload: unknown,
+  ): { send: Promise<{ status: number; body: any }>; release: () => void } {
+    const { request, release } = deferredBody(payload);
+    const send = (async () => {
+      const res = await app.fetch(
+        new Request(`http://localhost${path}`, request),
+        env,
+      );
+      return { status: res.status, body: await res.json().catch(() => undefined) };
+    })();
+    return { send, release };
+  }
+
+  it('denies independent credit to an attempt that overlapped a reveal', async () => {
+    const session = await newSession();
+    const id = session.sessionId;
+    await advanceTo(id, 'check');
+
+    // The learner's attempt starts first, but its body is still in flight.
+    const attempt = slowPost(`/api/sessions/${id}/attempt`, {
+      stage: 'check',
+      optionId: demoLesson.check.correctOptionId,
+    });
+
+    // While it is suspended, a reveal completes. The answer is now assisted.
+    const revealed = await post(`/api/sessions/${id}/reveal`, { stage: 'check' });
+    expect(revealed.status).toBe(200);
+    expect((revealed.body as SessionView).assistance).toBe('revealed');
+
+    // Now the attempt resumes and is graded.
+    attempt.release();
+    const graded = (await attempt.send).body as SessionView;
+
+    // The answer is still correct, but it must NOT be independent, and the
+    // reveal must not have been rolled back. In R01 both failed: the attempt
+    // wrote state it had read before the reveal existed.
+    expect(graded.lastResult?.correct).toBe(true);
+    expect(graded.lastResult?.countsAsIndependent).toBe(false);
+    expect(graded.lastResult?.assistance).toBe('revealed');
+    expect(graded.assistance).toBe('revealed');
+    expect(graded.evidence.state).toBe('practicing');
+    expect(graded.evidence.nextReviewDue).toBeUndefined();
+  });
+
+  it('refuses a hint whose stage the learner left while it was in flight', async () => {
+    const session = await newSession();
+    const id = session.sessionId;
+    await advanceTo(id, 'practice');
+
+    const hint = slowPost(`/api/sessions/${id}/hint`, { stage: 'practice' });
+    // A legal navigation completes while the hint request is suspended.
+    await post(`/api/sessions/${id}/stage`, { stage: 'learn' });
+
+    hint.release();
+    const result = await hint.send;
+
+    // The hint was addressed to a stage the session has left, so it is refused
+    // rather than applied to whatever question is now active.
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe('stage_not_active');
+
+    const reloaded = (await call(`/api/sessions/${id}`)).body as SessionView;
+    expect(reloaded.stage).toBe('learn');
+  });
+
+  it('records one attempt when two identical submissions overlap', async () => {
+    const session = await newSession();
+    const id = session.sessionId;
+    await advanceTo(id, 'check');
+
+    const payload = { stage: 'check', optionId: demoLesson.check.correctOptionId };
+    const first = slowPost(`/api/sessions/${id}/attempt`, payload);
+    const second = slowPost(`/api/sessions/${id}/attempt`, payload);
+
+    // Both bodies are released before either has been graded: a genuine double
+    // submit, not a sequential retry.
+    first.release();
+    second.release();
+    const [a, b] = await Promise.all([first.send, second.send]);
+
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    const latest = (await call(`/api/sessions/${id}`)).body as SessionView;
+    expect(latest.evidence.attempts).toHaveLength(1);
+    expect(latest.evidence.attempts[0]?.countsAsIndependent).toBe(true);
+  });
+});
+
+describe('commands must name the active stage', () => {
+  it('refuses a jump straight from the diagnostic to the scored check', async () => {
+    const session = await newSession();
+    const { status, body } = await post(
+      `/api/sessions/${session.sessionId}/stage`,
+      { stage: 'check' },
+    );
+    // R01 returned 200 here, letting a learner reach the scored check without
+    // passing through the teaching stages.
+    expect(status).toBe(409);
+    expect(body.error).toBe('stage_transition_not_allowed');
+
+    const unchanged = (await call(`/api/sessions/${session.sessionId}`))
+      .body as SessionView;
+    expect(unchanged.stage).toBe('diagnose');
+  });
+
+  it('refuses an attempt addressed to a stage the learner has left', async () => {
+    const session = await newSession();
+    const id = session.sessionId;
+    await advanceTo(id, 'practice');
+
+    // A stale tab still showing the diagnostic submits its answer.
+    const { status, body } = await post(`/api/sessions/${id}/attempt`, {
+      stage: 'diagnose',
+      optionId: demoLesson.diagnostic.correctOptionId,
+    });
+    expect(status).toBe(409);
+    expect(body.error).toBe('stage_not_active');
+
+    // Nothing was recorded against the question now in front of the learner.
+    const latest = (await call(`/api/sessions/${id}`)).body as SessionView;
+    expect(latest.evidence.attempts).toHaveLength(0);
+  });
+
+  it('treats navigating to the current stage as a no-op, not an error', async () => {
+    const session = await newSession();
+    const id = session.sessionId;
+    await advanceTo(id, 'learn');
+
+    const { status, body } = await post(`/api/sessions/${id}/stage`, {
+      stage: 'learn',
+    });
+    expect(status).toBe(200);
+    expect((body as SessionView).stage).toBe('learn');
+  });
+});
+
+describe('recorded evidence does not change when it is read later', () => {
+  it('keeps the review date fixed when the session is re-read', async () => {
+    const session = await newSession();
+    const id = session.sessionId;
+    await advanceTo(id, 'check');
+
+    const graded = (await post(`/api/sessions/${id}/attempt`, {
+      stage: 'check',
+      optionId: demoLesson.check.correctOptionId,
+    })).body as SessionView;
+    const dueAtSubmission = graded.evidence.nextReviewDue;
+    expect(dueAtSubmission).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    // Re-read the same session. The projection takes no clock at all, so this
+    // is the same read the learner makes after sleeping; R01 recomputed the
+    // date from the read time and moved it forward every day.
+    const later = (await call(`/api/sessions/${id}`)).body as SessionView;
+    expect(later.evidence.nextReviewDue).toBe(dueAtSubmission);
+    expect(later.evidence.attempts[0]?.reviewDue).toBe(dueAtSubmission);
+  });
+
+  it('replays the original result rather than describing it with later help', async () => {
+    const session = await newSession();
+    const id = session.sessionId;
+    await advanceTo(id, 'check');
+
+    const first = (await post(`/api/sessions/${id}/attempt`, {
+      stage: 'check',
+      optionId: demoLesson.check.correctOptionId,
+    })).body as SessionView;
+    expect(first.lastResult?.countsAsIndependent).toBe(true);
+    expect(first.lastResult?.assistance).toBe('none');
+
+    // The learner reveals the answer after being graded. Reading the worked
+    // explanation is legitimate and must not rewrite what already happened.
+    await post(`/api/sessions/${id}/reveal`, { stage: 'check' });
+
+    const replay = (await post(`/api/sessions/${id}/attempt`, {
+      stage: 'check',
+      optionId: demoLesson.check.correctOptionId,
+    })).body as SessionView;
+
+    // R01 replayed the old correctness alongside the question's CURRENT
+    // assistance, producing "correct, independent, revealed" - a combination
+    // describing no real event.
+    expect(replay.lastResult?.assistance).toBe('none');
+    expect(replay.lastResult?.countsAsIndependent).toBe(true);
+    expect(replay.evidence.attempts).toHaveLength(1);
+    expect(replay.evidence.state).toBe('independent-once');
   });
 });

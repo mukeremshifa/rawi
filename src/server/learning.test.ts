@@ -17,7 +17,9 @@ import {
   revealAnswer,
   setStage,
   submitAttempt,
+  type SessionState,
 } from './learning.js';
+import type { Stage } from '../shared/types.js';
 import {
   clearSessions,
   questionForStage,
@@ -28,6 +30,37 @@ const NOW = new Date('2026-09-13T10:00:00.000Z');
 
 function freshSession() {
   return createSession('s1', demoLesson);
+}
+
+/**
+ * Move a session to `stage` along the declared transitions.
+ *
+ * R02A made stage jumps explicit, so tests that want to start "at the check"
+ * must walk the path a learner actually walks. Failing loudly here is the
+ * point: if a transition stops being legal, the tests that depend on it say so.
+ */
+function advanceTo(state: SessionState, stage: Stage): SessionState {
+  const path: Record<Stage, readonly Stage[]> = {
+    diagnose: [],
+    learn: ['learn'],
+    practice: ['learn', 'practice'],
+    check: ['learn', 'practice', 'check'],
+    summary: ['learn', 'practice', 'check', 'summary'],
+  };
+  let current = state;
+  for (const step of path[stage]) {
+    const next = setStage(current, step);
+    if (!next) throw new Error(`illegal test transition ${current.stage} -> ${step}`);
+    current = next;
+  }
+  return current;
+}
+
+/** setStage where the transition is expected to be legal. */
+function mustSetStage(state: SessionState, stage: Stage): SessionState {
+  const next = setStage(state, stage);
+  if (!next) throw new Error(`illegal transition ${state.stage} -> ${stage}`);
+  return next;
 }
 
 beforeEach(() => clearSessions());
@@ -45,14 +78,13 @@ describe('invariant 1: assistance is monotonic', () => {
   });
 
   it('survives a stage change', () => {
-    let state = freshSession();
-    state = setStage(state, 'practice');
+    let state = advanceTo(freshSession(), 'practice');
     state = requestHint(state, demoLesson.practice).state;
     expect(questionState(state, demoLesson.practice.id).assistance).toBe('hinted');
 
     // Switching away and back must not clear the flag.
-    state = setStage(state, 'learn');
-    state = setStage(state, 'practice');
+    state = mustSetStage(state, 'learn');
+    state = mustSetStage(state, 'practice');
     expect(questionState(state, demoLesson.practice.id).assistance).toBe('hinted');
   });
 
@@ -60,14 +92,14 @@ describe('invariant 1: assistance is monotonic', () => {
     // A reload is a GET that re-projects the same server state.
     let state = freshSession();
     state = revealAnswer(state, demoLesson.diagnostic);
-    const view = toSessionView(state, demoLesson, NOW);
+    const view = toSessionView(state, demoLesson);
     expect(view.assistance).toBe('revealed');
   });
 });
 
 describe('invariant 2: independence requires correct AND unaided', () => {
   it('records a correct unaided answer as independent', () => {
-    const state = setStage(freshSession(), 'check');
+    const state = advanceTo(freshSession(), 'check');
     const { result } = submitAttempt(
       state,
       demoLesson.check,
@@ -80,7 +112,7 @@ describe('invariant 2: independence requires correct AND unaided', () => {
   });
 
   it('does not count a correct answer that used a hint', () => {
-    let state = setStage(freshSession(), 'practice');
+    let state = advanceTo(freshSession(), 'practice');
     state = requestHint(state, demoLesson.practice).state;
     const { result } = submitAttempt(
       state,
@@ -95,7 +127,7 @@ describe('invariant 2: independence requires correct AND unaided', () => {
   });
 
   it('does not count a wrong unaided answer', () => {
-    const state = setStage(freshSession(), 'check');
+    const state = advanceTo(freshSession(), 'check');
     const wrong = demoLesson.check.options.find(
       (o) => o.id !== demoLesson.check.correctOptionId,
     )!;
@@ -106,7 +138,7 @@ describe('invariant 2: independence requires correct AND unaided', () => {
 
 describe('invariant 3: a revealed question cannot become independent evidence', () => {
   it('records an answer after reveal as assisted', () => {
-    let state = setStage(freshSession(), 'check');
+    let state = advanceTo(freshSession(), 'check');
     state = revealAnswer(state, demoLesson.check);
 
     const { state: after, result } = submitAttempt(
@@ -127,7 +159,7 @@ describe('invariant 3: a revealed question cannot become independent evidence', 
 
 describe('invariant 4: submission is idempotent', () => {
   it('records one attempt when the same question is submitted twice', () => {
-    const state = setStage(freshSession(), 'check');
+    const state = advanceTo(freshSession(), 'check');
     const first = submitAttempt(
       state,
       demoLesson.check,
@@ -148,7 +180,7 @@ describe('invariant 4: submission is idempotent', () => {
   });
 
   it('does not let a second, different answer overwrite the first result', () => {
-    const state = setStage(freshSession(), 'check');
+    const state = advanceTo(freshSession(), 'check');
     const wrong = demoLesson.check.options.find(
       (o) => o.id !== demoLesson.check.correctOptionId,
     )!;
@@ -177,7 +209,7 @@ describe('evidence and review scheduling', () => {
   });
 
   it('reaches independent-once only through an unaided correct check', () => {
-    let state = setStage(freshSession(), 'check');
+    let state = advanceTo(freshSession(), 'check');
     state = submitAttempt(
       state,
       demoLesson.check,
@@ -191,7 +223,7 @@ describe('evidence and review scheduling', () => {
   });
 
   it('does not promote on the practice question alone', () => {
-    let state = setStage(freshSession(), 'practice');
+    let state = advanceTo(freshSession(), 'practice');
     state = submitAttempt(
       state,
       demoLesson.practice,
@@ -204,9 +236,9 @@ describe('evidence and review scheduling', () => {
   });
 
   it('schedules review seven days out, and not before evidence exists', () => {
-    expect(nextReviewDue([], demoLesson.check.id, NOW)).toBeUndefined();
+    expect(nextReviewDue([], demoLesson.check.id)).toBeUndefined();
 
-    let state = setStage(freshSession(), 'check');
+    let state = advanceTo(freshSession(), 'check');
     state = submitAttempt(
       state,
       demoLesson.check,
@@ -214,14 +246,14 @@ describe('evidence and review scheduling', () => {
       demoLesson.check.correctOptionId,
       NOW,
     ).state;
-    expect(nextReviewDue(state.attempts, demoLesson.check.id, NOW)).toBe(
+    expect(nextReviewDue(state.attempts, demoLesson.check.id)).toBe(
       '2026-09-20',
     );
   });
 
   it('crosses a month boundary correctly', () => {
     const lateInMonth = new Date('2026-09-28T22:00:00.000Z');
-    let state = setStage(freshSession(), 'check');
+    let state = advanceTo(freshSession(), 'check');
     state = submitAttempt(
       state,
       demoLesson.check,
@@ -229,7 +261,7 @@ describe('evidence and review scheduling', () => {
       demoLesson.check.correctOptionId,
       lateInMonth,
     ).state;
-    expect(nextReviewDue(state.attempts, demoLesson.check.id, lateInMonth)).toBe(
+    expect(nextReviewDue(state.attempts, demoLesson.check.id)).toBe(
       '2026-10-05',
     );
   });
@@ -237,8 +269,8 @@ describe('evidence and review scheduling', () => {
 
 describe('the browser never receives unrevealed answers', () => {
   it('omits the answer and the correct option before submission', () => {
-    const state = setStage(freshSession(), 'check');
-    const view = toSessionView(state, demoLesson, NOW);
+    const state = advanceTo(freshSession(), 'check');
+    const view = toSessionView(state, demoLesson);
 
     expect(view.revealedAnswer).toBeUndefined();
     expect(view.question?.options.map((o) => o.id).sort()).toEqual(
@@ -252,20 +284,20 @@ describe('the browser never receives unrevealed answers', () => {
   });
 
   it('omits hints the learner has not unlocked', () => {
-    let state = setStage(freshSession(), 'practice');
-    const view0 = toSessionView(state, demoLesson, NOW);
+    let state = advanceTo(freshSession(), 'practice');
+    const view0 = toSessionView(state, demoLesson);
     expect(view0.revealedHints).toHaveLength(0);
     expect(JSON.stringify(view0)).not.toContain(demoLesson.practice.hints[0]!);
 
     state = requestHint(state, demoLesson.practice).state;
-    const view1 = toSessionView(state, demoLesson, NOW);
+    const view1 = toSessionView(state, demoLesson);
     expect(view1.revealedHints).toEqual([demoLesson.practice.hints[0]]);
     // The second hint is still withheld.
     expect(JSON.stringify(view1)).not.toContain(demoLesson.practice.hints[1]!);
   });
 
   it('releases the answer once the learner has been graded', () => {
-    let state = setStage(freshSession(), 'check');
+    let state = advanceTo(freshSession(), 'check');
     state = submitAttempt(
       state,
       demoLesson.check,
@@ -273,16 +305,16 @@ describe('the browser never receives unrevealed answers', () => {
       demoLesson.check.correctOptionId,
       NOW,
     ).state;
-    const view = toSessionView(state, demoLesson, NOW);
+    const view = toSessionView(state, demoLesson);
     expect(view.revealedAnswer).toBe(demoLesson.check.answerExplanation);
   });
 
   it('caps hints at the authored count', () => {
-    let state = setStage(freshSession(), 'practice');
+    let state = advanceTo(freshSession(), 'practice');
     for (let i = 0; i < 10; i += 1) {
       state = requestHint(state, demoLesson.practice).state;
     }
-    const view = toSessionView(state, demoLesson, NOW);
+    const view = toSessionView(state, demoLesson);
     expect(view.revealedHints).toHaveLength(demoLesson.practice.hints.length);
   });
 });
