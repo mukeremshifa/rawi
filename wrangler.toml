@@ -1,0 +1,13 @@
+name = "rawi"
+main = "src/server/index.ts"
+compatibility_date = "2024-12-30"
+
+# Static assets are served by the platform, not by Worker code, so asset
+# requests do not consume the Free plan's per-request CPU budget.
+[assets]
+directory = "./dist/client"
+not_found_handling = "single-page-application"
+
+[vars]
+# R01 is fixture-only. No provider key is read anywhere in this codebase.
+RAWI_TUTOR_MODE = "fixture"

@@ -2,7 +2,32 @@
 
 An English-first AI learning workspace for UAE students, beginning with a small college pilot. The product helps learners understand a concept, solve a new problem independently and remember it later.
 
-This repository currently contains research and an implementation plan. No application has been built or deployed.
+This repository contains research, an implementation plan, and the first local slice of the application (ticket R01). Nothing is deployed, no paid service is contacted, and nothing has been shown to a learner.
+
+## Running it locally
+
+Requires Node 20 or later.
+
+```bash
+npm install
+# Vite and Wrangler need their binaries; approve the blocked install scripts:
+npm install-scripts approve esbuild
+npm install-scripts approve workerd
+
+npm run dev:api   # Worker API on http://127.0.0.1:8787
+npm run dev       # browser app on http://localhost:5173 (proxies /api)
+```
+
+Two processes in development; in production the Worker serves the built assets, so the browser origin is unchanged.
+
+| Command | What it does |
+|---|---|
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint |
+| `npm test` | Vitest — learning invariants and API behavior |
+| `npm run build` | Typecheck, then build to `dist/client` |
+
+**This build is a fixture demonstration.** Lesson content and feedback are fixed local fixtures, not a live AI tutor. Sessions live in Worker memory and do not survive a restart, and there is no authentication — so it must not be deployed publicly as it stands. See the R01 entry in [status](docs/STATUS.md) for verified results and limitations.
 
 ## Start here
 
