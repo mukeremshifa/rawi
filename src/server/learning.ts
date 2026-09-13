@@ -8,11 +8,18 @@
  *  2. An attempt counts as independent only if it is correct AND no assistance
  *     was used on that question.
  *  3. A revealed question can never later be graded as an unseen check.
- *  4. Submitting the same attempt twice is idempotent: one recorded attempt.
+ *  4. Submitting the same attempt twice is idempotent: one recorded attempt,
+ *     and the replay reports exactly what was originally recorded.
+ *  5. Commands act on the active stage only, and stages move along declared
+ *     transitions. A command naming a stale stage is rejected, not silently
+ *     applied to a different question (docs/NEXT_STEPS.md gap 1).
+ *  6. A recorded attempt is immutable, including the review date anchored to
+ *     it. Reading the same evidence on a later day does not move it (gap 2).
  *
  * The functions are pure: they take a state and return the next state. The
- * store (lesson-store.ts) decides where that state lives. At R03 the store
- * moves to Supabase and this file does not change.
+ * store (lesson-store.ts) decides where that state lives and serialises the
+ * read-apply-write. At R03 the store moves to Supabase and this file does not
+ * change.
  */
 import type {
   AssistanceLevel,
@@ -37,6 +44,9 @@ export interface QuestionState {
 export interface SessionState {
   readonly sessionId: string;
   readonly lessonId: string;
+  /** Bumped on every committed write. The store compares it to detect a
+   * conflicting concurrent update; R03 uses it as the WHERE-clause guard. */
+  readonly version: number;
   readonly stage: Stage;
   readonly questions: Readonly<Record<string, QuestionState>>;
   readonly attempts: readonly RecordedAttempt[];
@@ -73,6 +83,7 @@ export function createSession(
   return {
     sessionId,
     lessonId: lesson.id,
+    version: 1,
     stage: 'diagnose',
     questions: {
       [lesson.diagnostic.id]: emptyQuestionState(lesson.diagnostic.id),
@@ -159,12 +170,21 @@ export function submitAttempt(
   const current = questionState(state, question.id);
 
   if (current.submitted) {
+    // Invariant 4. Replay the attempt exactly as it was recorded. Reading
+    // `assistance` from the question's CURRENT state would describe a result
+    // using help the learner took after submitting, so the same attempt could
+    // be explained two different ways (docs/NEXT_STEPS.md gap 2).
     const existing = state.attempts.find((a) => a.questionId === question.id);
+    if (!existing) {
+      // submitted with no recorded attempt is not a state this module can
+      // produce; treat it as corruption rather than inventing a result.
+      throw new Error(`submitted question ${question.id} has no recorded attempt`);
+    }
     const result: AttemptResult = {
       questionId: question.id,
-      correct: existing?.correct ?? false,
-      assistance: current.assistance,
-      countsAsIndependent: existing?.countsAsIndependent ?? false,
+      correct: existing.correct,
+      assistance: existing.assistance,
+      countsAsIndependent: existing.countsAsIndependent,
       feedback: question.answerExplanation,
     };
     return { state: { ...state, lastResult: result }, result };
@@ -182,6 +202,9 @@ export function submitAttempt(
     assistance,
     countsAsIndependent,
     at: now.toISOString(),
+    // Invariant 6. Anchored here, at the moment of the attempt, so the date
+    // shown never depends on when the learner happens to reload.
+    reviewDue: countsAsIndependent ? addDays(now, REVIEW_INTERVAL_DAYS) : undefined,
   };
 
   const result: AttemptResult = {
@@ -201,8 +224,44 @@ export function submitAttempt(
   return { state: nextState, result };
 }
 
-/** Move the learner to a new stage. Stage changes never touch assistance. */
-export function setStage(state: SessionState, stage: Stage): SessionState {
+/**
+ * Stage transitions the learner may actually make (invariant 5).
+ *
+ * This is a product rule, written down rather than implied. The path forward is
+ * diagnose -> learn -> practice -> check -> summary. Going back to an earlier
+ * teaching stage is allowed - rereading the explanation is not cheating, and
+ * assistance already recorded does not disappear. Skipping ahead to `check` is
+ * NOT allowed: a learner must not reach a scored check without passing through
+ * the teaching stages, and R01 silently permitted a diagnose -> check jump.
+ * When product decides to support testing out, it becomes an explicit command
+ * here, not an unguarded client-supplied stage.
+ */
+const ALLOWED_TRANSITIONS: Readonly<Record<Stage, readonly Stage[]>> = {
+  diagnose: ['learn'],
+  learn: ['diagnose', 'practice'],
+  practice: ['learn', 'check'],
+  check: ['summary'],
+  summary: ['learn', 'practice'],
+};
+
+export function canTransition(from: Stage, to: Stage): boolean {
+  // A no-op transition is always fine: a retried or duplicated navigation
+  // request should not be an error.
+  if (from === to) return true;
+  return ALLOWED_TRANSITIONS[from].includes(to);
+}
+
+/**
+ * Move the learner to a new stage. Stage changes never touch assistance.
+ * Returns undefined when the transition is not allowed, so the caller can
+ * reject without writing.
+ */
+export function setStage(
+  state: SessionState,
+  stage: Stage,
+): SessionState | undefined {
+  if (!canTransition(state.stage, stage)) return undefined;
+  if (state.stage === stage) return state;
   return { ...state, stage };
 }
 
@@ -228,16 +287,27 @@ export function evidenceState(
 /** Days until the first delayed check, per the 7-day follow-up in PRODUCT.md. */
 export const REVIEW_INTERVAL_DAYS = 7;
 
+/** UTC date, `days` after `from`, as YYYY-MM-DD. */
+export function addDays(from: Date, days: number): string {
+  const due = new Date(from.getTime());
+  due.setUTCDate(due.getUTCDate() + days);
+  return due.toISOString().slice(0, 10);
+}
+
+/**
+ * The due date for the concept's next review.
+ *
+ * Invariant 6: this reads the date stored on the qualifying attempt instead of
+ * recomputing it from the current clock. Projection is now a pure read of
+ * recorded evidence, so the same attempt shows the same date on any later day.
+ * R06 owns the full queue and any subsequent scheduling policy.
+ */
 export function nextReviewDue(
   attempts: readonly RecordedAttempt[],
   checkQuestionId: string,
-  now: Date,
 ): string | undefined {
-  const state = evidenceState(attempts, checkQuestionId);
-  if (state !== 'independent-once' && state !== 'retained-on-review') {
-    return undefined;
-  }
-  const due = new Date(now.getTime());
-  due.setUTCDate(due.getUTCDate() + REVIEW_INTERVAL_DAYS);
-  return due.toISOString().slice(0, 10);
+  const qualifying = attempts.find(
+    (a) => a.questionId === checkQuestionId && a.countsAsIndependent,
+  );
+  return qualifying?.reviewDue;
 }

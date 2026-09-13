@@ -10,6 +10,13 @@
  * R01 has no authentication. Session IDs are opaque and unguessable, but they
  * are not an authorization boundary and this API must not be deployed publicly
  * as-is. R03 adds Supabase auth and per-learner ownership checks.
+ *
+ * R02A ordering rule, and the reason this file changed: every mutating handler
+ * must finish ALL its awaits - reading and validating the body - before it
+ * touches session state, then do the whole read-decide-write inside one
+ * synchronous updateSession() command. R01 read the session first and awaited
+ * the body afterwards, so a reveal could land in that gap and be overwritten by
+ * an attempt that had already decided it was unassisted.
  */
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -21,15 +28,20 @@ import {
   revealAnswer,
   setStage,
   submitAttempt,
+  type SessionState,
 } from './learning.js';
 import {
   clearSessions,
   getSession,
   putSession,
   questionForStage,
+  reject,
   toSessionView,
+  updateSession,
+  type UpdateOutcome,
 } from './lesson-store.js';
 import type { Stage } from '../shared/types.js';
+import type { Context } from 'hono';
 
 export interface Env {
   /** Set to "fixture" in R01. A real provider key is not read anywhere yet. */
@@ -69,90 +81,117 @@ app.post('/api/sessions', (c) => {
   const sessionId = crypto.randomUUID();
   const state = createSession(sessionId, demoLesson);
   putSession(state);
-  return c.json(toSessionView(state, demoLesson, new Date()), 201);
+  return c.json(toSessionView(state, demoLesson), 201);
 });
 
 /** Re-read a session. A refresh takes this path, and assistance survives it. */
 app.get('/api/sessions/:id', (c) => {
   const state = getSession(c.req.param('id'));
   if (!state) return c.json({ error: 'session_not_found' }, 404);
-  return c.json(toSessionView(state, demoLesson, new Date()));
+  return c.json(toSessionView(state, demoLesson));
 });
 
 /** Move to a named stage. Stage changes never reset assistance. */
 app.post('/api/sessions/:id/stage', async (c) => {
-  const state = getSession(c.req.param('id'));
-  if (!state) return c.json({ error: 'session_not_found' }, 404);
-
-  const body = await safeJson(c.req.raw);
-  const parsed = z.object({ stage: stageSchema }).safeParse(body);
+  const parsed = z
+    .object({ stage: stageSchema })
+    .safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_stage' }, 400);
+  const target = parsed.data.stage as Stage;
 
-  let next = setStage(state, parsed.data.stage as Stage);
-  if (parsed.data.stage === 'learn') next = markExplanationSeen(next);
-  putSession(next);
-  return c.json(toSessionView(next, demoLesson, new Date()));
+  return respond(
+    c,
+    updateSession(c.req.param('id'), (state) => {
+      // Invariant 5: an illegal jump is refused against the state as it is at
+      // this instant, not as the client believed it to be.
+      const moved = setStage(state, target);
+      if (!moved) reject('stage_transition_not_allowed', 409);
+      return target === 'learn' ? markExplanationSeen(moved) : moved;
+    }),
+  );
 });
 
 /** Ask for the next hint. Raises assistance for that question, permanently. */
 app.post('/api/sessions/:id/hint', async (c) => {
-  const state = getSession(c.req.param('id'));
-  if (!state) return c.json({ error: 'session_not_found' }, 404);
-
   const parsed = hintSchema.safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
+  const stage = parsed.data.stage as Stage;
 
-  const question = questionForStage(demoLesson, parsed.data.stage);
-  if (!question) return c.json({ error: 'no_question_at_stage' }, 400);
-
-  const { state: next } = requestHint(state, question);
-  putSession(next);
-  return c.json(toSessionView(next, demoLesson, new Date()));
+  return respond(
+    c,
+    updateSession(c.req.param('id'), (state) => {
+      const question = activeQuestion(state, stage);
+      return requestHint(state, question).state;
+    }),
+  );
 });
 
 /** Reveal the answer. Permanently marks the question as assisted. */
 app.post('/api/sessions/:id/reveal', async (c) => {
-  const state = getSession(c.req.param('id'));
-  if (!state) return c.json({ error: 'session_not_found' }, 404);
-
   const parsed = hintSchema.safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
+  const stage = parsed.data.stage as Stage;
 
-  const question = questionForStage(demoLesson, parsed.data.stage);
-  if (!question) return c.json({ error: 'no_question_at_stage' }, 400);
-
-  const next = revealAnswer(state, question);
-  putSession(next);
-  return c.json(toSessionView(next, demoLesson, new Date()));
+  return respond(
+    c,
+    updateSession(c.req.param('id'), (state) => {
+      const question = activeQuestion(state, stage);
+      return revealAnswer(state, question);
+    }),
+  );
 });
 
 /** Grade a submission. Idempotent per question. */
 app.post('/api/sessions/:id/attempt', async (c) => {
-  const state = getSession(c.req.param('id'));
-  if (!state) return c.json({ error: 'session_not_found' }, 404);
-
   const parsed = submitSchema.safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
+  const { stage, optionId } = parsed.data;
+  // The clock is read once, before the command, so the recorded time does not
+  // depend on how long the critical section took.
+  const now = new Date();
 
-  const question = questionForStage(demoLesson, parsed.data.stage);
-  if (!question) return c.json({ error: 'no_question_at_stage' }, 400);
+  return respond(
+    c,
+    updateSession(c.req.param('id'), (state) => {
+      const question = activeQuestion(state, stage as Stage);
 
-  // Validate the option ID against the authored allowlist rather than trusting
-  // whatever the client sent. A bogus ID is a bad request, not a wrong answer.
-  if (!question.options.some((o) => o.id === parsed.data.optionId)) {
-    return c.json({ error: 'unknown_option' }, 400);
-  }
+      // Validate the option ID against the authored allowlist rather than
+      // trusting whatever the client sent. A bogus ID is a bad request, not a
+      // wrong answer.
+      if (!question.options.some((o) => o.id === optionId)) {
+        reject('unknown_option');
+      }
 
-  const { state: next } = submitAttempt(
-    state,
-    question,
-    parsed.data.stage as Stage,
-    parsed.data.optionId,
-    new Date(),
+      return submitAttempt(state, question, stage as Stage, optionId, now).state;
+    }),
   );
-  putSession(next);
-  return c.json(toSessionView(next, demoLesson, new Date()));
 });
+
+/**
+ * Resolve the question a command may act on.
+ *
+ * Two separate guards, both evaluated inside the critical section:
+ *  - the client's stage must be the stage the session is actually on, so a
+ *    request built against a screen the learner has since left cannot act on
+ *    the question now in front of them;
+ *  - that stage must actually carry a question.
+ */
+function activeQuestion(state: SessionState, stage: Stage) {
+  if (state.stage !== stage) reject('stage_not_active', 409);
+  const question = questionForStage(demoLesson, stage);
+  if (!question) reject('no_question_at_stage');
+  return question;
+}
+
+/** Turn an atomic update outcome into the HTTP response. */
+function respond(c: Context<{ Bindings: Env }>, outcome: UpdateOutcome) {
+  if (outcome.ok) return c.json(toSessionView(outcome.state, demoLesson));
+  if (outcome.failure.kind === 'not-found') {
+    return c.json({ error: 'session_not_found' }, 404);
+  }
+  const { error, status } = outcome.failure.reason;
+  return c.json({ error }, status);
+}
 
 async function safeJson(req: Request): Promise<unknown> {
   try {

@@ -98,6 +98,9 @@ export const messages = {
     sessionLost:
       'This session is no longer on the server. Local demo sessions do not ' +
       'survive a server restart.',
+    stale:
+      'That action no longer matched where you are in the lesson, so nothing ' +
+      'was recorded. The latest state is shown below.',
   },
 
   loading: 'Working…',

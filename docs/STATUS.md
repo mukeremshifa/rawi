@@ -25,6 +25,9 @@ Last updated: 13 September 2026.
 - R01: local React/TypeScript/Vite application and Hono Worker API skeleton, with one
   original microeconomics demo lesson running the full diagnose → learn → practice →
   check → summary loop against locally verified fixtures. Git repository initialized.
+- R02A: reliable learning state. Session mutations are atomic, stage transitions are
+  declared and enforced, recorded attempts and their review dates are immutable, and
+  overlapping requests can no longer overwrite recorded assistance.
 - No hosted resources, purchases, user recruitment or deployment have been performed.
   Nothing has been shown to a learner.
 
@@ -32,10 +35,10 @@ Last updated: 13 September 2026.
 
 R00: ready for founder discovery; no completed interviews or selected course recorded.
 R01: local implementation delivered (see handoff log), with browser acceptance still
-outstanding. R02: partly implemented; next is **R02A — reliable learning state**,
-then R02B help/recovery and browser verification. R03–R10 wait on their listed
-dependencies. Optional R07 may be deferred. See [NEXT_STEPS.md](NEXT_STEPS.md) for
-the GitHub snapshot, verified gaps and ready-to-use next session brief.
+outstanding. R02A: delivered (see handoff log). Next is **R02B — help and recovery**,
+which also carries the outstanding R01 browser acceptance. R03–R10 wait on their
+listed dependencies. Optional R07 may be deferred. See [NEXT_STEPS.md](NEXT_STEPS.md)
+for the GitHub snapshot and the verified gaps R02A was scoped from.
 
 ## Decisions to resolve
 
@@ -150,3 +153,63 @@ The earlier R01 assistance guarantee is therefore verified for sequential paths,
 not conflicting requests. [NEXT_STEPS.md](NEXT_STEPS.md) separates reproduced
 behavior from inspection findings and defines R02A/R02B. This review changed only
 planning/status documentation; no application fixes or GitHub changes were made.
+
+### R02A — reliable learning state (13 September 2026)
+
+**Delivered.** The three defects reproduced in [NEXT_STEPS.md](NEXT_STEPS.md) gaps 1
+and 2 are fixed, with regression tests that fail against the previous code.
+
+**Atomic session updates.** `updateSession()` in `src/server/lesson-store.ts` is now
+the only supported way to change a session. It reads, applies a *synchronous*
+command and writes, with no `await` in between. Every mutating handler in
+`src/server/index.ts` was reordered to finish reading and validating its request body
+*before* it touches session state. This is the actual fix for the overlap defect: R01
+read the session first and awaited the body afterwards, so a reveal landing in that
+window was overwritten by an attempt that had already decided it was unassisted.
+`SessionState.version` is bumped on every committed write and checked before commit;
+in the R01 memory map that check cannot currently fail, but it is the contract R03
+carries into a transactional `UPDATE ... WHERE version = $n`.
+
+**Explicit transitions and active-item validation.** `ALLOWED_TRANSITIONS` in
+`src/server/learning.ts` declares the legal stage moves. A diagnostic-to-check jump is
+now refused with 409 instead of the 200 R01 returned. Commands additionally require
+that the stage they name is the stage the session is actually on, so a request built
+against a screen the learner has left cannot act on the question now in front of them.
+Re-navigating to the current stage stays a 200 no-op, so a retried navigation is not
+an error. Testing out remains a possible product choice; it would be an explicit
+command, not an unguarded client-supplied stage.
+
+**Immutable evidence.** A replayed submission now reports the recorded attempt
+exactly, instead of combining the old correctness with the question's current
+assistance — a combination that described no real event. `RecordedAttempt.reviewDue`
+is anchored at the moment of the qualifying attempt, and `toSessionView()` no longer
+takes a clock at all, so the same evidence projects to the same date on any later day.
+
+**Client.** A 409 now shows a plain recovery message and re-reads authoritative state
+rather than surfacing a raw error code. Correct/assisted label separation and the
+check-to-help conversion flow remain R02B.
+
+**Verification, run on this checkout.**
+
+| Check | Result |
+|---|---|
+| `npm run lint` | Passed |
+| `npm test` | 40 passed (21 learning, 19 API); was 32 |
+| `npm run build` | Typecheck and Vite build passed |
+| Answer-key leakage | `correctOptionId` absent from client source and built bundle |
+| Sabotage check | Restoring R01's read-before-await ordering fails the overlap test with the reported defect (`countsAsIndependent` true where it must be false) |
+
+The eight new tests construct overlapping requests deterministically rather than by
+timing luck: a request is given a body stream that resolves only when the test
+releases it, which places a second request exactly in the window where the handler is
+suspended. The 32 existing tests were kept, with every assertion preserved; the only
+changes were signature updates and test setup that now walks the legal stage path
+instead of jumping.
+
+**Not done here.** Browser, screen-reader, keyboard, narrow-screen and UAE-network
+verification remain outstanding, as does the Workers-runtime probe. No deployment,
+authentication, durable storage or AI call was added, and no hosting spend occurred.
+
+**Next ticket.** R02B — help and recovery: separate correctness from assistance in the
+interface, the explicit check-to-help conversion with a distinct replacement check,
+and the browser walkthrough that closes R01 acceptance.

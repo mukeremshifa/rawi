@@ -38,6 +38,21 @@ export function App() {
           window.localStorage.removeItem(SESSION_KEY);
           setSession(null);
           setError(messages.error.sessionLost);
+        } else if (err.status === 409) {
+          // The server refused a command that did not match the session as it
+          // actually was - a stale tab, a double submit, or a request built
+          // against a screen the learner has left. Nothing was written, so the
+          // recovery is to show the authoritative state rather than the
+          // learner's assumption of it.
+          setError(messages.error.stale);
+          const saved = window.localStorage.getItem(SESSION_KEY);
+          if (saved) {
+            try {
+              setSession(await api.loadSession(saved));
+            } catch {
+              // Leave the existing view in place; the message already explains.
+            }
+          }
         } else {
           setError(err.code === 'network' ? messages.error.network : err.message);
         }
