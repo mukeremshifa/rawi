@@ -35,9 +35,9 @@ This is a reusable template; the backlog supplies ticket-specific acceptance cri
 
 ## Next implementation session
 
-R01 has been implemented. Use **R02A — reliable learning state** in
-[NEXT_STEPS.md](NEXT_STEPS.md) for the next session; it identifies the existing
-work, reproduced gaps and acceptance criteria. The R01 brief below is historical
+R01 is implemented and R02A is merged. Use **R02B — help and recovery** in
+[NEXT_STEPS.md](NEXT_STEPS.md) for the next session; it includes the reviewed
+gaps, acceptance criteria and a separate parallel CI brief. The R01 brief below is historical
 context, not an instruction to re-scaffold the repository.
 
 ## R01 implementation brief (completed local implementation)

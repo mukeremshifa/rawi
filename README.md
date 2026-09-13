@@ -2,7 +2,7 @@
 
 An English-first AI learning workspace for UAE students, beginning with a small college pilot. The product helps learners understand a concept, solve a new problem independently and remember it later.
 
-This repository contains research, an implementation plan, and the first local slice of the application (ticket R01). Nothing is deployed, no paid service is contacted, and nothing has been shown to a learner.
+This repository contains research, an implementation plan, the first local application slice (R01), and merged learning-state fixes (R02A). Next is R02B: help, fresh checks and recovery. Nothing is deployed, no paid service is contacted, and nothing has been shown to a learner.
 
 ## Running it locally
 
@@ -33,7 +33,7 @@ Two processes in development; in production the Worker serves the built assets, 
 
 1. Read the [research and product strategy](research/REPORT.md) for the recommendation, evidence, tradeoffs and costs.
 2. Use the [product specification](docs/PRODUCT.md) and [delivery backlog](docs/DELIVERY.md) for implementation scope.
-3. Read the [GitHub status and next steps](docs/NEXT_STEPS.md), then use its R02A implementation brief. The [agent playbook](docs/AGENT_PLAYBOOK.md) covers session workflow.
+3. Read the [GitHub status and next steps](docs/NEXT_STEPS.md), then use its R02B implementation brief. The [agent playbook](docs/AGENT_PLAYBOOK.md) covers session workflow.
 4. Run founder discovery alongside development using the [interview and pilot protocol](docs/DISCOVERY.md).
 
 ## Working constraints
@@ -60,4 +60,4 @@ Two processes in development; in production the Worker serves the built assets, 
 | [Architecture](research/architecture.md) | Free-tier design, AI costs, evaluation and recovery |
 | [Source index](research/SOURCES.md) | External references used across the pack |
 
-Implementation sessions follow [AGENTS.md](AGENTS.md). R01's local implementation is delivered; continue with R02A, then R02B, while R00 founder discovery runs alongside them. Update status with verified outcomes rather than treating planned features as completed work.
+Implementation sessions follow [AGENTS.md](AGENTS.md). R02A is merged; continue with R02B and the outstanding R01 browser acceptance, while R00 founder discovery runs alongside development. Update status with verified outcomes rather than treating planned features as completed work.

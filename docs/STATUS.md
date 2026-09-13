@@ -25,7 +25,8 @@ Last updated: 13 September 2026.
 - R01: local React/TypeScript/Vite application and Hono Worker API skeleton, with one
   original microeconomics demo lesson running the full diagnose → learn → practice →
   check → summary loop against locally verified fixtures. Git repository initialized.
-- R02A: reliable learning state. Session mutations are atomic, stage transitions are
+- R02A: reliable learning state, merged in PR #1. Within the fixture's single isolate,
+  session mutations are atomic, stage transitions are
   declared and enforced, recorded attempts and their review dates are immutable, and
   overlapping requests can no longer overwrite recorded assistance.
 - No hosted resources, purchases, user recruitment or deployment have been performed.
@@ -35,10 +36,10 @@ Last updated: 13 September 2026.
 
 R00: ready for founder discovery; no completed interviews or selected course recorded.
 R01: local implementation delivered (see handoff log), with browser acceptance still
-outstanding. R02A: delivered (see handoff log). Next is **R02B — help and recovery**,
+outstanding. R02A: merged and independently reviewed (see handoff log). Next is **R02B — help and recovery**,
 which also carries the outstanding R01 browser acceptance. R03–R10 wait on their
 listed dependencies. Optional R07 may be deferred. See [NEXT_STEPS.md](NEXT_STEPS.md)
-for the GitHub snapshot and the verified gaps R02A was scoped from.
+for the current GitHub snapshot, recovery findings and the ready-to-use R02B brief.
 
 ## Decisions to resolve
 
@@ -106,8 +107,9 @@ wall time and production CPU time are different quantities. R04 must profile pro
 
 **Limitations, stated plainly.**
 
-1. **Sessions are in-memory and per-isolate.** A Worker restart drops them. `lesson-store.ts`
-   is the only file that must change when R03 moves storage to Supabase.
+1. **Sessions are in-memory and per-isolate.** A Worker restart drops them. R03
+   replaces this storage with durable transactions and an asynchronous boundary;
+   route signatures and callers may also need adaptation.
 2. **No authentication.** Session IDs are unguessable but are *not* an authorization
    boundary. This API must not be deployed publicly as-is.
 3. **No AI.** `RAWI_TUTOR_MODE` is `fixture`; no provider key is read anywhere in the
@@ -150,7 +152,7 @@ also accepted without a declared transition policy. Code inspection found incorr
 assistance labels and the missing check-to-help recovery flow.
 
 The earlier R01 assistance guarantee is therefore verified for sequential paths,
-not conflicting requests. [NEXT_STEPS.md](NEXT_STEPS.md) separates reproduced
+not conflicting requests. The [original review draft](https://github.com/mukeremshifa/rawi/blob/87e59b7/docs/NEXT_STEPS.md) separates reproduced
 behavior from inspection findings and defines R02A/R02B. This review changed only
 planning/status documentation; no application fixes or GitHub changes were made.
 
@@ -213,3 +215,47 @@ authentication, durable storage or AI call was added, and no hosting spend occur
 **Next ticket.** R02B — help and recovery: separate correctness from assistance in the
 interface, the explicit check-to-help conversion with a distinct replacement check,
 and the browser walkthrough that closes R01 acceptance.
+
+### R02A merged review and R02B handoff — 13 September 2026
+
+**GitHub.** [PR #1](https://github.com/mukeremshifa/rawi/pull/1) merged at
+18:57:59 UTC as `c7e7222a25a4c70e5dd49c7d28e511b306a282d3`. After
+`git fetch origin`, merged main and local `734a9b7` have identical file trees
+(`294193ab3b6de0d3568b25bb05c17146af985bac`). The local branch is still
+`r02a-reliable-learning-state`; GitHub lists only unprotected `main`.
+There are zero workflows, runs, check runs, commit statuses and open issues.
+No releases or GitHub deployment records were returned; external hosting was
+not inspected. A combined status of pending with zero statuses is not evidence
+of a running pipeline.
+
+**Fresh verification.** On Node 24.19.0 / npm 12.0.2, `npm test` passed all
+40 tests (21 learning, 19 API), `npm run lint` passed, and `npm run build`
+passed typechecking and Vite build. A separate in-memory API probe set the
+submission clock to September 13 at 23:59 UTC, then read on September 14 and
+September 21: all three views retained September 20 as the due date. The
+committed reread test does not advance the clock; R02B should make this probe
+a permanent regression case. Browser and Workers-runtime checks were not rerun.
+
+**Review conclusion.** The original assistance-loss, invalid-jump and unstable
+evidence defects are addressed within the documented single-isolate fixture
+scope. No new evidence-corruption blocker was found. Two remaining recovery
+issues are included in R02B:
+
+- A controlled delayed-navigation probe held an original request to learn,
+  retried successfully, advanced to practice and then released the original.
+  The original returned 200 and moved the session back to learn. Evidence was
+  preserved, but stage legality alone does not identify stale commands.
+- Conflict handling claims the latest state is displayed before a reload
+  succeeds, and suppresses reload failures. Distinguish confirmed refresh,
+  unavailable refresh and missing-session recovery.
+
+**Scope correction for R03.** The synchronous memory update is useful for this
+fixture; its version field does not by itself implement a database transaction.
+R03 must adapt storage and callers for asynchronous, ownership-scoped atomic
+writes and preserve exposure across sessions. Bound request bodies before JSON
+parsing before exposing the API.
+
+**Handoff.** NEXT_STEPS.md now contains the R02B behavior, acceptance checklist,
+implementation prompt and a separate CI brief. README, DELIVERY and the playbook
+point to the same next step. This review changed documentation only; no GitHub
+write, deployment, paid AI call or hosted resource change was performed.
