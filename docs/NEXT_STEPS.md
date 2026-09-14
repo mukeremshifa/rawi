@@ -1,6 +1,6 @@
 # Rawi: shortest path to v1
 
-Updated 14 September 2026 following R03 delivery.
+Updated 14 September 2026 following R03 Supabase activation.
 
 ## Current state
 
@@ -8,7 +8,7 @@ R03 is complete as a local integration. GitHub and local `main` should be update
 to the R03 commit after this session. R03 delivers:
 
 - Supabase schema, migrations, RLS and environment template
-- Web Crypto JWT verification (no npm client)
+- Web Crypto ES256 verification through the project JWKS (no npm client)
 - `/api/me` endpoint; invite enrollment gate
 - Ownership-scoped durable session storage via Supabase REST API (fetch-based)
 - Optimistic-concurrency `PATCH` with `version` guard
@@ -16,13 +16,13 @@ to the R03 commit after this session. R03 delivers:
 - Three R02B follow-ups: teach-before-check on convert, required `itemId` at
   check stage, `expectedStage` stale-navigation guard
 
-Fresh checks: **55 tests passed; production build and typecheck passed.**
-Answer keys absent from bundle. Lint, acceptance harness and browser checks were
-not rerun in this session.
+Fresh checks: **61 tests passed; lint, typecheck and production build passed.**
+The linked migration is up to date and the local Worker reports durable mode active.
+The acceptance harness and browser checks were not rerun in this session.
 
-The durable auth path requires external Supabase credentials; see STATUS.md
-for the exact setup steps. Until credentials are supplied, all routes fall back to
-the in-memory fixture path. No deployment, hosted auth or paid AI call was made.
+The local durable path is configured against project `gxbexwtopazokvmpfyzj`.
+Google OAuth credentials, two test identities and their enrollment rows remain
+before hosted auth can be accepted. No deployment or paid AI call was made.
 
 ## What v1 means
 
@@ -67,21 +67,23 @@ Before deployment / real learner use:
 
 Deferral changes scheduling, not what is honestly described as verified.
 
-## Supabase setup (required before durable mode is active)
+## Supabase activation status
 
-1. Create a Supabase project (free plan). Note project URL, anon key, service key
-   and JWT secret from Settings → API.
-2. In the SQL editor, run `supabase/migrations/001_initial_schema.sql`.
-3. Enable Google OAuth under Authentication → Providers. Add redirect URL for
-   `http://localhost:5173` (dev) and your production domain.
-4. Add to `wrangler.toml` `[vars]`: `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
-5. Add secrets: `wrangler secret put SUPABASE_SERVICE_KEY` and
-   `wrangler secret put SUPABASE_JWT_SECRET`.
-6. For local dev, create `.dev.vars` (gitignored) with all four values.
-7. Insert `invite_enrollments` rows for test identities.
+Completed: the project is linked, `001_initial_schema.sql` is applied, public
+configuration is in `wrangler.toml`, ignored local credentials are in `.dev.vars`,
+and ES256 learner tokens are verified against the project JWKS. Configured mode
+fails closed without a learner token.
 
-Until these steps are complete, every route falls back to the in-memory fixture
-path — no auth, no durability, existing tests pass unchanged.
+Remaining before hosted auth acceptance:
+
+1. Supply a Google OAuth client ID and secret, enable the provider, and add the
+   local and eventual production redirect URLs; wire the browser's OAuth start and
+   callback handling around the existing token-storage/API helpers.
+2. Create two ordinary test identities and insert their `invite_enrollments` rows.
+3. Run the two-user API and direct permitted-database isolation journey.
+4. Verify the organization is on Supabase Free; the supplied token can administer
+   the project but cannot read organization billing-plan details.
+5. At deployment time, add `SUPABASE_SERVICE_KEY` as a Cloudflare Worker secret.
 
 ## Paste into the next implementation session
 

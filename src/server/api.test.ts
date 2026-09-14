@@ -469,3 +469,30 @@ describe('recorded evidence does not change when it is read later', () => {
     expect(replay.evidence.state).toBe('independent-once');
   });
 });
+
+describe('configured Supabase boundary', () => {
+  const configuredEnv = {
+    RAWI_TUTOR_MODE: 'fixture',
+    SUPABASE_URL: 'https://example-project.supabase.co',
+    SUPABASE_ANON_KEY: 'sb_publishable_test',
+    SUPABASE_SERVICE_KEY: 'sb_secret_test',
+  };
+
+  it('fails closed instead of using fixture memory without a learner token', async () => {
+    const requests = [
+      new Request('http://localhost/api/sessions', { method: 'POST' }),
+      new Request('http://localhost/api/sessions/session-id'),
+      new Request('http://localhost/api/sessions/session-id/stage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage: 'learn' }),
+      }),
+    ];
+
+    for (const request of requests) {
+      const response = await app.fetch(request, configuredEnv);
+      expect(response.status).toBe(401);
+      await expect(response.json()).resolves.toEqual({ error: 'unauthenticated' });
+    }
+  });
+});

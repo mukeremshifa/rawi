@@ -61,7 +61,6 @@ export interface SessionSummary {
 function authHeaders(serviceKey: string) {
   return {
     'apikey': serviceKey,
-    'Authorization': `Bearer ${serviceKey}`,
     'Content-Type': 'application/json',
     'Prefer': 'return=minimal',
   };

@@ -15,16 +15,11 @@ RAWI_TUTOR_MODE = "fixture"
 # Supabase project URL — safe to commit; it is the public endpoint.
 # Override for production by setting wrangler secret or editing this value.
 # SUPABASE_URL and SUPABASE_ANON_KEY are safe to include here.
-# SUPABASE_SERVICE_KEY and SUPABASE_JWT_SECRET are secrets — never add them here;
-# add them with: wrangler secret put SUPABASE_SERVICE_KEY
-#                wrangler secret put SUPABASE_JWT_SECRET
-SUPABASE_URL = ""
-SUPABASE_ANON_KEY = ""
+# SUPABASE_SERVICE_KEY is secret — never add it here; add it with:
+# wrangler secret put SUPABASE_SERVICE_KEY
+SUPABASE_URL = "https://gxbexwtopazokvmpfyzj.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_vIXynYAvskDpPrUhIH8aXw_-JviV1JT"
 
 # ─── Secrets (add via wrangler CLI, not this file) ───────────────────────────
 # wrangler secret put SUPABASE_SERVICE_KEY
-# wrangler secret put SUPABASE_JWT_SECRET
-#
-# To configure locally without deploying, create .dev.vars (gitignored):
-#   SUPABASE_SERVICE_KEY=<your-service-key>
-#   SUPABASE_JWT_SECRET=<your-jwt-secret>
+# Local development reads all Supabase values from .dev.vars (gitignored).

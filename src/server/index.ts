@@ -2,9 +2,9 @@
  * Rawi Worker API.
  *
  * R03 additions over R02B:
- *  - Env now includes SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_KEY,
- *    SUPABASE_JWT_SECRET. When all four are present the Worker uses Supabase
- *    for auth and durable session storage. When any are absent the Worker
+ *  - Env includes SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_KEY.
+ *    When the URL and service key are present the Worker uses Supabase
+ *    for auth and durable session storage. When the server settings are absent the Worker
  *    falls back to the in-memory fixture path so existing tests keep passing.
  *  - GET  /api/me          — returns authenticated user info or 401
  *  - GET  /api/sessions    — returns session list for the authenticated user
@@ -13,9 +13,9 @@
  *  - All mutating session routes persist the committed state to Supabase.
  *
  * Auth flow:
- *  1. Browser signs in via Supabase client SDK (Google OAuth).
+ *  1. Browser completes a Supabase Auth flow and receives an access token.
  *  2. JWT is sent in Authorization: Bearer <token>.
- *  3. verifyJwt() checks the signature with SUPABASE_JWT_SECRET and extracts userId.
+ *  3. verifyJwt() checks the signature against the project JWKS and extracts userId.
  *  4. Routes that create sessions additionally require an active enrollment row.
  *
  * Fallback mode (DB not configured):
@@ -66,10 +66,8 @@ export interface Env {
   readonly SUPABASE_URL?: string;
   /** R03: Supabase anon/public key (safe to expose). */
   readonly SUPABASE_ANON_KEY?: string;
-  /** R03: Supabase service_role key. NEVER expose — server-only. */
+  /** R03: Supabase secret/service-role key. NEVER expose — server-only. */
   readonly SUPABASE_SERVICE_KEY?: string;
-  /** R03: Supabase JWT secret for server-side token verification. */
-  readonly SUPABASE_JWT_SECRET?: string;
 }
 
 type HonoEnv = { Bindings: Env; Variables: { user?: AuthenticatedUser } };
@@ -130,7 +128,7 @@ const convertSchema = z.object({
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** True when all four Supabase env vars are present — durable mode is active. */
+/** True when the server-side Supabase connection is configured. */
 function dbConfig(env: Env): db.DbConfig | null {
   if (env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY) {
     return { supabaseUrl: env.SUPABASE_URL, serviceKey: env.SUPABASE_SERVICE_KEY };
@@ -143,9 +141,22 @@ function dbConfig(env: Env): db.DbConfig | null {
  * Does not reject — callers decide whether auth is required.
  */
 async function authenticateRequest(c: Context<HonoEnv>): Promise<AuthenticatedUser | null> {
+  const existing = c.get('user');
+  if (existing) return existing;
+
   const token = extractBearerToken(c.req.header('Authorization') ?? null);
   if (!token) return null;
-  return verifyJwt(token, c.env?.SUPABASE_JWT_SECRET);
+  const user = await verifyJwt(token, c.env?.SUPABASE_URL);
+  if (user) c.set('user', user);
+  return user;
+}
+
+/** Require a valid learner token whenever durable mode is configured. */
+async function configuredAuthError(c: Context<HonoEnv>): Promise<Response | null> {
+  if (!dbConfig(c.env ?? {})) return null;
+  return (await authenticateRequest(c))
+    ? null
+    : c.json({ error: 'unauthenticated' }, 401);
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -204,24 +215,27 @@ app.get('/api/sessions', async (c) => {
  * session lives in Worker memory only.
  */
 app.post('/api/sessions', async (c) => {
+  const config = dbConfig(c.env ?? {});
+  let user: AuthenticatedUser | null = null;
+  if (config) {
+    user = await authenticateRequest(c);
+    if (!user) return c.json({ error: 'unauthenticated' }, 401);
+    const enrolled = await db.isEnrolled(config, user.userId);
+    if (!enrolled) {
+      return c.json({ error: 'not_enrolled' }, 403);
+    }
+  }
+
   const sessionId = crypto.randomUUID();
   const state = createLearningSession(sessionId, demoLesson);
   putSession(state);
 
-  const config = dbConfig(c.env ?? {});
-  if (config) {
-    const user = await authenticateRequest(c);
-    if (user) {
-      const enrolled = await db.isEnrolled(config, user.userId);
-      if (!enrolled) {
-        return c.json({ error: 'not_enrolled' }, 403);
-      }
-      // Background write — response goes back immediately.
-      try {
-        c.executionCtx.waitUntil(db.createSession(config, user.userId, state));
-      } catch {
-        void db.createSession(config, user.userId, state);
-      }
+  if (config && user) {
+    // Background write — response goes back immediately.
+    try {
+      c.executionCtx.waitUntil(db.createSession(config, user.userId, state));
+    } catch {
+      void db.createSession(config, user.userId, state);
     }
   }
 
@@ -240,19 +254,18 @@ app.get('/api/sessions/:id', async (c) => {
 
   if (config) {
     const user = await authenticateRequest(c);
-    if (user) {
-      const dbState = await db.getSession(config, user.userId, sessionId);
-      if (dbState) {
-        // Sync into memory so subsequent in-isolate commands work.
-        putSession(dbState);
-        return c.json(toSessionView(dbState, demoLesson));
-      }
-      // User is authenticated but session not found under their userId.
-      return c.json({ error: 'session_not_found' }, 404);
+    if (!user) return c.json({ error: 'unauthenticated' }, 401);
+    const dbState = await db.getSession(config, user.userId, sessionId);
+    if (dbState) {
+      // Sync into memory so subsequent in-isolate commands work.
+      putSession(dbState);
+      return c.json(toSessionView(dbState, demoLesson));
     }
+    // Authenticated, but the session was not found under this user ID.
+    return c.json({ error: 'session_not_found' }, 404);
   }
 
-  // Fallback: in-memory (unauthenticated or DB not configured).
+  // Fallback: in-memory only when durable mode is not configured.
   const state = memGetSession(sessionId);
   if (!state) return c.json({ error: 'session_not_found' }, 404);
   return c.json(toSessionView(state, demoLesson));
@@ -260,6 +273,8 @@ app.get('/api/sessions/:id', async (c) => {
 
 /** Move to a named stage. Stage changes never reset assistance. */
 app.post('/api/sessions/:id/stage', async (c) => {
+  const authError = await configuredAuthError(c);
+  if (authError) return authError;
   const parsed = stageCommandSchema.safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_stage' }, 400);
   const { stage: target, expectedStage } = parsed.data;
@@ -278,6 +293,8 @@ app.post('/api/sessions/:id/stage', async (c) => {
 
 /** Ask for the next hint. Raises assistance for that question, permanently. */
 app.post('/api/sessions/:id/hint', async (c) => {
+  const authError = await configuredAuthError(c);
+  if (authError) return authError;
   const parsed = hintSchema.safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
   const { stage, itemId } = parsed.data;
@@ -293,6 +310,8 @@ app.post('/api/sessions/:id/hint', async (c) => {
 
 /** Reveal the answer. Permanently marks the question as assisted. */
 app.post('/api/sessions/:id/reveal', async (c) => {
+  const authError = await configuredAuthError(c);
+  if (authError) return authError;
   const parsed = hintSchema.safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
   const { stage, itemId } = parsed.data;
@@ -308,6 +327,8 @@ app.post('/api/sessions/:id/reveal', async (c) => {
 
 /** Grade a submission. Idempotent per question. */
 app.post('/api/sessions/:id/attempt', async (c) => {
+  const authError = await configuredAuthError(c);
+  if (authError) return authError;
   const parsed = submitSchema.safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
   const { stage, optionId, itemId } = parsed.data;
@@ -347,6 +368,8 @@ app.post('/api/sessions/:id/attempt', async (c) => {
  * This fixes the probe gap where help was granted without a teaching step.
  */
 app.post('/api/sessions/:id/convert', async (c) => {
+  const authError = await configuredAuthError(c);
+  if (authError) return authError;
   const parsed = convertSchema.safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
   const { itemId } = parsed.data;

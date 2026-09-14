@@ -38,8 +38,9 @@ R00: ready for founder discovery; no completed interviews or selected course rec
 R01: local implementation delivered (see handoff log), with browser acceptance still
 outstanding. R02A: merged and independently reviewed (see handoff log). R02B:
 delivered 14 September 2026 — follow-ups folded into R03. **R03: delivered 14
-September 2026** — local integration complete; Supabase credentials not yet
-configured; see handoff log for setup steps. Next is **R04 — bounded AI tutor**.
+September 2026** — project linked, initial migration applied and local Worker
+credentials configured; pilot OAuth and two-user isolation acceptance remain.
+Next is **R04 — bounded AI tutor**, with hosted use still gated on those R03 checks.
 R04–R10 wait on their listed dependencies. See [NEXT_STEPS.md](NEXT_STEPS.md) for
 the updated snapshot.
 
@@ -334,10 +335,9 @@ updates are local; no push, deployment or paid AI call was made.
 
 ### R03 — identity and durable data (14 September 2026)
 
-**What changed.** R03 is fully implemented as a local integration. All routes and
-learning rules work. Supabase is not yet connected — credentials have not been
-provided, so the hosted auth path is local code only. The fixture path (no env vars)
-continues to work identically; all 55 tests pass against it.
+**What changed.** R03 was implemented as a local integration. At this original
+handoff Supabase was not yet connected; the activation follow-up below records the
+subsequent project configuration. The fixture path (no env vars) continues to work.
 
 Also folded in: the three R02B functional follow-ups identified in the fast review.
 
@@ -346,7 +346,7 @@ Also folded in: the three R02B functional follow-ups identified in the fast revi
 | Learning rules | `src/server/learning.ts` — check→learn added to ALLOWED_TRANSITIONS; `setStage` accepts optional `expectedCurrentStage` guard |
 | HTTP routes | `src/server/index.ts` — rewritten with Env extended, auth middleware, `/api/me`, `GET /api/sessions` list, all session routes wired to db with `waitUntil` background writes and in-memory fallback |
 | Async storage | `src/server/db.ts` — fetch-based Supabase REST client; ownership-scoped CRUD; optimistic-concurrency PATCH with version guard; session list; enrollment check |
-| Auth | `src/server/auth.ts` — Web Crypto HS256 JWT verification; no npm dependency |
+| Auth | `src/server/auth.ts` — originally implemented with Web Crypto HS256 verification; replaced by ES256 JWKS verification in the activation follow-up below |
 | Schema | `supabase/migrations/001_initial_schema.sql` — `invite_enrollments`, `sessions` tables, RLS, indexes |
 | Environment | `.env.example`, `wrangler.toml` — all required vars documented; secrets listed separately |
 | Shared contract | `src/shared/types.ts` — `SessionSummary`, `MeResponse` added |
@@ -377,19 +377,9 @@ Also folded in: the three R02B functional follow-ups identified in the fast revi
 | `npm run build` | Typecheck and Vite build passed; 158.95 kB JS (50.84 kB gzip) |
 | Answer-key leakage | `correctOptionId` and `answerExplanation` absent from built bundle (`Select-String` returned `False`) |
 
-**External setup required before the auth/durable path is active.**
-
-The implementation is complete. To activate durable storage and auth:
-
-1. Create a Supabase project (free plan).
-2. Run `supabase/migrations/001_initial_schema.sql` in the SQL editor.
-3. Enable Google OAuth under Authentication → Providers.
-4. Copy project URL and anon key into `wrangler.toml` `[vars]`.
-5. Add secrets: `wrangler secret put SUPABASE_SERVICE_KEY` and `wrangler secret put SUPABASE_JWT_SECRET`.
-6. For local dev: create `.dev.vars` (gitignored) with the same four values.
-7. Insert an `invite_enrollments` row for each test identity.
-
-Until credentials are supplied, all routes fall back to the in-memory fixture path and no auth is required.
+**Activation status.** Project creation, linking, migration, public configuration
+and ignored local secrets are complete; see the activation follow-up below. Google
+OAuth credentials, test identities and their `invite_enrollments` rows remain.
 
 **Not done here.** Keyboard-only walkthrough, screen-reader pass, narrow-screen and
 UAE-network verification remain open. Workers-runtime CPU profile not run. No
@@ -398,3 +388,46 @@ deployment, paid AI call or hosted resource change was made.
 **Next ticket.** R04 — one AI provider adapter, bounded teaching from the source pack,
 server-side API key, configured spend cap and usage ledger. Can be coded against
 fixtures; live calls require a key and explicit monthly budget.
+
+### R03 Supabase activation follow-up (14 September 2026)
+
+**Remote project.** Linked this checkout to project `gxbexwtopazokvmpfyzj`
+(`rawi`, `ap-southeast-1`, `ACTIVE_HEALTHY`). Applied
+`supabase/migrations/001_initial_schema.sql`; a subsequent `supabase db push
+--linked --dry-run --include-all` reported the database already up to date. The
+server key returned HTTP 200 from both `sessions` and `invite_enrollments`; both
+tables currently contain zero rows. The publishable key can query `sessions` but
+receives zero rows under RLS.
+
+**Environment and auth compatibility.** Added `.env` and `supabase/.temp/` to
+`.gitignore`; the management access token remains only in ignored `.env`. Created
+ignored `.dev.vars` with the project URL, publishable key, secret key and fixture
+tutor mode. Added only the safe URL and publishable key to `wrangler.toml`.
+The project signs learner tokens with ES256, so `src/server/auth.ts` now verifies
+the project JWKS instead of requiring the unavailable legacy shared JWT secret.
+The REST client uses the current server-key `apikey` header. When durable mode is
+configured, session creation, reads and mutations now fail closed with 401 if no
+valid learner token is supplied instead of falling through to fixture memory.
+
+**Verification.** `npm run typecheck`, `npm run lint` and `npm run build` passed.
+`npm test` passed **61 tests** across four files, including five ES256 verification
+tests and a configured-mode authorization regression. A local Wrangler smoke test
+loaded `.dev.vars`, returned `dbConfigured: true` from `/api/health`, and returned
+401 for unauthenticated `POST /api/sessions`. The remote JWKS exposes one ES256 key.
+The actual `src/server/db.ts` client also completed a read-only remote session-list
+request with the configured server key.
+
+**Still required before a learner pilot.** Google OAuth is disabled because no
+Google client ID/secret was provided. There are no Auth users or enrollment rows,
+so the required two-identity isolation journey is not yet testable. The browser
+currently has token-storage/API helpers but no complete OAuth initiation and
+callback interface; that must be wired when the provider credentials are supplied.
+Cloudflare deployment secrets were not changed and nothing was deployed. The
+access token can administer the project but lacks permission to read the
+organization plan, so the Supabase Free-plan requirement could not be independently
+verified; no plan, add-on or billing setting was changed in this work.
+
+**Tradeoff.** JWKS verification removes a long-lived shared JWT secret from the
+Worker and supports key rotation. It adds a small public-key lookup; Supabase serves
+that endpoint through an edge cache, and the real Worker CPU/latency check remains
+part of deployment readiness.

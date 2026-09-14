@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .wrangler/
+.env
 .dev.vars
+supabase/.temp/
 *.local
 .DS_Store
