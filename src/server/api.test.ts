@@ -176,9 +176,11 @@ describe('a complete learner journey', () => {
 
     // Check: fresh item, no help, correct. This is the evidence that counts.
     await post(`/api/sessions/${id}/stage`, { stage: 'check' });
+    const checkView = (await call(`/api/sessions/${id}`)).body as SessionView;
     const checked = (await post(`/api/sessions/${id}/attempt`, {
       stage: 'check',
       optionId: demoLesson.check.correctOptionId,
+      itemId: checkView.activeCheckId,
     })).body as SessionView;
 
     expect(checked.lastResult?.countsAsIndependent).toBe(true);
@@ -191,14 +193,16 @@ describe('a complete learner journey', () => {
     const session = await newSession();
     const id = session.sessionId;
 
-    await advanceTo(id, 'check');
+    const checkView = await advanceTo(id, 'check');
+    const itemId = checkView.activeCheckId!;
     // Reveal is not offered in the check UI, but the API must refuse to treat
     // a revealed answer as independent even if the route is called directly.
-    await post(`/api/sessions/${id}/reveal`, { stage: 'check' });
+    await post(`/api/sessions/${id}/reveal`, { stage: 'check', itemId });
 
     const checked = (await post(`/api/sessions/${id}/attempt`, {
       stage: 'check',
       optionId: demoLesson.check.correctOptionId,
+      itemId,
     })).body as SessionView;
 
     expect(checked.lastResult?.correct).toBe(true);
@@ -210,11 +214,13 @@ describe('a complete learner journey', () => {
   it('ignores a double-submitted answer', async () => {
     const session = await newSession();
     const id = session.sessionId;
-    await advanceTo(id, 'check');
+    const view = await advanceTo(id, 'check');
+    const itemId = view.activeCheckId!;
 
     const payload = {
       stage: 'check',
       optionId: demoLesson.check.correctOptionId,
+      itemId,
     };
     await post(`/api/sessions/${id}/attempt`, payload);
     const second = (await post(`/api/sessions/${id}/attempt`, payload))
@@ -284,16 +290,18 @@ describe('overlapping requests cannot lose recorded assistance', () => {
   it('denies independent credit to an attempt that overlapped a reveal', async () => {
     const session = await newSession();
     const id = session.sessionId;
-    await advanceTo(id, 'check');
+    const view = await advanceTo(id, 'check');
+    const itemId = view.activeCheckId!;
 
     // The learner's attempt starts first, but its body is still in flight.
     const attempt = slowPost(`/api/sessions/${id}/attempt`, {
       stage: 'check',
       optionId: demoLesson.check.correctOptionId,
+      itemId,
     });
 
     // While it is suspended, a reveal completes. The answer is now assisted.
-    const revealed = await post(`/api/sessions/${id}/reveal`, { stage: 'check' });
+    const revealed = await post(`/api/sessions/${id}/reveal`, { stage: 'check', itemId });
     expect(revealed.status).toBe(200);
     expect((revealed.body as SessionView).assistance).toBe('revealed');
 
@@ -336,9 +344,10 @@ describe('overlapping requests cannot lose recorded assistance', () => {
   it('records one attempt when two identical submissions overlap', async () => {
     const session = await newSession();
     const id = session.sessionId;
-    await advanceTo(id, 'check');
+    const view = await advanceTo(id, 'check');
+    const itemId = view.activeCheckId!;
 
-    const payload = { stage: 'check', optionId: demoLesson.check.correctOptionId };
+    const payload = { stage: 'check', optionId: demoLesson.check.correctOptionId, itemId };
     const first = slowPost(`/api/sessions/${id}/attempt`, payload);
     const second = slowPost(`/api/sessions/${id}/attempt`, payload);
 
@@ -408,11 +417,13 @@ describe('recorded evidence does not change when it is read later', () => {
   it('keeps the review date fixed when the session is re-read', async () => {
     const session = await newSession();
     const id = session.sessionId;
-    await advanceTo(id, 'check');
+    const view = await advanceTo(id, 'check');
+    const itemId = view.activeCheckId!;
 
     const graded = (await post(`/api/sessions/${id}/attempt`, {
       stage: 'check',
       optionId: demoLesson.check.correctOptionId,
+      itemId,
     })).body as SessionView;
     const dueAtSubmission = graded.evidence.nextReviewDue;
     expect(dueAtSubmission).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -428,22 +439,25 @@ describe('recorded evidence does not change when it is read later', () => {
   it('replays the original result rather than describing it with later help', async () => {
     const session = await newSession();
     const id = session.sessionId;
-    await advanceTo(id, 'check');
+    const view = await advanceTo(id, 'check');
+    const itemId = view.activeCheckId!;
 
     const first = (await post(`/api/sessions/${id}/attempt`, {
       stage: 'check',
       optionId: demoLesson.check.correctOptionId,
+      itemId,
     })).body as SessionView;
     expect(first.lastResult?.countsAsIndependent).toBe(true);
     expect(first.lastResult?.assistance).toBe('none');
 
     // The learner reveals the answer after being graded. Reading the worked
     // explanation is legitimate and must not rewrite what already happened.
-    await post(`/api/sessions/${id}/reveal`, { stage: 'check' });
+    await post(`/api/sessions/${id}/reveal`, { stage: 'check', itemId });
 
     const replay = (await post(`/api/sessions/${id}/attempt`, {
       stage: 'check',
       optionId: demoLesson.check.correctOptionId,
+      itemId,
     })).body as SessionView;
 
     // R01 replayed the old correctness alongside the question's CURRENT

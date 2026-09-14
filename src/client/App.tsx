@@ -15,9 +15,14 @@
  *  - Get help button in the check stage; shows exhaustion state honestly.
  *  - Focus and selection reset when activeCheckId changes (same stage, new item).
  *  - Correctness and help-used are rendered separately in Result.
+ *
+ * R03 changes:
+ *  - Home screen shows Continue (most recent session) and Review due list.
+ *  - loadSessions() runs on mount; silently ignored when DB is not configured.
+ *  - Auth token stored in sessionStorage; passed on every API call.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SessionView, Stage } from '../shared/types.js';
+import type { SessionSummary, SessionView, Stage } from '../shared/types.js';
 import * as api from './api.js';
 import { messages } from './messages.js';
 import { EvidencePanel } from './EvidencePanel.js';
@@ -30,6 +35,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [choice, setChoice] = useState<string>('');
   const [reasoning, setReasoning] = useState('');
+  // R03: session list for the resume UI. Null = not yet loaded; [] = loaded, none found.
+  const [sessionList, setSessionList] = useState<SessionSummary[] | null>(null);
 
   // Focus moves to the stage heading on every stage change so keyboard and
   // screen-reader users are not left at the top of the document.
@@ -125,6 +132,14 @@ export function App() {
     if (saved) void run(() => api.loadSession(saved));
   }, [run]);
 
+  // R03: load the session list for the resume UI. Silently ignored when DB is
+  // not configured (the list endpoint returns {sessions: []} without auth).
+  useEffect(() => {
+    api.listSessions()
+      .then(({ sessions }) => setSessionList(sessions))
+      .catch(() => setSessionList([]));
+  }, []);
+
   useEffect(() => {
     if (session) window.localStorage.setItem(SESSION_KEY, session.sessionId);
   }, [session]);
@@ -180,13 +195,12 @@ export function App() {
 
       <main>
         {!session ? (
-          <section className="card">
-            <h2>{messages.start.heading}</h2>
-            <p>{messages.start.body}</p>
-            <button type="button" onClick={start} disabled={busy}>
-              {messages.start.action}
-            </button>
-          </section>
+          <HomeScreen
+            busy={busy}
+            sessionList={sessionList}
+            onStart={start}
+            onResume={(id) => void run(() => api.loadSession(id))}
+          />
         ) : (
           <div className="workspace">
             <section className="card activity" aria-labelledby="stage-heading">
@@ -215,6 +229,85 @@ export function App() {
         )}
       </main>
     </div>
+  );
+}
+
+// ─── HomeScreen ───────────────────────────────────────────────────────────────
+
+interface HomeScreenProps {
+  busy: boolean;
+  sessionList: SessionSummary[] | null;
+  onStart: () => void;
+  onResume: (sessionId: string) => void;
+}
+
+/**
+ * Home screen shown when no session is active.
+ *
+ * R03: when the learner has prior sessions (loaded from Supabase via
+ * /api/sessions), shows a Continue button for the most recent one and a
+ * "Review due" list for sessions with a past due date.
+ * Falls back to the simple start card when there are no prior sessions or
+ * the DB is not configured (sessionList is empty or null).
+ */
+function HomeScreen({ busy, sessionList, onStart, onResume }: HomeScreenProps) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const mostRecent = sessionList?.[0] ?? null;
+  const reviewDue = (sessionList ?? []).filter(
+    (s) => s.nextReviewDue && s.nextReviewDue <= today,
+  );
+
+  return (
+    <>
+      <section className="card">
+        <h2>{messages.start.heading}</h2>
+        <p>{messages.start.body}</p>
+        <button type="button" onClick={onStart} disabled={busy}>
+          {messages.start.action}
+        </button>
+      </section>
+
+      {mostRecent && (
+        <section className="card resume-card" aria-label={messages.resume.continueLabel}>
+          <h2>{messages.resume.continueHeading}</h2>
+          <p className="resume-meta">
+            {messages.evidence.state[mostRecent.evidenceState as keyof typeof messages.evidence.state] ?? mostRecent.evidenceState}
+            {' · '}
+            {messages.resume.lastSeen}{' '}
+            {new Date(mostRecent.updatedAt).toLocaleDateString()}
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onResume(mostRecent.sessionId)}
+          >
+            {messages.resume.continueAction}
+          </button>
+        </section>
+      )}
+
+      {reviewDue.length > 0 && (
+        <section className="card review-due-card" aria-label={messages.resume.reviewDueLabel}>
+          <h2>{messages.resume.reviewDueHeading}</h2>
+          <ul className="review-due-list">
+            {reviewDue.map((s) => (
+              <li key={s.sessionId}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="ghost"
+                  onClick={() => onResume(s.sessionId)}
+                >
+                  {messages.resume.reviewAction}{' '}
+                  <span className="review-due-date">{s.nextReviewDue}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
   );
 }
 
@@ -259,7 +352,7 @@ function StageBody(props: StageBodyProps) {
         <button
           type="button"
           disabled={busy}
-          onClick={() => void run(() => api.setStage(sessionId, 'practice'))}
+          onClick={() => void run(() => api.setStage(sessionId, 'practice', stage))}
         >
           {messages.actions.toPractice}
         </button>
@@ -302,7 +395,7 @@ function StageBody(props: StageBodyProps) {
         <button
           type="button"
           disabled={busy}
-          onClick={() => void run(() => api.setStage(sessionId, 'practice'))}
+          onClick={() => void run(() => api.setStage(sessionId, 'practice', stage))}
         >
           {messages.actions.toPractice}
         </button>
@@ -318,7 +411,7 @@ function StageBody(props: StageBodyProps) {
         <button
           type="button"
           disabled={busy}
-          onClick={() => void run(() => api.setStage(sessionId, 'practice'))}
+          onClick={() => void run(() => api.setStage(sessionId, 'practice', stage))}
         >
           {messages.actions.toPractice}
         </button>
@@ -512,7 +605,7 @@ function Result(props: {
         <button
           type="button"
           disabled={busy}
-          onClick={() => void run(() => api.setStage(session.sessionId, next))}
+          onClick={() => void run(() => api.setStage(session.sessionId, next, session.stage))}
         >
           {nextLabel}
         </button>

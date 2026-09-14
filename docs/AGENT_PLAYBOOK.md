@@ -2,7 +2,7 @@
 
 ## Operating pattern
 
-Use **specification → complete user-facing slice → tests and AI evaluations → independent review → learner observation → next slice**. Keep one integration owner. Run a second or third agent only on bounded independent work, such as UI against an agreed contract, content/eval fixtures, or review. More agents are useful only while ownership stays clear.
+Use **short brief → working feature slice → quick build/existing tests → concise handoff → next slice**. The founder's 14 September priority is fast progress to v1. Defer detailed test expansion, broad browser/accessibility checks and deployment hardening to the deployment slice; keep focused ownership, learning-evidence and AI-budget checks with the features they protect. Follow the current policy in NEXT_STEPS.md. Keep one integration owner. Run a second or third agent only on bounded independent work, such as UI against an agreed contract, content/eval fixtures, or review. More agents are useful only while ownership stays clear.
 
 Use separate Git branches/worktrees for simultaneous implementation once Git is initialized. Shared-directory agents must own disjoint files and coordinate changes. One owner controls schema migrations, package manifests, shared contracts and integration. Do not run several agents against those files simultaneously.
 
@@ -35,9 +35,9 @@ This is a reusable template; the backlog supplies ticket-specific acceptance cri
 
 ## Next implementation session
 
-R01 is implemented and R02A is merged. Use **R02B — help and recovery** in
-[NEXT_STEPS.md](NEXT_STEPS.md) for the next session; it includes the reviewed
-gaps, acceptance criteria and a separate parallel CI brief. The R01 brief below is historical
+R02B is implemented with small functional follow-ups. Use **R03 — persistent v1 foundation** in
+[NEXT_STEPS.md](NEXT_STEPS.md); fold those fixes into the next working slice.
+Detailed acceptance and CI preparation move to deployment readiness. The R01 brief below is historical
 context, not an instruction to re-scaffold the repository.
 
 ## R01 implementation brief (completed local implementation)

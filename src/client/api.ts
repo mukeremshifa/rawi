@@ -4,8 +4,11 @@
  * Every learning action is a server round-trip. The browser holds no copy of
  * the rules and never decides correctness, assistance or evidence - it renders
  * whatever SessionView the server returns.
+ *
+ * R03: adds loadMe(), listSessions(), and passes the Authorization header
+ * when a Supabase access token is stored in sessionStorage.
  */
-import type { SessionView, Stage } from '../shared/types.js';
+import type { MeResponse, SessionSummary, SessionView, Stage } from '../shared/types.js';
 
 export class ApiError extends Error {
   constructor(
@@ -18,12 +21,36 @@ export class ApiError extends Error {
   }
 }
 
+/** Key used to store the Supabase JWT in sessionStorage. */
+const TOKEN_KEY = 'rawi.accessToken';
+
+export function storeToken(token: string): void {
+  sessionStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearToken(): void {
+  sessionStorage.removeItem(TOKEN_KEY);
+}
+
+function getToken(): string | null {
+  return sessionStorage.getItem(TOKEN_KEY);
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request(path: string, init?: RequestInit): Promise<SessionView> {
   let response: Response;
   try {
     response = await fetch(path, {
       ...init,
-      headers: { 'content-type': 'application/json', ...init?.headers },
+      headers: {
+        'content-type': 'application/json',
+        ...authHeaders(),
+        ...init?.headers,
+      },
     });
   } catch {
     throw new ApiError('network', 0, 'network');
@@ -37,6 +64,39 @@ async function request(path: string, init?: RequestInit): Promise<SessionView> {
   return (await response.json()) as SessionView;
 }
 
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...init,
+      headers: {
+        'content-type': 'application/json',
+        ...authHeaders(),
+        ...init?.headers,
+      },
+    });
+  } catch {
+    throw new ApiError('network', 0, 'network');
+  }
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new ApiError(body.error ?? 'request_failed', response.status, body.error);
+  }
+
+  return (await response.json()) as T;
+}
+
+/** Fetch the authenticated user's info. Throws ApiError(401) when not signed in. */
+export function loadMe(): Promise<MeResponse> {
+  return requestJson<MeResponse>('/api/me');
+}
+
+/** Fetch session summaries for the resume UI. */
+export function listSessions(): Promise<{ sessions: SessionSummary[] }> {
+  return requestJson<{ sessions: SessionSummary[] }>('/api/sessions');
+}
+
 export function startSession(): Promise<SessionView> {
   return request('/api/sessions', { method: 'POST' });
 }
@@ -45,10 +105,15 @@ export function loadSession(sessionId: string): Promise<SessionView> {
   return request(`/api/sessions/${encodeURIComponent(sessionId)}`);
 }
 
-export function setStage(sessionId: string, stage: Stage): Promise<SessionView> {
+export function setStage(
+  sessionId: string,
+  stage: Stage,
+  /** R03: current stage on the client. If provided, the server rejects stale navigation. */
+  expectedStage?: Stage,
+): Promise<SessionView> {
   return request(`/api/sessions/${encodeURIComponent(sessionId)}/stage`, {
     method: 'POST',
-    body: JSON.stringify({ stage }),
+    body: JSON.stringify({ stage, expectedStage }),
   });
 }
 

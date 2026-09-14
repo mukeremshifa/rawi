@@ -11,3 +11,20 @@ not_found_handling = "single-page-application"
 [vars]
 # R01 is fixture-only. No provider key is read anywhere in this codebase.
 RAWI_TUTOR_MODE = "fixture"
+
+# Supabase project URL — safe to commit; it is the public endpoint.
+# Override for production by setting wrangler secret or editing this value.
+# SUPABASE_URL and SUPABASE_ANON_KEY are safe to include here.
+# SUPABASE_SERVICE_KEY and SUPABASE_JWT_SECRET are secrets — never add them here;
+# add them with: wrangler secret put SUPABASE_SERVICE_KEY
+#                wrangler secret put SUPABASE_JWT_SECRET
+SUPABASE_URL = ""
+SUPABASE_ANON_KEY = ""
+
+# ─── Secrets (add via wrangler CLI, not this file) ───────────────────────────
+# wrangler secret put SUPABASE_SERVICE_KEY
+# wrangler secret put SUPABASE_JWT_SECRET
+#
+# To configure locally without deploying, create .dev.vars (gitignored):
+#   SUPABASE_SERVICE_KEY=<your-service-key>
+#   SUPABASE_JWT_SECRET=<your-jwt-secret>

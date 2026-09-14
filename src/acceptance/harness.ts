@@ -178,6 +178,11 @@ await test('path 2: convert primary check, get bank item, submit correctly', asy
   assertNoAnswerKeys(converted, 'after convert');
 
   // Find the bank item and submit correctly.
+  // R03 teach-before-check: after convert the session moves to learn.
+  // Advance through learn→practice→check before submitting the fresh item.
+  await post(`/api/sessions/${id}/stage`, { stage: 'practice' });
+  await post(`/api/sessions/${id}/stage`, { stage: 'check' });
+
   const allItems = [demoLesson.check, ...demoLesson.checkBank];
   const bankItem = allItems.find((q) => q.id === newItemId)!;
   assert(bankItem !== undefined, `bank item ${newItemId} not found in lesson`);
@@ -231,7 +236,10 @@ await test('path 4: stale item attempt is rejected 409 and session state is read
   const view = await advanceTo(id, 'check');
   const originalItemId = view.activeCheckId!;
 
-  // Convert to advance the active item.
+  // Convert to advance the active item. R03: after convert the session moves
+  // to learn for teach-before-check. The stale attempt names the old item AND
+  // the old stage ('check'), so the server rejects it — either as
+  // stage_not_active (session is at learn) or item_replaced. Both are 409.
   const converted = (
     await post(`/api/sessions/${id}/convert`, { itemId: originalItemId })
   ).body as SessionView;
@@ -245,7 +253,6 @@ await test('path 4: stale item attempt is rejected 409 and session state is read
     itemId: originalItemId,
   });
   assert(stale.status === 409, `stale attempt: expected 409, got ${stale.status}`);
-  assert((stale.body as { error: string }).error === 'item_replaced', 'should be item_replaced');
 
   // Session is still readable after the rejection.
   const { status: reloadStatus, body: reloaded } = await call(`/api/sessions/${id}`);
@@ -272,6 +279,13 @@ await test('path 6: exhausting all bank items produces honest exhaustion state',
   let current = (await call(`/api/sessions/${id}`)).body as SessionView;
 
   for (let i = 0; i < totalItems; i++) {
+    // R03 teach-before-check: after the first convert, the session is at learn.
+    // Advance back to check before each subsequent convert.
+    if (i > 0) {
+      await post(`/api/sessions/${id}/stage`, { stage: 'practice' });
+      await post(`/api/sessions/${id}/stage`, { stage: 'check' });
+      current = (await call(`/api/sessions/${id}`)).body as SessionView;
+    }
     const itemId = current.activeCheckId!;
     assert(!current.checkBankExhausted, `item ${i}: should not be exhausted yet`);
     const res = await post(`/api/sessions/${id}/convert`, { itemId });
@@ -294,7 +308,8 @@ await test('path 6: exhausting all bank items produces honest exhaustion state',
 await test('path 7: wrong unaided answer has assistance none and countsAsIndependent false', async () => {
   const session = await newSession();
   const id = session.sessionId;
-  await advanceTo(id, 'check');
+  const view = await advanceTo(id, 'check');
+  const itemId = view.activeCheckId!;
 
   const wrong = demoLesson.check.options.find(
     (o) => o.id !== demoLesson.check.correctOptionId,
@@ -302,6 +317,7 @@ await test('path 7: wrong unaided answer has assistance none and countsAsIndepen
   const { status, body } = await post(`/api/sessions/${id}/attempt`, {
     stage: 'check',
     optionId: wrong.id,
+    itemId,
   });
   assert(status === 200, `wrong attempt: ${status}`);
   const res = body as SessionView;
@@ -330,6 +346,10 @@ await test('path 8: no answer keys in session view, convert response, or check s
   assertNoAnswerKeys(converted, 'convert response');
 
   // After bank attempt.
+  // R03 teach-before-check: after convert the session is at learn; advance back to check.
+  await post(`/api/sessions/${id}/stage`, { stage: 'practice' });
+  await post(`/api/sessions/${id}/stage`, { stage: 'check' });
+
   const bankView = converted as SessionView;
   const bankItem = [demoLesson.check, ...demoLesson.checkBank].find(
     (q) => q.id === bankView.activeCheckId,

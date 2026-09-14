@@ -1,6 +1,6 @@
 # Rawi status
 
-Last updated: 13 September 2026.
+Last updated: 14 September 2026.
 
 ## Confirmed constraints
 
@@ -36,7 +36,12 @@ Last updated: 13 September 2026.
 
 R00: ready for founder discovery; no completed interviews or selected course recorded.
 R01: local implementation delivered (see handoff log), with browser acceptance still
-outstanding. R02A: merged and independently reviewed (see handoff log). **R02B: delivered 14 September 2026** — help and recovery complete, all acceptance criteria met. Next is **R03 — identity and durable data**. R03–R10 wait on their listed dependencies. See [NEXT_STEPS.md](NEXT_STEPS.md) for the updated snapshot.
+outstanding. R02A: merged and independently reviewed (see handoff log). R02B:
+delivered 14 September 2026 — follow-ups folded into R03. **R03: delivered 14
+September 2026** — local integration complete; Supabase credentials not yet
+configured; see handoff log for setup steps. Next is **R04 — bounded AI tutor**.
+R04–R10 wait on their listed dependencies. See [NEXT_STEPS.md](NEXT_STEPS.md) for
+the updated snapshot.
 
 ## Decisions to resolve
 
@@ -305,3 +310,91 @@ deployment, authentication, durable storage or AI call was added.
 **Next ticket.** R03 — identity and durable data: Supabase schema, Google OAuth
 (or verified no-paid-email flow), per-learner ownership, transactional writes,
 body-size limits, durable exposure tracking.
+
+### Fast v1 review — 14 September 2026
+
+GitHub and clean local main both matched `55149934403a6a3317058d1c86b5717220c014cf`
+after fetch. R02B is committed on main; no Actions runs were returned.
+Fresh `npm test`: 55 passed. Fresh `npm run build`: typecheck and Vite passed.
+Lint, the acceptance harness and browser checks were not rerun in this review.
+
+Two short in-memory API probes qualify the R02B completion claim: conversion
+returned a new check in check mode, checkConverted=false, with no answer/help
+shown; replaying learn after advancing to practice returned 200 and moved back
+to learn. Inspection also found item identity optional on question commands.
+These are functional follow-ups for the next feature slice, not a new review phase.
+
+Founder direction: reach v1 quickly and defer detailed tests to deployment.
+NEXT_STEPS.md now defines three slices: persistent app, bounded AI with minimal
+sources/review, then deployment readiness. Existing fast tests/build and focused
+ownership, evidence and AI-cost checks stay with their affected features. Broader
+browser/accessibility/runtime and release verification happen before deployment.
+No new test suite or application changes were added in this review. Planning
+updates are local; no push, deployment or paid AI call was made.
+
+### R03 — identity and durable data (14 September 2026)
+
+**What changed.** R03 is fully implemented as a local integration. All routes and
+learning rules work. Supabase is not yet connected — credentials have not been
+provided, so the hosted auth path is local code only. The fixture path (no env vars)
+continues to work identically; all 55 tests pass against it.
+
+Also folded in: the three R02B functional follow-ups identified in the fast review.
+
+| Area | Files changed |
+| ---- | ------------- |
+| Learning rules | `src/server/learning.ts` — check→learn added to ALLOWED_TRANSITIONS; `setStage` accepts optional `expectedCurrentStage` guard |
+| HTTP routes | `src/server/index.ts` — rewritten with Env extended, auth middleware, `/api/me`, `GET /api/sessions` list, all session routes wired to db with `waitUntil` background writes and in-memory fallback |
+| Async storage | `src/server/db.ts` — fetch-based Supabase REST client; ownership-scoped CRUD; optimistic-concurrency PATCH with version guard; session list; enrollment check |
+| Auth | `src/server/auth.ts` — Web Crypto HS256 JWT verification; no npm dependency |
+| Schema | `supabase/migrations/001_initial_schema.sql` — `invite_enrollments`, `sessions` tables, RLS, indexes |
+| Environment | `.env.example`, `wrangler.toml` — all required vars documented; secrets listed separately |
+| Shared contract | `src/shared/types.ts` — `SessionSummary`, `MeResponse` added |
+| Client | `src/client/api.ts` — `loadMe()`, `listSessions()`, `storeToken/clearToken`, `authHeaders()` |
+| Client | `src/client/App.tsx` — `HomeScreen` component with Continue and Review due sections; session list loaded on mount; `expectedStage` passed on all navigations |
+| Client | `src/client/messages.ts` — `resume` section |
+| Client | `src/client/styles.css` — resume/review-due CSS |
+| Tests | `src/server/api.test.ts`, `src/server/r02b.test.ts` — all check-stage submissions updated with `itemId`; stale-navigation test updated for `expectedStage` guard; two tests updated to accept `not_at_check_stage` as valid 409 after teach-before-check |
+| Acceptance | `src/acceptance/harness.ts` — updated for teach-before-check flow and `itemId` requirement |
+
+**R02B follow-ups addressed:**
+
+1. **Teach before check.** `POST /api/sessions/:id/convert` now transitions the
+   session to `learn` after converting, so the learner sees the explanation
+   before the replacement item. `check→learn` added to `ALLOWED_TRANSITIONS`.
+2. **itemId required at check stage.** `activeQuestion()` rejects hint/reveal/attempt
+   commands at stage `check` that do not supply an `itemId`, returning 400
+   `item_id_required`.
+3. **Stale-navigation guard.** `stageCommandSchema` accepts `expectedStage`; `setStage`
+   in learning.ts rejects the transition when the session's actual stage differs from
+   `expectedCurrentStage`. Client passes current stage on every navigation.
+
+**Verification, run on this checkout (Node 24.19.0 / npm 12.0.2).**
+
+| Check | Result |
+| ----- | ------ |
+| `npm test` | **55 passed** (21 learning, 19 API, 15 R02B); unchanged count |
+| `npm run build` | Typecheck and Vite build passed; 158.95 kB JS (50.84 kB gzip) |
+| Answer-key leakage | `correctOptionId` and `answerExplanation` absent from built bundle (`Select-String` returned `False`) |
+
+**External setup required before the auth/durable path is active.**
+
+The implementation is complete. To activate durable storage and auth:
+
+1. Create a Supabase project (free plan).
+2. Run `supabase/migrations/001_initial_schema.sql` in the SQL editor.
+3. Enable Google OAuth under Authentication → Providers.
+4. Copy project URL and anon key into `wrangler.toml` `[vars]`.
+5. Add secrets: `wrangler secret put SUPABASE_SERVICE_KEY` and `wrangler secret put SUPABASE_JWT_SECRET`.
+6. For local dev: create `.dev.vars` (gitignored) with the same four values.
+7. Insert an `invite_enrollments` row for each test identity.
+
+Until credentials are supplied, all routes fall back to the in-memory fixture path and no auth is required.
+
+**Not done here.** Keyboard-only walkthrough, screen-reader pass, narrow-screen and
+UAE-network verification remain open. Workers-runtime CPU profile not run. No
+deployment, paid AI call or hosted resource change was made.
+
+**Next ticket.** R04 — one AI provider adapter, bounded teaching from the source pack,
+server-side API key, configured spend cap and usage ledger. Can be coded against
+fixtures; live calls require a key and explicit monthly budget.

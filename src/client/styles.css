@@ -371,3 +371,41 @@ button:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ─── Resume / home screen ───────────────────────────────────────────────── */
+.resume-card,
+.review-due-card {
+  border-inline-start: 3px solid var(--accent, #4f6ef7);
+}
+
+.resume-meta {
+  color: var(--text-muted, #666);
+  font-size: 0.875rem;
+  margin-block-end: 0.75rem;
+}
+
+.review-due-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.review-due-list button.ghost {
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+.review-due-date {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.875em;
+  opacity: 0.75;
+}

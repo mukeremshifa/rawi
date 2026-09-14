@@ -152,3 +152,24 @@ export interface RecordedAttempt {
    */
   readonly reviewDue?: string;
 }
+
+/** Summary of one session returned by GET /api/sessions (resume UI). */
+export interface SessionSummary {
+  readonly sessionId: string;
+  readonly lessonId: string;
+  readonly version: number;
+  readonly updatedAt: string;
+  readonly evidenceState: EvidenceState;
+  readonly nextReviewDue?: string;
+}
+
+/** Response from GET /api/me. */
+export interface MeResponse {
+  readonly userId: string;
+  readonly email?: string;
+  readonly enrolled: boolean;
+  /** Supabase anon key for client-side OAuth — null when DB not configured. */
+  readonly supabaseAnonKey: string | null;
+  /** Supabase project URL — null when DB not configured. */
+  readonly supabaseUrl: string | null;
+}

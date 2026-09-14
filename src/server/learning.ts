@@ -344,12 +344,18 @@ export function isCheckBankExhausted(
  * the teaching stages, and R01 silently permitted a diagnose -> check jump.
  * When product decides to support testing out, it becomes an explicit command
  * here, not an unguarded client-supplied stage.
+ *
+ * R03: practice -> check is no longer a direct transition when the explanation
+ * has not yet been seen. Instead, convert on the check stage triggers a
+ * teach-before-fresh-check flow: after converting, the session moves to learn
+ * so the learner sees the explanation before the replacement item. The route
+ * handler owns this transition; the table here stays minimal.
  */
 const ALLOWED_TRANSITIONS: Readonly<Record<Stage, readonly Stage[]>> = {
   diagnose: ['learn'],
   learn: ['diagnose', 'practice'],
   practice: ['learn', 'check'],
-  check: ['summary', 'practice'],
+  check: ['summary', 'practice', 'learn'],
   summary: ['learn', 'practice'],
 };
 
@@ -362,13 +368,26 @@ export function canTransition(from: Stage, to: Stage): boolean {
 
 /**
  * Move the learner to a new stage. Stage changes never touch assistance.
- * Returns undefined when the transition is not allowed, so the caller can
- * reject without writing.
+ *
+ * R03 stale-navigation guard: if `expectedCurrentStage` is provided, the
+ * transition is only applied when the session's actual current stage matches.
+ * A command carrying an expected stage that does not match the server's actual
+ * stage is a stale request built against an old view; returning the current
+ * state unchanged is the safe action, and the caller rejects with 409.
+ *
+ * Returns undefined when the transition is not allowed or (if expectedCurrent
+ * is supplied) when the guard fails, so the caller can reject without writing.
  */
 export function setStage(
   state: SessionState,
   stage: Stage,
+  expectedCurrentStage?: Stage,
 ): SessionState | undefined {
+  // Stale-navigation guard: if the client told us where it thought the session
+  // was, and the session is actually somewhere else, reject rather than apply.
+  if (expectedCurrentStage !== undefined && state.stage !== expectedCurrentStage) {
+    return undefined;
+  }
   if (!canTransition(state.stage, stage)) return undefined;
   if (state.stage === stage) return state;
   return { ...state, stage };

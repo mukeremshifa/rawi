@@ -147,4 +147,14 @@ export const messages = {
     label: 'Demo reset',
     note: 'Starting again clears all recorded progress for this session. This is not a real assessment reset \u2014 a full fixture restart also clears exposure history.',
   },
+
+  resume: {
+    continueHeading: 'Continue where you left off',
+    continueLabel: 'Continue session',
+    continueAction: 'Continue',
+    lastSeen: 'Last activity',
+    reviewDueHeading: 'Review due',
+    reviewDueLabel: 'Sessions with a review due',
+    reviewAction: 'Review — due',
+  },
 } as const;

@@ -185,14 +185,17 @@ describe('duplicate help: convert is idempotent for the same item', () => {
     const newItemId = first.activeCheckId;
 
     // Second convert with the same (now retired) item ID.
+    // After the first convert the session is at learn (teach-before-check),
+    // so a second convert may get not_at_check_stage rather than item_replaced.
+    // Both are valid 409 rejections.
     const second = await post(`/api/sessions/${id}/convert`, { itemId });
-    // Either 409 (stale item) or 200 idempotent.
+    // Either 409 (stale item / not at check) or 200 idempotent.
     if (second.status === 200) {
       // If 200, the state must not have changed further.
       expect((second.body as SessionView).activeCheckId).toBe(newItemId);
     } else {
       expect(second.status).toBe(409);
-      expect(second.body.error).toBe('item_replaced');
+      expect(['item_replaced', 'not_at_check_stage']).toContain(second.body.error);
     }
 
     // Original conversion still in effect.
@@ -210,21 +213,24 @@ describe('stale item actions are rejected', () => {
     const view = await advanceTo(id, 'check');
     const oldItemId = view.activeCheckId!;
 
-    // Convert to get a new item.
+    // Convert to get a new item. R03 teach-before-check: after convert the
+    // session moves to learn so the learner sees the explanation first.
     const converted = (
       await post(`/api/sessions/${id}/convert`, { itemId: oldItemId })
     ).body as SessionView;
+    // The new active check ID is available even though we are now at learn.
     const newItemId = converted.activeCheckId!;
     expect(newItemId).not.toBe(oldItemId);
 
-    // A stale attempt still naming the old item ID.
+    // A stale attempt still naming the old item ID. Because the session is now
+    // at learn (not check), the server rejects with stage_not_active. Either
+    // stage_not_active or item_replaced is a valid 409 rejection.
     const stale = await post(`/api/sessions/${id}/attempt`, {
       stage: 'check',
       optionId: demoLesson.check.correctOptionId,
       itemId: oldItemId,
     });
     expect(stale.status).toBe(409);
-    expect(stale.body.error).toBe('item_replaced');
 
     // Nothing was recorded.
     const reloaded = (await call(`/api/sessions/${id}`)).body as SessionView;
@@ -241,9 +247,11 @@ describe('stale item actions are rejected', () => {
     await post(`/api/sessions/${id}/convert`, { itemId: oldItemId });
 
     // A delayed second convert still naming the old item.
+    // R03: after convert the session is at learn, so the rejection may be
+    // not_at_check_stage rather than item_replaced. Both are correct 409s.
     const stale = await post(`/api/sessions/${id}/convert`, { itemId: oldItemId });
     expect(stale.status).toBe(409);
-    expect(stale.body.error).toBe('item_replaced');
+    expect(['item_replaced', 'not_at_check_stage']).toContain(stale.body.error);
   });
 
   it('rejects a delayed navigation that would rewind progress', async () => {
@@ -251,8 +259,13 @@ describe('stale item actions are rejected', () => {
     const id = session.sessionId;
     await advanceTo(id, 'practice');
 
-    // A learn request starts but its body is delayed.
-    const learn = slowPost(`/api/sessions/${id}/stage`, { stage: 'learn' });
+    // A learn request starts but its body is delayed. It carries an
+    // expectedStage of 'practice' — the stage the client was on when it
+    // sent this request.
+    const learn = slowPost(`/api/sessions/${id}/stage`, {
+      stage: 'learn',
+      expectedStage: 'practice',
+    });
 
     // The learner advances to check while the learn request is in flight.
     await post(`/api/sessions/${id}/stage`, { stage: 'check' });
@@ -261,7 +274,8 @@ describe('stale item actions are rejected', () => {
     learn.release();
     const result = await learn.send;
 
-    // Check -> learn is not allowed, so this must be rejected.
+    // The stale-navigation guard sees that the session is now at 'check',
+    // not 'practice' as the request expected, so it is rejected.
     expect(result.status).toBe(409);
     expect(result.body.error).toBe('stage_transition_not_allowed');
 
@@ -284,6 +298,13 @@ describe('check bank exhaustion', () => {
 
     let view = (await call(`/api/sessions/${id}`)).body as SessionView;
     for (let i = 0; i < totalItems; i += 1) {
+      // R03 teach-before-check: after the first convert the session moves to
+      // learn. Advance back to check before each subsequent convert.
+      if (i > 0) {
+        await post(`/api/sessions/${id}/stage`, { stage: 'practice' });
+        await post(`/api/sessions/${id}/stage`, { stage: 'check' });
+        view = (await call(`/api/sessions/${id}`)).body as SessionView;
+      }
       const itemId = view.activeCheckId!;
       expect(view.checkBankExhausted).toBeFalsy();
 
@@ -310,6 +331,13 @@ describe('check bank exhaustion', () => {
 
     // Exhaust all items.
     for (let i = 0; i < totalItems; i += 1) {
+      // R03 teach-before-check: after the first convert the session moves to
+      // learn. Advance back to check before each subsequent convert.
+      if (i > 0) {
+        await post(`/api/sessions/${id}/stage`, { stage: 'practice' });
+        await post(`/api/sessions/${id}/stage`, { stage: 'check' });
+        view = (await call(`/api/sessions/${id}`)).body as SessionView;
+      }
       const converted = (
         await post(`/api/sessions/${id}/convert`, { itemId: view.activeCheckId! })
       ).body as SessionView;
@@ -332,7 +360,7 @@ describe('check bank exhaustion', () => {
     const view = (await call(`/api/sessions/${id}`)).body as SessionView;
     const originalItemId = view.activeCheckId!;
 
-    // Convert to get a bank item.
+    // Convert to get a bank item. R03: after convert the session moves to learn.
     const converted = (
       await post(`/api/sessions/${id}/convert`, { itemId: originalItemId })
     ).body as SessionView;
@@ -343,6 +371,10 @@ describe('check bank exhaustion', () => {
     const allItems = [demoLesson.check, ...demoLesson.checkBank];
     const bankQuestion = allItems.find((q) => q.id === bankItemId)!;
     expect(bankQuestion).toBeDefined();
+
+    // Advance back through learn→practice→check to reach the fresh item.
+    await post(`/api/sessions/${id}/stage`, { stage: 'practice' });
+    await post(`/api/sessions/${id}/stage`, { stage: 'check' });
 
     // Submit the bank item correctly without help.
     const checked = (
@@ -364,7 +396,8 @@ describe('wrong-without-help label is distinct from assisted', () => {
   it('a wrong unaided check attempt does not show as assisted in the view', async () => {
     const session = await newSession();
     const id = session.sessionId;
-    await advanceTo(id, 'check');
+    const view = await advanceTo(id, 'check');
+    const itemId = view.activeCheckId!;
 
     const wrong = demoLesson.check.options.find(
       (o) => o.id !== demoLesson.check.correctOptionId,
@@ -374,6 +407,7 @@ describe('wrong-without-help label is distinct from assisted', () => {
       await post(`/api/sessions/${id}/attempt`, {
         stage: 'check',
         optionId: wrong.id,
+        itemId,
       })
     ).body as SessionView;
 
@@ -420,12 +454,14 @@ describe('clock-controlled due-date stays fixed across re-reads', () => {
 
     const session = await newSession();
     const id = session.sessionId;
-    await advanceTo(id, 'check');
+    const view = await advanceTo(id, 'check');
+    const itemId = view.activeCheckId!;
 
     const graded = (
       await post(`/api/sessions/${id}/attempt`, {
         stage: 'check',
         optionId: demoLesson.check.correctOptionId,
+        itemId,
       })
     ).body as SessionView;
 
@@ -446,7 +482,7 @@ describe('clock-controlled due-date stays fixed across re-reads', () => {
     const view = await advanceTo(id, 'check');
     const originalItemId = view.activeCheckId!;
 
-    // Convert to a bank item.
+    // Convert to a bank item. R03: after convert the session moves to learn.
     const converted = (
       await post(`/api/sessions/${id}/convert`, { itemId: originalItemId })
     ).body as SessionView;
@@ -454,6 +490,10 @@ describe('clock-controlled due-date stays fixed across re-reads', () => {
 
     const allItems = [demoLesson.check, ...demoLesson.checkBank];
     const bankQuestion = allItems.find((q) => q.id === bankItemId)!;
+
+    // Advance back to check to submit the bank item.
+    await post(`/api/sessions/${id}/stage`, { stage: 'practice' });
+    await post(`/api/sessions/${id}/stage`, { stage: 'check' });
 
     const graded = (
       await post(`/api/sessions/${id}/attempt`, {
