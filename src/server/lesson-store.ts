@@ -60,6 +60,11 @@ export function clearSessions(): void {
   sessions.clear();
 }
 
+/** Fixture-only inspection used by learner export and deterministic metrics. */
+export function listMemorySessions(): readonly SessionState[] {
+  return [...sessions.values()];
+}
+
 /** Why an atomic update did not apply. Handlers map these onto HTTP codes. */
 export type UpdateFailure =
   | { readonly kind: 'not-found' }
@@ -175,6 +180,10 @@ export function questionForStage(
       const allItems = [lesson.check, ...lesson.checkBank];
       return allItems.find((q) => q.id === state.activeCheckId);
     }
+    case 'review': {
+      if (!state?.activeReviewId) return undefined;
+      return lesson.reviewBank.find((q) => q.id === state.activeReviewId);
+    }
     case 'learn':
     case 'summary':
       return undefined;
@@ -258,6 +267,7 @@ export function toSessionView(
     lastResult: state.lastResult,
     evidence,
     fixtureData: true,
+    delayedReview: state.stage === 'review',
   };
 }
 
@@ -267,12 +277,13 @@ export function projectLearningEvidence(
   lesson: AuthoredLesson,
 ): EvidenceSummary {
   const checkItemIds = [lesson.check, ...lesson.checkBank].map((item) => item.id);
+  const reviewItemIds = lesson.reviewBank.map((item) => item.id);
   return {
     conceptId: lesson.conceptId,
     conceptName: lesson.conceptName,
-    state: evidenceState(state.attempts, checkItemIds),
+    state: evidenceState(state.attempts, checkItemIds, reviewItemIds),
     attempts: state.attempts,
-    nextReviewDue: nextReviewDue(state.attempts, checkItemIds),
+    nextReviewDue: nextReviewDue(state.attempts, checkItemIds, reviewItemIds),
   };
 }
 
@@ -285,6 +296,7 @@ function stageToMode(stage: Stage): SessionView['mode'] {
       return 'learn';
     case 'check':
       return 'check';
+    case 'review':
     case 'summary':
       return 'review';
   }

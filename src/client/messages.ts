@@ -11,8 +11,8 @@ export const messages = {
   tagline: 'Understand the concept. Solve the next problem yourself.',
 
   fixtureBanner:
-    'Demonstration data. Lesson content and tutor responses are fixed local ' +
-    'fixtures, not a live AI tutor.',
+    'Pilot preparation build. This original lesson is provisional and still ' +
+    'awaiting subject-reviewer sign-off. Tutor mode is set by the server.',
 
   start: {
     heading: 'Start a lesson',
@@ -25,6 +25,7 @@ export const messages = {
     learn: 'Explanation',
     practice: 'Practice',
     check: 'Independent check',
+    review: 'Delayed review',
     summary: 'What you showed',
   },
 
@@ -32,6 +33,7 @@ export const messages = {
     diagnose: 'Answer if you can. \u201cI don\u2019t know yet\u201d is a real answer.',
     practice: 'Hints are available here. Using them is fine \u2014 it is practice.',
     check: 'No hints before you answer. This one measures what you can do alone.',
+    review: 'This is a fresh delayed check. No hints before you answer.',
   },
 
   actions: {
@@ -46,6 +48,7 @@ export const messages = {
     restart: 'Start again (demo reset)',
     retry: 'Retry',
     retryRefresh: 'Reload current state',
+    home: 'Back to home',
   },
 
   feedback: {
@@ -104,7 +107,7 @@ export const messages = {
     independentBadge: 'independent',
     assistedBadge: 'assisted',
     wrongUnaidedBadge: 'wrong, no help used',
-    nextReview: 'Next review due',
+    nextReview: 'Next review due (UTC date)',
     reviewNote:
       'Come back on that date for a delayed check. Delayed checks are the ' +
       'evidence that understanding lasted.',
@@ -174,5 +177,44 @@ export const messages = {
     reviewDueHeading: 'Review due',
     reviewDueLabel: 'Sessions with a review due',
     reviewAction: 'Review — due',
+  },
+
+  tutor: {
+    heading: 'Ask Rawi',
+    prompt: 'What is still unclear?',
+    ask: 'Ask for an explanation',
+    asking: 'Preparing an explanation…',
+    sources: 'Sources',
+    fixture: 'deterministic fixture',
+    checkLocked: 'Tutor help is paused while an unanswered independent check is active. Submit it or choose the help option first.',
+    budgetReached: 'The tutor budget limit has been reached. The reviewed lesson and saved work remain available.',
+    timeout: 'The tutor took too long to respond. Your question is preserved above; try again with a new request.',
+    unavailable: 'The tutor is temporarily unavailable. The course explanation remains available.',
+  },
+
+  pilot: {
+    heading: 'Private pilot information',
+    course: 'Supported unit',
+    unreviewed: 'Content is original but still awaiting a competent subject reviewer.',
+    retention: 'Configured retention: {days} days. Export or delete your data at any time.',
+    operatorMissing: 'Operator name/contact and legal review are not configured yet; real learner enrollment must wait.',
+  },
+
+  operations: {
+    heading: 'Support and your data',
+    reportLabel: 'Report a content, technical, or privacy problem',
+    report: 'Send report',
+    reported: 'Report saved for the pilot operator.',
+    failed: 'That operation could not be confirmed. Nothing has been reported or deleted; try again.',
+    export: 'Export my data',
+    delete: 'Delete my Rawi data',
+    deleteConfirm: 'Delete all saved Rawi learning data, sources, issues, and usage records? This cannot be undone.',
+    sources: 'Personal sources (readiness feature)',
+    sourceLimits: 'Pasted text only, up to 50,000 characters. PDF extraction is not enabled in the zero-cost Worker build.',
+    sourceTitle: 'Source title',
+    sourceText: 'Paste text',
+    permissionAck: 'By adding this text you confirm you have permission to use it for your own study.',
+    preview: 'Extraction preview',
+    addSource: 'Save approved text',
   },
 } as const;

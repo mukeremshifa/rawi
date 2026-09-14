@@ -9,13 +9,19 @@
   "scripts": {
     "dev": "vite",
     "dev:api": "wrangler dev",
+    "dev:api:fixture": "wrangler dev --var RAWI_STORAGE_MODE:fixture --var RAWI_TUTOR_MODE:fixture --port 8787",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "acceptance": "tsx src/acceptance/harness.ts"
+    "acceptance": "tsx src/acceptance/harness.ts",
+    "e2e": "playwright test",
+    "worker:types": "wrangler types src/worker-configuration.d.ts",
+    "deploy:check": "npm run build && wrangler deploy --dry-run",
+    "verify": "npm run lint && npm run typecheck && npm test && npm run build && npm run acceptance && npm run e2e",
+    "eval:live": "tsx scripts/live-ai-eval.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
@@ -25,25 +31,25 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.5.35",
-    "@cloudflare/workers-types": "^4.20241230.0",
     "@eslint/js": "^9.17.0",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.5.1",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^6.1.1",
     "eslint": "^9.17.0",
     "eslint-plugin-react-hooks": "^5.1.0",
+    "tsx": "^4.23.13",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.19.0",
-    "vite": "^6.0.7",
-    "vitest": "^2.1.8",
-    "wrangler": "^3.99.0"
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0",
+    "wrangler": "^4.131.2"
   },
   "allowScripts": {
-    "esbuild@0.17.19": true,
-    "esbuild@0.21.5": true,
-    "esbuild@0.25.12": true,
     "workerd@1.20241230.0": true,
-    "workerd@1.20250718.0": true
+    "esbuild@0.28.1": true,
+    "workerd@1.20260911.1": true,
+    "esbuild@0.28.2": true
   }
 }

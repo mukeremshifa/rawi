@@ -22,6 +22,6 @@ Read docs/STATUS.md, docs/PRODUCT.md and the relevant docs/DELIVERY.md ticket be
 
 ## Coordination and handoff
 
-Own a bounded ticket. Coordinate shared schemas/contracts/manifests with the integration owner. Preserve others' edits. Update docs/STATUS.md with verified outcomes, commands and next steps. Explain the main engineering tradeoff so the founder learns the system.
+For the current consolidated v1 assignment, own the complete scope in docs/V1_COMPLETION_BRIEF.md and continue across ticket boundaries without separate handoffs. Otherwise own a bounded ticket. Coordinate shared schemas/contracts/manifests with the integration owner. Preserve others' edits. Update docs/STATUS.md with verified outcomes, commands and next steps. Explain the main engineering tradeoff so the founder learns the system.
 
 Proceed with authorized reversible implementation without repeated confirmation. Respect existing authorization for later actions, but do not infer authority to contact learners, add hosting charges or publicly launch from a local build ticket. Prepare any genuinely required decision as a concrete reviewable result.

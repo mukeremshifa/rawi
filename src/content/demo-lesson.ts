@@ -34,6 +34,11 @@ export interface AuthoredLesson {
   readonly conceptId: string;
   readonly conceptName: string;
   readonly objective: string;
+  readonly curriculumVersion: string;
+  readonly reviewerStatus: 'pending' | 'reviewed';
+  readonly sources: readonly SourceExcerpt[];
+  readonly misconceptions: readonly string[];
+  readonly workedExamples: readonly string[];
   /** Opening diagnostic attempt. */
   readonly diagnostic: AuthoredQuestion;
   readonly explanation: Explanation;
@@ -52,6 +57,8 @@ export interface AuthoredLesson {
    * and from `check`.
    */
   readonly checkBank: readonly AuthoredQuestion[];
+  /** Distinct delayed items. These are never used for the immediate check. */
+  readonly reviewBank: readonly AuthoredQuestion[];
 }
 
 const source: SourceExcerpt = {
@@ -64,6 +71,29 @@ const source: SourceExcerpt = {
     'price of a substitute or complement, tastes, expectations, or the number ' +
     'of buyers — shifts the whole demand curve to a new position.',
   permission: 'Original text written for Rawi; no external licence required.',
+  reviewerStatus: 'pending',
+};
+
+const sourceExample: SourceExcerpt = {
+  sourceId: 'rawi-demo-example-v1',
+  title: 'Rawi worked example: substitutes',
+  version: '2026-09-14',
+  excerpt:
+    'When the price of a substitute rises, buyers switch toward the other good. ' +
+    'At every unchanged price of that other good, more is demanded, so its demand curve shifts right.',
+  permission: 'Original text written for Rawi; no external licence required.',
+  reviewerStatus: 'pending',
+};
+
+const sourceMisconception: SourceExcerpt = {
+  sourceId: 'rawi-demo-misconceptions-v1',
+  title: 'Rawi misconception guide: reading the changed variable',
+  version: '2026-09-14',
+  excerpt:
+    'A common error is to treat every quantity change as a curve shift. First identify ' +
+    'the variable that changed: the good\u2019s own price means movement along; another determinant means a shift.',
+  permission: 'Original text written for Rawi; no external licence required.',
+  reviewerStatus: 'pending',
 };
 
 export const demoLesson: AuthoredLesson = {
@@ -71,6 +101,16 @@ export const demoLesson: AuthoredLesson = {
   title: 'Shift in demand or movement along the curve?',
   conceptId: 'demand-shift-vs-movement',
   conceptName: 'Demand shifts versus movement along the curve',
+  curriculumVersion: 'demo-demand-v2-2026-09-14',
+  reviewerStatus: 'pending',
+  sources: [source, sourceExample, sourceMisconception],
+  misconceptions: [
+    'Any change in quantity demanded must mean the demand curve shifted.',
+    'A change in a related good\u2019s price is a movement along this good\u2019s demand curve.',
+  ],
+  workedExamples: [
+    'Petrol becomes more expensive and bus demand rises: petrol is a substitute, so the bus-demand curve shifts right.',
+  ],
   objective:
     'Decide whether a described change shifts the demand curve or moves the ' +
     'market along it, and say why.',
@@ -236,6 +276,44 @@ export const demoLesson: AuthoredLesson = {
         'Did the current price of smartphones change, or did something about buyers\u2019 expectations change?',
         'Expectations about future prices are one of the factors listed that shifts a demand curve.',
       ],
+      reviewedBy: 'Pending subject-reviewer sign-off (R00)',
+    },
+  ],
+  reviewBank: [
+    {
+      id: 'q-review-1',
+      prompt:
+        'A streaming service cuts its own monthly price. More households subscribe. ' +
+        'What happened on the demand curve for that service?',
+      options: [
+        { id: 'a', label: 'The demand curve shifted right' },
+        { id: 'b', label: 'Movement along the existing demand curve' },
+        { id: 'c', label: 'The demand curve shifted left' },
+        { id: 'd', label: 'There is not enough information' },
+      ],
+      correctOptionId: 'b',
+      answerExplanation:
+        'The service\u2019s own price changed, so households moved along its existing demand curve. ' +
+        'No outside determinant was described.',
+      hints: [],
+      reviewedBy: 'Pending subject-reviewer sign-off (R00)',
+    },
+    {
+      id: 'q-review-2',
+      prompt:
+        'Laptops and tablets are substitutes. Tablet prices rise while laptop prices stay fixed. ' +
+        'What happens to demand for laptops?',
+      options: [
+        { id: 'a', label: 'Movement along the laptop demand curve' },
+        { id: 'b', label: 'The laptop demand curve shifts left' },
+        { id: 'c', label: 'The laptop demand curve shifts right' },
+        { id: 'd', label: 'Laptop demand cannot change' },
+      ],
+      correctOptionId: 'c',
+      answerExplanation:
+        'A substitute\u2019s price rose, so buyers switch toward laptops at every laptop price. ' +
+        'That shifts the laptop demand curve right.',
+      hints: [],
       reviewedBy: 'Pending subject-reviewer sign-off (R00)',
     },
   ],

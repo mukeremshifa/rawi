@@ -73,6 +73,10 @@ export interface SessionState {
    * but is never selected again as the "fresh" independent check.
    */
   readonly exposedCheckIds: readonly string[];
+  /** Delayed-review items are a separate authored bank from immediate checks. */
+  readonly activeReviewId?: string;
+  readonly exposedReviewIds: readonly string[];
+  readonly reviewStartedAt?: string;
 }
 
 const ASSISTANCE_RANK: Record<AssistanceLevel, number> = {
@@ -134,6 +138,7 @@ export function createSession(
     exposedCheckIds: freshCheck
       ? [...inheritedExposure, freshCheck.id]
       : inheritedExposure,
+    exposedReviewIds: [],
   };
 }
 
@@ -246,7 +251,12 @@ export function submitAttempt(
     at: now.toISOString(),
     // Invariant 6. Anchored here, at the moment of the attempt, so the date
     // shown never depends on when the learner happens to reload.
-    reviewDue: countsAsIndependent ? addDays(now, REVIEW_INTERVAL_DAYS) : undefined,
+    reviewDue: countsAsIndependent
+      ? addDays(
+          now,
+          stage === 'review' ? REVIEW_INTERVAL_AFTER_REVIEW_DAYS : REVIEW_INTERVAL_DAYS,
+        )
+      : undefined,
   };
 
   const result: AttemptResult = {
@@ -376,6 +386,7 @@ const ALLOWED_TRANSITIONS: Readonly<Record<Stage, readonly Stage[]>> = {
   learn: ['diagnose', 'practice'],
   practice: ['learn', 'check'],
   check: ['summary', 'practice', 'learn'],
+  review: ['summary', 'learn', 'practice'],
   summary: ['learn', 'practice'],
 };
 
@@ -425,7 +436,16 @@ export function setStage(
 export function evidenceState(
   attempts: readonly RecordedAttempt[],
   checkItemIds: readonly string[],
+  reviewItemIds: readonly string[] = [],
 ): EvidenceState {
+  const retained = attempts.some(
+    (a) =>
+      a.stage === 'review' &&
+      reviewItemIds.includes(a.questionId) &&
+      a.countsAsIndependent,
+  );
+  if (retained) return 'retained-on-review';
+
   const independentCheck = attempts.some(
     (a) => checkItemIds.includes(a.questionId) && a.countsAsIndependent,
   );
@@ -436,6 +456,8 @@ export function evidenceState(
 
 /** Days until the first delayed check, per the 7-day follow-up in PRODUCT.md. */
 export const REVIEW_INTERVAL_DAYS = 7;
+/** A successful delayed review schedules another review two weeks later. */
+export const REVIEW_INTERVAL_AFTER_REVIEW_DAYS = 14;
 
 /** UTC date, `days` after `from`, as YYYY-MM-DD. */
 export function addDays(from: Date, days: number): string {
@@ -457,9 +479,47 @@ export function addDays(from: Date, days: number): string {
 export function nextReviewDue(
   attempts: readonly RecordedAttempt[],
   checkItemIds: readonly string[],
+  reviewItemIds: readonly string[] = [],
 ): string | undefined {
-  const qualifying = attempts.find(
-    (a) => checkItemIds.includes(a.questionId) && a.countsAsIndependent,
-  );
+  const qualifying = [...attempts]
+    .reverse()
+    .find(
+      (a) =>
+        a.countsAsIndependent &&
+        (checkItemIds.includes(a.questionId) || reviewItemIds.includes(a.questionId)),
+    );
   return qualifying?.reviewDue;
+}
+
+/**
+ * Begin a genuinely delayed review using a question that was never part of the
+ * immediate check bank. The caller supplies the server's date, making timezone
+ * handling explicit and testable. Re-entering an active review is idempotent.
+ */
+export function startReview(
+  state: SessionState,
+  lesson: AuthoredLesson,
+  now: Date,
+): SessionState | undefined {
+  if (state.stage === 'review' && state.activeReviewId) return state;
+  const due = nextReviewDue(
+    state.attempts,
+    [lesson.check, ...lesson.checkBank].map((item) => item.id),
+    lesson.reviewBank.map((item) => item.id),
+  );
+  if (!due || due > now.toISOString().slice(0, 10)) return undefined;
+
+  const nextItem = lesson.reviewBank.find(
+    (item) => !state.exposedReviewIds.includes(item.id),
+  );
+  if (!nextItem) return undefined;
+
+  return {
+    ...withQuestion(state, emptyQuestionState(nextItem.id)),
+    stage: 'review',
+    activeReviewId: nextItem.id,
+    exposedReviewIds: [...state.exposedReviewIds, nextItem.id],
+    reviewStartedAt: now.toISOString(),
+    lastResult: undefined,
+  };
 }

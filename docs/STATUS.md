@@ -33,18 +33,19 @@ Last updated: 14 September 2026.
   migration. Ownership-scoped confirmed saves and the browser sign-in interface are
   now implemented and covered by focused local synthetic regressions.
   No learner-facing deployment, paid AI use or learner observation is recorded.
+- Consolidated v1 software (R04–R09) and R10 pilot materials are implemented
+  locally. The full fixture/browser gate passes; external activation gates are
+  listed below and are not represented as completed.
 
 ## Current work
 
-R00: ready for founder discovery; no completed interviews or selected course recorded.
-R01: local implementation delivered (see handoff log), with browser acceptance still
-outstanding. R02A: merged and independently reviewed (see handoff log). R02B:
-delivered 14 September 2026 — follow-ups folded into R03. **R03: locally implemented** — project linking and migration are recorded; authoritative
-owner-scoped saves, learner-wide exposure and browser OAuth/enrollment states are in
-code. Hosted OAuth, remote two-user/RLS acceptance and Free-plan confirmation remain.
-Next is **R04 — bounded AI tutor plus the minimum real return-review action**.
-R04–R10 wait on their listed dependencies. See [NEXT_STEPS.md](NEXT_STEPS.md) for
-the updated snapshot.
+R00 discovery/course selection and competent review remain human work. R01–R03 are
+implemented locally. R04–R09 software is integrated and locally verified; R07 PDF
+processing is an explicit Free-tier blocker rather than claimed support. R10 is
+ready for pilot materials only. The product has not been deployed or used by real
+learners. Hosted OAuth/two-user acceptance, migration 003, account-plan checks,
+live AI evaluation, UAE device/network checks and restore rehearsal remain external
+activation gates.
 
 ## Decisions to resolve
 
@@ -517,3 +518,74 @@ silently losing work; the browser already reloads the authoritative row on 409.
 **Next ticket.** R04 bounded AI plus the minimum R05/R06 return-review experience,
 using deterministic fixtures until a provider key, monthly budget and live-eval
 ceiling are explicitly supplied.
+
+### Founder direction — consolidated v1 completion
+
+The founder requested one agent pass to build the remainder and test it together,
+reducing repeated handoffs and token use. V1_COMPLETION_BRIEF.md is the complete
+assignment: remaining integration, R04–R09 (including bounded R07), integrated
+verification/fixes, and R10 pilot software/materials. No new feature implementation
+or tests were performed while preparing this brief. Real recruitment, learner
+observations, content approval and live verification cannot be simulated as done.
+
+### Consolidated v1 implementation — R04–R09 and R10 preparation (14 September 2026)
+
+**Working product.** The existing owner-scoped R03 session path now supports a
+source-grounded tutor, due delayed reviews and pilot operations. The tutor has one
+OpenAI Responses adapter (`gpt-5.6-luna` default; model/pricing configurable),
+strict structured-output validation, authorized lexical retrieval, source-ID
+validation, bounded inputs/outputs/timeouts and a deterministic fixture. SQL RPCs
+reserve global and per-learner monthly budget under a transaction lock before a
+paid call, persist provider/model/prompt/curriculum versions and provider-confirmed
+usage, and keep ambiguous failures reserved. Missing key or caps disables paid use.
+
+The original demand lesson is now a small versioned source pack with misconceptions,
+worked example, immediate check bank and a separate delayed-review bank. It remains
+explicitly provisional: **0 items have competent subject-review sign-off**. Review
+starts only when its stored UTC due date has arrived, selects a never-exposed review
+item, records help monotonically, promotes only fresh correct unaided work to
+`retained-on-review`, and schedules the next review deterministically.
+
+Pasted text supports an explicit permission acknowledgement, bounded preview,
+50,000-character limit, SHA-256 deduplication, owner-scoped storage/read/delete and
+a pilot-off flag. PDF requests return `pdf_processing_unavailable`: a reliable PDF
+parser has not been shown to fit the Workers Free 10 ms CPU boundary, so scans/OCR
+and damaged extraction are not claimed. Operations include issue reports, immediate
+learner JSON export/delete, configured retention preview/purge, adult-confirmed
+invite management and a server-authorized redacted metrics summary whose fixture
+counts are labelled synthetic.
+
+The browser includes sign-in states, Continue/Review due, source-linked lesson,
+tutor unavailable/budget states, delayed review, support, export/delete and optional
+personal-source UI. Deployment assets include `.dev.vars.example`, generated Worker
+types, current Wrangler JSONC, fixture CI, a dry-run command, secure secret steps,
+rollback/backup/restore/outage/stop-enrollment instructions, pilot onboarding,
+observation checklist, seven-day procedure and findings template.
+
+**Integrated verification.** All commands ran locally on Node 24.19.0 / npm 12.0.2.
+
+| Check | Verified result |
+| --- | --- |
+| `npm run verify` | Passed after fixing one timeout-mock failure: lint, typecheck, **77 tests**, build, **8/8** fetch acceptance paths and **1/1** real Chromium mobile/keyboard end-to-end journey |
+| Browser path | Fixture Worker + Vite; keyboard answer, tutor citation, assisted practice, refresh, independent check, clock-controlled delayed review, issue, export, 390 px overflow check and deletion passed |
+| `npx wrangler deploy --dry-run` | Passed without deployment; 272.71 KiB Worker/static upload (54.50 KiB gzip), 4 client asset files |
+| `npx wrangler check startup` | Local profile built; 272.71 KiB bundle, 19.1 ms active startup sample. This is not production request CPU and does not prove the Free 10 ms request budget. |
+| `npm audit --omit=dev` / `npm audit` | Zero reported vulnerabilities after upgrading/removing the old test tooling |
+| Client confidentiality | Built JS contains none of `correctOptionId`, the check answer sentence, `OPENAI_API_KEY` or `SUPABASE_SERVICE_KEY`; public source maps disabled |
+| `npx --yes supabase@latest db push --dry-run` | Connected to the linked project and reported only migration 003 pending; no remote mutation performed |
+| Direct remote RLS probe | Public anon access to `sessions` returned HTTP 200 with zero rows; configured service-key reads returned HTTP 401, so the service key requires replacement/diagnosis before hosted acceptance |
+
+The live AI eval was **not run**: `OPENAI_API_KEY`, global/per-learner product caps
+and an explicit eval ceiling were not supplied. No hosted Worker journey, OAuth
+callback, real two-identity/RLS test, UAE device/network run, encrypted restore
+rehearsal or real learner activity was performed. The account documents support a
+zero-cost design, but the selected Cloudflare/Supabase account plans and add-ons
+were not independently visible and remain a founder check. Nothing was deployed,
+no billing setting changed and no learner was contacted.
+
+**Main tradeoff.** Reserving the conservative maximum before the provider call can
+temporarily make less budget available after an ambiguous timeout. That is deliberate:
+releasing an uncertain reservation could allow concurrent retries to overspend. A
+confirmed response settles down to actual provider usage; an operator can investigate
+ambiguous rows. Likewise, separate immediate and delayed banks consume more authored
+content, but prevent a seen answer from being misrepresented as retained learning.

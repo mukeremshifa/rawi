@@ -1,23 +1,40 @@
 # Rawi delivery plan
 
-This is the implementation source of truth. Research informs decisions; this file defines work order. R01's local implementation is delivered, with browser acceptance still outstanding; R03 persistence and sign-in are implemented locally, with hosted provider acceptance open. R04 plus the minimum real return-review action is next. See STATUS.md and NEXT_STEPS.md for verified progress. One outcome per task, with small changes that can be demonstrated and reviewed.
+This is the implementation source of truth. Research informs decisions; this file defines work order. The consolidated v1 software pass is implemented and locally integrated; hosted credentials, human review, deployment authorization and real pilot work remain. See STATUS.md for exact verification and limitations.
 
-## Current execution priority — 14 September 2026
+## Current execution priority — consolidated v1 pass
 
-The founder prioritizes getting to v1 quickly. Execute the three slices in
-[NEXT_STEPS.md](NEXT_STEPS.md): persistent app (R03 plus small R02 fixes), bounded
-AI with minimum sources/return-review (R04 and minimum R05/R06), then deployment
-readiness (minimum R08/R09). The detailed backlog below remains scope context;
-its broad testing requirements are scheduled for deployment readiness and do not
-block each intermediate local feature slice. Run existing fast tests/build and
-focused ownership/evidence/budget checks as relevant. No coverage expansion or
-separate CI milestone is required before proceeding to R03.
+The founder now directs one continuous implementation and integrated test pass.
+[V1_COMPLETION_BRIEF.md](V1_COMPLETION_BRIEF.md) supersedes the prior per-ticket
+and three-session execution order. Finish remaining integration, R04–R09 and
+R10 pilot software/materials without another handoff at each milestone. Include
+bounded R07 uploads behind a readiness flag. The backlog remains the scope
+checklist; dependencies determine internal build order, not separate sessions.
+Run an integrated gate, fix failures and deliver one report. R10's actual learner
+participation and delayed observations remain human work; do not mark them done
+from synthetic runs. Existing cost, privacy and launch boundaries remain in force.
 
-R03 now addresses the reproduced cross-owner cached mutation, rejected durable
-writes, learner-wide item exposure, common evidence projection and browser sign-in
-states. Focused local regressions pass; actual Google OAuth, remote two-user/RLS
-acceptance and Free-plan verification stay in deployment readiness. Continue with
-R04 and a real delayed-review action using the prompt in NEXT_STEPS.md.
+## Consolidated v1 result — 14 September 2026
+
+- **R04 implemented locally:** one OpenAI Responses adapter, validated citations,
+  atomic SQL reservations/settlement, fixture mode and a cost-capped live-eval
+  command. Live paid evaluation is unrun because no key/cap was supplied.
+- **R05 implemented as provisional content:** original versioned pack, lexical
+  retrieval and source navigation. Competent subject review remains at 0 items.
+- **R06 implemented and browser-accepted locally:** distinct due review bank,
+  immutable attempts, retained evidence and deterministic subsequent scheduling.
+- **R07 partially delivered behind an off flag:** bounded/deduplicated pasted text,
+  preview, permission acknowledgement, private retrieval and deletion work. PDF
+  extraction is explicitly unavailable pending a safe measured Free-tier design.
+- **R08 implemented locally:** invite management, adult confirmation, issue reports,
+  learner export/delete, retention preview/purge and redacted founder metrics.
+- **R09 deployable artifact ready:** offline CI, generated Worker types, current
+  configuration, full fixture gate, dry-run, backup/restore/rollback/outage runbook.
+  Hosted OAuth/two-user, account-plan, restore, UAE network/device and live-AI gates
+  are not complete.
+- **R10 ready for pilot materials only:** onboarding, observation checklist,
+  seven-day procedure, metrics and findings template exist. No recruitment,
+  observation, feedback or delayed learner outcome is claimed.
 
 ## Calendar and effort
 
@@ -45,13 +62,13 @@ Statuses: `ready`, `waiting on dependency`, `in progress`, `in review`, `done`. 
 | R02A | Atomic session updates, declared stage transitions, immutable recorded evidence                                                       | R01 implementation; **merged PR #1**                    | 40 tests, lint and build pass; separate clock-controlled later-read probe verified in STATUS.md; navigation retry follow-up assigned to R02B                                                                                                                                                                                                                          |
 | R02B | Correct assistance labels, explicit check-to-help conversion, fresh replacement and exhaustion, reliable recovery, browser acceptance | R02A; **implemented; follow-ups in R03** | Recorded conversion without invented grading; active-item validation; delayed retries cannot rewind; truthful reload failure; browser refresh/retry/keyboard/narrow-screen journey; full checklist in NEXT_STEPS.md. 55 tests + lint + build pass; 8/8 fetch acceptance paths pass; answer-key absence confirmed. Open: keyboard-only, screen-reader, narrow-screen, UAE-network not verified. |
 | R03  | Supabase schema, auth, enrollment, private progress; repository migrations                                                            | R02A and R02B                                           | Two ordinary non-team test identities complete Google OAuth or another verified no-paid-email flow; access isolation through API and direct permitted DB access; durable learner-wide item exposure; transactional writes through an asynchronous store boundary; body-size limits before parsing; server-only check answers; Free plans verified; no exposed secrets |
-| R04  | One model adapter, validated tutor response, atomic budget reservation, usage ledger                                                  | R02A and R02B; R03 before hosted usage                  | Reviewed eval cases, cost/latency report, synthetic-data restricted Free-runtime smoke/profile including auth, validation and streaming within Worker CPU limits; malformed/refusal/timeout handling; paid requests disabled without configured budget/key                                                                                                            |
-| R05  | Reviewed course pack and source navigation; scoped retrieval with a lexical baseline                                                  | R00, R03, R04                                           | Each explanation resolves to authorized source/version; missing evidence path; held-out retrieval checks                                                                                                                                                                                                                                                              |
-| R06  | Deterministic review queue and evidence-based progress                                                                                | R03, R05                                                | Repeated submissions don't duplicate reviews; assisted work doesn't promote independent status; timezone-boundary tests                                                                                                                                                                                                                                               |
-| R07  | Small text/PDF ingestion only if discovery requires it                                                                                | R03, R05; optional for pilot                            | Extraction quality screen, private source access, deduplicated bounded jobs, deletion race and retry verification                                                                                                                                                                                                                                                     |
-| R08  | Product reporting, export/delete, redacted support view, controlled free deployment                                                   | R03–R06                                                 | Data plan, supported auth onboarding, quota behavior, restricted admin routes, export/delete tested                                                                                                                                                                                                                                                                   |
-| R09  | Pilot readiness: outages, quotas, restore, rollback, accessibility and representative load                                            | R08; R07 if enabled                                     | Written evidence for each gate below; known limitations shown to pilot owner                                                                                                                                                                                                                                                                                          |
-| R10  | 10–20-person UAE adult pilot and prioritized findings                                                                                 | R00, R09                                                | Activation/return counts, immediate and delayed checks, costs, failure samples, next decision                                                                                                                                                                                                                                                                         |
+| R04  | **Implemented locally; live eval pending external key/cap.** One model adapter, validated tutor response, atomic budget reservation, usage ledger | R02A and R02B; R03 before hosted usage | Reviewed eval cases, cost/latency report, synthetic-data restricted Free-runtime smoke/profile including auth, validation and streaming within Worker CPU limits; malformed/refusal/timeout handling; paid requests disabled without configured budget/key |
+| R05  | **Provisional pack implemented; reviewer pending.** Course pack, source navigation and scoped lexical retrieval | R00, R03, R04 | Each explanation resolves to authorized source/version; missing evidence path; held-out retrieval checks |
+| R06  | **Implemented and locally accepted.** Deterministic review queue and evidence-based progress | R03, R05 | Repeated submissions don't duplicate reviews; assisted work doesn't promote independent status; timezone-boundary tests |
+| R07  | **Pasted text implemented/off; PDF blocked explicitly.** Small text/PDF ingestion only if discovery requires it | R03, R05; optional for pilot | Extraction quality screen, private source access, deduplicated bounded jobs, deletion race and retry verification |
+| R08  | **Implemented locally; hosted acceptance pending.** Reporting, export/delete, redacted support view, retention and controlled deployment | R03–R06 | Data plan, supported auth onboarding, quota behavior, restricted admin routes, export/delete tested |
+| R09  | **Deployable artifact ready; external gates open.** Outages, quotas, restore, rollback, accessibility and representative load | R08; R07 if enabled | Written evidence for each gate below; known limitations shown to pilot owner |
+| R10  | **Ready for pilot, not run.** 10–20-person UAE adult pilot and prioritized findings | R00, R09 | Activation/return counts, immediate and delayed checks, costs, failure samples, next decision |
 
 R01 can use a small original microeconomics fixture while R00 chooses the actual course. This does not authorize building a large economics curriculum. R04 and content preparation for R05 can run in parallel once contracts are stable; hosted tutor integration requires R03. R07 may be deferred without blocking a pilot using a curated source pack.
 

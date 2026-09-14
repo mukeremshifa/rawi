@@ -35,11 +35,11 @@ This is a reusable template; the backlog supplies ticket-specific acceptance cri
 
 ## Next implementation session
 
-R03 persistence/ownership and the browser sign-in interface are implemented locally;
-hosted provider acceptance remains open. Use the **bounded AI and minimum
-return-review** brief in [NEXT_STEPS.md](NEXT_STEPS.md).
-Detailed acceptance and CI preparation move to deployment readiness. The R01 brief below is historical
-context, not an instruction to re-scaffold the repository.
+Use [V1_COMPLETION_BRIEF.md](V1_COMPLETION_BRIEF.md) for one continuous pass through
+R04–R09 and R10 preparation. The founder explicitly replaced sequential handoffs.
+Implement, integrate, verify and fix within the same assignment; do not stop at
+ticket boundaries. The operating template elsewhere in this file remains useful
+for internal checkpoints, not mandatory new sessions.
 
 ## R01 implementation brief (completed local implementation)
 

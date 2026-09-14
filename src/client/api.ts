@@ -8,7 +8,16 @@
  * R03: adds loadMe(), listSessions(), and passes the Authorization header
  * when a Supabase access token is stored in sessionStorage.
  */
-import type { MeResponse, SessionSummary, SessionView, Stage } from '../shared/types.js';
+import type {
+  CourseOverview,
+  LearnerSourceSummary,
+  MeResponse,
+  PrivacyInfo,
+  SessionSummary,
+  SessionView,
+  Stage,
+  TutorReply,
+} from '../shared/types.js';
 import { getAccessToken } from './auth.js';
 
 export class ApiError extends Error {
@@ -81,6 +90,14 @@ export function loadMe(): Promise<MeResponse> {
 /** Fetch session summaries for the resume UI. */
 export function listSessions(): Promise<{ sessions: SessionSummary[] }> {
   return requestJson<{ sessions: SessionSummary[] }>('/api/sessions');
+}
+
+export function loadCourse(): Promise<CourseOverview> {
+  return requestJson<CourseOverview>('/api/course');
+}
+
+export function loadPrivacy(): Promise<PrivacyInfo> {
+  return requestJson<PrivacyInfo>('/api/privacy');
 }
 
 export function startSession(): Promise<SessionView> {
@@ -169,5 +186,63 @@ export function convertCheck(
   return request(`/api/sessions/${encodeURIComponent(sessionId)}/convert`, {
     method: 'POST',
     body: JSON.stringify({ itemId }),
+  });
+}
+
+export function startReview(sessionId: string, testNow?: string): Promise<SessionView> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/review`, {
+    method: 'POST',
+    headers: testNow ? { 'X-Rawi-Test-Now': testNow } : undefined,
+  });
+}
+
+export function askTutor(
+  sessionId: string,
+  message: string,
+  idempotencyKey: string,
+): Promise<TutorReply> {
+  return requestJson<TutorReply>('/api/tutor', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, message, idempotencyKey }),
+  });
+}
+
+export function listSources(): Promise<{ sources: LearnerSourceSummary[] }> {
+  return requestJson<{ sources: LearnerSourceSummary[] }>('/api/sources');
+}
+
+export function addPastedSource(
+  title: string,
+  text: string,
+): Promise<{ source: LearnerSourceSummary; duplicate: boolean }> {
+  return requestJson('/api/sources/pasted-text', {
+    method: 'POST',
+    body: JSON.stringify({ title, text, permissionAcknowledged: true }),
+  });
+}
+
+export function deleteSource(id: string): Promise<{ deleted: true }> {
+  return requestJson(`/api/sources/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export function reportIssue(
+  category: 'content' | 'technical' | 'privacy' | 'other',
+  description: string,
+  sessionId?: string,
+): Promise<{ id: string }> {
+  return requestJson('/api/issues', {
+    method: 'POST',
+    body: JSON.stringify({ category, description, sessionId }),
+  });
+}
+
+export function exportAccount(): Promise<Record<string, unknown>> {
+  return requestJson('/api/account/export');
+}
+
+export function deleteAccount(): Promise<{ deleted: true }> {
+  return requestJson('/api/account', {
+    method: 'DELETE',
+    body: JSON.stringify({ confirmation: 'DELETE' }),
   });
 }

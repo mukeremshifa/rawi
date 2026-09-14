@@ -38,6 +38,8 @@ export interface SourceExcerpt {
   readonly excerpt: string;
   /** Authorship/licence basis. AGENTS.md requires this to be recorded. */
   readonly permission: string;
+  /** Honest publication state; "reviewed" is never inferred from authorship. */
+  readonly reviewerStatus?: 'pending' | 'reviewed';
 }
 
 /** A multiple-choice option as shown to the learner (no correctness marker). */
@@ -113,7 +115,9 @@ export interface SessionView {
   readonly lastResult?: AttemptResult;
   readonly evidence: EvidenceSummary;
   /** True when the fixture tutor produced this content. Always true in R01. */
-  readonly fixtureData: true;
+  readonly fixtureData: boolean;
+  /** True only for a delayed review item that has become due. */
+  readonly delayedReview?: boolean;
 }
 
 /** Stages of the smallest complete experience (PRODUCT.md). */
@@ -122,6 +126,7 @@ export type Stage =
   | 'learn'
   | 'practice'
   | 'check'
+  | 'review'
   | 'summary';
 
 export interface EvidenceSummary {
@@ -161,6 +166,87 @@ export interface SessionSummary {
   readonly updatedAt: string;
   readonly evidenceState: EvidenceState;
   readonly nextReviewDue?: string;
+  readonly reviewAvailable: boolean;
+}
+
+export interface CourseSource {
+  readonly sourceId: string;
+  readonly title: string;
+  readonly version: string;
+  readonly permission: string;
+  readonly reviewerStatus: 'pending' | 'reviewed';
+  readonly excerpt: string;
+}
+
+export interface CourseOverview {
+  readonly id: string;
+  readonly title: string;
+  readonly objective: string;
+  readonly curriculumVersion: string;
+  readonly reviewerStatus: 'pending' | 'reviewed';
+  readonly concepts: readonly string[];
+  readonly sources: readonly CourseSource[];
+}
+
+export interface TutorReply {
+  readonly requestId: string;
+  readonly text: string;
+  readonly sourceIds: readonly string[];
+  readonly fixtureData: boolean;
+  readonly provider: 'fixture' | 'openai';
+  readonly model: string;
+  readonly promptVersion: string;
+  readonly curriculumVersion: string;
+  /** Provider-confirmed usage only. Absent for fixtures and failed calls. */
+  readonly usage?: {
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly costUsd: number;
+  };
+}
+
+export interface ReviewQueueItem {
+  readonly sessionId: string;
+  readonly lessonId: string;
+  readonly conceptName: string;
+  readonly dueDate: string;
+  readonly available: boolean;
+}
+
+export type UploadStatus = 'ready' | 'quarantined';
+
+export interface LearnerSourceSummary {
+  readonly id: string;
+  readonly title: string;
+  readonly kind: 'pasted-text';
+  readonly status: UploadStatus;
+  readonly chars: number;
+  readonly sha256: string;
+  readonly createdAt: string;
+}
+
+export interface PrivacyInfo {
+  readonly audience: string;
+  readonly eligibility: string;
+  readonly operatorName: string | null;
+  readonly operatorContact: string | null;
+  readonly retentionDays: number;
+  readonly uploadsEnabled: boolean;
+  readonly pdfUploadsEnabled: false;
+  readonly legalReviewComplete: false;
+}
+
+export interface PilotMetrics {
+  readonly synthetic: boolean;
+  readonly enrolled: number;
+  readonly activated: number;
+  readonly completed: number;
+  readonly returned: number;
+  readonly delayedEligible: number;
+  readonly delayedRetained: number;
+  readonly aiCalls: number;
+  readonly aiCostUsd: number;
+  readonly issuesOpen: number;
 }
 
 /** Public response from GET /api/auth/config. */

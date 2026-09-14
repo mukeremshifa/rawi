@@ -23,7 +23,16 @@
  *    its current access token.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { MeResponse, SessionSummary, SessionView, Stage } from '../shared/types.js';
+import type {
+  CourseOverview,
+  LearnerSourceSummary,
+  MeResponse,
+  PrivacyInfo,
+  SessionSummary,
+  SessionView,
+  Stage,
+  TutorReply,
+} from '../shared/types.js';
 import * as api from './api.js';
 import * as auth from './auth.js';
 import { messages } from './messages.js';
@@ -50,6 +59,8 @@ export function App() {
   const [sessionList, setSessionList] = useState<SessionSummary[] | null>(null);
   const [access, setAccess] = useState<AccessState>({ status: 'loading' });
   const [authAttempt, setAuthAttempt] = useState(0);
+  const [course, setCourse] = useState<CourseOverview | null>(null);
+  const [privacy, setPrivacy] = useState<PrivacyInfo | null>(null);
 
   // Focus moves to the stage heading on every stage change so keyboard and
   // screen-reader users are not left at the top of the document.
@@ -192,6 +203,15 @@ export function App() {
   }, [authAttempt, run]);
 
   useEffect(() => {
+    void Promise.all([api.loadCourse(), api.loadPrivacy()]).then(([nextCourse, nextPrivacy]) => {
+      setCourse(nextCourse);
+      setPrivacy(nextPrivacy);
+    }).catch(() => {
+      // The main access state already carries service errors; these panels are supplementary.
+    });
+  }, []);
+
+  useEffect(() => {
     if (session) window.localStorage.setItem(SESSION_KEY, session.sessionId);
   }, [session]);
 
@@ -220,6 +240,15 @@ export function App() {
     setSession(null);
     setError(null);
     void run(() => api.startSession());
+  };
+
+  const goHome = () => {
+    window.localStorage.removeItem(SESSION_KEY);
+    setSession(null);
+    setError(null);
+    if (access.status === 'ready') {
+      void api.listSessions().then(({ sessions }) => setSessionList(sessions)).catch(() => undefined);
+    }
   };
 
   const signIn = async () => {
@@ -292,8 +321,11 @@ export function App() {
           <HomeScreen
             busy={busy}
             sessionList={sessionList}
+            course={course}
+            privacy={privacy}
             onStart={start}
             onResume={(id) => void run(() => api.loadSession(id))}
+            onReview={(id) => void run(() => api.startReview(id))}
           />
         ) : (
           <div className="workspace">
@@ -311,6 +343,7 @@ export function App() {
                 onChoice={setChoice}
                 onReasoning={setReasoning}
                 run={run}
+                onHome={goHome}
               />
             </section>
 
@@ -318,6 +351,17 @@ export function App() {
               evidence={session.evidence}
               onRestart={restart}
               busy={busy}
+            />
+            <TutorPanel session={session} busy={busy} />
+            <OperationsPanel
+              session={session}
+              privacy={privacy}
+              busy={busy}
+              onDeleted={() => {
+                window.localStorage.removeItem(SESSION_KEY);
+                setSession(null);
+                setSessionList([]);
+              }}
             />
           </div>
         )}
@@ -381,8 +425,11 @@ function AccessScreen({ access, busy, onSignIn, onRetry }: AccessScreenProps) {
 interface HomeScreenProps {
   busy: boolean;
   sessionList: SessionSummary[] | null;
+  course: CourseOverview | null;
+  privacy: PrivacyInfo | null;
   onStart: () => void;
   onResume: (sessionId: string) => void;
+  onReview: (sessionId: string) => void;
 }
 
 /**
@@ -394,12 +441,12 @@ interface HomeScreenProps {
  * Falls back to the simple start card when there are no prior sessions or
  * the DB is not configured (sessionList is empty or null).
  */
-function HomeScreen({ busy, sessionList, onStart, onResume }: HomeScreenProps) {
+function HomeScreen({ busy, sessionList, course, privacy, onStart, onResume, onReview }: HomeScreenProps) {
   const today = new Date().toISOString().slice(0, 10);
 
   const mostRecent = sessionList?.[0] ?? null;
   const reviewDue = (sessionList ?? []).filter(
-    (s) => s.nextReviewDue && s.nextReviewDue <= today,
+    (s) => s.reviewAvailable && s.nextReviewDue && s.nextReviewDue <= today,
   );
 
   return (
@@ -441,7 +488,7 @@ function HomeScreen({ busy, sessionList, onStart, onResume }: HomeScreenProps) {
                   type="button"
                   disabled={busy}
                   className="ghost"
-                  onClick={() => onResume(s.sessionId)}
+                  onClick={() => onReview(s.sessionId)}
                 >
                   {messages.resume.reviewAction}{' '}
                   <span className="review-due-date">{s.nextReviewDue}</span>
@@ -449,6 +496,21 @@ function HomeScreen({ busy, sessionList, onStart, onResume }: HomeScreenProps) {
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {course && privacy && (
+        <section className="card pilot-info">
+          <h2>{messages.pilot.heading}</h2>
+          <p>{privacy.audience}. {privacy.eligibility}</p>
+          <p>
+            {messages.pilot.course}: {course.title}.{' '}
+            <strong>{messages.pilot.unreviewed}</strong>
+          </p>
+          <p>{messages.pilot.retention.replace('{days}', String(privacy.retentionDays))}</p>
+          {(!privacy.operatorName || !privacy.operatorContact) && (
+            <p className="warn">{messages.pilot.operatorMissing}</p>
+          )}
         </section>
       )}
     </>
@@ -463,10 +525,11 @@ interface StageBodyProps {
   onChoice: (value: string) => void;
   onReasoning: (value: string) => void;
   run: (action: () => Promise<SessionView>) => Promise<void>;
+  onHome: () => void;
 }
 
 function StageBody(props: StageBodyProps) {
-  const { session, busy, choice, reasoning, onChoice, onReasoning, run } = props;
+  const { session, busy, choice, reasoning, onChoice, onReasoning, run, onHome } = props;
   const { sessionId, stage } = session;
 
   if (stage === 'learn') {
@@ -506,7 +569,10 @@ function StageBody(props: StageBodyProps) {
 
   if (stage === 'summary') {
     return (
-      <p className="summary-note">{messages.evidence.reviewNote}</p>
+      <>
+        <p className="summary-note">{messages.evidence.reviewNote}</p>
+        <button type="button" onClick={onHome}>{messages.actions.home}</button>
+      </>
     );
   }
 
@@ -526,7 +592,9 @@ function StageBody(props: StageBodyProps) {
         choice,
         reasoning || undefined,
         // R02B: pass the item ID at check stage for stale-item detection.
-        stage === 'check' ? (session.activeCheckId ?? question.id) : undefined,
+        stage === 'check' || stage === 'review'
+          ? (stage === 'review' ? question.id : (session.activeCheckId ?? question.id))
+          : undefined,
       ),
     );
   };
@@ -687,6 +755,187 @@ function StageBody(props: StageBodyProps) {
   );
 }
 
+function TutorPanel({ session, busy }: { session: SessionView; busy: boolean }) {
+  const [message, setMessage] = useState('');
+  const [reply, setReply] = useState<TutorReply | null>(null);
+  const [tutorError, setTutorError] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const independentActive =
+    (session.stage === 'check' || session.stage === 'review') &&
+    session.lastResult?.questionId !== session.question?.id;
+
+  const ask = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!message.trim() || asking || independentActive) return;
+    setAsking(true);
+    setTutorError(null);
+    try {
+      setReply(await api.askTutor(session.sessionId, message.trim(), crypto.randomUUID()));
+      setMessage('');
+    } catch (caught) {
+      const err = caught as api.ApiError;
+      setTutorError(
+        err.status === 429
+          ? messages.tutor.budgetReached
+          : err.status === 504
+            ? messages.tutor.timeout
+            : messages.tutor.unavailable,
+      );
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  return (
+    <section className="card tutor-card" aria-labelledby="tutor-heading">
+      <h2 id="tutor-heading">{messages.tutor.heading}</h2>
+      {independentActive ? (
+        <p className="mode-note">{messages.tutor.checkLocked}</p>
+      ) : (
+        <form onSubmit={(event) => void ask(event)}>
+          <label className="reasoning">
+            <span>{messages.tutor.prompt}</span>
+            <textarea
+              value={message}
+              maxLength={1200}
+              rows={3}
+              disabled={busy || asking}
+              onChange={(event) => setMessage(event.target.value)}
+            />
+          </label>
+          <button type="submit" disabled={busy || asking || !message.trim()}>
+            {asking ? messages.tutor.asking : messages.tutor.ask}
+          </button>
+        </form>
+      )}
+      {tutorError && <p className="warn" role="alert">{tutorError}</p>}
+      {reply && (
+        <article className="tutor-reply" aria-live="polite">
+          <p>{reply.text}</p>
+          <p className="source-meta">
+            {messages.tutor.sources}: {reply.sourceIds.join(', ')} · {reply.model}
+            {reply.fixtureData ? ` · ${messages.tutor.fixture}` : ''}
+          </p>
+        </article>
+      )}
+    </section>
+  );
+}
+
+function OperationsPanel(props: {
+  session: SessionView;
+  privacy: PrivacyInfo | null;
+  busy: boolean;
+  onDeleted: () => void;
+}) {
+  const { session, privacy, busy, onDeleted } = props;
+  const [issue, setIssue] = useState('');
+  const [issueSent, setIssueSent] = useState(false);
+  const [sources, setSources] = useState<LearnerSourceSummary[]>([]);
+  const [sourceTitle, setSourceTitle] = useState('');
+  const [sourceText, setSourceText] = useState('');
+  const [sourcePermission, setSourcePermission] = useState(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!privacy?.uploadsEnabled) return;
+    void api.listSources().then((result) => setSources(result.sources)).catch(() => undefined);
+  }, [privacy?.uploadsEnabled]);
+
+  const report = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!issue.trim()) return;
+    setOperationError(null);
+    try {
+      await api.reportIssue('other', issue.trim(), session.sessionId);
+      setIssue('');
+      setIssueSent(true);
+    } catch {
+      setOperationError(messages.operations.failed);
+    }
+  };
+
+  const exportData = async () => {
+    setOperationError(null);
+    try {
+      const data = await api.exportAccount();
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `rawi-export-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setOperationError(messages.operations.failed);
+    }
+  };
+
+  const deleteData = async () => {
+    if (!window.confirm(messages.operations.deleteConfirm)) return;
+    setOperationError(null);
+    try {
+      await api.deleteAccount();
+      onDeleted();
+    } catch {
+      setOperationError(messages.operations.failed);
+    }
+  };
+
+  const addSource = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setOperationError(null);
+    try {
+      const added = await api.addPastedSource(sourceTitle, sourceText);
+      setSources((current) => [added.source, ...current.filter((item) => item.id !== added.source.id)]);
+      setSourceTitle('');
+      setSourceText('');
+      setSourcePermission(false);
+    } catch {
+      setOperationError(messages.operations.failed);
+    }
+  };
+
+  return (
+    <section className="card operations-card" aria-labelledby="operations-heading">
+      <h2 id="operations-heading">{messages.operations.heading}</h2>
+      <form onSubmit={(event) => void report(event)}>
+        <label className="reasoning">
+          <span>{messages.operations.reportLabel}</span>
+          <textarea value={issue} maxLength={2000} rows={2} onChange={(event) => setIssue(event.target.value)} />
+        </label>
+        <button type="submit" disabled={busy || !issue.trim()}>{messages.operations.report}</button>
+        {issueSent && <p role="status">{messages.operations.reported}</p>}
+      </form>
+
+      {privacy?.uploadsEnabled && (
+        <details className="source-upload">
+          <summary>{messages.operations.sources}</summary>
+          <p>{messages.operations.sourceLimits}</p>
+          <form onSubmit={(event) => void addSource(event)}>
+            <label>{messages.operations.sourceTitle}<input value={sourceTitle} maxLength={120} onChange={(event) => setSourceTitle(event.target.value)} /></label>
+            <label>{messages.operations.sourceText}<textarea value={sourceText} maxLength={50000} rows={5} onChange={(event) => setSourceText(event.target.value)} /></label>
+            {sourceText.trim() && (
+              <aside className="source"><strong>{messages.operations.preview}</strong><p>{sourceText.trim().slice(0, 500)}</p></aside>
+            )}
+            <label className="option">
+              <input type="checkbox" checked={sourcePermission} onChange={(event) => setSourcePermission(event.target.checked)} />
+              <span>{messages.operations.permissionAck}</span>
+            </label>
+            <button type="submit" disabled={!sourceTitle.trim() || !sourceText.trim() || !sourcePermission}>{messages.operations.addSource}</button>
+          </form>
+          <ul>{sources.map((source) => <li key={source.id}>{source.title} · {source.chars} characters</li>)}</ul>
+        </details>
+      )}
+
+      <div className="actions account-actions">
+        <button type="button" className="ghost" onClick={() => void exportData()}>{messages.operations.export}</button>
+        <button type="button" className="danger" onClick={() => void deleteData()}>{messages.operations.delete}</button>
+      </div>
+      {operationError && <p className="warn" role="alert">{operationError}</p>}
+    </section>
+  );
+}
+
 function Result(props: {
   session: SessionView;
   busy: boolean;
@@ -701,7 +950,7 @@ function Result(props: {
       ? 'learn'
       : session.stage === 'practice'
         ? 'check'
-        : session.stage === 'check'
+      : session.stage === 'check' || session.stage === 'review'
           ? 'summary'
           : null;
 

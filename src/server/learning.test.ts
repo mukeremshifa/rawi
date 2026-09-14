@@ -45,6 +45,7 @@ function advanceTo(state: SessionState, stage: Stage): SessionState {
     learn: ['learn'],
     practice: ['learn', 'practice'],
     check: ['learn', 'practice', 'check'],
+    review: [],
     summary: ['learn', 'practice', 'check', 'summary'],
   };
   let current = state;

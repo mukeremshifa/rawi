@@ -18,6 +18,8 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist/client',
-    sourcemap: true,
+    // Public client sourcemaps can expose implementation details. Worker
+    // source maps are handled separately by deployment tooling.
+    sourcemap: false,
   },
 });

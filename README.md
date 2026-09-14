@@ -2,7 +2,12 @@
 
 An English-first AI learning workspace for UAE students, beginning with a small college pilot. The product helps learners understand a concept, solve a new problem independently and remember it later.
 
-This repository contains research, an implementation plan, the first local application slice (R01), and merged learning-state fixes (R02A). R03 now includes authoritative Supabase saves and the browser sign-in interface; next is bounded AI plus a real delayed-review action, then deployment readiness. Nothing is deployed, no paid service is contacted, and nothing has been shown to a learner.
+This repository contains the integrated v1 application and pilot preparation
+materials. It includes invitation-only authentication, authoritative Supabase
+saves, a bounded source-linked tutor, distinct delayed review, issue reporting,
+export/delete, redacted founder metrics, and feature-flagged pasted-text sources.
+Nothing is publicly deployed, no paid AI evaluation has been run, and no learner
+participation is claimed.
 
 ## Running it locally
 
@@ -14,7 +19,7 @@ npm install
 npm install-scripts approve esbuild
 npm install-scripts approve workerd
 
-npm run dev:api   # Worker API on http://127.0.0.1:8787
+npm run dev:api:fixture # Worker API on http://127.0.0.1:8787, offline fixture mode
 npm run dev       # browser app on http://localhost:5173 (proxies /api)
 ```
 
@@ -26,14 +31,23 @@ Two processes in development; in production the Worker serves the built assets, 
 | `npm run lint` | ESLint |
 | `npm test` | Vitest — learning invariants and API behavior |
 | `npm run build` | Typecheck, then build to `dist/client` |
+| `npm run acceptance` | Fetch-level deterministic journey |
+| `npm run e2e` | Real Chromium mobile/keyboard journey |
+| `npm run verify` | Full local integrated fixture gate |
+| `npm run deploy:check` | Production build and Wrangler dry run; does not deploy |
+| `npm run eval:live` | Opt-in paid AI eval; requires an explicit cost ceiling |
 
-**This build is a fixture demonstration.** Lesson content and feedback are fixed local fixtures, not a live AI tutor. Sessions live in Worker memory and do not survive a restart, and there is no authentication — so it must not be deployed publicly as it stands. See the R01 entry in [status](docs/STATUS.md) for verified results and limitations.
+Use `.dev.vars.example` for configured Supabase/OpenAI mode. Paid tutoring fails
+closed unless a provider key and both monthly caps are present. The provisional
+original microeconomics pack is not subject-reviewed; uploads remain off for the
+pilot. Read [deployment and operations](docs/DEPLOYMENT_RUNBOOK.md) before any
+release action.
 
 ## Start here
 
 1. Read the [research and product strategy](research/REPORT.md) for the recommendation, evidence, tradeoffs and costs.
 2. Use the [product specification](docs/PRODUCT.md) and [delivery backlog](docs/DELIVERY.md) for implementation scope.
-3. Read the [GitHub status and next steps](docs/NEXT_STEPS.md), then use its persistent-v1 implementation brief. The [agent playbook](docs/AGENT_PLAYBOOK.md) covers session workflow.
+3. Read the [current status](docs/STATUS.md), [deployment runbook](docs/DEPLOYMENT_RUNBOOK.md), and [pilot runbook](docs/PILOT_RUNBOOK.md).
 4. Run founder discovery alongside development using the [interview and pilot protocol](docs/DISCOVERY.md).
 
 ## Working constraints
@@ -60,4 +74,7 @@ Two processes in development; in production the Worker serves the built assets, 
 | [Architecture](research/architecture.md) | Free-tier design, AI costs, evaluation and recovery |
 | [Source index](research/SOURCES.md) | External references used across the pack |
 
-Implementation sessions follow [AGENTS.md](AGENTS.md). Continue with the three-slice v1 plan: persistent app, bounded AI plus return/review, then deployment readiness. Detailed browser/test work is deferred to that final slice; founder discovery runs alongside development. Update status with verified outcomes rather than treating planned features as completed work.
+Implementation sessions follow [AGENTS.md](AGENTS.md). Founder discovery, subject
+review, legal/operator configuration, account-plan confirmation, capped live AI
+evaluation, deployment authorization and actual pilot participation remain real
+external work; fixture results are never presented as learner evidence.

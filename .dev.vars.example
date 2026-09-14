@@ -1,0 +1,25 @@
+# Copy to .dev.vars for local configured mode. Never commit the real file.
+RAWI_STORAGE_MODE=fixture
+RAWI_TUTOR_MODE=fixture
+
+# Configured Supabase mode (replace placeholders and set RAWI_STORAGE_MODE=supabase)
+SUPABASE_URL=https://PROJECT_REF.supabase.co
+SUPABASE_ANON_KEY=public-anon-or-publishable-key
+SUPABASE_SERVICE_KEY=server-only-service-role-key
+
+# Paid tutor remains disabled unless every setting below is present.
+OPENAI_API_KEY=server-only-openai-api-key
+RAWI_AI_GLOBAL_MONTHLY_CAP_USD=10
+RAWI_AI_LEARNER_MONTHLY_CAP_USD=1
+RAWI_OPENAI_MODEL=gpt-5.6-luna
+RAWI_OPENAI_INPUT_USD_PER_MILLION=0.20
+RAWI_OPENAI_OUTPUT_USD_PER_MILLION=1.20
+RAWI_AI_TIMEOUT_MS=8000
+
+RAWI_UPLOADS_ENABLED=false
+RAWI_RETENTION_DAYS=30
+RAWI_OPERATOR_NAME=
+RAWI_OPERATOR_CONTACT=
+RAWI_FOUNDER_USER_IDS=founder-supabase-user-uuid
+RAWI_LOCAL_ADMIN_TOKEN=local-only-random-secret
+

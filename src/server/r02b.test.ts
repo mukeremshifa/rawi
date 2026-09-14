@@ -46,6 +46,7 @@ async function advanceTo(id: string, stage: Stage): Promise<SessionView> {
     learn: ['learn'],
     practice: ['learn', 'practice'],
     check: ['learn', 'practice', 'check'],
+    review: [],
     summary: ['learn', 'practice', 'check', 'summary'],
   };
   let view: SessionView | undefined;
