@@ -27,6 +27,7 @@
  *  - item-identity validation inside the critical section
  */
 import type {
+  EvidenceSummary,
   PublicQuestion,
   SessionView,
   Stage,
@@ -107,15 +108,8 @@ export function updateSession(
   const current = sessions.get(sessionId);
   if (!current) return { ok: false, failure: { kind: 'not-found' } };
 
-  let next: SessionState;
-  try {
-    next = apply(current);
-  } catch (err) {
-    if (err instanceof CommandError) {
-      return { ok: false, failure: { kind: 'rejected', reason: err.rejection } };
-    }
-    throw err;
-  }
+  const outcome = applySessionUpdate(current, apply);
+  if (!outcome.ok) return outcome;
 
   // Optimistic-concurrency check. In R01 memory the read above cannot go stale,
   // but asserting it here means the contract is already correct when R03 swaps
@@ -128,10 +122,34 @@ export function updateSession(
     };
   }
 
-  const committed: SessionState =
-    next === current ? current : { ...next, version: current.version + 1 };
+  const committed = outcome.state;
   sessions.set(sessionId, committed);
   return { ok: true, state: committed };
+}
+
+/**
+ * Apply one pure learning command and assign its next durable version.
+ *
+ * Both stores use this function: fixture mode commits its result to the local
+ * Map, while configured mode conditionally commits it to Postgres. Keeping the
+ * command/error/version rules here prevents the two persistence paths from
+ * interpreting the same learner action differently.
+ */
+export function applySessionUpdate(
+  current: SessionState,
+  apply: (state: SessionState) => SessionState,
+): UpdateOutcome {
+  try {
+    const next = apply(current);
+    const committed =
+      next === current ? current : { ...next, version: current.version + 1 };
+    return { ok: true, state: committed };
+  } catch (err) {
+    if (err instanceof CommandError) {
+      return { ok: false, failure: { kind: 'rejected', reason: err.rejection } };
+    }
+    throw err;
+  }
 }
 
 /**
@@ -206,8 +224,7 @@ export function toSessionView(
   const showAnswer =
     question && qState && (qState.assistance === 'revealed' || qState.submitted);
 
-  const allCheckIds = [lesson.check, ...lesson.checkBank].map((q) => q.id);
-  const attempts = state.attempts;
+  const evidence = projectLearningEvidence(state, lesson);
 
   // R02B: determine converted and exhausted states for the active check item.
   const activeCheckQState = questionState(state, state.activeCheckId);
@@ -239,14 +256,23 @@ export function toSessionView(
         : undefined,
     assistance: qState ? qState.assistance : 'none',
     lastResult: state.lastResult,
-    evidence: {
-      conceptId: lesson.conceptId,
-      conceptName: lesson.conceptName,
-      state: evidenceState(attempts, allCheckIds),
-      attempts,
-      nextReviewDue: nextReviewDue(attempts, allCheckIds),
-    },
+    evidence,
     fixtureData: true,
+  };
+}
+
+/** Common check-specific projection used by detail and session-list views. */
+export function projectLearningEvidence(
+  state: SessionState,
+  lesson: AuthoredLesson,
+): EvidenceSummary {
+  const checkItemIds = [lesson.check, ...lesson.checkBank].map((item) => item.id);
+  return {
+    conceptId: lesson.conceptId,
+    conceptName: lesson.conceptName,
+    state: evidenceState(state.attempts, checkItemIds),
+    attempts: state.attempts,
+    nextReviewDue: nextReviewDue(state.attempts, checkItemIds),
   };
 }
 

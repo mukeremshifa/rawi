@@ -11,6 +11,7 @@ not_found_handling = "single-page-application"
 [vars]
 # R01 is fixture-only. No provider key is read anywhere in this codebase.
 RAWI_TUTOR_MODE = "fixture"
+RAWI_STORAGE_MODE = "supabase"
 
 # Supabase project URL — safe to commit; it is the public endpoint.
 # Override for production by setting wrangler secret or editing this value.

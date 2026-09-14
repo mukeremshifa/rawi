@@ -163,13 +163,17 @@ export interface SessionSummary {
   readonly nextReviewDue?: string;
 }
 
+/** Public response from GET /api/auth/config. */
+export interface AuthConfigResponse {
+  readonly configured: boolean;
+  readonly serverReady: boolean;
+  readonly supabaseAnonKey: string | null;
+  readonly supabaseUrl: string | null;
+}
+
 /** Response from GET /api/me. */
 export interface MeResponse {
   readonly userId: string;
   readonly email?: string;
   readonly enrolled: boolean;
-  /** Supabase anon key for client-side OAuth — null when DB not configured. */
-  readonly supabaseAnonKey: string | null;
-  /** Supabase project URL — null when DB not configured. */
-  readonly supabaseUrl: string | null;
 }

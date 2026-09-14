@@ -29,18 +29,20 @@ Last updated: 14 September 2026.
   session mutations are atomic, stage transitions are
   declared and enforced, recorded attempts and their review dates are immutable, and
   overlapping requests can no longer overwrite recorded assistance.
-- No hosted resources, purchases, user recruitment or deployment have been performed.
-  Nothing has been shown to a learner.
+- R03 added Supabase integration; its activation handoff records project setup and
+  migration. Ownership-scoped confirmed saves and the browser sign-in interface are
+  now implemented and covered by focused local synthetic regressions.
+  No learner-facing deployment, paid AI use or learner observation is recorded.
 
 ## Current work
 
 R00: ready for founder discovery; no completed interviews or selected course recorded.
 R01: local implementation delivered (see handoff log), with browser acceptance still
 outstanding. R02A: merged and independently reviewed (see handoff log). R02B:
-delivered 14 September 2026 — follow-ups folded into R03. **R03: delivered 14
-September 2026** — project linked, initial migration applied and local Worker
-credentials configured; pilot OAuth and two-user isolation acceptance remain.
-Next is **R04 — bounded AI tutor**, with hosted use still gated on those R03 checks.
+delivered 14 September 2026 — follow-ups folded into R03. **R03: locally implemented** — project linking and migration are recorded; authoritative
+owner-scoped saves, learner-wide exposure and browser OAuth/enrollment states are in
+code. Hosted OAuth, remote two-user/RLS acceptance and Free-plan confirmation remain.
+Next is **R04 — bounded AI tutor plus the minimum real return-review action**.
 R04–R10 wait on their listed dependencies. See [NEXT_STEPS.md](NEXT_STEPS.md) for
 the updated snapshot.
 
@@ -431,3 +433,87 @@ verified; no plan, add-on or billing setting was changed in this work.
 Worker and supports key rotation. It adds a small public-key lookup; Supabase serves
 that endpoint through an edge cache, and the real Worker CPU/latency check remains
 part of deployment readiness.
+
+### R03 fast v1 review — 14 September 2026
+
+GitHub and initially clean local main match `82a884366126d40bdcb0d0223ad3b631d07327bb`.
+Fresh `npm test`: 61 passed. Fresh `npm run build`: typecheck and build passed.
+No Actions runs returned. No remote Supabase, browser or lint checks were rerun.
+
+A no-file, offline API probe generated two synthetic ES256 learner identities and
+mocked database responses. A created a session; B mutated A's cached session using
+its ID. The response was 200 with A's session, cached stage changed to learn,
+and the database stage remained diagnose after a zero-row update conflict.
+Configured authentication checks identity but mutations do not resolve ownership
+before using shared memory. Required writes run in the background and their
+results do not affect the success response. Creation has the same save-ack issue.
+This is a reproduced functional/authorization gap, not deferred test polish.
+
+Inspection also found the session-list summary promotes diagnostic/practice
+independent attempts as check evidence, new-session exposure resets, and browser
+OAuth initiation/callback remains unimplemented. NEXT_STEPS.md scopes these into
+one persistence/sign-in completion slice, followed by bounded AI and deployment.
+Only directly necessary ownership/save regressions are requested; broad testing
+remains deferred under the founder's fast-v1 instruction.
+
+No application changes, real learner data, remote writes, paid calls or deployment
+were performed. Planning changes are local and uncommitted.
+
+### R03 persistence and sign-in completion — 14 September 2026
+
+**Implemented locally.** Configured session commands now load the authenticated
+owner's row from Supabase, apply the shared pure learning update, and await a
+version- and owner-guarded PostgREST commit before returning success. A zero-row
+write returns `409 session_conflict`; unavailable reads or writes return
+`503 persistence_unavailable`. Creation confirms the returned row. Configured
+mode never uses isolate memory, and `RAWI_STORAGE_MODE = "supabase"` prevents a
+missing service secret from silently enabling the local fixture store.
+
+Migration `002_atomic_session_creation.sql` selects and records learner-wide
+exposure inside one database transaction, serialized per learner and lesson.
+Starting again therefore cannot make a previously exposed item fresh—even during
+concurrent starts—and an exhausted reviewed bank stays exhausted. Session list and detail
+views use the same check-specific evidence projection, so independent diagnostic
+or practice attempts no longer promote the list summary.
+
+The browser now uses the official Supabase client for Google OAuth with PKCE,
+callback exchange, persisted session restoration/refresh and local-device sign-out.
+It renders distinct restoring, signed-out, setup-incomplete, not-enrolled and ready
+states. Only the public project URL/publishable key are returned by
+`/api/auth/config`; the configured service key was checked absent from the built
+JavaScript. `@supabase/supabase-js` is the only new runtime dependency.
+
+**Focused verification.** Run from the repository root on the existing local
+toolchain:
+
+| Command | Result |
+| --- | --- |
+| `npm test` | **68 tests passed** across five files, including seven configured persistence regressions |
+| `npm run lint` | Passed |
+| `npm run build` | Passed; 390.96 kB JavaScript (110.96 kB gzip) |
+| `npm audit --omit=dev` | Zero production vulnerabilities reported |
+| built-bundle checks | `correctOptionId` and the configured service key absent |
+| `npx --yes supabase@latest db push` | Applied `002_atomic_session_creation.sql` to the linked project |
+
+The regressions demonstrate cross-owner mutation denial, an owned mutation from a
+cold isolate followed by resume, confirmed normal saves, conflict and unavailable
+save responses, partial-configuration fail-closed behavior, learner-wide exposure,
+and common evidence projection. They use synthetic identities and a mocked
+Supabase REST boundary; no real user data was read or written. `npx --yes
+supabase@latest db push` successfully applied migration 002 to the linked remote
+project; this confirms schema application, not the learner journey.
+
+**Not remotely accepted.** Google provider credentials/redirects, ordinary test
+identities and enrollment rows are still absent, so no real OAuth callback or
+remote two-user API/RLS journey was run. Supabase Free was not independently
+verified, no Worker secret was changed, and nothing was deployed. The fixture
+lesson remains provisional and unreviewed for pilot use. No live AI exists.
+
+**Tradeoff.** Awaiting every required database commit adds one network round trip
+to each learner action, but the response now means the state was durably accepted.
+Optimistic version guards make concurrent commands explicit conflicts instead of
+silently losing work; the browser already reloads the authoritative row on 409.
+
+**Next ticket.** R04 bounded AI plus the minimum R05/R06 return-review experience,
+using deterministic fixtures until a provider key, monthly budget and live-eval
+ceiling are explicitly supplied.

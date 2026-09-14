@@ -2,7 +2,7 @@
 
 An English-first AI learning workspace for UAE students, beginning with a small college pilot. The product helps learners understand a concept, solve a new problem independently and remember it later.
 
-This repository contains research, an implementation plan, the first local application slice (R01), and merged learning-state fixes (R02A). R02B is implemented; next is persistent accounts/progress, then live AI and a deployment pass. Nothing is deployed, no paid service is contacted, and nothing has been shown to a learner.
+This repository contains research, an implementation plan, the first local application slice (R01), and merged learning-state fixes (R02A). R03 now includes authoritative Supabase saves and the browser sign-in interface; next is bounded AI plus a real delayed-review action, then deployment readiness. Nothing is deployed, no paid service is contacted, and nothing has been shown to a learner.
 
 ## Running it locally
 

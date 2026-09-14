@@ -9,6 +9,7 @@
  * when a Supabase access token is stored in sessionStorage.
  */
 import type { MeResponse, SessionSummary, SessionView, Stage } from '../shared/types.js';
+import { getAccessToken } from './auth.js';
 
 export class ApiError extends Error {
   constructor(
@@ -21,23 +22,8 @@ export class ApiError extends Error {
   }
 }
 
-/** Key used to store the Supabase JWT in sessionStorage. */
-const TOKEN_KEY = 'rawi.accessToken';
-
-export function storeToken(token: string): void {
-  sessionStorage.setItem(TOKEN_KEY, token);
-}
-
-export function clearToken(): void {
-  sessionStorage.removeItem(TOKEN_KEY);
-}
-
-function getToken(): string | null {
-  return sessionStorage.getItem(TOKEN_KEY);
-}
-
-function authHeaders(): Record<string, string> {
-  const token = getToken();
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -48,7 +34,7 @@ async function request(path: string, init?: RequestInit): Promise<SessionView> {
       ...init,
       headers: {
         'content-type': 'application/json',
-        ...authHeaders(),
+        ...(await authHeaders()),
         ...init?.headers,
       },
     });
@@ -71,7 +57,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       headers: {
         'content-type': 'application/json',
-        ...authHeaders(),
+        ...(await authHeaders()),
         ...init?.headers,
       },
     });

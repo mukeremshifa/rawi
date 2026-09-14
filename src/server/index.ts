@@ -18,18 +18,15 @@
  *  3. verifyJwt() checks the signature against the project JWKS and extracts userId.
  *  4. Routes that create sessions additionally require an active enrollment row.
  *
- * Fallback mode (DB not configured):
- *  - Routes behave exactly as they did in R01/R02: in-memory only, no auth.
- *  - All existing tests run in fallback mode (no Supabase env vars).
+ * Fixture storage mode:
+ *  - Routes behave as they did in R01/R02: in-memory only, no auth.
+ *  - It is selected explicitly, or only when no Supabase setting is present.
+ *    A partially configured deployment fails closed instead of using memory.
  *
  * Storage orchestration:
- *  - After every successful updateSession() the Worker dispatches a background
- *    Supabase write via ctx.waitUntil(). This keeps the critical path fast:
- *    the response goes back to the browser immediately; the DB write happens
- *    concurrently. If the DB write fails, the in-memory version is authoritative
- *    for the duration of the isolate.
- *  - In durable mode (DB configured + user authenticated) session reads go to
- *    Supabase first so that another device or a new isolate can resume.
+ *  - Configured mutations read the owner-scoped row, apply one pure command,
+ *    and await a confirmed version-guarded commit before returning success.
+ *  - Configured mode never reads or writes the isolate-local session Map.
  */
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -46,6 +43,7 @@ import {
 } from './learning.js';
 import {
   clearSessions,
+  applySessionUpdate,
   getSession as memGetSession,
   putSession,
   questionForStage,
@@ -62,6 +60,8 @@ import type { Context } from 'hono';
 export interface Env {
   /** Set to "fixture" in R01/R02. A real provider key is not read anywhere yet. */
   readonly RAWI_TUTOR_MODE?: string;
+  /** "supabase" fails closed if any required durable setting is absent. */
+  readonly RAWI_STORAGE_MODE?: 'fixture' | 'supabase';
   /** R03: Supabase project URL (safe to expose). */
   readonly SUPABASE_URL?: string;
   /** R03: Supabase anon/public key (safe to expose). */
@@ -136,6 +136,13 @@ function dbConfig(env: Env): db.DbConfig | null {
   return null;
 }
 
+function configuredStorage(env: Env): boolean {
+  if (env.RAWI_STORAGE_MODE) return env.RAWI_STORAGE_MODE === 'supabase';
+  return Boolean(
+    env.SUPABASE_URL || env.SUPABASE_ANON_KEY || env.SUPABASE_SERVICE_KEY,
+  );
+}
+
 /**
  * Verify the request's JWT and return the authenticated user, or null.
  * Does not reject — callers decide whether auth is required.
@@ -151,14 +158,6 @@ async function authenticateRequest(c: Context<HonoEnv>): Promise<AuthenticatedUs
   return user;
 }
 
-/** Require a valid learner token whenever durable mode is configured. */
-async function configuredAuthError(c: Context<HonoEnv>): Promise<Response | null> {
-  if (!dbConfig(c.env ?? {})) return null;
-  return (await authenticateRequest(c))
-    ? null
-    : c.json({ error: 'unauthenticated' }, 401);
-}
-
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 /** Health check, and a clear statement of what this build is. */
@@ -171,6 +170,17 @@ app.get('/api/health', (c) =>
   }),
 );
 
+/** Public browser configuration. The privileged service key is never projected. */
+app.get('/api/auth/config', (c) => {
+  const config = dbConfig(c.env ?? {});
+  return c.json({
+    configured: configuredStorage(c.env ?? {}),
+    serverReady: Boolean(config),
+    supabaseUrl: c.env?.SUPABASE_URL ?? null,
+    supabaseAnonKey: c.env?.SUPABASE_ANON_KEY ?? null,
+  });
+});
+
 /**
  * Authenticated user info. Returns 401 when no valid JWT is provided.
  * The browser uses this to show a login/logout state.
@@ -180,31 +190,38 @@ app.get('/api/me', async (c) => {
   if (!user) return c.json({ error: 'unauthenticated' }, 401);
 
   const config = dbConfig(c.env ?? {});
-  const enrolled = config ? await db.isEnrolled(config, user.userId) : false;
+  if (!config && configuredStorage(c.env ?? {})) return unavailable(c);
+  const enrollment = config
+    ? await db.isEnrolled(config, user.userId)
+    : { ok: true as const, value: false };
+  if (!enrollment.ok) return unavailable(c);
 
   return c.json({
     userId: user.userId,
     email: user.email,
-    enrolled,
-    supabaseAnonKey: c.env?.SUPABASE_ANON_KEY ?? null,
-    supabaseUrl: c.env?.SUPABASE_URL ?? null,
+    enrolled: enrollment.value,
   });
 });
 
 /**
  * List sessions for the authenticated user.
  * Returns a lightweight summary for the resume/Continue UI.
- * Falls back to an empty list when DB is not configured.
+ * Fixture mode returns an empty durable-session list.
  */
 app.get('/api/sessions', async (c) => {
+  const config = dbConfig(c.env ?? {});
+  if (!config) {
+    return configuredStorage(c.env ?? {})
+      ? unavailable(c)
+      : c.json({ sessions: [] });
+  }
+
   const user = await authenticateRequest(c);
   if (!user) return c.json({ error: 'unauthenticated' }, 401);
 
-  const config = dbConfig(c.env ?? {});
-  if (!config) return c.json({ sessions: [] });
-
-  const sessions = await db.listSessions(config, user.userId);
-  return c.json({ sessions });
+  const sessions = await db.listSessions(config, user.userId, demoLesson);
+  if (!sessions.ok) return unavailable(c);
+  return c.json({ sessions: sessions.value });
 });
 
 /**
@@ -216,27 +233,39 @@ app.get('/api/sessions', async (c) => {
  */
 app.post('/api/sessions', async (c) => {
   const config = dbConfig(c.env ?? {});
+  if (!config && configuredStorage(c.env ?? {})) return unavailable(c);
   let user: AuthenticatedUser | null = null;
   if (config) {
     user = await authenticateRequest(c);
     if (!user) return c.json({ error: 'unauthenticated' }, 401);
-    const enrolled = await db.isEnrolled(config, user.userId);
-    if (!enrolled) {
+    const enrollment = await db.isEnrolled(config, user.userId);
+    if (!enrollment.ok) return unavailable(c);
+    if (!enrollment.value) {
       return c.json({ error: 'not_enrolled' }, 403);
     }
   }
 
   const sessionId = crypto.randomUUID();
-  const state = createLearningSession(sessionId, demoLesson);
-  putSession(state);
+  let state = createLearningSession(sessionId, demoLesson);
 
   if (config && user) {
-    // Background write — response goes back immediately.
-    try {
-      c.executionCtx.waitUntil(db.createSession(config, user.userId, state));
-    } catch {
-      void db.createSession(config, user.userId, state);
+    const checkItemIds = [demoLesson.check, ...demoLesson.checkBank].map(
+      (item) => item.id,
+    );
+    const created = await db.createSession(
+      config,
+      user.userId,
+      state,
+      checkItemIds,
+    );
+    if (!created.ok) {
+      return created.reason === 'conflict'
+        ? c.json({ error: 'session_conflict' }, 409)
+        : unavailable(c);
     }
+    state = created.value;
+  } else {
+    putSession(state);
   }
 
   return c.json(toSessionView(state, demoLesson), 201);
@@ -245,21 +274,22 @@ app.post('/api/sessions', async (c) => {
 /**
  * Re-read a session. A refresh takes this path, and assistance survives it.
  *
- * R03: in durable mode, reads from Supabase first (so another device or a
- * new isolate can resume). Falls back to in-memory when DB is not configured.
+ * R03: in durable mode, reads only from Supabase (so another device or a new
+ * isolate can resume). Explicit fixture mode uses the in-memory store.
  */
 app.get('/api/sessions/:id', async (c) => {
   const sessionId = c.req.param('id');
   const config = dbConfig(c.env ?? {});
 
+  if (!config && configuredStorage(c.env ?? {})) return unavailable(c);
+
   if (config) {
     const user = await authenticateRequest(c);
     if (!user) return c.json({ error: 'unauthenticated' }, 401);
-    const dbState = await db.getSession(config, user.userId, sessionId);
-    if (dbState) {
-      // Sync into memory so subsequent in-isolate commands work.
-      putSession(dbState);
-      return c.json(toSessionView(dbState, demoLesson));
+    const loaded = await db.getSession(config, user.userId, sessionId);
+    if (!loaded.ok) return unavailable(c);
+    if (loaded.value) {
+      return c.json(toSessionView(loaded.value, demoLesson));
     }
     // Authenticated, but the session was not found under this user ID.
     return c.json({ error: 'session_not_found' }, 404);
@@ -273,13 +303,11 @@ app.get('/api/sessions/:id', async (c) => {
 
 /** Move to a named stage. Stage changes never reset assistance. */
 app.post('/api/sessions/:id/stage', async (c) => {
-  const authError = await configuredAuthError(c);
-  if (authError) return authError;
   const parsed = stageCommandSchema.safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_stage' }, 400);
   const { stage: target, expectedStage } = parsed.data;
 
-  const outcome = memUpdateSession(c.req.param('id'), (state) => {
+  const outcome = await updateSessionForRequest(c, (state) => {
     // Invariant 5 + R03 stale-navigation guard: an illegal jump or a stale
     // command built against an old view is refused.
     const moved = setStage(state, target as Stage, expectedStage as Stage | undefined);
@@ -287,48 +315,42 @@ app.post('/api/sessions/:id/stage', async (c) => {
     return target === 'learn' ? markExplanationSeen(moved) : moved;
   });
 
-  await persistOutcome(c, outcome);
+  if (outcome instanceof Response) return outcome;
   return respond(c, outcome);
 });
 
 /** Ask for the next hint. Raises assistance for that question, permanently. */
 app.post('/api/sessions/:id/hint', async (c) => {
-  const authError = await configuredAuthError(c);
-  if (authError) return authError;
   const parsed = hintSchema.safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
   const { stage, itemId } = parsed.data;
 
-  const outcome = memUpdateSession(c.req.param('id'), (state) => {
+  const outcome = await updateSessionForRequest(c, (state) => {
     const question = activeQuestion(state, stage as Stage, itemId);
     return requestHint(state, question).state;
   });
 
-  await persistOutcome(c, outcome);
+  if (outcome instanceof Response) return outcome;
   return respond(c, outcome);
 });
 
 /** Reveal the answer. Permanently marks the question as assisted. */
 app.post('/api/sessions/:id/reveal', async (c) => {
-  const authError = await configuredAuthError(c);
-  if (authError) return authError;
   const parsed = hintSchema.safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
   const { stage, itemId } = parsed.data;
 
-  const outcome = memUpdateSession(c.req.param('id'), (state) => {
+  const outcome = await updateSessionForRequest(c, (state) => {
     const question = activeQuestion(state, stage as Stage, itemId);
     return revealAnswer(state, question);
   });
 
-  await persistOutcome(c, outcome);
+  if (outcome instanceof Response) return outcome;
   return respond(c, outcome);
 });
 
 /** Grade a submission. Idempotent per question. */
 app.post('/api/sessions/:id/attempt', async (c) => {
-  const authError = await configuredAuthError(c);
-  if (authError) return authError;
   const parsed = submitSchema.safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
   const { stage, optionId, itemId } = parsed.data;
@@ -336,7 +358,7 @@ app.post('/api/sessions/:id/attempt', async (c) => {
   // depend on how long the critical section took.
   const now = new Date();
 
-  const outcome = memUpdateSession(c.req.param('id'), (state) => {
+  const outcome = await updateSessionForRequest(c, (state) => {
     const question = activeQuestion(state, stage as Stage, itemId);
 
     // Validate the option ID against the authored allowlist rather than
@@ -349,7 +371,7 @@ app.post('/api/sessions/:id/attempt', async (c) => {
     return submitAttempt(state, question, stage as Stage, optionId, now).state;
   });
 
-  await persistOutcome(c, outcome);
+  if (outcome instanceof Response) return outcome;
   return respond(c, outcome);
 });
 
@@ -368,13 +390,11 @@ app.post('/api/sessions/:id/attempt', async (c) => {
  * This fixes the probe gap where help was granted without a teaching step.
  */
 app.post('/api/sessions/:id/convert', async (c) => {
-  const authError = await configuredAuthError(c);
-  if (authError) return authError;
   const parsed = convertSchema.safeParse(await safeJson(c.req.raw));
   if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
   const { itemId } = parsed.data;
 
-  const outcome = memUpdateSession(c.req.param('id'), (state) => {
+  const outcome = await updateSessionForRequest(c, (state) => {
     if (state.stage !== 'check') {
       reject('not_at_check_stage', 409);
     }
@@ -406,7 +426,7 @@ app.post('/api/sessions/:id/convert', async (c) => {
     return markExplanationSeen(withTeach);
   });
 
-  await persistOutcome(c, outcome);
+  if (outcome instanceof Response) return outcome;
   return respond(c, outcome);
 });
 
@@ -443,37 +463,48 @@ function activeQuestion(state: SessionState, stage: Stage, itemId?: string) {
   return question;
 }
 
-/**
- * If the update succeeded and Supabase is configured, persist the new state
- * asynchronously. The response goes back immediately; the DB write happens
- * in the background via waitUntil().
- *
- * Ownership: reads the authenticated user from the request. If no user is
- * present (unauthenticated fixture path), the DB write is skipped — sessions
- * created without auth are in-memory only.
- */
-async function persistOutcome(
+/** Read, apply and conditionally commit one owner-scoped mutation. */
+async function updateSessionForRequest(
   c: Context<HonoEnv>,
-  outcome: UpdateOutcome,
-): Promise<void> {
-  if (!outcome.ok) return;
+  apply: (state: SessionState) => SessionState,
+): Promise<UpdateOutcome | Response> {
   const config = dbConfig(c.env ?? {});
-  if (!config) return;
-  const user = await authenticateRequest(c);
-  if (!user) return;
-
-  const state = outcome.state;
-  // Optimistic version: the in-memory store already incremented version.
-  // We update where the previous version was (state.version - 1).
-  const previousVersion = state.version - 1;
-  try {
-    c.executionCtx.waitUntil(
-      db.updateSession(config, user.userId, state, previousVersion),
-    );
-  } catch {
-    // executionCtx is unavailable in test environments; fire-and-forget.
-    void db.updateSession(config, user.userId, state, previousVersion);
+  const sessionId = c.req.param('id');
+  if (!sessionId) return c.json({ error: 'session_not_found' }, 404);
+  if (!config) {
+    return configuredStorage(c.env ?? {})
+      ? unavailable(c)
+      : memUpdateSession(sessionId, apply);
   }
+
+  const user = await authenticateRequest(c);
+  if (!user) return c.json({ error: 'unauthenticated' }, 401);
+
+  const loaded = await db.getSession(config, user.userId, sessionId);
+  if (!loaded.ok) return unavailable(c);
+  if (!loaded.value) return c.json({ error: 'session_not_found' }, 404);
+
+  const current = loaded.value;
+  const outcome = applySessionUpdate(current, apply);
+  if (!outcome.ok) return outcome;
+
+  const saved = await db.updateSession(
+    config,
+    user.userId,
+    outcome.state,
+    current.version,
+  );
+  if (!saved.ok) {
+    return saved.reason === 'conflict'
+      ? c.json({ error: 'session_conflict' }, 409)
+      : unavailable(c);
+  }
+
+  return outcome;
+}
+
+function unavailable(c: Context<HonoEnv>) {
+  return c.json({ error: 'persistence_unavailable' }, 503);
 }
 
 /** Turn an atomic update outcome into the HTTP response. */

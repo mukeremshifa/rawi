@@ -19,15 +19,26 @@
  * R03 changes:
  *  - Home screen shows Continue (most recent session) and Review due list.
  *  - loadSessions() runs on mount; silently ignored when DB is not configured.
- *  - Auth token stored in sessionStorage; passed on every API call.
+ *  - Supabase restores/refreshes the browser session and each API call reads
+ *    its current access token.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SessionSummary, SessionView, Stage } from '../shared/types.js';
+import type { MeResponse, SessionSummary, SessionView, Stage } from '../shared/types.js';
 import * as api from './api.js';
+import * as auth from './auth.js';
 import { messages } from './messages.js';
 import { EvidencePanel } from './EvidencePanel.js';
 
 const SESSION_KEY = 'rawi.sessionId';
+
+type AccessState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'fixture' }
+  | { readonly status: 'signed-out' }
+  | { readonly status: 'setup-required' }
+  | { readonly status: 'not-enrolled'; readonly me: MeResponse }
+  | { readonly status: 'ready'; readonly me: MeResponse }
+  | { readonly status: 'error' };
 
 export function App() {
   const [session, setSession] = useState<SessionView | null>(null);
@@ -37,6 +48,8 @@ export function App() {
   const [reasoning, setReasoning] = useState('');
   // R03: session list for the resume UI. Null = not yet loaded; [] = loaded, none found.
   const [sessionList, setSessionList] = useState<SessionSummary[] | null>(null);
+  const [access, setAccess] = useState<AccessState>({ status: 'loading' });
+  const [authAttempt, setAuthAttempt] = useState(0);
 
   // Focus moves to the stage heading on every stage change so keyboard and
   // screen-reader users are not left at the top of the document.
@@ -115,6 +128,8 @@ export function App() {
                 : messages.error.staleRefreshFailed,
             );
           }
+        } else if (err.status === 503) {
+          setError(messages.error.persistenceUnavailable);
         } else {
           setError(err.code === 'network' ? messages.error.network : err.message);
         }
@@ -125,20 +140,56 @@ export function App() {
     [tryReload],
   );
 
-  // Resume an existing session on load, so a refresh keeps the learner's place
-  // and, more importantly, keeps their assistance record.
+  // Bootstrap fixture mode or restore the Supabase PKCE session before any
+  // owner-scoped session request is made.
   useEffect(() => {
-    const saved = window.localStorage.getItem(SESSION_KEY);
-    if (saved) void run(() => api.loadSession(saved));
-  }, [run]);
+    let active = true;
+    setAccess({ status: 'loading' });
 
-  // R03: load the session list for the resume UI. Silently ignored when DB is
-  // not configured (the list endpoint returns {sessions: []} without auth).
-  useEffect(() => {
-    api.listSessions()
-      .then(({ sessions }) => setSessionList(sessions))
-      .catch(() => setSessionList([]));
-  }, []);
+    const bootstrap = async () => {
+      try {
+        const authState = await auth.bootstrapAuth();
+        if (!active) return;
+
+        if (authState.mode === 'fixture') {
+          setAccess({ status: 'fixture' });
+          setSessionList([]);
+          const saved = window.localStorage.getItem(SESSION_KEY);
+          if (saved) await run(() => api.loadSession(saved));
+          return;
+        }
+        if (authState.mode === 'setup-required') {
+          setAccess({ status: 'setup-required' });
+          return;
+        }
+        if (authState.mode === 'signed-out') {
+          setAccess({ status: 'signed-out' });
+          return;
+        }
+
+        const me = await api.loadMe();
+        if (!active) return;
+        if (!me.enrolled) {
+          setAccess({ status: 'not-enrolled', me });
+          return;
+        }
+
+        setAccess({ status: 'ready', me });
+        const [{ sessions }] = await Promise.all([api.listSessions()]);
+        if (!active) return;
+        setSessionList(sessions);
+        const saved = window.localStorage.getItem(SESSION_KEY);
+        if (saved) await run(() => api.loadSession(saved));
+      } catch {
+        if (active) setAccess({ status: 'error' });
+      }
+    };
+
+    void bootstrap();
+    return () => {
+      active = false;
+    };
+  }, [authAttempt, run]);
 
   useEffect(() => {
     if (session) window.localStorage.setItem(SESSION_KEY, session.sessionId);
@@ -171,10 +222,46 @@ export function App() {
     void run(() => api.startSession());
   };
 
+  const signIn = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await auth.signInWithGoogle();
+    } catch {
+      setError(messages.auth.signInFailed);
+      setBusy(false);
+    }
+  };
+
+  const signOut = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await auth.signOut();
+      window.localStorage.removeItem(SESSION_KEY);
+      setSession(null);
+      setSessionList(null);
+      setAccess({ status: 'signed-out' });
+    } catch {
+      setError(messages.auth.signOutFailed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const learningReady = access.status === 'fixture' || access.status === 'ready';
+
   return (
     <div className="app">
       <header className="app-header">
-        <h1>{messages.appName}</h1>
+        <div className="header-row">
+          <h1>{messages.appName}</h1>
+          {(access.status === 'ready' || access.status === 'not-enrolled') && (
+            <button type="button" className="ghost" disabled={busy} onClick={() => void signOut()}>
+              {messages.auth.signOut}
+            </button>
+          )}
+        </div>
         <p className="tagline">{messages.tagline}</p>
         <p className="fixture-banner" role="note">
           {messages.fixtureBanner}
@@ -194,7 +281,14 @@ export function App() {
       )}
 
       <main>
-        {!session ? (
+        {!learningReady ? (
+          <AccessScreen
+            access={access}
+            busy={busy}
+            onSignIn={() => void signIn()}
+            onRetry={() => setAuthAttempt((attempt) => attempt + 1)}
+          />
+        ) : !session ? (
           <HomeScreen
             busy={busy}
             sessionList={sessionList}
@@ -229,6 +323,56 @@ export function App() {
         )}
       </main>
     </div>
+  );
+}
+
+interface AccessScreenProps {
+  access: Exclude<AccessState, { status: 'fixture' } | { status: 'ready' }>;
+  busy: boolean;
+  onSignIn: () => void;
+  onRetry: () => void;
+}
+
+function AccessScreen({ access, busy, onSignIn, onRetry }: AccessScreenProps) {
+  if (access.status === 'loading') {
+    return <section className="card auth-card"><h2>{messages.auth.restoring}</h2></section>;
+  }
+  if (access.status === 'signed-out') {
+    return (
+      <section className="card auth-card">
+        <h2>{messages.auth.heading}</h2>
+        <p>{messages.auth.body}</p>
+        <button type="button" disabled={busy} onClick={onSignIn}>
+          {messages.auth.signIn}
+        </button>
+      </section>
+    );
+  }
+  if (access.status === 'not-enrolled') {
+    return (
+      <section className="card auth-card">
+        <h2>{messages.auth.notEnrolledHeading}</h2>
+        <p>{messages.auth.notEnrolledBody}</p>
+        {access.me.email && <p className="muted">{access.me.email}</p>}
+      </section>
+    );
+  }
+  if (access.status === 'setup-required') {
+    return (
+      <section className="card auth-card">
+        <h2>{messages.auth.setupHeading}</h2>
+        <p>{messages.auth.setupBody}</p>
+      </section>
+    );
+  }
+  return (
+    <section className="card auth-card">
+      <h2>{messages.auth.unavailableHeading}</h2>
+      <p>{messages.auth.unavailableBody}</p>
+      <button type="button" disabled={busy} onClick={onRetry}>
+        {messages.actions.retry}
+      </button>
+    </section>
   );
 }
 

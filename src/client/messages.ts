@@ -85,8 +85,8 @@ export const messages = {
       'you move on.',
     /** Shown when all check bank items have been used. */
     bankExhausted:
-      'You\u2019ve used all available check questions in this session. ' +
-      'Practise more, then start a new session for a fresh check.',
+      'You\u2019ve used all available reviewed check questions. Practise more; ' +
+      'a new session will not present a seen question as fresh.',
     /** Shown after getting help and replacement item arrives. */
     newItemReady: 'A replacement check question has been selected.',
   },
@@ -119,6 +119,8 @@ export const messages = {
   error: {
     heading: 'Something went wrong',
     network: 'Could not reach the lesson server. Your answer was not lost — try again when you\u2019re back online.',
+    persistenceUnavailable:
+      'Saved progress is temporarily unavailable. This action was not confirmed; retry when the service is back.',
     sessionLost:
       'This session is no longer on the server. Local demo sessions do not ' +
       'survive a server restart. Start a new session to continue.',
@@ -145,7 +147,23 @@ export const messages = {
 
   demoReset: {
     label: 'Demo reset',
-    note: 'Starting again clears all recorded progress for this session. This is not a real assessment reset \u2014 a full fixture restart also clears exposure history.',
+    note: 'Starting again creates a new session. Configured accounts keep item exposure across sessions; a full local fixture restart does not.',
+  },
+
+  auth: {
+    heading: 'Sign in to Rawi',
+    body: 'This private pilot uses Google sign-in. Only enrolled learners can start a lesson.',
+    signIn: 'Continue with Google',
+    signOut: 'Sign out',
+    restoring: 'Restoring your session\u2026',
+    notEnrolledHeading: 'Invitation required',
+    notEnrolledBody: 'This account is signed in but is not enrolled in the private pilot.',
+    setupHeading: 'Sign-in setup is incomplete',
+    setupBody: 'The public authentication configuration is missing. The operator must finish provider setup before sign-in can begin.',
+    unavailableHeading: 'Sign-in is unavailable',
+    unavailableBody: 'Rawi could not restore the authentication service. Try again when the service is available.',
+    signInFailed: 'Google sign-in could not start. The provider may still need to be configured.',
+    signOutFailed: 'Rawi could not complete sign-out. Try again.',
   },
 
   resume: {

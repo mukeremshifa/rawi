@@ -99,7 +99,25 @@ export function emptyQuestionState(questionId: string): QuestionState {
 export function createSession(
   sessionId: string,
   lesson: AuthoredLesson,
+  previouslyExposedCheckIds: readonly string[] = [],
 ): SessionState {
+  const checkItems = [lesson.check, ...lesson.checkBank];
+  const authoredCheckIds = new Set(checkItems.map((item) => item.id));
+  const inheritedExposure = [...new Set(previouslyExposedCheckIds)].filter((id) =>
+    authoredCheckIds.has(id),
+  );
+  const freshCheck = checkItems.find((item) => !inheritedExposure.includes(item.id));
+  const activeCheck = freshCheck ?? lesson.check;
+  const activeCheckState = emptyQuestionState(activeCheck.id);
+
+  // When the learner has already seen the complete authored bank, retain an
+  // exhausted marker instead of making the primary item appear fresh again.
+  // The next content slice can add more reviewed items; restart is not a way
+  // to erase exposure.
+  const initialActiveState = freshCheck
+    ? activeCheckState
+    : { ...activeCheckState, assistance: 'revealed' as const };
+
   return {
     sessionId,
     lessonId: lesson.id,
@@ -108,12 +126,14 @@ export function createSession(
     questions: {
       [lesson.diagnostic.id]: emptyQuestionState(lesson.diagnostic.id),
       [lesson.practice.id]: emptyQuestionState(lesson.practice.id),
-      [lesson.check.id]: emptyQuestionState(lesson.check.id),
+      [activeCheck.id]: initialActiveState,
     },
     attempts: [],
     explanationSeen: false,
-    activeCheckId: lesson.check.id,
-    exposedCheckIds: [lesson.check.id],
+    activeCheckId: activeCheck.id,
+    exposedCheckIds: freshCheck
+      ? [...inheritedExposure, freshCheck.id]
+      : inheritedExposure,
   };
 }
 

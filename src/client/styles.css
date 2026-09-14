@@ -378,6 +378,22 @@ button:focus-visible {
   border-inline-start: 3px solid var(--accent, #4f6ef7);
 }
 
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.header-row button {
+  flex: none;
+}
+
+.auth-card {
+  max-inline-size: 34rem;
+  margin-inline: auto;
+}
+
 .resume-meta {
   color: var(--text-muted, #666);
   font-size: 0.875rem;

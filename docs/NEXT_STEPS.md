@@ -1,124 +1,124 @@
-# Rawi: shortest path to v1
+# Rawi: next v1 session
 
-Updated 14 September 2026 following R03 Supabase activation.
+Updated 14 September 2026. Keep the founder's fast-v1 policy: build features,
+run existing quick checks, and defer broad test expansion to deployment.
 
-## Current state
+## Checked now
 
-R03 is complete as a local integration. GitHub and local `main` should be updated
-to the R03 commit after this session. R03 delivers:
+The R03 persistence/sign-in completion slice is implemented locally on top of
+`82a8843`. Configured mutations now resolve the authenticated owner's session
+from Supabase, apply the learning command to that durable version, and return
+success only after PostgREST confirms the conditional write. Configured mode
+does not use shared isolate memory and a partial Supabase configuration fails
+closed. Creation likewise confirms its write.
 
-- Supabase schema, migrations, RLS and environment template
-- Web Crypto ES256 verification through the project JWKS (no npm client)
-- `/api/me` endpoint; invite enrollment gate
-- Ownership-scoped durable session storage via Supabase REST API (fetch-based)
-- Optimistic-concurrency `PATCH` with `version` guard
-- Session list and resume UI (Continue + Review due) on the home screen
-- Three R02B follow-ups: teach-before-check on convert, required `itemId` at
-  check stage, `expectedStage` stale-navigation guard
+Focused synthetic regressions cover the reproduced cross-owner attempt, a
+cold-cache owned mutation and resume, rejected and unavailable saves, learner-wide
+item exposure, and common check-specific evidence projection. Fresh verification:
+**68 tests passed; typecheck, lint and production build passed**. The browser now
+implements Supabase Google OAuth PKCE initiation/callback handling, persisted
+session restoration and refresh through the official client, local-device sign-out,
+and distinct signed-out, setup-missing and not-enrolled states.
 
-Fresh checks: **61 tests passed; lint, typecheck and production build passed.**
-The linked migration is up to date and the local Worker reports durable mode active.
-The acceptance harness and browser checks were not rerun in this session.
+This is local implementation evidence, not hosted acceptance. No real provider
+login, two-user remote journey, direct RLS check, Supabase plan verification,
+deployment or learner use was performed. Google OAuth credentials and allowed
+redirects are still required. Migration `002_atomic_session_creation.sql` was
+applied to the linked Supabase project; live AI is not implemented.
 
-The local durable path is configured against project `gxbexwtopazokvmpfyzj`.
-Google OAuth credentials, two test identities and their enrollment rows remain
-before hosted auth can be accepted. No deployment or paid AI call was made.
+## Foundation fix implemented; migration applied
 
-## What v1 means
+A short offline probe used two synthetic, valid signed identities and mocked
+Supabase responses. A created a session; B submitted a stage mutation naming A's
+session. The API returned **200 with A's session**, changed the shared cached
+state to learn, and ignored the database update's zero-row conflict. The stored
+state remained diagnose. No real credentials, users or remote data were used.
 
-An invited adult learner can sign in, open one supported lesson, get useful AI
-help, answer a fresh independent check, leave, and return to saved progress and
-a simple due-review action. The founder can cap AI spend and operate the app
-without hosting charges.
+Cause in src/server/index.ts: configuredAuthError verifies identity but mutations
+then call memUpdateSession by session ID without resolving its owner.
+persistOutcome starts a background write and ignores its result. Session creation
+also returns 201 before its database write succeeds.
 
-Use the current original demo course during implementation. Real pilot content
-still needs a selected shared course, permission and competent review before
-learners rely on it. Start with English and the adult college cohort.
+Consequences:
+- An authenticated caller knowing another cached session ID can mutate its
+  in-memory state and receive its projected view.
+- A success response does not confirm progress was saved; failures and concurrent
+  conflicts can silently lose changes.
+- A mutation reaching a fresh isolate depends on a cache populated elsewhere.
 
-## Three implementation slices
+The configured mutation path no longer uses the shared Map. Owner-scoped reads,
+pure command application and confirmed conditional writes now form one request
+path; zero-row conflicts return 409 and unavailable reads/writes return 503.
 
-| Order | Deliverable | Scope |
-|---|---|---|
-| 1 — done | Persistent learning app (R03 + R02 follow-ups) | Login, enrollment, ownership-scoped saved sessions/attempts/exposure, async transactional storage, resume UI. Teach before check, require item identity, reject stale navigation. |
-| 2 — next | AI learning v1 (R04 + minimum R05/R06) | One provider, bounded teaching from the original source pack, server-side keys, configured spend cap and usage ledger, useful timeout/failure fallback. Continue and Review due, with distinct review items and saved outcomes. |
-| 3 | Deployable private v1 (minimum R08/R09) | Free-plan/account verification, hosted end-to-end journey, focused release checks, essential privacy/delete/support flow and restricted adult enrollment. Then deploy under the session's actual authorization. |
+Related small corrections are also implemented: db.listSessions previously counted any independent
+attempt, including diagnostic/practice, as independent check evidence; use the
+same check-specific evidence rules as the session view. A newly created session
+also resets item exposure; carry exposure across the learner's sessions so restart
+cannot make a seen item fresh. Both now share the detail-view evidence projection,
+and a transaction-scoped database function selects exposure during creation so
+concurrent starts cannot claim the same authored item as fresh.
 
-## Lightweight verification policy
-
-During implementation:
-- Run the existing fast tests and build/typecheck once after meaningful changes.
-- Demonstrate the new happy path. Check the directly affected critical invariant:
-  ownership for storage/auth, independent evidence for learning changes, or the
-  spending ceiling for AI changes.
-- Add a focused regression only when it protects those invariants or fixes a
-  reproduced serious defect. No coverage target or exhaustive test expansion.
-
-Before deployment / real learner use:
-- Verify two ordinary identities cannot read/write each other's progress, including
-  direct permitted database access; keep check keys and API secrets server-side.
-- Verify the AI cap including concurrent calls/retries, provider failure recovery,
-  and correct accounting. Live evaluations need an explicit cost ceiling.
-- Complete the main hosted journey, refresh/retry, keyboard and narrow-screen smoke
-  checks; perform targeted accessibility/security/runtime checks appropriate to
-  the release, plus a representative UAE connection check.
-- Verify persistent progress and review behavior, basic delete/export and recovery,
-  content permissions/review, eligibility/privacy and actual zero-hosting billing.
-- Fix release-blocking findings before opening enrollment.
-
-Deferral changes scheduling, not what is honestly described as verified.
-
-## Supabase activation status
-
-Completed: the project is linked, `001_initial_schema.sql` is applied, public
-configuration is in `wrangler.toml`, ignored local credentials are in `.dev.vars`,
-and ES256 learner tokens are verified against the project JWKS. Configured mode
-fails closed without a learner token.
-
-Remaining before hosted auth acceptance:
-
-1. Supply a Google OAuth client ID and secret, enable the provider, and add the
-   local and eventual production redirect URLs; wire the browser's OAuth start and
-   callback handling around the existing token-storage/API helpers.
-2. Create two ordinary test identities and insert their `invite_enrollments` rows.
-3. Run the two-user API and direct permitted-database isolation journey.
-4. Verify the organization is on Supabase Free; the supplied token can administer
-   the project but cannot read organization billing-plan details.
-5. At deployment time, add `SUPABASE_SERVICE_KEY` as a Cloudflare Worker secret.
-
-## Paste into the next implementation session
+## Next session prompt
 
 ```text
-Build Rawi's AI tutor slice in D:\rawi.
-Read AGENTS.md, docs/STATUS.md, docs/PRODUCT.md and docs/NEXT_STEPS.md.
-Start from current main; preserve existing changes. Prioritize a working v1.
+Build Rawi's bounded AI and minimum return-review slice in D:\rawi.
+Read AGENTS.md, docs/STATUS.md, docs/PRODUCT.md, docs/DELIVERY.md and
+docs/NEXT_STEPS.md. Preserve existing changes and keep the session bounded.
 
-Implement R04 as one complete slice: one AI provider adapter (Claude or OpenAI),
-bounded teaching response from the original source pack, server-side API key
-(never in the browser bundle), atomic budget reservation before each call, a
-usage ledger (log provider/model/tokens/cost per request), useful timeout and
-failure fallback that leaves reviewed material readable.
+Implement R04 with one provider adapter, bounded tutoring grounded in the
+original provisional source pack, server-only credentials, durable atomic budget
+reservation before calls, and an actual-usage ledger preserving provider, model,
+prompt/curriculum versions and costs. Add timeouts and a useful deterministic
+fallback that leaves reviewed material readable. Paid requests must remain
+disabled unless both a provider key and explicit monthly budget are configured.
+Keep active independent-check answers out of tutor context.
 
-Also add the minimum R05/R06 for a usable return/review experience: Continue
-shows the last session's state; Review due presents the next due check as a
-distinct review item (same check stage flow); evidence from review is saved
-as 'retained-on-review'. The review queue uses the nextReviewDue dates already
-stored in sessions.
+Add only the minimum R05/R06 needed for a real return action: Review due must
+start a distinct delayed check item and save its evidence. Do not link back to an
+old answered session and call that a review. Mark retained-on-review only after
+a qualifying fresh, unaided correct check at the scheduled return.
 
-Use synthetic data and test identities during development. Keep free hosting only.
-If a provider key is unavailable, finish the adapter with fixture mode retained
-and document the exact setup. Do not claim live AI works without a key and an
-explicit monthly budget and evaluation cap.
+Use deterministic fixtures until an API key, monthly spending ceiling and live
+evaluation cap are supplied. Do not assume chat subscriptions cover API use.
+Run existing tests/build once and add only focused budget-concurrency, answer
+isolation and delayed-evidence regressions. No uploads, new platform, paid
+hosting, broad coverage campaign, public deployment or fabricated evaluations.
 
-Run existing tests and build. Add only directly necessary critical regressions:
-spending ceiling invariant (concurrent calls cannot exceed configured cap),
-server-side key absence from bundle. Do not add exhaustive AI evaluation suites.
-
-Do not add uploads, a new framework, paid hosting or public launch.
-End with working code, concise setup/handoff, updated status and remaining
-external setup clearly separated from implemented functionality.
-Next slice is deployment readiness (R08/R09).
+Update docs/STATUS.md with implemented versus locally verified versus remotely
+accepted outcomes. End with provider setup and live-evaluation prerequisites.
+Next slice is deployment readiness.
 ```
 
-The AI slice can be coded with fixture mode retained. Before live calls, supply
-the API credentials and an explicit monthly budget and evaluation cap. Existing
-chat subscriptions are not assumed to cover API use.
+## After that: AI v1, then deployment
+
+**AI slice (R04 + minimum R05/R06):** one provider adapter, useful tutoring from
+the original source pack, server-only credentials, durable atomic budget
+reservations and usage ledger, timeout/failure fallback. Keep active independent
+check answers out of tutor context. Add a real due-review action with a distinct
+item and saved delayed evidence; a link back to an old answered session is not
+a delayed check. Mark retained-on-review only after a qualifying fresh, unaided
+correct check at the scheduled return, not merely because a learner revisits.
+
+Implement against deterministic fixtures until an API key, explicit monthly
+spending ceiling and live-evaluation cap are available. Do not assume existing
+chat subscriptions cover API usage.
+
+**Deployment slice:** complete provider setup, actual two-user isolation and
+save/resume checks, Free-plan verification, targeted hosted/browser/accessibility
+checks, AI-cap checks, essential privacy/delete/support and adult invite-only
+enrollment. Broad edge cases, CI and performance work stay here.
+
+No uploads, multiple subjects, Arabic, teens, voice, payments or advanced admin
+work before v1. Keep the provisional original demo content until discovery
+selects a shared course; subject review and permissions are required for pilot use.
+
+## External setup still recorded as open
+
+- Google OAuth client credentials and allowed redirects; ordinary test identities
+  and their enrollment rows.
+- Independent verification of Supabase Free in the account.
+- Product AI provider key, monthly budget and evaluation ceiling.
+- Pilot course, reviewer and content permissions.
+
+These do not block writing the remaining code. Hosted acceptance and paid calls
+must not be reported complete without their prerequisites.

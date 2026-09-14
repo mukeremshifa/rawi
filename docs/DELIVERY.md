@@ -1,6 +1,6 @@
 # Rawi delivery plan
 
-This is the implementation source of truth. Research informs decisions; this file defines work order. R01's local implementation is delivered, with browser acceptance still outstanding; R02B is implemented with functional follow-ups; R03 is next. See STATUS.md and NEXT_STEPS.md for verified progress. One outcome per task, with small changes that can be demonstrated and reviewed.
+This is the implementation source of truth. Research informs decisions; this file defines work order. R01's local implementation is delivered, with browser acceptance still outstanding; R03 persistence and sign-in are implemented locally, with hosted provider acceptance open. R04 plus the minimum real return-review action is next. See STATUS.md and NEXT_STEPS.md for verified progress. One outcome per task, with small changes that can be demonstrated and reviewed.
 
 ## Current execution priority — 14 September 2026
 
@@ -13,9 +13,11 @@ block each intermediate local feature slice. Run existing fast tests/build and
 focused ownership/evidence/budget checks as relevant. No coverage expansion or
 separate CI milestone is required before proceeding to R03.
 
-R02B's claimed complete acceptance is qualified by the latest review: help currently
-skips to the next check without a teaching step, item IDs are optional, and old
-navigation can still rewind. Fold these into R03; browser acceptance is deferred.
+R03 now addresses the reproduced cross-owner cached mutation, rejected durable
+writes, learner-wide item exposure, common evidence projection and browser sign-in
+states. Focused local regressions pass; actual Google OAuth, remote two-user/RLS
+acceptance and Free-plan verification stay in deployment readiness. Continue with
+R04 and a real delayed-review action using the prompt in NEXT_STEPS.md.
 
 ## Calendar and effort
 

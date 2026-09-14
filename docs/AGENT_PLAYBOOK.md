@@ -35,8 +35,9 @@ This is a reusable template; the backlog supplies ticket-specific acceptance cri
 
 ## Next implementation session
 
-R02B is implemented with small functional follow-ups. Use **R03 — persistent v1 foundation** in
-[NEXT_STEPS.md](NEXT_STEPS.md); fold those fixes into the next working slice.
+R03 persistence/ownership and the browser sign-in interface are implemented locally;
+hosted provider acceptance remains open. Use the **bounded AI and minimum
+return-review** brief in [NEXT_STEPS.md](NEXT_STEPS.md).
 Detailed acceptance and CI preparation move to deployment readiness. The R01 brief below is historical
 context, not an instruction to re-scaffold the repository.
 
