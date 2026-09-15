@@ -1,0 +1,573 @@
+@import 'tailwindcss';
+
+/* Brand faces, self-hosted. The page renders untrusted model output and
+   untrusted source text; it should not also be making a request to a font CDN
+   on every load. Three faces, one job each — see the typography note below. */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/source-serif-4';
+@import '@fontsource-variable/jetbrains-mono';
+
+/* Tailwind v4: design tokens live in CSS and reach utilities through @theme. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ===========================================================================
+   Rawi — the design system.
+
+   **Every ratio quoted below was computed, not estimated.** Run
+   `node scripts/check-contrast.mjs`; it parses this file, so it cannot drift
+   away from these numbers the way a hand-maintained table would. Change a
+   colour here and re-run it. The full argument is in docs/DESIGN.md.
+
+   Five rules hold this palette together.
+
+   1. **Neutrals are chroma 0.** Every grey, in both themes, is achromatic.
+      A grey tinted toward the accent muddies the only colour allowed to mean
+      anything. (Kept from SynapseDeck. It was right there and it is right here.)
+
+   2. **One accent hue: 255, a deep low-chroma blue-slate.** SynapseDeck's
+      yellow-green existed because "rating Easy is what the product exists to
+      produce" — an argument that does not transfer, because Rawi does not
+      produce a rating. What Rawi produces is a reading surface you can think
+      on. So the accent is a *mark* and a *focus ring*, the page itself carries
+      no colour at all, and the hue is the quietest one that still reads as a
+      deliberate choice rather than as grey.
+
+   3. **--primary here IS a foreground, and that inverts SynapseDeck's rule
+      two.** Theirs was oklch(.922 …) — a near-white field that could never be
+      ink. Rawi's is oklch(.45 …): dark enough to be a link, an icon, a focused
+      outline, and still able to carry white as a filled button. This is the
+      one structural change the hue change forces, and it is why the accent can
+      appear as a small mark on a page that is otherwise ink on paper.
+
+   4. **The evidence ramp is two ramps, and that is not redundancy.** A stop
+      light enough for ink to sit on it (>=4.5:1) is too light to *be* a mark on
+      white paper (>=3:1) — the two requirements barely overlap.
+        --evidence-*        the FIELD ramp. A filled chip, a bar. Ink on top.
+        --evidence-*-mark   the INK-side ramp. A dot, a rule, an icon — anything
+                            that sits *on* the page rather than under something.
+      Both climb in **lightness**, because value survives colour-blindness and
+      hue does not. The ramp is one hue plus a chroma-0 first stop, so the four
+      evidence states separate by value alone.
+
+      The states are the product's, not a score: not-checked -> practicing ->
+      independent-once -> retained-on-review. There is deliberately no fifth
+      stop and no percentage anywhere near this ramp (invariant 6).
+
+   5. **Borders are two tokens.** --border is decorative: a card hairline, which
+      is what a hairline has to be to read as one. --border-strong is what
+      WCAG SC 1.4.11 actually governs — boundaries that carry information: a
+      field outline, a selected state, a focused control. Using --border where
+      meaning lives is the bug; using --border-strong for decoration makes the
+      app look like a spreadsheet.
+   =========================================================================== */
+
+:root {
+  /* ── Radius ─────────────────────────────────────────────────────────── */
+  --radius: 0.5rem;
+
+  /* ── Neutrals and surfaces ──────────────────────────────────────────── */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.16 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.16 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.16 0 0);
+
+  --secondary: oklch(0.965 0 0);
+  --secondary-foreground: oklch(0.16 0 0);
+  --muted: oklch(0.965 0 0);
+  --muted-foreground: oklch(0.52 0 0);
+  --accent: oklch(0.965 0 0);
+  --accent-foreground: oklch(0.16 0 0);
+
+  /* ── Brand — see rules 2 and 3 ──────────────────────────────────────── */
+  --primary: oklch(0.45 0.095 255);
+  --primary-foreground: oklch(0.985 0 0);
+
+  /* ── Semantic ───────────────────────────────────────────────────────── */
+  --destructive: oklch(0.55 0.21 27);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.55 0.14 155);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.75 0.15 70);
+  --warning-foreground: oklch(0.16 0 0);
+
+  /* ── Boundaries — see rule 5 ────────────────────────────────────────── */
+  --border: oklch(0.9 0 0);
+  --border-strong: oklch(0.655 0 0);
+  --input: oklch(0.655 0 0);
+  /* The accent doing the job it is best at. Unlike SynapseDeck, one ring
+     token CAN serve both themes here, because the accent is dark on light and
+     lifts on dark — the two definitions differ only in lightness. */
+  --ring: oklch(0.45 0.095 255);
+
+  /* ── The evidence ramp — see rule 4 ─────────────────────────────────────
+     FIELD stops. Ink sits on these, so all four clear 4.5:1 against
+     --evidence-ink and one rule can style the whole set. */
+  --evidence-none: oklch(0.93 0 0);
+  --evidence-practicing: oklch(0.945 0.02 255);
+  --evidence-independent: oklch(0.96 0.03 255);
+  --evidence-retained: oklch(0.975 0.04 255);
+
+  /* MARK stops. These sit on the page and clear 3:1 against --background.
+     Compressed into the readable band and still climbing, so the ramp reads as
+     one ramp in both roles. */
+  --evidence-none-mark: oklch(0.45 0 0);
+  --evidence-practicing-mark: oklch(0.52 0.045 255);
+  --evidence-independent-mark: oklch(0.59 0.085 255);
+  --evidence-retained-mark: oklch(0.66 0.12 255);
+
+  /* The one ink the ramp is checked against, named so the checker can compute
+     "ink on practicing" without hardcoding a value this file owns. */
+  --evidence-ink: oklch(0.16 0 0);
+
+  /* ── Spacing ────────────────────────────────────────────────────────────
+     A 4px base, named by role rather than by size, because "gutter" survives a
+     redesign and "space-6" does not.
+
+     **Rawi sits at the generous end of these.** A teaching surface is a page
+     you read, so a screen reaches for `section` and `page` where SynapseDeck's
+     working shell reached for `gutter`. */
+  --space-hairline: 0.25rem; /*  4px — icon to its label */
+  --space-tight: 0.5rem; /*  8px — within a control */
+  --space-snug: 0.75rem; /* 12px — between related controls */
+  --space-base: 1rem; /* 16px — the default gap */
+  --space-gutter: 1.5rem; /* 24px — card padding, column gutters */
+  --space-section: 2.5rem; /* 40px — between sections of a page */
+  --space-page: 4rem; /* 64px — page top padding, empty-state breathing */
+
+  /* ── Elevation ──────────────────────────────────────────────────────────
+     Elevation means *distance from the page*, not importance. A card is not
+     raised because it matters; it is raised because it floats. Achromatic,
+     per rule 1. */
+  --elevation-flat: 0 0 #0000;
+  --elevation-raised: 0 1px 2px 0 oklch(0 0 0 / 0.05);
+  --elevation-overlay: 0 4px 12px -2px oklch(0 0 0 / 0.1), 0 2px 4px -2px oklch(0 0 0 / 0.06);
+  --elevation-modal: 0 16px 40px -8px oklch(0 0 0 / 0.18), 0 4px 12px -4px oklch(0 0 0 / 0.1);
+
+  /* ── Motion ─────────────────────────────────────────────────────────────
+       instant  a state the user just caused — hover, press. Not perceptible as
+                motion, only as responsiveness.
+       quick    something appearing or leaving in place — a tooltip, a toast.
+       moving   something that travels — a sheet, a dialog.
+     Anything slower is a decision, not a default, and belongs in the component
+     with a comment saying why. Exits are faster than entrances: a UI that
+     lingers on the way out feels slow. */
+  --duration-instant: 120ms;
+  --duration-quick: 180ms;
+  --duration-moving: 260ms;
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.34, 1.32, 0.64, 1);
+}
+
+.dark {
+  /* Background 0.125 and card 0.205. The gap is what makes a card read as a
+     card without a border doing the work, which is how dark themes usually
+     fail — and the surface-separation section of check-contrast.mjs is what
+     keeps it from collapsing back to one flat sheet. */
+  --background: oklch(0.125 0 0);
+  --foreground: oklch(0.98 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.98 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.98 0 0);
+
+  --secondary: oklch(0.275 0 0);
+  --secondary-foreground: oklch(0.98 0 0);
+  --muted: oklch(0.275 0 0);
+  --muted-foreground: oklch(0.715 0 0);
+  --accent: oklch(0.275 0 0);
+  --accent-foreground: oklch(0.98 0 0);
+
+  /* The same accent, lifted for a dark ground. Still ink-side: it is a mark
+     and a ring here too, and it carries dark text when filled. */
+  --primary: oklch(0.72 0.11 255);
+  --primary-foreground: oklch(0.16 0 0);
+
+  --destructive: oklch(0.66 0.19 27);
+  --destructive-foreground: oklch(0.16 0 0);
+  --success: oklch(0.72 0.15 155);
+  --success-foreground: oklch(0.16 0 0);
+  --warning: oklch(0.8 0.15 70);
+  --warning-foreground: oklch(0.16 0 0);
+
+  --border: oklch(0.3 0 0);
+  --border-strong: oklch(0.535 0 0);
+  --input: oklch(0.535 0 0);
+  --ring: oklch(0.72 0.11 255);
+
+  /* The field ramp, re-pitched for the dark ground: ink still sits on it, so
+     the stops stay light — they are a fill on a dark page, not a tint of it. */
+  --evidence-none: oklch(0.8 0 0);
+  --evidence-practicing: oklch(0.85 0.04 255);
+  --evidence-independent: oklch(0.9 0.07 255);
+  --evidence-retained: oklch(0.94 0.08 255);
+
+  /* The mark ramp lifts to clear 3:1 against a 0.125 page, and still climbs. */
+  --evidence-none-mark: oklch(0.6 0 0);
+  --evidence-practicing-mark: oklch(0.66 0.05 255);
+  --evidence-independent-mark: oklch(0.72 0.09 255);
+  --evidence-retained-mark: oklch(0.8 0.1 255);
+
+  --evidence-ink: oklch(0.16 0 0);
+
+  /* Shadows barely read on a dark ground; depth comes from the surface steps
+     above. Kept non-zero so a modal still separates from what is behind it. */
+  --elevation-raised: 0 1px 2px 0 oklch(0 0 0 / 0.3);
+  --elevation-overlay: 0 4px 12px -2px oklch(0 0 0 / 0.45), 0 2px 4px -2px oklch(0 0 0 / 0.3);
+  --elevation-modal: 0 16px 40px -8px oklch(0 0 0 / 0.6), 0 4px 12px -4px oklch(0 0 0 / 0.4);
+}
+
+@theme inline {
+  /* ── Typography ─────────────────────────────────────────────────────────
+       sans   (Inter) — everything. The default, and the answer unless one of
+              the two below applies.
+       serif  (Source Serif 4) — the name of the thing you are looking at, once
+              per screen, owned by PageHeader. Rawi is reading-heavy, so this
+              is a **text** serif with a real 400 weight, not a display face:
+              a paragraph set in it has to stay comfortable, which is the exact
+              thing a display serif fails at.
+       mono   (JetBrains Mono) — a value you might compare, count or type: a
+              date, a count, an id, an email. Always tabular-nums. */
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Source Serif 4 Variable', ui-serif, Georgia, serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-evidence-none: var(--evidence-none);
+  --color-evidence-practicing: var(--evidence-practicing);
+  --color-evidence-independent: var(--evidence-independent);
+  --color-evidence-retained: var(--evidence-retained);
+
+  --color-evidence-none-mark: var(--evidence-none-mark);
+  --color-evidence-practicing-mark: var(--evidence-practicing-mark);
+  --color-evidence-independent-mark: var(--evidence-independent-mark);
+  --color-evidence-retained-mark: var(--evidence-retained-mark);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --spacing-hairline: var(--space-hairline);
+  --spacing-tight: var(--space-tight);
+  --spacing-snug: var(--space-snug);
+  --spacing-base: var(--space-base);
+  --spacing-gutter: var(--space-gutter);
+  --spacing-section: var(--space-section);
+  --spacing-page: var(--space-page);
+
+  --shadow-raised: var(--elevation-raised);
+  --shadow-overlay: var(--elevation-overlay);
+  --shadow-modal: var(--elevation-modal);
+
+  --ease-standard: var(--ease-standard);
+  --ease-exit: var(--ease-exit);
+  --ease-spring: var(--ease-spring);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+    outline-color: color-mix(in oklab, var(--color-ring) 50%, transparent);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* One scrollbar, and it belongs to whoever is scrolling. Ordinary pages
+     scroll in `body`; a full-height shell sets `h-dvh` and scrolls inside
+     itself. Giving the root a definite height rather than an implicit one is
+     what stops the second kind from putting a useless second bar down the
+     right edge. */
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    overflow: auto;
+  }
+
+  ::selection {
+    background-color: var(--color-primary);
+    color: var(--color-primary-foreground);
+  }
+
+  /* Matches `*` deliberately: an opted-out user gets every end state instantly,
+     which is correct, because all of the motion in this app is decoration on
+     top of a state change that happens either way. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ── Motion keyframes ───────────────────────────────────────────────────────
+   `shimmer` is the loading skeleton: a sweep, not a pulse. A pulsing block
+   reads as "broken"; a sweep reads as "arriving".
+   `breathe` is the generating state — slower, and deliberately unlike the
+   skeleton, because "we are working" and "this is loading" are different
+   promises and the job surface depends on the difference being visible. */
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+@keyframes panel-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.96);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes pop-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@layer components {
+  /* Written here rather than pulled in as `tailwindcss-animate`, so the
+     durations and easings are the tokens above rather than a plugin's own
+     scale. Everything below inherits the prefers-reduced-motion block. */
+  .ui-overlay[data-state='open'] {
+    animation: overlay-in var(--duration-quick) var(--ease-standard);
+  }
+  .ui-overlay[data-state='closed'] {
+    animation: overlay-out var(--duration-quick) var(--ease-exit);
+  }
+
+  .ui-panel[data-state='open'] {
+    animation: panel-in var(--duration-moving) var(--ease-standard);
+  }
+  .ui-panel[data-state='closed'] {
+    animation: panel-out var(--duration-quick) var(--ease-exit);
+  }
+
+  .ui-pop[data-state='open'] {
+    animation: pop-in var(--duration-quick) var(--ease-standard);
+    transform-origin: var(--radix-popper-transform-origin, center);
+  }
+  .ui-pop[data-state='closed'] {
+    animation: pop-out var(--duration-instant) var(--ease-exit);
+    transform-origin: var(--radix-popper-transform-origin, center);
+  }
+
+  .ui-sheet[data-state='open'] {
+    animation-duration: var(--duration-moving);
+    animation-timing-function: var(--ease-standard);
+  }
+  .ui-sheet[data-state='closed'] {
+    animation-duration: var(--duration-quick);
+    animation-timing-function: var(--ease-exit);
+  }
+  .ui-sheet[data-side='right'][data-state='open'] {
+    animation-name: sheet-in-right;
+  }
+  .ui-sheet[data-side='right'][data-state='closed'] {
+    animation-name: sheet-out-right;
+  }
+  .ui-sheet[data-side='left'][data-state='open'] {
+    animation-name: sheet-in-left;
+  }
+  .ui-sheet[data-side='left'][data-state='closed'] {
+    animation-name: sheet-out-left;
+  }
+  .ui-sheet[data-side='bottom'][data-state='open'] {
+    animation-name: sheet-in-bottom;
+  }
+  .ui-sheet[data-side='bottom'][data-state='closed'] {
+    animation-name: sheet-out-bottom;
+  }
+  .ui-sheet[data-side='top'][data-state='open'] {
+    animation-name: sheet-in-top;
+  }
+  .ui-sheet[data-side='top'][data-state='closed'] {
+    animation-name: sheet-out-top;
+  }
+
+  .ui-skeleton {
+    background-image: linear-gradient(
+      90deg,
+      var(--color-muted) 0%,
+      color-mix(in oklab, var(--color-muted) 55%, var(--color-background)) 50%,
+      var(--color-muted) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s linear infinite;
+  }
+
+  .ui-generating {
+    animation: breathe 2s var(--ease-standard) infinite;
+  }
+
+  /* The reading column of a teaching session or a source. A measure, not a
+     width: the number is chosen so a line lands near 70 characters at the base
+     size, which is the whole reason the teaching surface is one column. */
+  .ui-reading {
+    max-width: 38rem;
+  }
+}
+
+@keyframes sheet-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes sheet-out-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes sheet-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes sheet-out-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes sheet-in-bottom {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes sheet-out-bottom {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes sheet-in-top {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes sheet-out-top {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-100%);
+  }
+}
