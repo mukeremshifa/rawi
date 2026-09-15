@@ -1,80 +1,95 @@
 # Rawi
 
-An English-first AI learning workspace for UAE students, beginning with a small college pilot. The product helps learners understand a concept, solve a new problem independently and remember it later.
+**Rawi** (راوي) — *narrator; the one who carries an account and passes it on.*
 
-This repository contains the integrated v1 application and pilot preparation
-materials. It includes invitation-only authentication, authoritative Supabase
-saves, a bounded source-linked tutor, distinct delayed review, issue reporting,
-export/delete, redacted founder metrics, and feature-flagged pasted-text sources.
-Nothing is publicly deployed, no paid AI evaluation has been run, and no learner
-participation is claimed.
+> Rawi takes material you do not understand, teaches it, verifies you can use it
+> without help, and re-verifies later — and it never claims you know something it
+> did not watch you do unaided.
 
-## Running it locally
+## What it does
 
-Requires Node 20 or later.
+1. **Workspaces** — a subject you are learning. Every source, concept, session
+   and piece of evidence belongs to exactly one, always named explicitly.
+2. **Sources** — pasted text and uploaded `.txt`/`.md`, chunked and searchable.
+   Everything the tutor says is grounded in these and cites them.
+3. **Concept map** — extracted from your sources, each concept carrying an
+   evidence state: `not-checked` → `practicing` → `independent-once` →
+   `retained-on-review`.
+4. **Teaching sessions** — diagnose → teach → practise → check, with hints and
+   reveals that permanently change whether an answer counts as evidence.
+5. **Ask** — grounded chat with citations, answering only from your sources.
+   Using it during a check is support, and support is recorded.
+6. **Delayed re-check** — a scheduled return to concepts you solved unaided,
+   asking a **different** question from the same concept. Never the same one.
+7. **Evidence** — per concept: what you did, unaided or not, when, what is due.
+   No mastery percentage, ever.
+8. **Study plan** — what to do next and why, derived from evidence and due dates.
+
+**Not in v1:** classrooms, teacher dashboards, Arabic UI, PDF/OCR, vector
+embeddings, collaboration, mobile apps.
+
+## The line against SynapseDeck
+
+Rawi and SynapseDeck are siblings, and they are not the same product.
+
+| | SynapseDeck | Rawi |
+| --- | --- | --- |
+| You arrive with | Material you want to retain | Material you do not understand |
+| Unit of account | A **card**, with an interval | A **concept**, with an evidence state |
+| Who owns correctness | You do — you grade yourself | The server does — you cannot self-report |
+| Core loop | Generate → gate → review | Diagnose → teach → practise → check → delayed re-check |
+| Success | Retention curve holds | A learner solved something *new*, unaided |
+
+Spaced repetition is a **mechanism** Rawi uses for the delayed re-check. It is
+not Rawi's product, and Rawi never shows a card-and-interval UI.
+
+## Running it
 
 ```bash
 npm install
-# Vite and Wrangler need their binaries; approve the blocked install scripts:
-npm install-scripts approve esbuild
-npm install-scripts approve workerd
-
-npm run dev:api:fixture # Worker API on http://127.0.0.1:8787, offline fixture mode
-npm run dev       # browser app on http://localhost:5173 (proxies /api)
+npm run dev        # http://localhost:5173, against the in-browser fake
 ```
 
-Two processes in development; in production the Worker serves the built assets, so the browser origin is unchanged.
+`VITE_API_MODE` defaults to `fake`, so this needs no credentials and spends
+nothing. The demo workspace is seeded with one real source and one complete
+concept.
 
-| Command | What it does |
-|---|---|
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run lint` | ESLint |
-| `npm test` | Vitest — learning invariants and API behavior |
-| `npm run build` | Typecheck, then build to `dist/client` |
-| `npm run acceptance` | Fetch-level deterministic journey |
-| `npm run e2e` | Real Chromium mobile/keyboard journey |
-| `npm run verify` | Full local integrated fixture gate |
-| `npm run deploy:check` | Production build and Wrangler dry run; does not deploy |
-| `npm run eval:live` | Opt-in paid AI eval; requires an explicit cost ceiling |
+To run the Worker as well:
 
-Use `.dev.vars.example` for configured Supabase/OpenAI mode. Paid tutoring fails
-closed unless a provider key and both monthly caps are present. The provisional
-original microeconomics pack is not subject-reviewed; uploads remain off for the
-pilot. Read [deployment and operations](docs/DEPLOYMENT_RUNBOOK.md) before any
-release action.
+```bash
+cp .dev.vars.example .dev.vars   # then fill it in — docs/OPERATIONS.md §5.1
+npm run dev:api                  # http://localhost:8787
+VITE_API_MODE=live npm run dev
+```
 
-## Start here
+## The gate
 
-1. Read the [research and product strategy](research/REPORT.md) for the recommendation, evidence, tradeoffs and costs.
-2. Use the [product specification](docs/PRODUCT.md) and [delivery backlog](docs/DELIVERY.md) for implementation scope.
-3. Read the [current status](docs/STATUS.md), [deployment runbook](docs/DEPLOYMENT_RUNBOOK.md), and [pilot runbook](docs/PILOT_RUNBOOK.md).
-4. Run founder discovery alongside development using the [interview and pilot protocol](docs/DISCOVERY.md).
+```bash
+npm run verify
+```
 
-## Working constraints
+lint → typecheck → tests → build → bundle-secret scan → contrast → route
+parity → `wrangler deploy --dry-run` → Playwright. The whole thing runs with no
+credentials and no spend. CI runs it and **does not deploy**; deployment is one
+owner-run command after a green gate.
 
-- UAE college contacts are 17–24; proposed first pilot is 10–20 learners from the 18–24 subset. Teen/high-school support follows a separate release.
-- English primary; Arabic later. Select one shared course through discovery; microeconomics is only the provisional demo subject.
-- Solo founder, 20+ hours/week. Real learner pilot and engineering depth are both priorities.
-- Hosting/deployment cost must remain zero. Paid AI usage requires a configured budget; existing subscription credit eligibility is unverified.
-- Recommended stack: React/TypeScript/Vite, a lightweight Cloudflare Worker API and Supabase Free, within verified plan limits.
+## The stack
 
-## Project documents
+Vite + React 19 + Tailwind v4 on the front, a Hono Worker on Cloudflare serving
+both the API and the built client from one origin, Supabase for auth, Postgres
+and private storage, and Vertex AI reached over REST with a service-account JWT
+signed by Web Crypto.
 
-| Document | Purpose |
-|---|---|
-| [Current status](docs/STATUS.md) | Confirmed constraints, open decisions and actual progress |
-| [Next steps](docs/NEXT_STEPS.md) | GitHub snapshot, reproduced gaps and next implementation brief |
-| [Product](docs/PRODUCT.md) | Learner flow, modes, content rules and pilot metrics |
-| [Delivery](docs/DELIVERY.md) | Tickets, dependencies, estimates and readiness gates |
-| [Agent playbook](docs/AGENT_PLAYBOOK.md) | Implementation and review session prompts |
-| [Discovery](docs/DISCOVERY.md) | Interviews, course selection and pilot measurement |
-| [Safety and data](docs/SAFETY.md) | UAE/minor considerations and concrete controls |
-| [Competition](research/market.md) | Current alternatives and positioning hypotheses |
-| [Learning evidence](research/learning.md) | Original studies, limitations and pedagogy |
-| [Architecture](research/architecture.md) | Free-tier design, AI costs, evaluation and recovery |
-| [Source index](research/SOURCES.md) | External references used across the pack |
+## Where to read next
 
-Implementation sessions follow [AGENTS.md](AGENTS.md). Founder discovery, subject
-review, legal/operator configuration, account-plan confirmation, capped live AI
-evaluation, deployment authorization and actual pilot participation remain real
-external work; fixture results are never presented as learner evidence.
+| Question | File |
+| --- | --- |
+| What is verified working, and what is next | [docs/STATUS.md](docs/STATUS.md) |
+| Why the architecture is shaped this way | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| The design system, with computed contrast ratios | [docs/DESIGN.md](docs/DESIGN.md) |
+| Secrets, external setup, deployment | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
+| Untrusted input, minors, deletion, export | [docs/SAFETY.md](docs/SAFETY.md) |
+| How to work in this repo | [AGENTS.md](AGENTS.md) |
+
+The invariants — the eleven rules that are the product rather than preferences —
+are in [AGENTS.md](AGENTS.md) and enforced in `tests/invariants/`.
