@@ -112,7 +112,7 @@ export function LoadingCard({ className }: { className?: string }) {
  * The icon sits in a filled disc so it reads as a deliberate mark instead of a
  * stray glyph, and the whole block is given room.
  *
- * 
+ *
  */
 export function EmptyState({
   icon,

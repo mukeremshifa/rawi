@@ -351,7 +351,7 @@ export function PaneHandle(props: React.ComponentProps<typeof ResizableHandle>) 
 /* ── Breakpoints ──────────────────────────────────────────────────────── */
 
 /**
- * Whether a CSS media query currently matches, as React state. 
+ * Whether a CSS media query currently matches, as React state.
  *
  * ── When to reach for this, and when not to ──────────────────────────────
  *
