@@ -70,21 +70,34 @@ export function dbError(error: { code?: string; message: string }): ApiClientErr
   return new ApiClientError('internal', `Database error: ${error.message}`);
 }
 
-/** Unwrap a single-row result, or fail with the right code. */
-export function single<T>(result: {
-  data: T | null;
+/**
+ * Unwrap a single-row result, or fail with the right code.
+ *
+ * ── Why the result is typed loosely ───────────────────────────────────────
+ *
+ * `supabase-js` resolves an untyped `.select()` to `GenericStringError[]` — a
+ * deliberate placeholder for "you have not generated database types". Generating
+ * them would make these two helpers precise, and would also make every schema
+ * change a regeneration step in the gate.
+ *
+ * The trade taken here: the row shape is declared once per module as an
+ * interface beside its `COLUMNS` string, and asserted at this boundary. That is
+ * weaker than generated types, and it is honest about where the assertion
+ * lives — one function, not scattered `as` casts at forty call sites.
+ */
+export interface DbResult {
+  data: unknown;
   error: { code?: string; message: string } | null;
-}): T {
+}
+
+export function single<T>(result: DbResult): T {
   if (result.error) throw dbError(result.error);
   if (!result.data) throw new ApiClientError('not_found', 'That is not here any more.');
-  return result.data;
+  return result.data as T;
 }
 
 /** Unwrap a list result. */
-export function many<T>(result: {
-  data: T[] | null;
-  error: { code?: string; message: string } | null;
-}): T[] {
+export function many<T>(result: DbResult): T[] {
   if (result.error) throw dbError(result.error);
-  return result.data ?? [];
+  return (result.data ?? []) as T[];
 }

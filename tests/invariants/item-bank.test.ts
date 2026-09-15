@@ -20,33 +20,33 @@ import { task, sessionWith } from './fixtures.ts';
 
 describe('invariant 5 — the bank is never recycled', () => {
   const tasks = [
-    task('t1', { purpose: 'check', family_id: 'fam-a' }),
-    task('t2', { purpose: 'check', family_id: 'fam-b' }),
+    task('t1', { purpose: 'probe', family_id: 'fam-a' }),
+    task('t2', { purpose: 'probe', family_id: 'fam-b' }),
   ];
 
   it('never returns an item that has been exposed', () => {
-    expect(selectNextItem(tasks, 'check', [])?.id).toBe('t1');
-    expect(selectNextItem(tasks, 'check', ['t1'])?.id).toBe('t2');
-    expect(selectNextItem(tasks, 'check', ['t1', 't2'])).toBeNull();
+    expect(selectNextItem(tasks, 'probe', [])?.id).toBe('t1');
+    expect(selectNextItem(tasks, 'probe', ['t1'])?.id).toBe('t2');
+    expect(selectNextItem(tasks, 'probe', ['t1', 't2'])).toBeNull();
   });
 
   it('returns null rather than relaxing the family filter', () => {
     // The donor router fell back to "any task of this purpose" when nothing
     // unseen matched. That line is the one that re-serves a seen item, and it
     // is deliberately absent here.
-    expect(selectNextItem(tasks, 'check', [], ['fam-a', 'fam-b'])).toBeNull();
+    expect(selectNextItem(tasks, 'probe', [], ['fam-a', 'fam-b'])).toBeNull();
   });
 
   it('reports exhaustion rather than looping', () => {
     const state = sessionWith(tasks[0]!);
-    expect(isItemBankExhausted(state, tasks, 'check')).toBe(false);
+    expect(isItemBankExhausted(state, tasks, 'probe')).toBe(false);
     const exhausted = { ...state, exposedItemIds: ['t1', 't2'] };
-    expect(isItemBankExhausted(exhausted, tasks, 'check')).toBe(true);
+    expect(isItemBankExhausted(exhausted, tasks, 'probe')).toBe(true);
   });
 
   it('replacing an item retires it and invents no graded attempt', () => {
     const state = sessionWith(tasks[0]!);
-    const next = replaceActiveItem(state, tasks, 't1', 'check');
+    const next = replaceActiveItem(state, tasks, 't1', 'probe');
 
     expect(next).not.toBeNull();
     expect(next!.activeItemId).toBe('t2');
@@ -58,12 +58,12 @@ describe('invariant 5 — the bank is never recycled', () => {
 
   it('returns null when there is no replacement, rather than reusing one', () => {
     const state = { ...sessionWith(tasks[0]!), exposedItemIds: ['t1', 't2'] };
-    expect(replaceActiveItem(state, tasks, 't1', 'check')).toBeNull();
+    expect(replaceActiveItem(state, tasks, 't1', 'probe')).toBeNull();
   });
 
   it('rejects a replacement request naming a different item', () => {
     const state = sessionWith(tasks[0]!);
-    expect(replaceActiveItem(state, tasks, 't2', 'check')).toBeNull();
+    expect(replaceActiveItem(state, tasks, 't2', 'probe')).toBeNull();
   });
 });
 

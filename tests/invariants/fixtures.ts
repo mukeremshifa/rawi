@@ -14,7 +14,7 @@ export function task(id: string, overrides: Partial<Task> = {}): Task {
     id,
     version: 1,
     family_id: `fam-${id}`,
-    purpose: 'check' as Task['purpose'],
+    purpose: 'probe' as Task['purpose'],
     prompt: `Prompt for ${id}`,
     response_mode: 'text',
     options: null,

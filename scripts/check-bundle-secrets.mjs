@@ -24,7 +24,18 @@
  * bundling and tree-shaking, and the only honest way to ask it is to grep the
  * output.
  *
- *   node scripts/check-bundle-secrets.mjs
+ * ── It scans the LIVE build, and that is load-bearing ─────────────────────
+ *
+ * In fake mode the browser is the server, so it necessarily holds the authored
+ * content it grades against — answer keys included. That is unavoidable there
+ * and harmless: no learner, no evidence that matters.
+ *
+ * It is neither in the build that ships. So `npm run check:bundle` builds with
+ * `VITE_API_MODE=live` first, where the fake is a dynamic import and is
+ * genuinely absent. Scanning a fake-mode build would either fail forever or
+ * force the rule to be weakened until it guarded nothing.
+ *
+ *   npm run check:bundle
  */
 
 import { readdir, readFile, stat } from 'node:fs/promises';
@@ -56,7 +67,11 @@ const RULES = [
   ],
   [
     'supabase service role key',
-    /SUPABASE_SERVICE_ROLE_KEY|\bsb_secret_/,
+    // A prefix on its own is not a key: `supabase-js` ships its own key-format
+    // validator containing the literal string, and matching that would be a
+    // permanent false positive — the kind a team learns to ignore, which is how
+    // a check quietly stops working. Require a plausible key body.
+    /SUPABASE_SERVICE_ROLE_KEY|\bsb_secret_[A-Za-z0-9_-]{12,}/,
     'The service-role key bypasses RLS. It must never leave the Worker.',
   ],
   [

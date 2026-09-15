@@ -94,7 +94,7 @@ export async function findByIdempotencyKey(
     .eq('idempotency_key', idempotencyKey)
     .maybeSingle();
   if (error) throw new ApiClientError('internal', error.message);
-  return data ? toAttempt(data as AttemptRow) : null;
+  return data ? toAttempt(data as unknown as AttemptRow) : null;
 }
 
 export async function insertAttempt(

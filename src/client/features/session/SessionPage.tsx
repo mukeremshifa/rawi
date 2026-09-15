@@ -175,6 +175,24 @@ function SessionBody({
         </Button>
       )}
 
+      {/*
+        The feedback about the LAST answer sits above the NEXT question, not
+        below the form. Seen in the browser: after submitting, the new question
+        arrived at the top and the sentence explaining what happened to the
+        previous one was below the answer box, past two paragraphs of help
+        text. A learner reads top to bottom and would have moved on before
+        finding out how they did.
+      */}
+      {session.feedback && session.item && (
+        <p
+          className="border-border-strong ui-reading rounded-lg border-s-2 ps-base text-sm leading-relaxed"
+          role="status"
+          aria-live="polite"
+        >
+          {session.feedback.text}
+        </p>
+      )}
+
       {session.item ? (
         <Section title={session.stage === 'review' ? 'The re-check' : 'The question'}>
           <div className="ui-reading font-serif text-xl leading-snug">
@@ -303,10 +321,6 @@ function SessionBody({
             </Button>
           </div>
         </Section>
-      )}
-
-      {session.feedback && session.item && (
-        <p className="ui-reading text-sm leading-relaxed">{session.feedback.text}</p>
       )}
 
       {session.item && (

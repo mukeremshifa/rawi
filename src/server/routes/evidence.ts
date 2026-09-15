@@ -2,12 +2,7 @@ import { currentMonth } from '../ai/budget.ts';
 import { aiSettings, flag } from '../env.ts';
 import { monthlyUsage } from '../db/ai.ts';
 import { listAttempts } from '../db/attempts.ts';
-import {
-  contentOf,
-  exposedItemIds,
-  getConceptEvidence,
-  listConcepts,
-} from '../db/concepts.ts';
+import { getConceptEvidence, listConcepts } from '../db/concepts.ts';
 import { assertOwnsWorkspace } from '../db/workspaces.ts';
 import { buildStudyPlan } from '../analytics/mastery.ts';
 import { summarise } from '../analytics/progress.ts';
@@ -74,7 +69,6 @@ export const evidenceRoutes: Route[] = [
       const inputs = await Promise.all(
         concepts.map(async (concept) => {
           const attempts = await listAttempts(context.db, context.userId, concept.id);
-          const exposed = await exposedItemIds(context.db, context.userId, concept.id);
           return {
             conceptId: concept.id,
             conceptName: concept.name,

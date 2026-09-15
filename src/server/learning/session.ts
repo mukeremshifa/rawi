@@ -144,7 +144,7 @@ export async function project(
       : null,
     feedback: state.lastFeedback,
     evidence: evidenceState(attempts),
-    itemBankExhausted: isItemBankExhausted(state, content.tasks, task?.purpose ?? 'check'),
+    itemBankExhausted: isItemBankExhausted(state, content.tasks, task?.purpose ?? 'probe'),
     startedAt: state.startedAt,
   };
 }
@@ -421,15 +421,25 @@ export async function submitResponse(
     context.workspaceId,
     sessionId,
   );
-  guard(state, input);
-
   const content = await loadContent(context, state.conceptId);
-  const task = taskById(content, input.itemId);
 
-  // ── Replay. Invariant 4: the same key returns the attempt that was actually
-  //    recorded, not a fresh judgement of the same text.
+  /*
+   * ── Replay BEFORE the stale guard, and the order is the point ───────────
+   *
+   * Invariant 4: the same key returns the attempt that was actually recorded,
+   * not a fresh judgement of the same text.
+   *
+   * It has to come first. A retried submission arrives *after* the original
+   * advanced the session past that item, so guarding first would reject the
+   * retry as `stale_request` — which is precisely the case idempotency exists
+   * to handle. A key already in the log is not a stale command; it is the same
+   * command arriving twice.
+   */
   const prior = await findByIdempotencyKey(context.db, context.userId, input.idempotencyKey);
   if (prior) return project(context, state, content);
+
+  guard(state, input);
+  const task = taskById(content, input.itemId);
 
   const supports = supportsInForce(content, task);
 

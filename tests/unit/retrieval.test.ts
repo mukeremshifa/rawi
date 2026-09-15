@@ -12,7 +12,7 @@ describe('chunking', () => {
   it('bounds a step by chunk count', () => {
     // The CPU limit is the whole reason this is stepped. A step that ignores
     // the bound is a Worker killed mid-loop with half a source indexed.
-    const text = 'A sentence that is long enough to be its own chunk. '.repeat(400);
+    const text = 'A sentence that is long enough to be its own chunk. '.repeat(1500);
     const step = chunkStep(text, 0, 0);
     expect(step.chunks.length).toBeLessThanOrEqual(MAX_CHUNKS_PER_STEP);
     expect(step.done).toBe(false);

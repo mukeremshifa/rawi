@@ -24,7 +24,7 @@ function attempt(overrides: Partial<RecordedAttempt> = {}): RecordedAttempt {
     conceptId: 'c1',
     itemId: 't1',
     familyId: 'fam-a',
-    purpose: 'check',
+    purpose: 'probe',
     stage: 'check',
     correct: true,
     assistance: 'none',

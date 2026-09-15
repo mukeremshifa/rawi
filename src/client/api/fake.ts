@@ -735,12 +735,14 @@ export const fakeApi: ApiClient = {
     requireWorkspace(workspaceId);
     const session = store.sessions.get(sessionId);
     if (!session) throw new ApiClientError('not_found', 'That session is not here.');
-    guard(session, input);
-
-    // Idempotent, like the server: a replayed key returns what was recorded.
+    // Idempotent, like the server — and checked BEFORE the stale guard, for
+    // the same reason: a retry arrives after the original advanced the session
+    // past that item, so guarding first would reject it as stale.
     if (store.attempts.some((attempt) => attempt.idempotencyKey === input.idempotencyKey)) {
       return projectSession(session);
     }
+
+    guard(session, input);
 
     const content = requireContent(session.conceptId);
     const task = content.tasks.find((candidate) => candidate.id === input.itemId)!;

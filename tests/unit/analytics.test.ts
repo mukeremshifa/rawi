@@ -12,7 +12,7 @@ function attempt(overrides: Partial<RecordedAttempt> = {}): RecordedAttempt {
     conceptId: 'c1',
     itemId: 't1',
     familyId: 'fam-a',
-    purpose: 'check',
+    purpose: 'probe',
     stage: 'check',
     correct: true,
     assistance: 'none',
@@ -132,7 +132,7 @@ describe('buildStudyPlan', () => {
       [{ ...base, conceptId: 'c1', conceptName: 'Empty', hasUnseenItems: false }],
       now,
     );
-    expect(plan.entries[0]!.reason).toContain('every question');
+    expect(plan.entries[0]!.reason).toMatch(/every question/i);
   });
 
   it('gives every entry a reason', () => {

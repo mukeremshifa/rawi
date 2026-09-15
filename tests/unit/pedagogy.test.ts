@@ -106,7 +106,7 @@ describe('the pedagogy router', () => {
         conceptId: 'c1',
         itemId: 'entry',
         familyId: 'fam-a',
-        purpose: 'check' as const,
+        purpose: 'probe' as const,
         stage: 'check' as const,
         correct: false,
         assistance: 'none' as const,

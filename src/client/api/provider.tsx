@@ -1,21 +1,44 @@
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import type { ApiClient } from '@shared/contract.ts';
 
 import { createClient } from './client.ts';
-import { fakeApi } from './fake.ts';
 
 /**
- * Which implementation the app is talking to, decided once.
+ * Which implementation the app is talking to, decided once, at build time.
  *
  * `VITE_API_MODE` defaults to `fake`, and that default is what lets the whole
  * gate — including Playwright — run on a machine with no credentials and no
- * spend. Live mode is the owner's step after the secrets in
- * docs/OPERATIONS.md §5 are in place.
+ * spend. Live mode is the owner's step after docs/OPERATIONS.md §5.
  *
- * The mode is read from the environment rather than from a toggle in the UI,
- * because a runtime switch would mean both implementations ship and a bug could
- * put a real learner on the fake — which would silently discard their work.
+ * The mode comes from the environment rather than a toggle in the UI, because a
+ * runtime switch would mean both implementations ship and a bug could put a
+ * real learner on the fake — which would silently discard their work.
+ *
+ * ── Why the fake is a dynamic import ──────────────────────────────────────
+ *
+ * **In fake mode the browser IS the server**, so it necessarily holds the
+ * authored content it grades against — including `correct_option_id` and
+ * `answer_explanation`. That is unavoidable and harmless there: there is no
+ * learner and no evidence that matters.
+ *
+ * It is neither unavoidable nor harmless in the build that ships. A static
+ * import would pull the fake and its demo content into the live bundle too,
+ * breaking invariant 9 for real — and `scripts/check-bundle-secrets.mjs`
+ * caught exactly that. Importing it dynamically means a live build genuinely
+ * does not contain it: the answer keys are absent rather than merely unused,
+ * and the check runs against the live build to prove it.
+ *
+ * The cost is that the client resolves asynchronously and this provider has a
+ * loading frame. That frame is real in fake mode and never happens in live
+ * mode, where the branch is synchronous.
  */
 
 export type ApiMode = 'fake' | 'live';
@@ -36,11 +59,28 @@ export function ApiProvider({
   /** Injected in tests. Otherwise chosen by `API_MODE`. */
   client?: ApiClient;
 }) {
-  const value = useMemo(
-    () => client ?? (API_MODE === 'live' ? createClient({ getToken }) : fakeApi),
-    [client, getToken],
+  const live = useMemo(
+    () => (API_MODE === 'live' ? createClient({ getToken }) : null),
+    [getToken],
   );
-  return <ApiContext.Provider value={value}>{children}</ApiContext.Provider>;
+  const [resolved, setResolved] = useState<ApiClient | null>(client ?? live);
+
+  useEffect(() => {
+    if (resolved) return;
+    let cancelled = false;
+    void import('@/api/fake.ts').then((module) => {
+      if (!cancelled) setResolved(module.fakeApi);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [resolved]);
+
+  // Nothing rendered until the client exists. Rendering the tree with a null
+  // client would make every `useApi()` throw on the first frame.
+  if (!resolved) return null;
+
+  return <ApiContext.Provider value={resolved}>{children}</ApiContext.Provider>;
 }
 
 export function useApi(): ApiClient {
