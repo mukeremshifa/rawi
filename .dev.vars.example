@@ -1,25 +1,36 @@
-# Copy to .dev.vars for local configured mode. Never commit the real file.
-RAWI_STORAGE_MODE=fixture
-RAWI_TUTOR_MODE=fixture
+# Rawi — server secrets. Copy to `.dev.vars` for local development; push the
+# same keys to production with `wrangler secret put <KEY>`. Never commit
+# `.dev.vars`, and never put any of these in `wrangler.jsonc` or a VITE_ var.
+#
+# The table this file mirrors is docs/OPERATIONS.md §5.1.
 
-# Configured Supabase mode (replace placeholders and set RAWI_STORAGE_MODE=supabase)
-SUPABASE_URL=https://PROJECT_REF.supabase.co
-SUPABASE_ANON_KEY=public-anon-or-publishable-key
-SUPABASE_SERVICE_KEY=server-only-service-role-key
+# ── Google Cloud / Vertex AI ────────────────────────────────────────────────
+GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+VERTEX_LOCATION=global
+VERTEX_MODEL=gemini-3.6-flash
+GOOGLE_SA_CLIENT_EMAIL=rawi-vertex@your-gcp-project-id.iam.gserviceaccount.com
+# Copy `private_key` out of the service-account JSON EXACTLY as it appears
+# there — one line, with the literal \n escape sequences and the
+# -----BEGIN PRIVATE KEY----- header intact. Do not reformat it. The client
+# calls .replace(/\n/g, '\n') on read, and also accepts a real multi-line
+# paste, so either form works.
+GOOGLE_SA_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg...\n-----END PRIVATE KEY-----\n"
 
-# Paid tutor remains disabled unless every setting below is present.
-OPENAI_API_KEY=server-only-openai-api-key
-RAWI_AI_GLOBAL_MONTHLY_CAP_USD=10
-RAWI_AI_LEARNER_MONTHLY_CAP_USD=1
-RAWI_OPENAI_MODEL=gpt-5.6-luna
-RAWI_OPENAI_INPUT_USD_PER_MILLION=0.20
-RAWI_OPENAI_OUTPUT_USD_PER_MILLION=1.20
-RAWI_AI_TIMEOUT_MS=8000
+# ── Supabase ────────────────────────────────────────────────────────────────
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_ANON_KEY=sb_publishable_...
+# Server only. Never in a VITE_* var, never in wrangler.jsonc.
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_...
 
-RAWI_UPLOADS_ENABLED=false
-RAWI_RETENTION_DAYS=30
-RAWI_OPERATOR_NAME=
-RAWI_OPERATOR_CONTACT=
-RAWI_FOUNDER_USER_IDS=founder-supabase-user-uuid
-RAWI_LOCAL_ADMIN_TOKEN=local-only-random-secret
+# ── Cost control ────────────────────────────────────────────────────────────
+# Paid AI fails closed: without BOTH caps and a provider credential, live mode
+# is unavailable and the app runs on fixtures.
+RAWI_AI_MONTHLY_CAP_USD=10
+RAWI_AI_USER_MONTHLY_CAP_USD=1
+# Owner-set from the Vertex pricing page, so a price change is a config edit
+# and never a silent under-count.
+VERTEX_INPUT_USD_PER_MILLION=0.20
+VERTEX_OUTPUT_USD_PER_MILLION=1.20
 
+# ── Opt-in live evaluation only (npm run eval:live) ─────────────────────────
+RAWI_LIVE_EVAL_MAX_USD=0.01

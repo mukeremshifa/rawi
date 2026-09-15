@@ -2,7 +2,13 @@ node_modules/
 dist/
 .wrangler/
 .env
+.env.local
 .dev.vars
 supabase/.temp/
+test-results/
+playwright-report/
 *.local
 .DS_Store
+
+# Pre-rebuild local env, kept for reference.
+*.bak-prerebuild
