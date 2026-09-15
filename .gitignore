@@ -9,3 +9,6 @@ test-results/
 playwright-report/
 *.local
 .DS_Store
+
+# Pre-rebuild local env, kept for reference.
+*.bak-prerebuild
