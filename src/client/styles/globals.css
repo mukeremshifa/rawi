@@ -10,56 +10,7 @@
 /* Tailwind v4: design tokens live in CSS and reach utilities through @theme. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ===========================================================================
-   Rawi — the design system.
 
-   **Every ratio quoted below was computed, not estimated.** Run
-   `node scripts/check-contrast.mjs`; it parses this file, so it cannot drift
-   away from these numbers the way a hand-maintained table would. Change a
-   colour here and re-run it. The full argument is in docs/DESIGN.md.
-
-   Five rules hold this palette together.
-
-   1. **Neutrals are chroma 0.** Every grey, in both themes, is achromatic.
-      A grey tinted toward the accent muddies the only colour allowed to mean
-      anything. (Kept from SynapseDeck. It was right there and it is right here.)
-
-   2. **One accent hue: 255, a deep low-chroma blue-slate.** SynapseDeck's
-      yellow-green existed because "rating Easy is what the product exists to
-      produce" — an argument that does not transfer, because Rawi does not
-      produce a rating. What Rawi produces is a reading surface you can think
-      on. So the accent is a *mark* and a *focus ring*, the page itself carries
-      no colour at all, and the hue is the quietest one that still reads as a
-      deliberate choice rather than as grey.
-
-   3. **--primary here IS a foreground, and that inverts SynapseDeck's rule
-      two.** Theirs was oklch(.922 …) — a near-white field that could never be
-      ink. Rawi's is oklch(.45 …): dark enough to be a link, an icon, a focused
-      outline, and still able to carry white as a filled button. This is the
-      one structural change the hue change forces, and it is why the accent can
-      appear as a small mark on a page that is otherwise ink on paper.
-
-   4. **The evidence ramp is two ramps, and that is not redundancy.** A stop
-      light enough for ink to sit on it (>=4.5:1) is too light to *be* a mark on
-      white paper (>=3:1) — the two requirements barely overlap.
-        --evidence-*        the FIELD ramp. A filled chip, a bar. Ink on top.
-        --evidence-*-mark   the INK-side ramp. A dot, a rule, an icon — anything
-                            that sits *on* the page rather than under something.
-      Both climb in **lightness**, because value survives colour-blindness and
-      hue does not. The ramp is one hue plus a chroma-0 first stop, so the four
-      evidence states separate by value alone.
-
-      The states are the product's, not a score: not-checked -> practicing ->
-      independent-once -> retained-on-review. There is deliberately no fifth
-      stop and no percentage anywhere near this ramp (invariant 6).
-
-   5. **Borders are two tokens.** --border is decorative: a card hairline, which
-      is what a hairline has to be to read as one. --border-strong is what
-      WCAG SC 1.4.11 actually governs — boundaries that carry information: a
-      field outline, a selected state, a focused control. Using --border where
-      meaning lives is the bug; using --border-strong for decoration makes the
-      app look like a spreadsheet.
-   =========================================================================== */
 
 :root {
   /* ── Radius ─────────────────────────────────────────────────────────── */

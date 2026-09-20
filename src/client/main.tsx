@@ -7,7 +7,6 @@ import { ApiProvider } from '@/api/provider.tsx';
 import { ErrorBoundary } from '@/components/ErrorBoundary.tsx';
 import { ThemeProvider } from '@/components/theme.tsx';
 import { Toaster } from '@/components/ui/sonner.tsx';
-import { AuthProvider, useAuth } from '@/features/auth/AuthProvider.tsx';
 import { AppRoutes } from '@/routes.tsx';
 
 import '@/styles/globals.css';
@@ -41,9 +40,8 @@ const queryClient = new QueryClient({
 });
 
 function App() {
-  const { getToken } = useAuth();
   return (
-    <ApiProvider getToken={getToken}>
+    <ApiProvider>
       <AppRoutes />
       <Toaster />
     </ApiProvider>
@@ -59,9 +57,7 @@ createRoot(root).render(
       <ThemeProvider>
         <QueryClientProvider client={queryClient}>
           <BrowserRouter>
-            <AuthProvider>
-              <App />
-            </AuthProvider>
+            <App />
           </BrowserRouter>
         </QueryClientProvider>
       </ThemeProvider>

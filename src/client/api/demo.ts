@@ -1,25 +1,7 @@
 import type { Concept, Source, SourceChunk, Workspace } from '@shared/contract.ts';
 import type { ConceptContent } from '@shared/content.ts';
 
-/**
- * The seeded demo workspace.
- *
- * ── Why this exists and the old `demo-lesson.ts` did not survive ──────────
- *
- * The deleted file was a hardcoded lesson the *application* read: the product
- * had one lesson and the lesson was in the bundle. This is data for the fake
- * API, which means it is a fixture rather than a feature — the real app has no
- * built-in content, and a learner's first workspace is one they create from
- * their own material.
- *
- * It is deliberately a real, complete concept: two item families, a hintable
- * item, a revealable item, a practice item, a transfer item and a review item.
- * That is the minimum needed for the full loop — including the delayed re-check
- * asking a *different* family — to be exercised end to end against the fake.
- *
- * The subject is deliberately generic. The old repo's microeconomics pilot is
- * gone; nothing in the product is about one course any more.
- */
+
 
 const WORKSPACE_ID = 'ws-demo';
 const SOURCE_ID = 'src-demo';

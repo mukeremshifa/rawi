@@ -13,8 +13,6 @@ import {
   type Job,
   type Page,
   type PageRequest,
-  type Profile,
-  type Quota,
   type Readiness,
   type Session,
   type SessionCommandInput,
@@ -23,8 +21,6 @@ import {
   type StudyPlan,
   type SubmitResponseInput,
   type UpdateWorkspaceInput,
-  type UploadRequest,
-  type UploadTicket,
   type Workspace,
 } from '@shared/contract.ts';
 import type { ConceptContent, Task } from '@shared/content.ts';
@@ -32,51 +28,7 @@ import { ASK_NO_GROUNDING, FEEDBACK } from '@shared/messages.ts';
 
 import { DEMO } from './demo.ts';
 
-/**
- * The in-browser implementation of `ApiClient`.
- *
- * ── The rule that keeps this honest ───────────────────────────────────────
- *
- * **The fake may not have capabilities a real API could not have.** No
- * cross-workspace queries, no roll-ups the server could not compute, nothing
- * synchronous that would need a job. A fake that is more capable than the
- * server is a fake that lets the UI be designed against an API nobody can
- * build — and the bill arrives at integration, as a redesign.
- *
- * Concretely, that means `addSource` returns a job here too, and that job takes
- * several polls to finish. It would be one line to return a ready source. It
- * would also be the lie that makes `GeneratingState` untested.
- *
- * ── It enforces the invariants, because the UI is designed against them ───
- *
- * Assistance is monotonic here. A revealed item is never independent evidence.
- * A command naming a stale item is rejected with `stale_request`. The fake is
- * where the error states are *dialable*, and an error state you cannot dial is
- * an error state nobody has looked at.
- *
- * State lives in memory and is lost on reload, which is correct for a fake: it
- * is a demonstration surface and a test fixture, not a local-first mode.
- */
-
-interface FakeConfig {
-  latencyMs: number;
-  failAlways: ApiClientError | null;
-}
-
-const config: FakeConfig = { latencyMs: 0, failAlways: null };
-
-/** Dial latency and failure. Kept from the donor fake, for the same reason. */
-export function configure(next: Partial<FakeConfig>): void {
-  if (next.latencyMs !== undefined) config.latencyMs = next.latencyMs;
-  if (next.failAlways !== undefined) config.failAlways = next.failAlways;
-}
-
-async function latency(): Promise<void> {
-  if (config.failAlways) throw config.failAlways;
-  if (config.latencyMs > 0) {
-    await new Promise((resolve) => setTimeout(resolve, config.latencyMs));
-  }
-}
+/** In-memory demo data. Reloading resets all changes; no external services are called. */
 
 // ---------------------------------------------------------------------------
 // The store
@@ -89,7 +41,7 @@ interface ItemProgress {
   usedAsk: boolean;
 }
 
-interface FakeSession {
+interface LocalSession {
   id: string;
   workspaceId: string;
   conceptId: string;
@@ -104,7 +56,7 @@ interface FakeSession {
   ended: boolean;
 }
 
-interface FakeAttempt {
+interface LocalAttempt {
   id: string;
   conceptId: string;
   itemId: string;
@@ -125,8 +77,8 @@ interface Store {
   sources: Map<string, Source & { text: string }>;
   chunks: Map<string, SourceChunk & { workspaceId: string }>;
   concepts: Map<string, Concept & { content: ConceptContent | null }>;
-  sessions: Map<string, FakeSession>;
-  attempts: FakeAttempt[];
+  sessions: Map<string, LocalSession>;
+  attempts: LocalAttempt[];
   jobs: Map<string, Job & { remaining: number }>;
 }
 
@@ -157,19 +109,6 @@ function seed(): void {
   for (const source of DEMO.sources) store.sources.set(source.id, { ...source });
   for (const chunk of DEMO.chunks) store.chunks.set(chunk.id, { ...chunk });
   for (const concept of DEMO.concepts) store.concepts.set(concept.id, { ...concept });
-}
-
-/** Reset, for tests that need a clean slate. */
-export function reset(): void {
-  store.workspaces.clear();
-  store.sources.clear();
-  store.chunks.clear();
-  store.concepts.clear();
-  store.sessions.clear();
-  store.attempts = [];
-  store.jobs.clear();
-  seeded = false;
-  seed();
 }
 
 function requireWorkspace(workspaceId: string): Workspace {
@@ -211,7 +150,7 @@ function raise(
   return RANK[next] > RANK[current] ? next : current;
 }
 
-function progress(session: FakeSession, itemId: string): ItemProgress {
+function progress(session: LocalSession, itemId: string): ItemProgress {
   return (
     session.items[itemId] ?? {
       assistance: 'none',
@@ -222,11 +161,11 @@ function progress(session: FakeSession, itemId: string): ItemProgress {
   );
 }
 
-function attemptsFor(conceptId: string): FakeAttempt[] {
+function attemptsFor(conceptId: string): LocalAttempt[] {
   return store.attempts.filter((attempt) => attempt.conceptId === conceptId);
 }
 
-/** The same derivation `rules.ts` does, so the UI sees the same states. */
+/** Derive the displayed evidence from local attempts. */
 function evidenceOf(conceptId: string): Concept['evidence'] {
   const attempts = attemptsFor(conceptId);
   const independent = attempts.filter((attempt) => attempt.countsAsIndependent);
@@ -265,9 +204,7 @@ function projectConcept(concept: Concept & { content: ConceptContent | null }): 
 }
 
 function toCheckItem(task: Task, conceptId: string): CheckItem {
-  // The same stripping the server does. `correct_option_id` and
-  // `answer_explanation` do not cross this line until they are earned — which
-  // is the property `check-bundle-secrets.mjs` verifies against `dist/`.
+  // Views receive the question; demo answers stay in this data layer.
   return {
     id: task.id,
     conceptId,
@@ -280,7 +217,7 @@ function toCheckItem(task: Task, conceptId: string): CheckItem {
   };
 }
 
-function projectSession(session: FakeSession): Session {
+function projectSession(session: LocalSession): Session {
   const content = requireContent(session.conceptId);
   const task = session.activeItemId
     ? content.tasks.find((candidate) => candidate.id === session.activeItemId)
@@ -314,7 +251,7 @@ function projectSession(session: FakeSession): Session {
   };
 }
 
-function guard(session: FakeSession, input: SessionCommandInput): void {
+function guard(session: LocalSession, input: SessionCommandInput): void {
   if (session.version !== input.expectedVersion) {
     throw new ApiClientError('stale_request', 'This session moved on. Reload.');
   }
@@ -362,36 +299,8 @@ function paginate<T>(items: T[], page?: PageRequest): Page<T> {
 // The implementation
 // ---------------------------------------------------------------------------
 
-export const fakeApi: ApiClient = {
-  async getProfile(timezone) {
-    await latency();
-    seed();
-    const profile: Profile = {
-      userId: 'demo-user',
-      email: 'you@example.com',
-      timezone,
-      awaitingInvite: false,
-    };
-    return profile;
-  },
-
-  async getQuota() {
-    await latency();
-    const quota: Quota = {
-      mode: 'fixture',
-      monthlyCapCents: null,
-      userCapCents: null,
-      userSpentCents: 0,
-      ambiguousCalls: 0,
-      available: false,
-      unavailableReason:
-        'Running on fixtures. Everything works; nothing is sent to a model and nothing is charged.',
-    };
-    return quota;
-  },
-
+export const localApi: ApiClient = {
   async listWorkspaces(page) {
-    await latency();
     seed();
     const items = [...store.workspaces.values()]
       .map((workspace) => ({
@@ -414,7 +323,6 @@ export const fakeApi: ApiClient = {
   },
 
   async getWorkspace(workspaceId) {
-    await latency();
     const workspace = requireWorkspace(workspaceId);
     return {
       ...workspace,
@@ -431,7 +339,6 @@ export const fakeApi: ApiClient = {
   },
 
   async createWorkspace(input: CreateWorkspaceInput) {
-    await latency();
     seed();
     const now = new Date().toISOString();
     const workspace: Workspace & { intent: string | null } = {
@@ -449,7 +356,6 @@ export const fakeApi: ApiClient = {
   },
 
   async updateWorkspace(workspaceId, input: UpdateWorkspaceInput) {
-    await latency();
     const workspace = requireWorkspace(workspaceId);
     const next = {
       ...workspace,
@@ -462,7 +368,6 @@ export const fakeApi: ApiClient = {
   },
 
   async deleteWorkspace(workspaceId) {
-    await latency();
     requireWorkspace(workspaceId);
     store.workspaces.delete(workspaceId);
     for (const [id, source] of store.sources) {
@@ -474,7 +379,6 @@ export const fakeApi: ApiClient = {
   },
 
   async listSources(workspaceId, page) {
-    await latency();
     requireWorkspace(workspaceId);
     return paginate(
       [...store.sources.values()]
@@ -485,7 +389,6 @@ export const fakeApi: ApiClient = {
   },
 
   async getSource(workspaceId, sourceId) {
-    await latency();
     requireWorkspace(workspaceId);
     const source = store.sources.get(sourceId);
     if (!source || source.workspaceId !== workspaceId) {
@@ -495,7 +398,6 @@ export const fakeApi: ApiClient = {
   },
 
   async getSourceChunks(workspaceId, sourceId, page) {
-    await latency();
     requireWorkspace(workspaceId);
     return paginate(
       [...store.chunks.values()]
@@ -505,23 +407,7 @@ export const fakeApi: ApiClient = {
     );
   },
 
-  async requestUpload(workspaceId, input: UploadRequest) {
-    await latency();
-    requireWorkspace(workspaceId);
-    const ticket: UploadTicket = {
-      // A real API returns a signed URL to storage. The fake returns a
-      // `blob:`-shaped placeholder rather than something that looks live, so a
-      // surface that tries to actually PUT to it fails loudly here rather than
-      // quietly in production.
-      uploadUrl: `about:blank#fake-upload/${input.filename}`,
-      path: `demo-user/${workspaceId}/${crypto.randomUUID()}-${input.filename}`,
-      expiresAt: new Date(Date.now() + 7_200_000).toISOString(),
-    };
-    return ticket;
-  },
-
   async addSource(workspaceId, input: AddSourceInput) {
-    await latency();
     requireWorkspace(workspaceId);
 
     const text = input.text ?? '';
@@ -579,7 +465,6 @@ export const fakeApi: ApiClient = {
   },
 
   async deleteSource(workspaceId, sourceId) {
-    await latency();
     requireWorkspace(workspaceId);
     store.sources.delete(sourceId);
     for (const [id, chunk] of store.chunks) {
@@ -588,7 +473,6 @@ export const fakeApi: ApiClient = {
   },
 
   async listConcepts(workspaceId) {
-    await latency();
     requireWorkspace(workspaceId);
     return [...store.concepts.values()]
       .filter((concept) => concept.workspaceId === workspaceId)
@@ -597,12 +481,10 @@ export const fakeApi: ApiClient = {
   },
 
   async getConcept(workspaceId, conceptId) {
-    await latency();
     return projectConcept(requireConcept(workspaceId, conceptId));
   },
 
   async extractConcepts(workspaceId) {
-    await latency();
     requireWorkspace(workspaceId);
     const job: Job & { remaining: number } = {
       id: `job-${crypto.randomUUID().slice(0, 8)}`,
@@ -622,7 +504,6 @@ export const fakeApi: ApiClient = {
   },
 
   async getConceptReadiness(workspaceId, conceptId) {
-    await latency();
     const concept = requireConcept(workspaceId, conceptId);
     const blockers: Readiness['blockers'] = [];
     if (!concept.content) {
@@ -637,7 +518,6 @@ export const fakeApi: ApiClient = {
   },
 
   async startSession(workspaceId, conceptId) {
-    await latency();
     requireConcept(workspaceId, conceptId);
     const content = requireContent(conceptId);
 
@@ -651,7 +531,7 @@ export const fakeApi: ApiClient = {
       nextItem(content, 'entry', exposed) ?? nextItem(content, 'probe', exposed);
     if (!first) throw new ApiClientError('item_bank_exhausted', FEEDBACK.bankExhausted);
 
-    const session: FakeSession = {
+    const session: LocalSession = {
       id: `sess-${crypto.randomUUID().slice(0, 8)}`,
       workspaceId,
       conceptId,
@@ -672,7 +552,6 @@ export const fakeApi: ApiClient = {
   },
 
   async getSession(workspaceId, sessionId) {
-    await latency();
     requireWorkspace(workspaceId);
     const session = store.sessions.get(sessionId);
     if (!session) throw new ApiClientError('not_found', 'That session is not here.');
@@ -680,7 +559,6 @@ export const fakeApi: ApiClient = {
   },
 
   async advanceStage(workspaceId, sessionId, input: AdvanceStageInput) {
-    await latency();
     requireWorkspace(workspaceId);
     const session = store.sessions.get(sessionId);
     if (!session) throw new ApiClientError('not_found', 'That session is not here.');
@@ -694,7 +572,6 @@ export const fakeApi: ApiClient = {
   },
 
   async requestHint(workspaceId, sessionId, input) {
-    await latency();
     requireWorkspace(workspaceId);
     const session = store.sessions.get(sessionId);
     if (!session) throw new ApiClientError('not_found', 'That session is not here.');
@@ -715,7 +592,6 @@ export const fakeApi: ApiClient = {
   },
 
   async revealAnswer(workspaceId, sessionId, input) {
-    await latency();
     requireWorkspace(workspaceId);
     const session = store.sessions.get(sessionId);
     if (!session) throw new ApiClientError('not_found', 'That session is not here.');
@@ -731,7 +607,6 @@ export const fakeApi: ApiClient = {
   },
 
   async submitResponse(workspaceId, sessionId, input: SubmitResponseInput) {
-    await latency();
     requireWorkspace(workspaceId);
     const session = store.sessions.get(sessionId);
     if (!session) throw new ApiClientError('not_found', 'That session is not here.');
@@ -826,7 +701,6 @@ export const fakeApi: ApiClient = {
   },
 
   async endSession(workspaceId, sessionId) {
-    await latency();
     requireWorkspace(workspaceId);
     const session = store.sessions.get(sessionId);
     if (!session) throw new ApiClientError('not_found', 'That session is not here.');
@@ -838,7 +712,6 @@ export const fakeApi: ApiClient = {
   },
 
   async ask(workspaceId, input: AskInput): Promise<AskResponse> {
-    await latency();
     requireWorkspace(workspaceId);
 
     let recordedAsSupport = false;
@@ -898,7 +771,6 @@ export const fakeApi: ApiClient = {
   },
 
   async listDueReviews(workspaceId) {
-    await latency();
     requireWorkspace(workspaceId);
     const today = new Date().toISOString().slice(0, 10);
     return [...store.concepts.values()]
@@ -908,7 +780,6 @@ export const fakeApi: ApiClient = {
   },
 
   async startReview(workspaceId, conceptId) {
-    await latency();
     requireConcept(workspaceId, conceptId);
     const content = requireContent(conceptId);
     const exposed = exposedFor(conceptId);
@@ -919,7 +790,7 @@ export const fakeApi: ApiClient = {
       nextItem(content, 'transfer', exposed, seenFamilies);
     if (!item) throw new ApiClientError('item_bank_exhausted', FEEDBACK.bankExhausted);
 
-    const session: FakeSession = {
+    const session: LocalSession = {
       id: `sess-${crypto.randomUUID().slice(0, 8)}`,
       workspaceId,
       conceptId,
@@ -940,7 +811,6 @@ export const fakeApi: ApiClient = {
   },
 
   async getConceptEvidence(workspaceId, conceptId): Promise<ConceptEvidence> {
-    await latency();
     const concept = projectConcept(requireConcept(workspaceId, conceptId));
     const attempts = attemptsFor(conceptId).map((attempt) => ({
       id: attempt.id,
@@ -964,7 +834,6 @@ export const fakeApi: ApiClient = {
   },
 
   async getEvidenceSummary(workspaceId): Promise<EvidenceSummary> {
-    await latency();
     requireWorkspace(workspaceId);
     const concepts = [...store.concepts.values()].filter(
       (concept) => concept.workspaceId === workspaceId,
@@ -993,7 +862,6 @@ export const fakeApi: ApiClient = {
   },
 
   async getStudyPlan(workspaceId): Promise<StudyPlan> {
-    await latency();
     requireWorkspace(workspaceId);
     const today = new Date().toISOString().slice(0, 10);
 
@@ -1051,7 +919,6 @@ export const fakeApi: ApiClient = {
   },
 
   async getJob(workspaceId, jobId) {
-    await latency();
     requireWorkspace(workspaceId);
     const job = store.jobs.get(jobId);
     if (!job) throw new ApiClientError('not_found', 'That job is not here.');
@@ -1087,7 +954,6 @@ export const fakeApi: ApiClient = {
   },
 
   async listJobs(workspaceId) {
-    await latency();
     requireWorkspace(workspaceId);
     return [...store.jobs.values()]
       .filter((job) => job.workspaceId === workspaceId)

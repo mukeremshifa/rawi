@@ -1,31 +1,5 @@
 import { z } from 'zod';
 
-/**
- * The authored content model — what a concept, its claims, its items and its
- * supports actually are.
- *
- * Adapted from Concept Bridge's `lib/content/schema.ts`. Two things came across
- * because they are load-bearing rather than incidental:
- *
- * **1. `family_id`.** Two items with the same family are the same question
- * wearing different clothes. The delayed re-check *must* ask a different family
- * (invariant, brief §1 feature 6) or it is testing whether the learner
- * remembers an answer rather than whether they understand a concept. Without
- * this field that rule cannot be expressed, only hoped for.
- *
- * **2. Claims carry both acceptable and contradiction examples.** An assessor
- * given only the right answers can score fluency; one given both can tell
- * *contradiction* from *omission*, which is the single distinction that decides
- * whether a learner is taught again or moved on. It is also what lets the
- * fixture assessor be deterministic without being a stub.
- *
- * What did **not** come across: the bilingual `{en, ar}` pairs, the middle
- * school grade band, and the fixed three-lesson unit shape. Rawi is
- * English-first with no Arabic UI in v1 (logical-property CSS keeps that cheap
- * later), and content here is extracted from one learner's own sources rather
- * than authored as a curriculum, so the unit/lesson nesting has no job.
- */
-
 /** Ids are uppercase-underscore so they are visibly not prose. */
 const IdSchema = z.string().regex(/^[A-Z][A-Z0-9_]*$/);
 
@@ -91,11 +65,7 @@ export const taskSchema = z
     options: z
       .array(z.object({ id: z.string().min(1), text: z.string().min(1) }))
       .nullable(),
-    /**
-     * Server-side only. This never reaches the browser on an unanswered item
-     * (invariant 9), which is why it lives on the authored task rather than on
-     * the contract's `CheckItem`.
-     */
+
     correct_option_id: z.string().nullable(),
     /** The prose shown after a reveal, or after the item is answered. */
     answer_explanation: z.string().min(1),

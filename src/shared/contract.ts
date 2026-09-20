@@ -1,46 +1,6 @@
 import { z } from 'zod';
 
-/**
- * **The contract.** One interface of named methods, two implementations.
- *
- * ── Why an interface of named methods, and not `api.get<T>(path)` ─────────
- *
- * A verb-shaped seam (`api.get<T>('/concepts')`) takes a string and a
- * caller-asserted type parameter, so nothing can implement it *differently* in
- * a way TypeScript checks. A fake behind that seam has to parse URLs and guess
- * what `T` was meant to be, and drift between fake and real surfaces as a 404
- * at runtime rather than as a compile error.
- *
- * So this file declares `ApiClient` — named methods, typed arguments, typed
- * returns. `src/client/api/fake.ts` and `src/client/api/client.ts` are two
- * implementations of it, and the Worker serves exactly one route per method
- * (`scripts/check-routes.mjs` fails the build if that stops being true).
- * **Drift is a compile error**, which is the whole reason this file exists.
- *
- * ── The model, in one line ────────────────────────────────────────────────
- *
- * **The workspace is the only first-class citizen.** Sources, concepts, check
- * items, sessions and evidence belong to exactly one workspace and have no
- * existence outside it. Every workspace-scoped method therefore takes
- * `workspaceId` as its required first parameter — never optional, never
- * defaulted, never inferred from a heuristic. A surface that cannot name its
- * workspace is not a valid surface, and a defaulted scope is how an ownership
- * bug becomes silent.
- *
- * ── One Zod definition per concept ────────────────────────────────────────
- *
- * Each entity is defined once, here, and its TypeScript type is inferred from
- * the schema rather than declared beside it. The Worker parses requests with
- * these same schemas, so "what the client sends" and "what the server accepts"
- * cannot describe different shapes.
- *
- * ── What the server owns ──────────────────────────────────────────────────
- *
- * Invariant 7: correctness, assistance, evidence, scheduling and quota are
- * server decisions. Notice what this interface has **no method for**: setting
- * an evidence state, marking an attempt independent, choosing a review date,
- * or clearing assistance. The browser renders and requests; it never decides.
- */
+/** Schemas and the API interface used by the local prototype. */
 
 // ---------------------------------------------------------------------------
 // Errors — part of the contract, because the UI designs against them
@@ -68,11 +28,7 @@ export const ApiErrorCode = z.enum([
   'refused',
   /** The model or its transport failed. Retryable. */
   'provider_error',
-  /**
-   * The model returned something that did not survive validation — an invented
-   * evidence quote, a wrong ID set. **Not a warning.** Invariant 11: a rejected
-   * assessment affects no evidence at all.
-   */
+
   'assessment_rejected',
   /**
    * The request named a check item that is no longer the active one, or a stage
@@ -80,15 +36,11 @@ export const ApiErrorCode = z.enum([
    * outcome, not a crash.
    */
   'stale_request',
-  /**
-   * Every authored item for this concept has been seen. **An honest terminal
-   * state** (invariant 5), not an error the learner can retry away — the server
-   * will not recycle a seen item as fresh.
-   */
+
   'item_bank_exhausted',
   /** The network did not carry the request. Retryable. */
   'network',
-  /** The route exists in this contract and not yet in the Worker. */
+
   'not_implemented',
   'internal',
 ]);
@@ -141,19 +93,6 @@ export interface Page<T> {
 // The learning vocabulary — the nouns that make Rawi not a flashcard app
 // ---------------------------------------------------------------------------
 
-/**
- * What the server is willing to say about a concept, derived **only** from the
- * append-only attempt log.
- *
- *   not-checked          nothing has been asked yet
- *   practicing           attempts exist; none was both correct and unaided
- *   independent-once     one correct, unaided answer on a check item
- *   retained-on-review   a later, different item from another family, also
- *                        correct and unaided
- *
- * Invariant 6: this is the whole vocabulary. There is no number, no percentage
- * and no model confidence score anywhere near it.
- */
 export const EvidenceState = z.enum([
   'not-checked',
   'practicing',
@@ -162,21 +101,9 @@ export const EvidenceState = z.enum([
 ]);
 export type EvidenceState = z.infer<typeof EvidenceState>;
 
-/**
- * How much help was in force on an item when it was answered.
- *
- * Invariant 1: this only ever climbs — `none -> hinted -> revealed`. Not by
- * reload, not by a second tab, not by a mode switch. Invariant 2: anything
- * above `none` means the answer is not independent evidence, **and using Ask
- * during a check raises it to `hinted`.**
- */
 export const AssistanceLevel = z.enum(['none', 'hinted', 'revealed']);
 export type AssistanceLevel = z.infer<typeof AssistanceLevel>;
 
-/**
- * Why an item is being asked. Carried over from the Concept Bridge router,
- * where it is already subject-agnostic.
- */
 export const ItemPurpose = z.enum([
   'entry',
   'probe',
@@ -263,29 +190,10 @@ export type SourceChunk = z.infer<typeof SourceChunk>;
 export const AddSourceInput = z.object({
   title: z.string().min(1).max(160),
   kind: SourceKind,
-  /** Present for `pasted`. For `upload`, the text comes from `uploadPath`. */
+  /** Pasted text or text read from a local file. */
   text: z.string().max(200_000).optional(),
-  /** The storage path returned by `requestUpload`. Present for `upload`. */
-  uploadPath: z.string().optional(),
 });
 export type AddSourceInput = z.infer<typeof AddSourceInput>;
-
-export const UploadRequest = z.object({
-  filename: z.string().min(1).max(200),
-  /** v1 accepts `.txt` and `.md` only. No PDF, no OCR. */
-  contentType: z.enum(['text/plain', 'text/markdown']),
-  byteSize: z.number().int().min(1).max(5_000_000),
-});
-export type UploadRequest = z.infer<typeof UploadRequest>;
-
-export const UploadTicket = z.object({
-  /** A signed, single-use URL into the private `sources` bucket. */
-  uploadUrl: z.string(),
-  /** Hand this back to `addSource` as `uploadPath`. */
-  path: z.string(),
-  expiresAt: z.string(),
-});
-export type UploadTicket = z.infer<typeof UploadTicket>;
 
 export const Concept = z.object({
   id: z.string(),
@@ -300,29 +208,13 @@ export const Concept = z.object({
   sourceIds: z.array(z.string()),
   /** When the last attempt on this concept was recorded. */
   lastAttemptAt: z.string().nullable(),
-  /**
-   * When a delayed re-check is due, anchored to the attempt that earned it.
-   * Invariant 4: reading this on a later day does not move it.
-   */
+
   dueAt: z.string().nullable(),
   /** How many authored items remain unseen. `0` is the honest terminal state. */
   itemsRemaining: z.number().int().min(0),
 });
 export type Concept = z.infer<typeof Concept>;
 
-/**
- * One thing the learner is asked to do.
- *
- * **`familyId` is the field the delayed re-check depends on.** Two items in the
- * same family are the same question wearing different clothes; a re-check must
- * ask a *different* family or it is testing recall of an answer rather than
- * understanding of a concept.
- *
- * Notice what is absent: **there is no correct answer on this type.** The
- * server never sends one to the browser before it has been earned
- * (invariant 9), and `scripts/check-bundle-secrets.mjs` greps `dist/` to make
- * sure no fixture answer sneaks in either.
- */
 export const CheckItem = z.object({
   id: z.string(),
   conceptId: z.string(),
@@ -338,10 +230,6 @@ export const CheckItem = z.object({
 });
 export type CheckItem = z.infer<typeof CheckItem>;
 
-/**
- * One row of the append-only log. Immutable once written (invariant 4),
- * including `reviewDue` — which is why it is stored rather than recomputed.
- */
 export const Attempt = z.object({
   id: z.string(),
   conceptId: z.string(),
@@ -352,7 +240,7 @@ export const Attempt = z.object({
   correct: z.boolean(),
   /** What was in force **at submission**, not what the learner did after. */
   assistance: AssistanceLevel,
-  /** Invariant 2: `correct && assistance === 'none'`. Nothing else. */
+
   countsAsIndependent: z.boolean(),
   /** Set when the learner used Ask on this item. Ask during a check is help. */
   usedAsk: z.boolean(),
@@ -378,7 +266,7 @@ export const Session = z.object({
   version: z.number().int().min(1),
   /** `null` at `teach` and `summary`, where there is nothing to answer. */
   item: CheckItem.nullable(),
-  /** Assistance in force on `item`. Monotonic (invariant 1). */
+
   assistance: AssistanceLevel,
   /** Hints already handed out for `item`, in order. */
   hints: z.array(z.string()),
@@ -400,10 +288,7 @@ export const Session = z.object({
     .nullable(),
   /** The evidence state as of this session's last recorded attempt. */
   evidence: EvidenceState,
-  /**
-   * True when every authored item for this concept has been seen. Invariant 5:
-   * the session ends honestly rather than re-serving something.
-   */
+
   itemBankExhausted: z.boolean(),
   startedAt: z.string(),
 });
@@ -411,11 +296,7 @@ export type Session = z.infer<typeof Session>;
 
 /** Every command that mutates a session carries the item and stage it meant. */
 export const SessionCommandInput = z.object({
-  /**
-   * The item the learner was actually looking at. Invariant 3 and the
-   * stale-request guard both live here: a command naming a replaced item is
-   * rejected, not applied to whatever happens to be active now.
-   */
+
   itemId: z.string(),
   /** Where the client thought the session was. Mismatch is `stale_request`. */
   expectedStage: SessionStage,
@@ -526,13 +407,6 @@ export type JobKind = z.infer<typeof JobKind>;
 export const JobStatus = z.enum(['queued', 'running', 'succeeded', 'failed']);
 export type JobStatus = z.infer<typeof JobStatus>;
 
-/**
- * A bounded, stepped, client-polled unit of work.
- *
- * Each Worker invocation advances **one step** and returns; the client polls
- * `getJob`. No Queues and no Durable Objects — both add cost or complexity for
- * nothing this workload needs.
- */
 export const Job = z.object({
   id: z.string(),
   workspaceId: z.string(),
@@ -549,45 +423,6 @@ export const Job = z.object({
 });
 export type Job = z.infer<typeof Job>;
 
-export const Profile = z.object({
-  userId: z.string(),
-  email: z.string().nullable(),
-  timezone: z.string(),
-  /**
-   * Whether the invite gate is closed **and** this account is not through it.
-   * The gate is a flag now, off by default; the mechanism stays available.
-   */
-  awaitingInvite: z.boolean(),
-});
-export type Profile = z.infer<typeof Profile>;
-
-/**
- * Whether paid AI is available, and honestly why not when it is not.
- *
- * Fail-closed: without a provider credential **and** both caps, `mode` is
- * `fixture` and the app says so rather than pretending to be thinking.
- */
-export const Quota = z.object({
-  mode: z.enum(['fixture', 'live']),
-  /** Cents, not dollars, because money is an integer. `null` in fixture mode. */
-  monthlyCapCents: z.number().int().min(0).nullable(),
-  userCapCents: z.number().int().min(0).nullable(),
-  userSpentCents: z.number().int().min(0),
-  /**
-   * Calls that may have charged but whose outcome is unknown. Invariant 10:
-   * never assumed free, and surfaced rather than buried.
-   */
-  ambiguousCalls: z.number().int().min(0),
-  available: z.boolean(),
-  unavailableReason: z.string().nullable(),
-});
-export type Quota = z.infer<typeof Quota>;
-
-/**
- * Whether a concept is ready to be *checked* — kept from the donor contract
- * because the idea generalises: a surface that offers an action the server will
- * refuse is a surface that lies.
- */
 export const Readiness = z.object({
   ready: z.boolean(),
   /** What is missing, in the order it should be fixed. */
@@ -610,18 +445,7 @@ export type Readiness = z.infer<typeof Readiness>;
 // The interface
 // ---------------------------------------------------------------------------
 
-/**
- * Every route the Worker serves, and every method the fake implements.
- *
- * `scripts/check-routes.mjs` parses the method names below and the `op` field
- * of the Worker's route table, and fails if the two sets differ. A method added
- * here without a route is caught on the commit that creates it, not at deploy.
- */
 export interface ApiClient {
-  // ── Account ─────────────────────────────────────────────────────────────
-  getProfile(timezone: string): Promise<Profile>;
-  getQuota(): Promise<Quota>;
-
   // ── Workspaces ──────────────────────────────────────────────────────────
   listWorkspaces(page?: PageRequest): Promise<Page<Workspace>>;
   getWorkspace(workspaceId: string): Promise<Workspace>;
@@ -637,7 +461,6 @@ export interface ApiClient {
     sourceId: string,
     page?: PageRequest,
   ): Promise<Page<SourceChunk>>;
-  requestUpload(workspaceId: string, input: UploadRequest): Promise<UploadTicket>;
   /** Returns a job: chunking is stepped, so this cannot be synchronous. */
   addSource(workspaceId: string, input: AddSourceInput): Promise<Job>;
   deleteSource(workspaceId: string, sourceId: string): Promise<void>;

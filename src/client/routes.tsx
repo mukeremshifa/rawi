@@ -2,8 +2,6 @@ import { Link, Navigate, Route, Routes } from 'react-router-dom';
 
 import { Page, PageHeader } from '@/components/layout.tsx';
 import { Button } from '@/components/ui/button.tsx';
-import { AuthCallbackPage, SignInPage } from '@/features/auth/AuthPages.tsx';
-import { ProtectedRoute } from '@/features/auth/ProtectedRoute.tsx';
 import { AskPage } from '@/features/ask/AskPage.tsx';
 import { ConceptMapPage } from '@/features/concepts/ConceptMapPage.tsx';
 import { ConceptPage } from '@/features/concepts/ConceptPage.tsx';
@@ -31,26 +29,9 @@ import { WorkspaceShell } from '@/features/workspace/WorkspaceShell.tsx';
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path="/sign-in" element={<SignInPage />} />
-      <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      <Route path="/" element={<WorkspaceListPage />} />
 
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <WorkspaceListPage />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/w/:workspaceId"
-        element={
-          <ProtectedRoute>
-            <WorkspaceShell />
-          </ProtectedRoute>
-        }
-      >
+      <Route path="/w/:workspaceId" element={<WorkspaceShell />}>
         <Route index element={<PlanPage />} />
         <Route path="concepts" element={<ConceptMapPage />} />
         <Route path="concepts/:conceptId" element={<ConceptPage />} />

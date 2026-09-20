@@ -12,25 +12,23 @@ import { Logo } from '@/components/Logo.tsx';
 import { ErrorState, LoadingState } from '@/components/states.tsx';
 import { ThemeToggle } from '@/components/ThemeToggle.tsx';
 import { cn } from '@/lib/utils.ts';
-import { useAuth } from '@/features/auth/AuthProvider.tsx';
 
 /**
  * The frame every workspace screen sits in.
  *
- * ── These are routes, not tabs ────────────────────────────────────────────
+ * â”€â”€ These are routes, not tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *
  * Switching between Plan, Concepts, Sources, Ask and Evidence changes *what*
  * you are looking at, so each one is a URL. The standing rule: if switching
  * changes what you see, it is a route. Tabs are for two views of the same
  * subject, and these are five different subjects.
  *
- * That is also what makes a deep link work — a learner can bookmark a concept,
+ * That is also what makes a deep link work â€” a learner can bookmark a concept,
  * and the back button means what they expect.
  */
 export function WorkspaceShell() {
   const { workspaceId = '' } = useParams();
   const workspace = useWorkspace(workspaceId);
-  const { user, signOut } = useAuth();
 
   return (
     <div className="flex min-h-full flex-col">
@@ -45,20 +43,12 @@ export function WorkspaceShell() {
           </span>
 
           <span className="min-w-0 truncate text-sm font-medium">
-            {workspace.data?.name ?? '…'}
+            {workspace.data?.name ?? 'â€¦'}
           </span>
 
           <div className="ml-auto flex items-center gap-tight">
             <ThemeToggle />
-            {user && (
-              <button
-                type="button"
-                onClick={() => void signOut()}
-                className="text-muted-foreground hover:text-foreground focus-visible:ring-ring rounded-md px-tight py-hairline text-xs outline-none focus-visible:ring-2"
-              >
-                Sign out
-              </button>
-            )}
+            <span className="text-muted-foreground text-xs">Local demo</span>
           </div>
         </div>
 

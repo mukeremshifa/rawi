@@ -1,28 +1,5 @@
 import type { ApiErrorCode, AssistanceLevel, EvidenceState } from './contract.ts';
 
-/**
- * Every user-facing string that more than one surface says.
- *
- * ── Why they are here and not inline ──────────────────────────────────────
- *
- * Concept Bridge hardcoded its feedback strings inside the pedagogy router,
- * which meant the state machine and the copy could not be changed
- * independently — and the copy was bilingual, so the router also carried a
- * language decision it had no business making. Lifting them out leaves
- * `route.ts` deciding *what happened* and this file deciding *how to say it*.
- *
- * ── The rules these strings obey ──────────────────────────────────────────
- *
- * 1. **Nothing here is a lie.** Unknown is written as unknown. No string
- *    congratulates a learner for something the log does not show.
- * 2. **No score, no percentage, no "mastery".** Evidence is described
- *    (invariant 6). If a sentence here needs a number, it is a count of rows.
- * 3. **Every provider failure says the learner's work is saved**, because it
- *    is: the response is persisted before the model is ever called.
- * 4. Shared between client and server, so an error the Worker raises and an
- *    error the fake injects read identically.
- */
-
 /** How each evidence state is described. Four states, four sentences. */
 export const EVIDENCE_LABEL: Record<EvidenceState, string> = {
   'not-checked': 'Not checked yet',

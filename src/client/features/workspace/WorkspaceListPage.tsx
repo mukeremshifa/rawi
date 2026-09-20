@@ -36,7 +36,7 @@ export function WorkspaceListPage() {
     <Page width="wide" className="py-page">
       <PageHeader
         title="Your workspaces"
-        description="A workspace is one subject you are trying to understand. Sources, concepts and evidence all belong to exactly one."
+        description="Local demo — data and tutor responses are simulated. Changes reset on reload."
         actions={
           <NewWorkspaceDialog open={open} onOpenChange={setOpen}>
             <Button>

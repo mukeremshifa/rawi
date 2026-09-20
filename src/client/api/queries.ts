@@ -18,8 +18,6 @@ import type {
   EvidenceSummary,
   Job,
   Page,
-  Profile,
-  Quota,
   Readiness,
   Session,
   SessionCommandInput,
@@ -54,8 +52,6 @@ import { useApi } from './provider.tsx';
  */
 
 export const keys = {
-  profile: ['profile'] as const,
-  quota: ['quota'] as const,
   workspaces: ['workspaces'] as const,
   workspace: (id: string) => ['workspace', id] as const,
   sources: (id: string) => ['workspace', id, 'sources'] as const,
@@ -76,16 +72,6 @@ export const keys = {
   reviews: (id: string) => ['workspace', id, 'reviews'] as const,
   job: (id: string, jobId: string) => ['workspace', id, 'job', jobId] as const,
 };
-
-export function useProfile(timezone: string): UseQueryResult<Profile> {
-  const api = useApi();
-  return useQuery({ queryKey: keys.profile, queryFn: () => api.getProfile(timezone) });
-}
-
-export function useQuota(): UseQueryResult<Quota> {
-  const api = useApi();
-  return useQuery({ queryKey: keys.quota, queryFn: () => api.getQuota() });
-}
 
 export function useWorkspaces(): UseQueryResult<Page<Workspace>> {
   const api = useApi();
@@ -225,7 +211,7 @@ export function useExtractConcepts(
  * rather than continuing forever against a finished row. On the free plan the
  * poll is also what *advances* the job (see `jobs/runner.ts`), which makes the
  * interval a throughput knob as well as a freshness one — 1200ms is slow enough
- * not to hammer the Worker and fast enough that ingestion feels like progress.
+ * to avoid excessive polling and fast enough that ingestion feels like progress.
  */
 export function useJob(workspaceId: string, jobId: string | null): UseQueryResult<Job> {
   const api = useApi();
