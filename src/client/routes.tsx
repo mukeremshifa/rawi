@@ -1,45 +1,72 @@
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
 
-import { Page, PageHeader } from '@/components/layout.tsx';
-import { Button } from '@/components/ui/button.tsx';
-import { AskPage } from '@/features/ask/AskPage.tsx';
-import { ConceptMapPage } from '@/features/concepts/ConceptMapPage.tsx';
-import { ConceptPage } from '@/features/concepts/ConceptPage.tsx';
-import { EvidencePage } from '@/features/evidence/EvidencePage.tsx';
-import { PlanPage } from '@/features/plan/PlanPage.tsx';
-import { SessionPage } from '@/features/session/SessionPage.tsx';
-import { SourcePage } from '@/features/sources/SourcePage.tsx';
-import { SourcesPage } from '@/features/sources/SourcesPage.tsx';
-import { WorkspaceListPage } from '@/features/workspace/WorkspaceListPage.tsx';
-import { WorkspaceShell } from '@/features/workspace/WorkspaceShell.tsx';
+import { Page, PageHeader } from '@/components/layout';
+import { Button } from '@/components/ui/button';
+import { AppShell } from '@/features/shell/AppShell';
+import { OverviewPage } from '@/features/overview/OverviewPage';
+import { SetupPage, WelcomePage } from '@/features/overview/SetupPage';
+import { MaterialsPage } from '@/features/materials/MaterialsPage';
+import { MaterialPage } from '@/features/materials/MaterialPage';
+import { TutorHomePage } from '@/features/tutor/TutorHomePage';
+import { TutorSessionPage } from '@/features/tutor/TutorSessionPage';
+import { NewTutorSession } from '@/features/tutor/NewTutorSession';
+import { PracticeHomePage } from '@/features/practice/PracticeHomePage';
+import { PracticeSetupPage } from '@/features/practice/PracticeSetupPage';
+import { PracticeRunPage } from '@/features/practice/PracticeRunPage';
+import { AttemptResultsPage } from '@/features/practice/AttemptResultsPage';
+import { ExamsHomePage } from '@/features/exam/ExamsHomePage';
+import { ExamBuilderPage } from '@/features/exam/ExamBuilderPage';
+import { ExamRunPage } from '@/features/exam/ExamRunPage';
+import { ExamResultsPage } from '@/features/exam/ExamResultsPage';
+import { ProgressPage } from '@/features/progress/ProgressPage';
+import { TopicProgressPage } from '@/features/progress/TopicProgressPage';
 
 /**
  * The route table.
  *
- * **What you are looking at lives in the URL.** Every screen below can be
- * bookmarked, shared and reloaded into the same state, and the workspace is
- * always in the path rather than in a context that survived a navigation. That
- * is the same rule the contract enforces on the server side, applied to the
- * browser: a surface that cannot name its workspace is not a valid surface.
+ * **What you are looking at lives in the URL.** Every screen can be bookmarked
+ * and reloaded into the same state, which matters more here than it looks: the
+ * store persists to `localStorage`, so a reload genuinely restores the session
+ * rather than merely re-rendering a shell.
  *
- * Note the session route nests under its concept. A session is not a top-level
- * object you visit; it is a thing happening to a concept, and the URL says so —
- * which also means the back button from a session lands somewhere sensible.
+ * Two routes deliberately do not carry their subject in the path:
+ *
+ *   /exams/run    there is one active exam at a time, and it lives on the
+ *                 store. Putting a run id in the URL would invite two tabs to
+ *                 sit the same paper and write over each other's answers.
+ *   /tutor/new    a session-creating route that immediately redirects to the
+ *                 created session's id, so the back button does not land on a
+ *                 route whose only effect is to create another session.
  */
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<WorkspaceListPage />} />
+      <Route path="/welcome" element={<WelcomePage />} />
 
-      <Route path="/w/:workspaceId" element={<WorkspaceShell />}>
-        <Route index element={<PlanPage />} />
-        <Route path="concepts" element={<ConceptMapPage />} />
-        <Route path="concepts/:conceptId" element={<ConceptPage />} />
-        <Route path="concepts/:conceptId/session/:sessionId" element={<SessionPage />} />
-        <Route path="sources" element={<SourcesPage />} />
-        <Route path="sources/:sourceId" element={<SourcePage />} />
-        <Route path="ask" element={<AskPage />} />
-        <Route path="evidence" element={<EvidencePage />} />
+      <Route element={<AppShell />}>
+        <Route path="/" element={<OverviewPage />} />
+        <Route path="/setup" element={<SetupPage />} />
+
+        <Route path="/materials" element={<MaterialsPage />} />
+        <Route path="/materials/:materialId" element={<MaterialPage />} />
+
+        <Route path="/tutor" element={<TutorHomePage />} />
+        <Route path="/tutor/new" element={<NewTutorSession />} />
+        <Route path="/tutor/:sessionId" element={<TutorSessionPage />} />
+
+        <Route path="/practice" element={<PracticeHomePage />} />
+        <Route path="/practice/new" element={<PracticeSetupPage />} />
+        <Route path="/practice/run/:attemptId" element={<PracticeRunPage />} />
+        <Route path="/practice/results/:attemptId" element={<AttemptResultsPage />} />
+
+        <Route path="/exams" element={<ExamsHomePage />} />
+        <Route path="/exams/build" element={<ExamBuilderPage />} />
+        <Route path="/exams/build/:configId" element={<ExamBuilderPage />} />
+        <Route path="/exams/run" element={<ExamRunPage />} />
+        <Route path="/exams/results/:attemptId" element={<ExamResultsPage />} />
+
+        <Route path="/progress" element={<ProgressPage />} />
+        <Route path="/progress/topic/:topicId" element={<TopicProgressPage />} />
       </Route>
 
       {/* A real 404 rather than a redirect to the root. Silently sending a
@@ -51,7 +78,7 @@ export function AppRoutes() {
   );
 }
 
-function NotFoundPage() {
+export function NotFoundPage() {
   return (
     <Page width="prose" className="py-page">
       <PageHeader
@@ -59,11 +86,10 @@ function NotFoundPage() {
         description="That address does not point at anything in Rawi. It may have been deleted, or the link may be wrong."
       />
       <Button asChild className="self-start">
-        <Link to="/">Back to your workspaces</Link>
+        <Link to="/">Back to your overview</Link>
       </Button>
     </Page>
   );
 }
 
-export { NotFoundPage };
 export { Navigate };

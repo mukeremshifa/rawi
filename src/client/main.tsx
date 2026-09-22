@@ -1,12 +1,12 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { ApiProvider } from '@/api/provider.tsx';
 import { ErrorBoundary } from '@/components/ErrorBoundary.tsx';
 import { ThemeProvider } from '@/components/theme.tsx';
+import { TooltipProvider } from '@/components/ui/tooltip.tsx';
 import { Toaster } from '@/components/ui/sonner.tsx';
+import { StoreProvider } from '@/store/store.tsx';
 import { AppRoutes } from '@/routes.tsx';
 
 import '@/styles/globals.css';
@@ -14,39 +14,23 @@ import '@/styles/globals.css';
 /**
  * The composition root.
  *
- * ── Retry, and why `stale_request` must not be retried ────────────────────
+ * ── What is not here any more ─────────────────────────────────────────────
  *
- * React Query retries failed queries by default, which is right for a dropped
- * connection and wrong for everything else here. A 409 means the session moved
- * on; retrying it three times produces three identical rejections and delays
- * the reload the learner actually needs. So retries are limited to genuinely
- * transient codes, and everything else surfaces immediately.
+ * The previous version mounted React Query over a simulated async API. There is
+ * no async here: every read is a synchronous function of a local state tree, so
+ * a query cache would add loading states that resolve in the same tick and an
+ * invalidation story for data that cannot go stale. `StoreProvider` replaced
+ * it, and the dependency went with it.
+ *
+ * The one genuinely async operation left — reading a text file the student
+ * picked — is a promise awaited inside the component that owns the input, which
+ * is the right size of machinery for one file read.
+ *
+ * `TooltipProvider` wraps everything because tooltips appear in several
+ * features and Radix wants one provider for shared open/close timing; per-
+ * instance providers give each tooltip its own delay, which reads as
+ * inconsistent.
  */
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: (failureCount, error) => {
-        const code = (error as { code?: string }).code;
-        const transient = code === 'network' || code === 'rate_limited';
-        return transient && failureCount < 2;
-      },
-      // A learner switching tabs mid-session does not need everything refetched
-      // on focus; the session state is written by its own mutations.
-      refetchOnWindowFocus: false,
-      staleTime: 30_000,
-    },
-    mutations: { retry: false },
-  },
-});
-
-function App() {
-  return (
-    <ApiProvider>
-      <AppRoutes />
-      <Toaster />
-    </ApiProvider>
-  );
-}
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root is missing from index.html');
@@ -55,11 +39,14 @@ createRoot(root).render(
   <StrictMode>
     <ErrorBoundary>
       <ThemeProvider>
-        <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
-        </QueryClientProvider>
+        <StoreProvider>
+          <TooltipProvider delayDuration={300}>
+            <BrowserRouter>
+              <AppRoutes />
+              <Toaster />
+            </BrowserRouter>
+          </TooltipProvider>
+        </StoreProvider>
       </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>,

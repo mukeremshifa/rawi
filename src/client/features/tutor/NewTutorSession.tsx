@@ -1,0 +1,67 @@
+import { useEffect, useRef } from 'react';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+
+import { useStore } from '@/store/store';
+import { openSession } from './engine';
+
+/**
+ * Creates a session from query parameters, then replaces itself with it.
+ *
+ * ── Why this is a route rather than a function call ───────────────────────
+ *
+ * Every surface that launches tutoring — a passage action, a plan suggestion, a
+ * results page's "discuss this with the tutor" — needs to create a session and
+ * land the student in it. Making that a link to `/tutor/new?topic=…` means
+ * those surfaces stay declarative `<Link>`s rather than each importing the
+ * store and the engine to do the same three lines.
+ *
+ * The navigation is `replace`, so the back button from a session returns to
+ * wherever the student came from rather than re-running this route and creating
+ * a second identical session.
+ *
+ * The ref guard is for React 18+ StrictMode, which mounts effects twice in
+ * development. Without it every session launched in dev is created twice.
+ */
+export function NewTutorSession() {
+  const [params] = useSearchParams();
+  const { dispatch } = useStore();
+  const navigate = useNavigate();
+  const created = useRef<string | null>(null);
+
+  const topicId = params.get('topic');
+  const materialId = params.get('material');
+  const passageId = params.get('passage');
+  const quote = params.get('quote');
+  const fromAttemptId = params.get('attempt');
+  const fromQuestionId = params.get('question');
+
+  useEffect(() => {
+    if (!topicId || created.current) return;
+
+    const session = openSession({
+      topicId,
+      ...(materialId && passageId
+        ? { source: { materialId, passageId } }
+        : {}),
+      ...(quote ? { quote } : {}),
+      ...(fromAttemptId ? { fromAttemptId } : {}),
+      ...(fromQuestionId ? { fromQuestionId } : {}),
+    });
+
+    created.current = session.id;
+    dispatch({ type: 'upsert-tutor-session', session });
+    navigate(`/tutor/${session.id}`, { replace: true });
+  }, [
+    topicId,
+    materialId,
+    passageId,
+    quote,
+    fromAttemptId,
+    fromQuestionId,
+    dispatch,
+    navigate,
+  ]);
+
+  if (!topicId) return <Navigate to="/tutor" replace />;
+  return null;
+}
