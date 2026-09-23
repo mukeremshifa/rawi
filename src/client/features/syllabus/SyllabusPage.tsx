@@ -491,8 +491,8 @@ export function SyllabusPage() {
                       <span key={topic.id} className="text-xs">
                         <strong>{topic.title}</strong>
                         {pointing.length > 0
-                          ? ` — ${pointing.join(', ')} point at it. Your attempts stay in your history, but they will no longer count toward any topic.`
-                          : ' — nothing points at it.'}
+                          ? `: ${pointing.join(', ')} point at it. Your attempts stay in your history, but they will no longer count toward any topic.`
+                          : ': nothing points at it.'}
                       </span>
                     );
                   })}
