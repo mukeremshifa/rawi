@@ -35,7 +35,7 @@ export const SEED_QUESTIONS: Question[] = [
     answer:
       'Eastward, to Europe, Africa and Asia. They raised the calorie ceiling of Old World agriculture and underwrote a long demographic expansion.',
     explanation:
-      'The direction is the easy half. The consequence — a higher calorie ceiling, therefore population growth — is the half that earns marks.',
+      'The direction is the easy half. The consequence, a higher calorie ceiling, therefore population growth, is the half that earns marks.',
     source: { materialId: 'mat-exchange-reading', passageId: 'p-exch-1' },
   },
   {
@@ -69,7 +69,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     correctIndices: [1],
     explanation:
-      'The demand for labour came first. Epidemic mortality removed the indigenous supply that had been meeting it; the slave trade expanded into the resulting gap. Option 3 inverts the order and option 1 overcorrects into denying any link at all.',
+      'The demand for labour came first. Epidemic mortality removed the indigenous supply that had been meeting it, and the slave trade expanded into the resulting gap. Option 3 inverts the order and option 1 overcorrects into denying any link at all.',
     source: { materialId: 'mat-exchange-reading', passageId: 'p-exch-2' },
   },
   {
@@ -90,7 +90,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     correctIndices: [0, 1, 2],
     explanation:
-      'The argument is that identical pathogens produced different outcomes depending on colonial demands, so biology alone cannot be the explanation. Options 4 and 5 are true statements from the reading but they support the biological account or are neutral — they are not part of the case against it.',
+      'The argument is that identical pathogens produced different outcomes depending on colonial demands, so biology alone cannot be the explanation. Options 4 and 5 are true statements from the reading but they support the biological account or are neutral, so they are not part of the case against it.',
     source: { materialId: 'mat-exchange-reading', passageId: 'p-exch-3' },
   },
   {
@@ -128,7 +128,7 @@ export const SEED_QUESTIONS: Question[] = [
         marks: 2,
         keywords: ['mortality', 'disease', 'epidemic', 'smallpox', 'population', 'collapse'],
         missedAdvice:
-          'Start with the demographic collapse — it is the first link and the rest does not follow without it.',
+          'Start with the demographic collapse. It is the first link and the rest does not follow without it.',
       },
       {
         id: 'r-col-2',
@@ -162,7 +162,7 @@ export const SEED_QUESTIONS: Question[] = [
     marks: 1,
     prompt: 'What did an encomienda grant actually convey?',
     answer:
-      'The right to tribute and labour from a named group of people, in exchange for obligations to protect and instruct them. Not land — the land remained legally theirs.',
+      'The right to tribute and labour from a named group of people, in exchange for obligations to protect and instruct them. Not land: the land remained legally theirs.',
     explanation:
       'People, not acres, and conditionally at that. This is the distinction most undergraduate answers get wrong.',
     source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-1' },
@@ -316,7 +316,7 @@ export const SEED_QUESTIONS: Question[] = [
         marks: 2,
         keywords: ['abolition', 'abolished', 'timing', 'convert', 'commute', 'cash payment', 'direct taxation'],
         missedAdvice:
-          'Name the two evidential moves separately — when it was abolished, and what the Crown kept trying to change it into.',
+          'Name the two evidential moves separately: when it was abolished, and what the Crown kept trying to change it into.',
       },
       {
         id: 'r-sa-enc-3',
@@ -328,7 +328,7 @@ export const SEED_QUESTIONS: Question[] = [
       },
     ],
     explanation:
-      'Claim, evidence, limitation — in that order. The limitation is where marks are usually lost, because it requires bringing in what the source is silent about.',
+      'Claim, evidence, limitation, in that order. The limitation is where marks are usually lost, because it requires bringing in what the source is silent about.',
     source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-2' },
   },
 
@@ -342,7 +342,7 @@ export const SEED_QUESTIONS: Question[] = [
     marks: 1,
     prompt: 'What agronomic fact about sugar cane drove the plantation form?',
     answer:
-      'Cane must be milled within about a day of cutting or its sucrose content falls sharply — which puts the mill beside the field and requires a large coordinated workforce and heavy fixed capital.',
+      'Cane must be milled within about a day of cutting or its sucrose content falls sharply, which puts the mill beside the field and requires a large coordinated workforce and heavy fixed capital.',
     explanation:
       'The technical constraint comes before the economic consequence. Answers that start with profit skip the step that explains the form.',
     source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-1' },
@@ -404,7 +404,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     correctIndices: [0, 1, 3],
     explanation:
-      'Mbeki does not dispute Larssen’s facts about credit or profit — she disputes what the ledger can show. Options 3 and 5 attribute a factual disagreement to her that she does not make.',
+      'Mbeki does not dispute Larssen’s facts about credit or profit. She disputes what the ledger can show. Options 3 and 5 attribute a factual disagreement to her that she does not make.',
     source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-3' },
   },
   {
@@ -441,7 +441,7 @@ export const SEED_QUESTIONS: Question[] = [
         marks: 2,
         keywords: ['limitation', 'one side', 'his terms', 'silent', 'no voice', 'only records', 'cost line'],
         missedAdvice:
-          'Name what the source cannot show — the enslaved people appear only as a shortfall in output, never in their own words.',
+          'Name what the source cannot show: the enslaved people appear only as a shortfall in output, never in their own words.',
       },
     ],
     explanation:
@@ -459,7 +459,7 @@ export const SEED_QUESTIONS: Question[] = [
     template:
       'Cane must be ___ within roughly a day of cutting or its ___ content falls sharply. This forces the mill next to the field and requires heavy fixed ___ investment.',
     blanks: [['milled', 'ground', 'processed'], ['sucrose', 'sugar'], ['capital']],
-    explanation: 'Milled, sucrose, capital — the chain from plant biology to industrial form.',
+    explanation: 'Milled, sucrose, capital: the chain from plant biology to industrial form.',
     source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-1' },
   },
   {
@@ -511,7 +511,7 @@ export const SEED_QUESTIONS: Question[] = [
     marks: 1,
     prompt: 'State the three propositions of mercantilist doctrine.',
     answer:
-      'National wealth is measured in bullion; trade is close to zero-sum; colonies exist to supply raw materials to the metropole and to buy its manufactures.',
+      'National wealth is measured in bullion, trade is close to zero-sum, and colonies exist to supply raw materials to the metropole and to buy its manufactures.',
     explanation:
       'Bullion, zero-sum, colonial subordination. Holding all three together is what makes it a doctrine rather than three opinions.',
     source: { materialId: 'mat-mercantilism-lecture', passageId: 'p-merc-1' },
@@ -553,7 +553,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     correctIndices: [0, 1, 2],
     explanation:
-      'Three requirements: English shipping, enumeration, and entrepôt. Options 4 and 5 invert the point of the system — the Acts existed to channel colonial produce, not to suppress it.',
+      'Three requirements: English shipping, enumeration, and entrepôt. Options 4 and 5 invert the point of the system: the Acts existed to channel colonial produce, not to suppress it.',
     source: { materialId: 'mat-mercantilism-lecture', passageId: 'p-merc-2' },
   },
   {
@@ -587,7 +587,7 @@ export const SEED_QUESTIONS: Question[] = [
         marks: 2,
         keywords: ['mechanism', 'not automatic', 'real but', 'connection', 'too direct'],
         missedAdvice:
-          'Concede the connection before qualifying it — the lecture does not deny the link, it denies the shortcut.',
+          'Concede the connection before qualifying it: the lecture does not deny the link, it denies the shortcut.',
       },
       {
         id: 'r-mer-2',
@@ -621,7 +621,7 @@ export const SEED_QUESTIONS: Question[] = [
     marks: 1,
     prompt: 'Why does Mbeki object to teaching resistance as a list of revolts?',
     answer:
-      'It makes resistance look rare. Organised revolt was its least common form; the spectrum ran from slowdown and feigned incomprehension through flight and maroon settlement to armed rising.',
+      'It makes resistance look rare. Organised revolt was its least common form. The spectrum ran from slowdown and feigned incomprehension through flight and maroon settlement to armed rising.',
     explanation:
       'Counting only the most visible form and concluding resistance was exceptional is a methodological error, not a finding.',
     source: { materialId: 'mat-revolt-reading', passageId: 'p-rev-1' },
@@ -680,7 +680,7 @@ export const SEED_QUESTIONS: Question[] = [
     rubric: [
       {
         id: 'r-sa-rev-1',
-        label: 'Notes the precision of detail — skill, languages, appearance, relationships',
+        label: 'Notes the precision of detail: skill, languages, appearance, relationships',
         marks: 2,
         keywords: ['skill', 'cooper', 'trade', 'language', 'french', 'scar', 'wife', 'detail', 'precise'],
         missedAdvice:
@@ -738,7 +738,7 @@ export const SEED_QUESTIONS: Question[] = [
         marks: 2,
         keywords: ['against', 'purpose', 'grain', 'advertisement', 'punishment book', 'against their'],
         missedAdvice:
-          'The technique has a name in the reading — reading a document against the purpose for which it was written.',
+          'The technique has a name in the reading: reading a document against the purpose for which it was written.',
       },
     ],
     explanation:
@@ -756,7 +756,7 @@ export const SEED_QUESTIONS: Question[] = [
     marks: 1,
     prompt: 'Name the three families of explanation and their representative historian.',
     answer:
-      'Economic (Larssen — capital, credit, commodity flows); cultural/social (Mbeki — human relations and the actions of people inside the system); imperial/institutional (Valderrama — state capacity and what governments could actually manage at distance).',
+      'Economic (Larssen: capital, credit, commodity flows), cultural or social (Mbeki: human relations and the actions of people inside the system), and imperial or institutional (Valderrama: state capacity and what governments could actually manage at distance).',
     explanation:
       'None is the correct one. The productive question is which reading better explains a particular piece of evidence.',
     source: { materialId: 'mat-debate-lecture', passageId: 'p-deb-2' },
@@ -772,13 +772,13 @@ export const SEED_QUESTIONS: Question[] = [
       'According to the lecture, what turns two adjacent summaries into a comparison?',
     options: [
       'Writing more about each historian.',
-      'Naming the axis of disagreement — whether they differ about what happened, which evidence counts, or what it means.',
+      'Naming the axis of disagreement: whether they differ about what happened, which evidence counts, or what it means.',
       'Deciding which historian is correct in the first line.',
       'Quoting both historians directly.',
     ],
     correctIndices: [1],
     explanation:
-      'The axis is the whole thing. Valderrama and Okonkwo barely disagree about events; they disagree about which sources reveal the institution’s function.',
+      'The axis is the whole thing. Valderrama and Okonkwo barely disagree about events. They disagree about which sources reveal the institution’s function.',
     source: { materialId: 'mat-debate-lecture', passageId: 'p-deb-1' },
   },
   {
@@ -853,7 +853,7 @@ export const SEED_QUESTIONS: Question[] = [
       },
       {
         id: 'r-ess-4',
-        label: 'Identifies the test that would distinguish them — what changed after 1542',
+        label: 'Identifies the test that would distinguish them: what changed after 1542',
         marks: 3,
         keywords: ['1542', 'new laws', 'after abolition', 'repartimiento', 'mita', 'test', 'distinguish', 'outlived'],
         missedAdvice:
@@ -869,7 +869,7 @@ export const SEED_QUESTIONS: Question[] = [
       },
     ],
     explanation:
-      'The upper band is reached by step four — naming what evidence would settle it. Most answers stop after presenting both positions.',
+      'The upper band is reached by step four: naming what evidence would settle it. Most answers stop after presenting both positions.',
     source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-4' },
   },
   {
@@ -888,7 +888,7 @@ export const SEED_QUESTIONS: Question[] = [
         marks: 3,
         keywords: ['larssen', 'credit', 'insurance', 'circuit', 'commercial', 'capital', 'debtor'],
         missedAdvice:
-          'Establish the commercial account first — credit from European ports, insurance contracts, the planter as debtor.',
+          'Establish the commercial account first: credit from European ports, insurance contracts, the planter as debtor.',
       },
       {
         id: 'r-ess2-2',
@@ -912,7 +912,7 @@ export const SEED_QUESTIONS: Question[] = [
         marks: 3,
         keywords: ['how far', 'extent', 'conclude', 'limit', 'both', 'incomplete', 'on balance', 'argue'],
         missedAdvice:
-          'The question asks "how far", so answer it with a limit — where the commercial reading explains well and where it stops.',
+          'The question asks "how far", so answer it with a limit: where the commercial reading explains well and where it stops.',
       },
     ],
     explanation:
@@ -943,7 +943,7 @@ export const SEED_QUESTIONS: Question[] = [
         marks: 3,
         keywords: ['demand', 'first', 'already', 'supply', 'order', 'gap', 'pre-exist'],
         missedAdvice:
-          'The order is the argument. Commercial demand existed before the collapse; the collapse removed the supply meeting it.',
+          'The order is the argument. Commercial demand existed before the collapse, and the collapse removed the supply meeting it.',
       },
       {
         id: 'r-ess3-3',
@@ -951,7 +951,7 @@ export const SEED_QUESTIONS: Question[] = [
         marks: 3,
         keywords: ['evidence', 'valderrama', 'larssen', 'mortality', 'sugar', 'recovery', 'caribbean'],
         missedAdvice:
-          'Attach evidence to each outline point — a plan without evidence is a list of intentions.',
+          'Attach evidence to each outline point. A plan without evidence is a list of intentions.',
       },
       {
         id: 'r-ess3-4',
@@ -989,7 +989,7 @@ export const SEED_QUESTIONS: Question[] = [
         marks: 2,
         keywords: ['third', 'step three', 'distinguish', 'what evidence would', 'missing'],
         missedAdvice:
-          'It is step three — naming what evidence would favour one position — that is almost always absent.',
+          'It is step three, naming what evidence would favour one position, that is almost always absent.',
       },
       {
         id: 'r-deb-wr-3',
@@ -1030,7 +1030,7 @@ export const SEED_QUESTIONS: Question[] = [
         marks: 2,
         keywords: ['cultural', 'social', 'human relations', 'people inside', 'mbeki'],
         missedAdvice:
-          'It belongs to the cultural and social reading — the one that insists the actions of people inside the system shaped it.',
+          'It belongs to the cultural and social reading: the one that insists the actions of people inside the system shaped it.',
       },
       {
         id: 'r-sa-deb-3',

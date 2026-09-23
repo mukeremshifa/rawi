@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeftIcon,
@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import type { PracticeAttemptState } from '@shared/types.ts';
+import type { PracticeAttemptState, SavedPracticeSet } from '@shared/types.ts';
 
 import { Page, PageHeader, Section } from '@/components/layout';
 import { Button } from '@/components/ui/button';
@@ -24,10 +24,13 @@ import { FORMAT_LABEL, OutcomeBadge, relativeDay } from '@/components/domain';
 import { useStore } from '@/store/store';
 import { useCourse, useCoursePath } from '@/store/course-context';
 import {
+  resolveSetQuestions,
+  useAllSessions,
   useAttempts,
   useOpenRunForSet,
   usePracticeSet,
   useQuestionMap,
+  useQuestions,
   useTopicMap,
 } from '@/store/selectors';
 import { newId } from '@/lib/id';
@@ -64,7 +67,26 @@ export function PracticeSetPage() {
   const { setId } = useParams<{ setId: string }>();
   const set = usePracticeSet(setId);
   const openRun = useOpenRunForSet(set?.id);
-  const sessionId = params.get('session') ?? undefined;
+  const allSessions = useAllSessions();
+
+  /*
+   * The planner session this page was opened from, validated before use.
+   *
+   * A `?session=` that survives in the address bar, a bookmark, or a back
+   * button is stale navigation state rather than a live link. Accepting it
+   * blindly would let an unrelated new attempt complete a planned session,
+   * possibly in another course. So the id has to name a session that still
+   * exists, belongs to this course and is still outstanding.
+   */
+  const sessionParam = params.get('session') ?? undefined;
+  const sessionId = sessionParam
+    ? allSessions.find(
+        (s) =>
+          s.id === sessionParam &&
+          s.courseId === course.id &&
+          s.status === 'planned',
+      )?.id
+    : undefined;
 
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState('');
@@ -81,6 +103,9 @@ export function PracticeSetPage() {
     .filter((q): q is NonNullable<typeof q> => !!q);
 
   const missing = set.questionIds.length - questions.length;
+
+  /* A set that stored settings but no content. See `RecoverEmptySet`. */
+  const needsRecovery = set.questionIds.length === 0;
 
   const previous = attempts
     .filter((a) => a.practiceSetId === set.id && a.completedAt)
@@ -203,6 +228,8 @@ export function PracticeSetPage() {
         </Alert>
       )}
 
+      {needsRecovery && <RecoverEmptySet set={set} />}
+
       {openRun && (
         <Alert>
           <AlertTitle>You have an attempt in progress</AlertTitle>
@@ -234,7 +261,7 @@ export function PracticeSetPage() {
         </Alert>
       )}
 
-      {!openRun && (
+      {!openRun && !needsRecovery && (
         <div className="flex flex-wrap items-center gap-tight">
           <Button onClick={start} disabled={questions.length === 0}>
             <PlayIcon />
@@ -344,5 +371,114 @@ export function PracticeSetPage() {
         }}
       />
     </Page>
+  );
+}
+
+/**
+ * Repairs a saved set that stored its settings but not its questions.
+ *
+ * ── Where these sets come from ────────────────────────────────────────────
+ *
+ * Two places. The version-one store saved a set as a *configuration*, and the
+ * upgrade to version two carried that forward honestly but incompletely: it
+ * wrote an empty `questionIds`, intending the content to resolve on the next
+ * attempt, and nothing ever resolved it. The seeded "Comparison drill" has the
+ * same shape for the same reason. The result either way is a set whose Start
+ * button is disabled and which never explains why.
+ *
+ * ── Why recovery is explicit and persisted ────────────────────────────────
+ *
+ * Resolving on every render would be simpler and wrong: a set is supposed to
+ * *be* its questions, so that two attempts at it are comparable. A set whose
+ * content is recomputed each time it loads is a different paper whenever the
+ * pool changes. So this resolves once and writes the result back, after which
+ * the set behaves exactly like one generated today. Repeating the recovery is
+ * therefore a no-op rather than a second set, and reloading changes nothing.
+ *
+ * The set's identity, title, settings and attempt history are untouched
+ * throughout: only `questionIds` is filled in.
+ */
+function RecoverEmptySet({ set }: { set: SavedPracticeSet }) {
+  const { dispatch } = useStore();
+  const path = useCoursePath();
+  /* This course's pool only. A history set must not recover into statistics
+     questions because both courses happen to have a "testing" topic. */
+  const pool = useQuestions();
+  const recovered = useRef(false);
+
+  const resolved = resolveSetQuestions(set, pool);
+
+  /*
+   * Recovery runs automatically, once, when there is something to recover.
+   *
+   * The student did not break this and should not have to press a button to
+   * un-break it. When nothing matches there is nothing to do automatically,
+   * and the panel below explains that instead.
+   */
+  useEffect(() => {
+    if (recovered.current) return;
+    if (resolved.length === 0) return;
+    recovered.current = true;
+    dispatch({
+      type: 'save-practice',
+      set: { ...set, questionIds: resolved.map((q) => q.id) },
+    });
+  }, [dispatch, set, resolved]);
+
+  if (resolved.length > 0) {
+    return (
+      <Alert>
+        <AlertTitle>This set has been restored</AlertTitle>
+        <AlertDescription>
+          It was saved with its settings but without its questions, which is how
+          sets were stored in an earlier version. Its {resolved.length}{' '}
+          {resolved.length === 1 ? 'question has' : 'questions have'} been resolved
+          from those settings and saved, so it now behaves like any other set. Its
+          name, settings and earlier results are unchanged.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <Alert>
+      <AlertTitle>This set has no questions to run</AlertTitle>
+      <AlertDescription>
+        <span className="flex flex-col gap-snug">
+          <span>
+            It was saved with its settings but without its questions, and nothing
+            in this course's question bank now matches those settings:{' '}
+            {set.config.activity.replace('-', ' ')} questions on{' '}
+            {set.config.topicIds.length === 0
+              ? 'any topic'
+              : `${set.config.topicIds.length} ${
+                  set.config.topicIds.length === 1 ? 'topic' : 'topics'
+                }`}
+            {set.config.difficulties.length > 0 &&
+              ` at ${set.config.difficulties.join(' or ')} difficulty`}
+            . The topics or questions it drew on have probably been removed since.
+          </span>
+          <span>
+            The set and its attempt history are kept. Build a replacement with
+            different settings, and this record stays where it is.
+          </span>
+          <span className="flex flex-wrap gap-tight">
+            <Button size="sm" asChild>
+              <Link
+                to={path(
+                  `/practice/new?activity=${set.config.activity}${
+                    set.config.topicIds.length
+                      ? `&topic=${set.config.topicIds.join(',')}`
+                      : ''
+                  }`,
+                )}
+              >
+                Build a new set from these settings
+              </Link>
+            </Button>
+          </span>
+        </span>
+      </AlertDescription>
+    </Alert>
   );
 }

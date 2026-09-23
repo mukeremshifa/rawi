@@ -33,7 +33,7 @@ export const SEED_EXAM_PRESETS: ExamConfig[] = [
   {
     id: 'preset-quick',
     courseId: ATLANTIC_COURSE_ID,
-    name: 'Quick check — 15 minutes',
+    name: 'Quick check, 15 minutes',
     preset: true,
     savedAt: day(30),
     sections: [
@@ -60,13 +60,13 @@ export const SEED_EXAM_PRESETS: ExamConfig[] = [
   {
     id: 'preset-paper',
     courseId: ATLANTIC_COURSE_ID,
-    name: 'Full paper — two sections',
+    name: 'Full paper, two sections',
     preset: true,
     savedAt: day(30),
     sections: [
       {
         id: 'sec-paper-1',
-        title: 'Section A — Short answers',
+        title: 'Section A: short answers',
         instructions:
           'Answer all questions in this section. Each is worth 2–4 marks. Closed book.',
         formats: ['multiple-choice', 'multiple-select', 'fill-blank', 'ordering', 'matching'],
@@ -76,7 +76,7 @@ export const SEED_EXAM_PRESETS: ExamConfig[] = [
       },
       {
         id: 'sec-paper-2',
-        title: 'Section B — Extended writing',
+        title: 'Section B: extended writing',
         instructions:
           'Answer the questions in this section in continuous prose. Marks and rubrics are released once the whole paper is submitted.',
         formats: ['source-analysis', 'essay'],
@@ -97,7 +97,7 @@ export const SEED_EXAM_PRESETS: ExamConfig[] = [
   {
     id: 'preset-rehearsal',
     courseId: ATLANTIC_COURSE_ID,
-    name: 'Untimed rehearsal — essay only',
+    name: 'Untimed rehearsal, essay only',
     preset: true,
     savedAt: day(30),
     sections: [
@@ -124,7 +124,7 @@ export const SEED_EXAM_PRESETS: ExamConfig[] = [
   {
     id: 'preset-stat-quiz',
     courseId: STATS_COURSE_ID,
-    name: 'Quiz conditions — 20 minutes',
+    name: 'Quiz conditions, 20 minutes',
     preset: true,
     savedAt: day(30),
     sections: [
@@ -166,7 +166,7 @@ export const SEED_ATTEMPTS: Attempt[] = [
     assistanceRecord: 'tracked',
     kind: 'practice',
     mode: 'self-rated',
-    title: 'Flashcards — Columbian Exchange',
+    title: 'Flashcards: Columbian Exchange',
     topicIds: ['topic-columbian'],
     startedAt: day(10),
     completedAt: day(10),
@@ -201,7 +201,7 @@ export const SEED_ATTEMPTS: Attempt[] = [
     assistanceRecord: 'tracked',
     kind: 'practice',
     mode: 'practice',
-    title: 'Quiz — Encomienda',
+    title: 'Quiz: encomienda',
     topicIds: ['topic-encomienda'],
     startedAt: day(8),
     completedAt: day(8),
@@ -246,7 +246,7 @@ export const SEED_ATTEMPTS: Attempt[] = [
     assistanceRecord: 'tracked',
     kind: 'exam',
     mode: 'exam',
-    title: 'Quick check — 15 minutes',
+    title: 'Quick check, 15 minutes',
     examConfigId: 'preset-quick',
     topicIds: ['topic-columbian', 'topic-encomienda', 'topic-debate'],
     startedAt: day(8),
@@ -346,7 +346,7 @@ export const SEED_ATTEMPTS: Attempt[] = [
     assistanceRecord: 'tracked',
     kind: 'practice',
     mode: 'self-rated',
-    title: 'Flashcards — mixed review',
+    title: 'Flashcards: mixed review',
     topicIds: ['topic-plantation', 'topic-mercantilism', 'topic-revolt'],
     startedAt: day(6),
     completedAt: day(6),
@@ -391,7 +391,7 @@ export const SEED_ATTEMPTS: Attempt[] = [
     assistanceRecord: 'tracked',
     kind: 'practice',
     mode: 'practice',
-    title: 'Written recall — plantation complex',
+    title: 'Written recall: plantation complex',
     topicIds: ['topic-plantation'],
     startedAt: day(6),
     completedAt: day(6),
@@ -420,7 +420,7 @@ export const SEED_ATTEMPTS: Attempt[] = [
     assistanceRecord: 'tracked',
     kind: 'exam',
     mode: 'exam',
-    title: 'Quick check — 15 minutes',
+    title: 'Quick check, 15 minutes',
     examConfigId: 'preset-quick',
     topicIds: ['topic-encomienda', 'topic-debate', 'topic-columbian'],
     startedAt: day(2),

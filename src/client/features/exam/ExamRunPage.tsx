@@ -143,7 +143,7 @@ export function ExamRunPage() {
       dispatch({ type: 'set-active-exam', run: null });
 
       toast[finish === 'expired' ? 'warning' : 'success'](
-        finish === 'expired' ? 'Time expired — paper submitted' : 'Paper submitted',
+        finish === 'expired' ? 'Time expired, paper submitted' : 'Paper submitted',
         { description: 'Your marks and feedback are on the results page.' },
       );
       navigate(`/course/${course.id}/exams/results/${attempt.id}`, { replace: true });
@@ -669,7 +669,7 @@ export function ExamRunPage() {
 
                   {/*
                     `hintsAllowed` is hard false. An exam offers no assistance,
-                    so this is not a setting being read — it is the absence of a
+                    so this is not a setting being read. It is the absence of a
                     capability, which is why no configuration can turn it on.
                   */}
                   <QuestionView

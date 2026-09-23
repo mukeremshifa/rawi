@@ -36,7 +36,7 @@ export const STATS_COURSE: Course = {
   id: STATS_COURSE_ID,
   name: 'Statistical Inference for Social Research',
   description:
-    'A problem-based second-year methods course. Weekly problem sets, two in-term quizzes and a practical exam; the emphasis is on interpreting estimates rather than deriving them.',
+    'A problem-based second-year methods course. Weekly problem sets, two in-term quizzes and a practical exam. The emphasis is on interpreting estimates rather than deriving them.',
   goal: 'Read a result and say honestly what it does and does not support.',
   accent: 'teal',
   createdAt: new Date().toISOString(),
@@ -46,7 +46,7 @@ export const STATS_TOPICS: Topic[] = [
   {
     id: 'stat-sampling',
     courseId: STATS_COURSE_ID,
-    module: 'Week 1 — Foundations',
+    module: 'Week 1: Foundations',
     order: 0,
     title: 'Sampling and the target population',
     summary:
@@ -57,18 +57,18 @@ export const STATS_TOPICS: Topic[] = [
   {
     id: 'stat-describing',
     courseId: STATS_COURSE_ID,
-    module: 'Week 2 — Describing data',
+    module: 'Week 2: Describing data',
     order: 1,
     title: 'Describing distributions',
     summary:
-      'Centre, spread and shape; when a mean misleads, and what a standard deviation does and does not tell you.',
+      'Centre, spread and shape, when a mean misleads, and what a standard deviation does and does not tell you.',
     priority: 'low',
     relatedTopicIds: ['stat-sampling', 'stat-intervals'],
   },
   {
     id: 'stat-intervals',
     courseId: STATS_COURSE_ID,
-    module: 'Week 3 — Estimation',
+    module: 'Week 3: Estimation',
     order: 2,
     title: 'Standard errors and confidence intervals',
     summary:
@@ -79,7 +79,7 @@ export const STATS_TOPICS: Topic[] = [
   {
     id: 'stat-testing',
     courseId: STATS_COURSE_ID,
-    module: 'Week 4 — Testing',
+    module: 'Week 4: Testing',
     order: 3,
     title: 'Hypothesis tests and p-values',
     summary:
@@ -90,7 +90,7 @@ export const STATS_TOPICS: Topic[] = [
   {
     id: 'stat-multiple',
     courseId: STATS_COURSE_ID,
-    module: 'Week 5 — Practice and its failures',
+    module: 'Week 5: Practice and its failures',
     order: 4,
     title: 'Multiple comparisons and researcher degrees of freedom',
     summary:
@@ -101,7 +101,7 @@ export const STATS_TOPICS: Topic[] = [
   {
     id: 'stat-causal',
     courseId: STATS_COURSE_ID,
-    module: 'Week 6 — Causal claims',
+    module: 'Week 6: Causal claims',
     order: 5,
     title: 'From association to cause',
     summary:
@@ -129,9 +129,9 @@ export const STATS_MATERIALS: Material[] = [
         id: 'p-stat-int-1',
         heading: 'The quantity that varies',
         topicIds: ['stat-intervals', 'stat-sampling'],
-        text: `Begin with the thing that is actually random. The population mean is a fixed number: we do not know it, but it is not moving. What moves is the sample — draw a different 400 people and you get a different sample mean.
+        text: `Begin with the thing that is actually random. The population mean is a fixed number: we do not know it, but it is not moving. What moves is the sample: draw a different 400 people and you get a different sample mean.
 
-The standard error is a statement about that movement. It is the standard deviation of the sampling distribution of the estimate: roughly, how far a typical sample mean lands from the population mean. For a mean it falls as the square root of n, which has a consequence students consistently underestimate. Going from 100 respondents to 400 does not halve your uncertainty twice over; it halves it once. Going from 400 to 1600 halves it again. Precision is expensive, and it gets more expensive the more of it you already have.`,
+The standard error is a statement about that movement. It is the standard deviation of the sampling distribution of the estimate: roughly, how far a typical sample mean lands from the population mean. For a mean it falls as the square root of n, which has a consequence students consistently underestimate. Going from 100 respondents to 400 does not halve your uncertainty twice over. It halves it once. Going from 400 to 1600 halves it again. Precision is expensive, and it gets more expensive the more of it you already have.`,
       },
       {
         id: 'p-stat-int-2',
@@ -141,17 +141,17 @@ The standard error is a statement about that movement. It is the standard deviat
 
 The standard error is 100 / √400 = 100 / 20 = 5 minutes. A 95% interval is approximately 244 ± 1.96 × 5, which is 244 ± 9.8, or about 234 to 254 minutes.
 
-Now note what has been assumed to get there. That the 400 were drawn in a way that makes them stand for the population. That non-response did not select on commuting time — which, for a survey about commuting, is a real worry rather than a formal one. The arithmetic is the easy part and it is not where the estimate usually goes wrong.`,
+Now note what has been assumed to get there. That the 400 were drawn in a way that makes them stand for the population. That non-response did not select on commuting time, which, for a survey about commuting, is a real worry rather than a formal one. The arithmetic is the easy part and it is not where the estimate usually goes wrong.`,
       },
       {
         id: 'p-stat-int-3',
         heading: 'Three interpretations, two of them wrong',
         topicIds: ['stat-intervals', 'stat-testing'],
-        text: `"There is a 95% probability the true mean lies between 234 and 254." This is the common reading and it is not what the interval says. Under this framework the true mean is fixed; it is either in that range or it is not, and no probability attaches to it.
+        text: `"There is a 95% probability the true mean lies between 234 and 254." This is the common reading and it is not what the interval says. Under this framework the true mean is fixed. It is either in that range or it is not, and no probability attaches to it.
 
 "95% of commuters take between 234 and 254 minutes." This confuses the interval for the mean with the spread of individuals. With a standard deviation of 100 minutes, individual commutes vary enormously more than the interval suggests.
 
-The defensible reading is about the procedure: if we repeated this sampling and this construction many times, about 95% of the intervals produced would contain the true mean. The confidence is in the method, not in this particular interval — which is less satisfying, and is what the mathematics supports.`,
+The defensible reading is about the procedure: if we repeated this sampling and this construction many times, about 95% of the intervals produced would contain the true mean. The confidence is in the method, not in this particular interval, which is less satisfying, and is what the mathematics supports.`,
       },
     ],
   },
@@ -185,9 +185,9 @@ The discipline is to report the estimate and its interval alongside the test, so
         id: 'p-stat-test-3',
         heading: 'Where the error rate actually goes',
         topicIds: ['stat-multiple'],
-        text: `Run one test at α = 0.05 on a true null and you have a 5% chance of a false positive. Run twenty independent such tests and the probability of at least one false positive is 1 − 0.95²⁰, which is about 64%. Nobody has cheated; the arithmetic simply accumulates.
+        text: `Run one test at α = 0.05 on a true null and you have a 5% chance of a false positive. Run twenty independent such tests and the probability of at least one false positive is 1 − 0.95²⁰, which is about 64%. Nobody has cheated. The arithmetic simply accumulates.
 
-This is why the analysis plan matters more than the analysis. Twenty tests declared in advance can be corrected for. Twenty tests run informally, of which the one that reached significance is written up, cannot be — because the count that the correction needs is no longer known, not even to the researcher, who genuinely remembers trying "a few things".`,
+This is why the analysis plan matters more than the analysis. Twenty tests declared in advance can be corrected for. Twenty tests run informally, of which the one that reached significance is written up, cannot be, because the count that the correction needs is no longer known, not even to the researcher, who genuinely remembers trying "a few things".`,
       },
     ],
   },
@@ -207,7 +207,7 @@ This is why the analysis plan matters more than the analysis. Twenty tests decla
         topicIds: ['stat-causal'],
         text: `A study reports that students who attend optional revision sessions score 11 marks higher on average than those who do not, and concludes the sessions are effective.
 
-Ask who attends. Students who elect to attend an optional session on a Friday afternoon differ from those who do not in ways that also predict marks: prior attainment, time available, how seriously they are taking the course. The 11 marks is a real difference between two groups; it is not an estimate of what the sessions did, because the groups were not comparable before the sessions happened.
+Ask who attends. Students who elect to attend an optional session on a Friday afternoon differ from those who do not in ways that also predict marks: prior attainment, time available, how seriously they are taking the course. The 11 marks is a real difference between two groups. It is not an estimate of what the sessions did, because the groups were not comparable before the sessions happened.
 
 This is selection into treatment, and it is the ordinary condition of observational social data rather than an exotic failure.`,
       },
@@ -215,9 +215,9 @@ This is selection into treatment, and it is the ordinary condition of observatio
         id: 'p-stat-caus-2',
         heading: 'What would have to be true',
         topicIds: ['stat-causal', 'stat-testing'],
-        text: `For the 11-mark difference to carry a causal reading, attendance would have to be unrelated to everything else that affects the outcome — which is exactly what randomisation buys and exactly what an optional session does not have.
+        text: `For the 11-mark difference to carry a causal reading, attendance would have to be unrelated to everything else that affects the outcome, which is exactly what randomisation buys and exactly what an optional session does not have.
 
-Short of randomising, the honest moves are to adjust for the confounders you can measure and to say plainly which you cannot. Controlling for prior attainment narrows the gap; it does not close the argument, because motivation remains unmeasured and plausibly drives both attendance and marks.
+Short of randomising, the honest moves are to adjust for the confounders you can measure and to say plainly which you cannot. Controlling for prior attainment narrows the gap. It does not close the argument, because motivation remains unmeasured and plausibly drives both attendance and marks.
 
 The useful habit is to state the assumption the causal reading requires, in one sentence, and then ask whether you believe it. "This holds if attenders and non-attenders would have scored the same had neither attended." Written out, it is usually easier to judge than it was to assume.`,
       },
@@ -246,7 +246,7 @@ export const STATS_QUESTIONS: Question[] = [
     marks: 1,
     prompt: 'Sampling frame',
     answer:
-      'The list from which the sample is actually drawn. Bias enters when the frame and the target population differ — the estimate then stands for the frame, not the population.',
+      'The list from which the sample is actually drawn. Bias enters when the frame and the target population differ: the estimate then stands for the frame, not the population.',
     explanation:
       'The distinction matters because frame problems are invisible in the arithmetic: nothing in the standard error notices that the wrong people were listed.',
   },
@@ -321,7 +321,7 @@ export const STATS_QUESTIONS: Question[] = [
     marks: 1,
     prompt: 'When does the median describe a distribution better than the mean?',
     answer:
-      'When the distribution is skewed or has extreme values — income, wealth, waiting times. The mean follows the tail; the median follows the typical case.',
+      'When the distribution is skewed or has extreme values: income, wealth, waiting times. The mean follows the tail, and the median follows the typical case.',
     explanation:
       'Neither is "correct". They answer different questions, and the skew is what decides which question you meant.',
   },
@@ -338,7 +338,7 @@ export const STATS_QUESTIONS: Question[] = [
       'It is right-skewed: a minority of high incomes pull the mean above the median.',
       'It is left-skewed: a minority of very low incomes pull the mean down.',
       'It is symmetric, and the difference is a rounding artefact.',
-      'Nothing — the mean and median are not comparable.',
+      'Nothing. The mean and median are not comparable.',
     ],
     correctIndices: [0],
     explanation:
@@ -372,7 +372,7 @@ export const STATS_QUESTIONS: Question[] = [
     difficulty: 'recall',
     marks: 1,
     prompt: 'Standard error of a sample mean',
-    answer: 's / √n — the sample standard deviation divided by the square root of the sample size.',
+    answer: 's / √n, the sample standard deviation divided by the square root of the sample size.',
     explanation:
       'The √n is the important part: quadrupling the sample halves the standard error, so precision gets steadily more expensive.',
     source: { materialId: 'mat-stat-intervals', passageId: 'p-stat-int-1' },
@@ -409,7 +409,7 @@ export const STATS_QUESTIONS: Question[] = [
     ],
     correctIndices: [0, 3],
     explanation:
-      'The first is the frequentist definition. The fourth is a compatibility reading, which is defensible. The second attaches a probability to a fixed quantity; the third confuses the interval for the mean with the spread of individuals.',
+      'The first is the frequentist definition. The fourth is a compatibility reading, which is defensible. The second attaches a probability to a fixed quantity. The third confuses the interval for the mean with the spread of individuals.',
     source: { materialId: 'mat-stat-intervals', passageId: 'p-stat-int-3' },
   },
   {
@@ -441,7 +441,7 @@ export const STATS_QUESTIONS: Question[] = [
     prompt:
       'A colleague writes: "the 95% interval is 234 to 254, so there is a 95% chance the true mean is in that range." Explain what is wrong with this, and give a reading you would accept.',
     answer:
-      'Under this framework the true mean is fixed, so no probability attaches to it; the 95% describes the long-run behaviour of the procedure.',
+      'Under this framework the true mean is fixed, so no probability attaches to it. The 95% describes the long-run behaviour of the procedure.',
     rubric: [
       {
         id: 'r-stat-int-1',
@@ -469,7 +469,7 @@ export const STATS_QUESTIONS: Question[] = [
       },
     ],
     explanation:
-      'This is the single most common misreading in applied work, and the corrected version is genuinely less satisfying — which is why it keeps being replaced by the wrong one.',
+      'This is the single most common misreading in applied work, and the corrected version is genuinely less satisfying, which is why it keeps being replaced by the wrong one.',
     source: { materialId: 'mat-stat-intervals', passageId: 'p-stat-int-3' },
   },
 
@@ -504,7 +504,7 @@ export const STATS_QUESTIONS: Question[] = [
     ],
     correctIndices: [2],
     explanation:
-      'The first two invert the conditional; the fourth confuses significance with magnitude, which no p-value speaks to.',
+      'The first two invert the conditional, and the fourth confuses significance with magnitude, which no p-value speaks to.',
     source: { materialId: 'mat-stat-testing', passageId: 'p-stat-test-1' },
   },
   {
@@ -539,7 +539,7 @@ export const STATS_QUESTIONS: Question[] = [
       ['interval', 'confidence interval', 'uncertainty', 'ci', 'standard error'],
     ],
     explanation:
-      'Significance answers "is it distinguishable from zero"; the interval answers "how big, and how sure", which is usually the question that was asked.',
+      'Significance answers "is it distinguishable from zero", and the interval answers "how big, and how sure", which is usually the question that was asked.',
     source: { materialId: 'mat-stat-testing', passageId: 'p-stat-test-2' },
   },
   {
@@ -551,11 +551,11 @@ export const STATS_QUESTIONS: Question[] = [
     marks: 8,
     prompt:
       'Read the press summary below. Identify what the result supports, what it does not, and what you would need to see before accepting the headline claim.',
-    extract: `PRESS SUMMARY — "Redesign boosts engagement", internal communications, fictional.
+    extract: `PRESS SUMMARY. "Redesign boosts engagement", internal communications, fictional.
 
 "Our new interface significantly increases engagement (p < 0.001, n = 90,000). Mean session length rose from 4 minutes 12 seconds to 4 minutes 15 seconds. We recommend rolling the redesign out to all users."`,
     answer:
-      'The test supports a non-zero difference; it does not support "boosts engagement" in any sense a reader would take from the headline.',
+      'The test supports a non-zero difference. It does not support "boosts engagement" in any sense a reader would take from the headline.',
     rubric: [
       {
         id: 'r-stat-test-s1',
@@ -605,7 +605,7 @@ export const STATS_QUESTIONS: Question[] = [
     marks: 1,
     prompt: 'Researcher degrees of freedom',
     answer:
-      'The analytic choices — which cases to exclude, which covariates to include, where to cut a continuous variable — that are made after seeing the data and can be made in the direction that helps.',
+      'The analytic choices, which cases to exclude, which covariates to include, where to cut a continuous variable, that are made after seeing the data and can be made in the direction that helps.',
     explanation:
       'The term is useful because it does not require anyone to be dishonest. The choices feel reasonable one at a time.',
     source: { materialId: 'mat-stat-testing', passageId: 'p-stat-test-3' },
@@ -622,7 +622,7 @@ export const STATS_QUESTIONS: Question[] = [
     options: ['5%', 'about 26%', 'about 64%', '100%'],
     correctIndices: [2],
     explanation:
-      '1 − 0.95²⁰ ≈ 0.64. The per-test rate is unchanged; it is the family-wise rate that has climbed.',
+      '1 − 0.95²⁰ ≈ 0.64. The per-test rate is unchanged. It is the family-wise rate that has climbed.',
     source: { materialId: 'mat-stat-testing', passageId: 'p-stat-test-3' },
   },
   {
@@ -643,7 +643,7 @@ export const STATS_QUESTIONS: Question[] = [
         marks: 2,
         keywords: ['how many', 'number of tests', 'count', 'depends on knowing', 'unknown'],
         missedAdvice:
-          'A Bonferroni correction divides by the number of comparisons — which has to be known before it can be divided by.',
+          'A Bonferroni correction divides by the number of comparisons, which has to be known before it can be divided by.',
       },
       {
         id: 'r-stat-mult-2',
@@ -679,7 +679,7 @@ export const STATS_QUESTIONS: Question[] = [
     answer:
       'A variable that influences both the supposed cause and the outcome, producing an association between them that is not causal.',
     explanation:
-      'The definition has two arrows in it, and both are required — a variable affecting only the outcome is not a confounder.',
+      'The definition has two arrows in it, and both are required: a variable affecting only the outcome is not a confounder.',
   },
   {
     id: 'q-stat-caus-mc-1',
@@ -718,7 +718,7 @@ export const STATS_QUESTIONS: Question[] = [
     ],
     correctIndices: [0, 1, 3],
     explanation:
-      'A bigger sample sharpens a biased estimate without moving it toward the truth; the other three each address comparability.',
+      'A bigger sample sharpens a biased estimate without moving it toward the truth. The other three each address comparability.',
     source: { materialId: 'mat-stat-causal', passageId: 'p-stat-caus-2' },
   },
   {
@@ -730,9 +730,9 @@ export const STATS_QUESTIONS: Question[] = [
     marks: 12,
     prompt:
       '"An observational estimate can never support a causal claim." Discuss, with reference to what such a claim would require and to the conditions under which researchers accept one.',
-    extract: `For reference — from the week 6 problem set:
+    extract: `For reference, from the week 6 problem set:
 
-"Short of randomising, the honest moves are to adjust for the confounders you can measure and to say plainly which you cannot. Controlling for prior attainment narrows the gap; it does not close the argument, because motivation remains unmeasured and plausibly drives both attendance and marks."`,
+"Short of randomising, the honest moves are to adjust for the confounders you can measure and to say plainly which you cannot. Controlling for prior attainment narrows the gap. It does not close the argument, because motivation remains unmeasured and plausibly drives both attendance and marks."`,
     answer:
       'The strong claim is too strong: observational estimates carry causal readings under assumptions, and the work is in stating and defending those assumptions.',
     rubric: [
@@ -758,7 +758,7 @@ export const STATS_QUESTIONS: Question[] = [
         marks: 3,
         keywords: ['assumption', 'no unmeasured', 'conditional', 'ignorab', 'exchangeab', 'all confounders', 'given the covariates'],
         missedAdvice:
-          'The standard assumption is that treatment is as good as random once the measured covariates are accounted for — worth naming and worth doubting.',
+          'The standard assumption is that treatment is as good as random once the measured covariates are accounted for, worth naming and worth doubting.',
       },
       {
         id: 'r-stat-caus-e4',
@@ -766,11 +766,11 @@ export const STATS_QUESTIONS: Question[] = [
         marks: 2,
         keywords: ['revision', 'attendance', 'smoking', 'example', 'for instance', 'suppose', 'consider'],
         missedAdvice:
-          'A worked case keeps the discussion from becoming abstract; the revision sessions or any well-known observational finding will do.',
+          'A worked case keeps the discussion from becoming abstract, and the revision sessions or any well-known observational finding will do.',
       },
       {
         id: 'r-stat-caus-e5',
-        label: 'Acknowledges the cost of the strong position — that it would discard most social research',
+        label: 'Acknowledges the cost of the strong position: that it would discard most social research',
         marks: 2,
         keywords: ['never randomis', 'cannot randomis', 'unethical', 'impractical', 'most research', 'would discard', 'no causal claims'],
         missedAdvice:

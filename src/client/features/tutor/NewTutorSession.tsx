@@ -37,6 +37,9 @@ export function NewTutorSession() {
   const quote = params.get('quote');
   const fromAttemptId = params.get('attempt');
   const fromQuestionId = params.get('question');
+  /* The planner session that launched this, when one did. Carried onto the
+     session so that reaching the end of the arc completes it. */
+  const plannedSessionId = params.get('session');
 
   useEffect(() => {
     if (!topicId || created.current) return;
@@ -50,6 +53,7 @@ export function NewTutorSession() {
       ...(quote ? { quote } : {}),
       ...(fromAttemptId ? { fromAttemptId } : {}),
       ...(fromQuestionId ? { fromQuestionId } : {}),
+      ...(plannedSessionId ? { plannedSessionId } : {}),
     });
 
     created.current = session.id;
@@ -64,6 +68,7 @@ export function NewTutorSession() {
     quote,
     fromAttemptId,
     fromQuestionId,
+    plannedSessionId,
     dispatch,
     navigate,
   ]);

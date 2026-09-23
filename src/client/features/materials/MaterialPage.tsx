@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangleIcon,
   ArrowLeftIcon,
+  CheckIcon,
   DumbbellIcon,
   MessageSquareIcon,
   NotebookPenIcon,
@@ -22,8 +23,9 @@ import {
   KIND_LABEL,
   ORIGIN_LABEL,
   formatDate,
+  formatDueDate,
 } from '@/components/domain';
-import { useMaterial, useTopicMap } from '@/store/selectors';
+import { useAllSessions, useMaterial, useTopicMap } from '@/store/selectors';
 import { useStore } from '@/store/store';
 import { useCourse, useCoursePath } from '@/store/course-context';
 import { newId } from '@/lib/id';
@@ -58,6 +60,7 @@ export function MaterialPage() {
   const path = useCoursePath();
   const course = useCourse();
   const { materialId } = useParams();
+  const [searchParams] = useSearchParams();
   const material = useMaterial(materialId);
   const topicMap = useTopicMap();
   const { dispatch } = useStore();
@@ -65,6 +68,41 @@ export function MaterialPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  /*
+   * A planner reading session, when one sent the student here.
+   *
+   * Reading has no completion event the app can observe: there is no answer to
+   * mark and no end of a run. Opening a material therefore does *not* complete
+   * the session, because "I opened it" and "I read it" are different claims and
+   * only the student knows which is true. So the session offers an explicit
+   * button instead, which is also what offline study needs.
+   */
+  const plannedSessionId = searchParams.get('session') ?? undefined;
+  const allSessions = useAllSessions();
+  const linkedSession = plannedSessionId
+    ? allSessions.find(
+        (session) =>
+          session.id === plannedSessionId &&
+          session.courseId === course.id &&
+          session.status === 'planned',
+      )
+    : undefined;
+
+  const completeReading = () => {
+    if (!linkedSession) return;
+    dispatch({
+      type: 'save-session',
+      session: {
+        ...linkedSession,
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+      },
+    });
+    toast.success('Reading marked done', {
+      description: 'Your planner session is complete. It counts once toward your streak.',
+    });
+  };
 
   /* Scroll to a passage named in the hash — how question reviews link back. */
   useEffect(() => {
@@ -132,7 +170,7 @@ export function MaterialPage() {
     if (!topicId) {
       toast.error('No topic linked', {
         description:
-          'Link this material to a topic first — the tutor’s authored branches are organised by topic.',
+          'Link this material to a topic first. The tutor’s authored branches are organised by topic.',
       });
       return;
     }
@@ -246,6 +284,27 @@ export function MaterialPage() {
           ) : null;
         })}
       </div>
+
+      {linkedSession && (
+        <Alert>
+          <AlertTitle>{linkedSession.title}</AlertTitle>
+          <AlertDescription>
+            <span className="flex flex-col gap-snug">
+              <span>
+                This reading is on your planner for{' '}
+                {formatDueDate(linkedSession.date).toLowerCase()}. Opening it does
+                not mark it done, because only you know whether you have read it.
+              </span>
+              <span className="flex flex-wrap gap-tight">
+                <Button size="sm" onClick={completeReading}>
+                  <CheckIcon />
+                  Mark this reading done
+                </Button>
+              </span>
+            </span>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {material.origin === 'preview' ? (
         <Alert>
@@ -368,7 +427,7 @@ export function MaterialPage() {
           dispatch({ type: 'remove-material', materialId: material.id });
           setDeleting(false);
           toast.success('Material deleted');
-          navigate('/materials');
+          navigate(path('/materials'));
         }}
       />
     </Page>

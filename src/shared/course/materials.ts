@@ -44,7 +44,7 @@ export const SEED_MATERIALS: Material[] = [
         id: 'p-exch-1',
         heading: 'What crossed, and in which direction',
         topicIds: ['topic-columbian'],
-        text: `The traffic that followed 1492 was never symmetrical. Eastward went maize, potatoes, cassava and tomatoes — crops that would, within two centuries, raise the calorie ceiling of European and Asian agriculture and underwrite a long demographic expansion. Westward went wheat, sugar cane, cattle, horses and swine, and with them the pathogens of a continent that had lived alongside domesticated animals for millennia.
+        text: `The traffic that followed 1492 was never symmetrical. Eastward went maize, potatoes, cassava and tomatoes: crops that would, within two centuries, raise the calorie ceiling of European and Asian agriculture and underwrite a long demographic expansion. Westward went wheat, sugar cane, cattle, horses and swine, and with them the pathogens of a continent that had lived alongside domesticated animals for millennia.
 
 It is the asymmetry of the disease exchange that most demands explanation. American populations had no acquired immunity to smallpox, measles, influenza or typhus. Mortality estimates for the century after contact remain contested, but no serious reconstruction places the decline below fifty per cent, and several place it far higher.`,
       },
@@ -54,7 +54,7 @@ It is the asymmetry of the disease exchange that most demands explanation. Ameri
         topicIds: ['topic-columbian', 'topic-encomienda'],
         text: `Demographic collapse is the hinge on which much of the subsequent history turns, and it is worth being precise about the causal chain rather than gesturing at it.
 
-Epidemic mortality removed the indigenous labour force on which early Spanish extraction depended. The encomienda, which granted a colonist the labour of a community rather than its land, became progressively harder to work as those communities shrank. Colonists responded by intensifying demands on survivors, which raised mortality further. It was into this gap — a labour system whose supply was collapsing and whose demand was not — that the Atlantic slave trade expanded.
+Epidemic mortality removed the indigenous labour force on which early Spanish extraction depended. The encomienda, which granted a colonist the labour of a community rather than its land, became progressively harder to work as those communities shrank. Colonists responded by intensifying demands on survivors, which raised mortality further. It was into this gap, a labour system whose supply was collapsing and whose demand was not, that the Atlantic slave trade expanded.
 
 Note the shape of the argument. Disease did not *cause* slavery. It removed one solution to a labour problem that the plantation economy had already created, and made a second solution commercially attractive.`,
       },
@@ -62,9 +62,9 @@ Note the shape of the argument. Disease did not *cause* slavery. It removed one 
         id: 'p-exch-3',
         heading: 'Against a purely biological reading',
         topicIds: ['topic-columbian', 'topic-debate'],
-        text: `A biological account of the Exchange has an appealing tidiness, and that is precisely its danger. Pathogens do not decide where to travel; ships carry them, and ships follow commerce and conquest.
+        text: `A biological account of the Exchange has an appealing tidiness, and that is precisely its danger. Pathogens do not decide where to travel. Ships carry them, and ships follow commerce and conquest.
 
-Where colonial demands on labour were lightest, indigenous populations recovered soonest. Where the demands were heaviest — the Caribbean sugar islands above all — recovery did not occur at all. The same pathogens produced very different outcomes depending on what was being asked of the people who survived them. Any explanation that stops at the virus has stopped one step too early.`,
+Where colonial demands on labour were lightest, indigenous populations recovered soonest. Where the demands were heaviest, the Caribbean sugar islands above all, recovery did not occur at all. The same pathogens produced very different outcomes depending on what was being asked of the people who survived them. Any explanation that stops at the virus has stopped one step too early.`,
       },
     ],
   },
@@ -85,7 +85,7 @@ Where colonial demands on labour were lightest, indigenous populations recovered
         topicIds: ['topic-encomienda'],
         text: `The encomienda was not a grant of land. This is the single most common error in undergraduate writing on the subject, and it matters because almost every argument about the institution depends on getting it right.
 
-What the Crown granted was the right to receive tribute and labour from a named group of indigenous people, in exchange for an obligation to protect them and see them instructed in Christianity. The land remained, in law, theirs. The encomendero held people, not acres — and held them conditionally, at the Crown's pleasure, for a term that the New Laws of 1542 attempted to limit to a single lifetime.`,
+What the Crown granted was the right to receive tribute and labour from a named group of indigenous people, in exchange for an obligation to protect them and see them instructed in Christianity. The land remained, in law, theirs. The encomendero held people, not acres, and held them conditionally, at the Crown's pleasure, for a term that the New Laws of 1542 attempted to limit to a single lifetime.`,
       },
       {
         id: 'p-enc-2',
@@ -93,7 +93,7 @@ What the Crown granted was the right to receive tribute and labour from a named 
         topicIds: ['topic-encomienda', 'topic-debate'],
         text: `Valderrama's account treats the encomienda as, first and last, a device for extracting revenue from a territory the Crown could not yet administer directly.
 
-On this reading the institution was a stopgap. Spain had conquered more than it could govern; it lacked the officials, the roads and the coin to collect tribute itself, so it delegated collection to the men who had done the conquering and paid them in the proceeds. The obligations to protect and instruct were not decoration but the legal basis on which the delegation rested.
+On this reading the institution was a stopgap. Spain had conquered more than it could govern. It lacked the officials, the roads and the coin to collect tribute itself, so it delegated collection to the men who had done the conquering and paid them in the proceeds. The obligations to protect and instruct were not decoration but the legal basis on which the delegation rested.
 
 The evidence Valderrama leans on is fiscal: tribute schedules, the Crown's repeated attempts to convert labour obligations into cash payments, and the speed with which the institution was dismantled once a salaried colonial bureaucracy existed to replace it. An institution abolished the moment direct taxation became feasible was, he argues, a tax-collection device all along.`,
       },
@@ -105,7 +105,7 @@ The evidence Valderrama leans on is fiscal: tribute schedules, the Crown's repea
 
 Her objection is about what the sources are records *of*. Tribute schedules record what the Crown hoped to collect and how it wished the arrangement to be described. They are poor evidence of what was done to people in the mines and fields, because that is not what they were written to record. For that she turns to the *residencia* hearings, the complaints of the Dominican friars, and mission mortality registers.
 
-Read against those sources, she argues, the encomienda was a labour-extraction system with a fiscal justification attached — and the justification should not be mistaken for the function. Her sharpest point is about the abolition Valderrama treats as decisive: the institution was dismantled, she notes, but forced labour was not. The *repartimiento* replaced it and the mita continued. If the coercion outlives the tax device, the coercion was not incidental to it.`,
+Read against those sources, she argues, the encomienda was a labour-extraction system with a fiscal justification attached, and the justification should not be mistaken for the function. Her sharpest point is about the abolition Valderrama treats as decisive: the institution was dismantled, she notes, but forced labour was not. The *repartimiento* replaced it and the mita continued. If the coercion outlives the tax device, the coercion was not incidental to it.`,
       },
       {
         id: 'p-enc-4',
@@ -135,7 +135,7 @@ The test that separates them is what happened after 1542. If the encomienda was 
         topicIds: ['topic-plantation'],
         text: `Sugar organised the Atlantic in a way that tobacco, rice and indigo did not, and the reason is technical before it is economic.
 
-Cane must be milled within roughly a day of cutting or its sucrose content falls sharply. That single agronomic fact forces the mill next to the field, forces a large coordinated workforce to cut and haul on a schedule set by the mill, and forces heavy fixed capital investment in the mill itself. A tobacco farm can be small; a sugar estate cannot. The crop selected for the plantation form, and the plantation form selected for coerced labour at scale.`,
+Cane must be milled within roughly a day of cutting or its sucrose content falls sharply. That single agronomic fact forces the mill next to the field, forces a large coordinated workforce to cut and haul on a schedule set by the mill, and forces heavy fixed capital investment in the mill itself. A tobacco farm can be small. A sugar estate cannot. The crop selected for the plantation form, and the plantation form selected for coerced labour at scale.`,
       },
       {
         id: 'p-plant-2',
@@ -143,7 +143,7 @@ Cane must be milled within roughly a day of cutting or its sucrose content falls
         topicIds: ['topic-plantation', 'topic-mercantilism'],
         text: `Larssen's central claim is that the plantation was not an agricultural enterprise that happened to trade, but a node in a commercial system that happened to farm.
 
-Credit originated in European ports. It financed the purchase of trade goods, which were exchanged on the West African coast for captives, who were carried to the Caribbean and sold, the proceeds settling the original credit and financing the sugar shipment home. Each leg was underwritten by insurance contracts written in Europe, and it is in those contracts — not in plantation ledgers — that Larssen finds the system's governing logic.
+Credit originated in European ports. It financed the purchase of trade goods, which were exchanged on the West African coast for captives, who were carried to the Caribbean and sold, the proceeds settling the original credit and financing the sugar shipment home. Each leg was underwritten by insurance contracts written in Europe, and it is in those contracts, not in plantation ledgers, that Larssen finds the system's governing logic.
 
 The planter, on this account, was less a landowner than a debtor operating someone else's capital under terms set at a distance of four thousand miles.`,
       },
@@ -162,7 +162,7 @@ Her argument is not sentimental. It is that the commercial model cannot explain 
   {
     id: 'mat-mercantilism-lecture',
     courseId: ATLANTIC_COURSE_ID,
-    title: 'Lecture 7 — Mercantilism: the theory and the practice',
+    title: 'Lecture 7. Mercantilism: the theory and the practice',
     kind: 'lecture-notes',
     origin: 'authored',
     attribution: 'Fictional lecture notes, Week 7',
@@ -176,7 +176,7 @@ Her argument is not sentimental. It is that the commercial model cannot explain 
         text: `Three propositions, held together:
 
 1. National wealth is measured by the stock of bullion a state holds.
-2. Trade is close to zero-sum — one nation's surplus is another's deficit.
+2. Trade is close to zero-sum: one nation's surplus is another's deficit.
 3. Colonies exist to supply the metropole with raw materials and to buy its manufactures, and should be prevented from doing anything else.
 
 Stated this baldly the doctrine sounds foolish, and it is worth resisting the temptation to treat it as such. It was a reasonable description of a world in which state capacity depended on the ability to pay armies in coin, and in which the coin was genuinely scarce.`,
@@ -185,9 +185,9 @@ Stated this baldly the doctrine sounds foolish, and it is worth resisting the te
         id: 'p-merc-2',
         heading: 'The Navigation Acts in practice',
         topicIds: ['topic-mercantilism', 'topic-plantation'],
-        text: `The Acts required that colonial trade travel in English ships, that enumerated goods — sugar and tobacco first among them — be landed in England before resale, and that colonial imports of European manufactures pass through English ports.
+        text: `The Acts required that colonial trade travel in English ships, that enumerated goods, sugar and tobacco first among them, be landed in England before resale, and that colonial imports of European manufactures pass through English ports.
 
-Enforcement was another matter. The customs establishment in the Caribbean was small, badly paid and frequently local. Smuggling was not a marginal leakage; on some estimates it accounted for a large fraction of the Dutch and French sugar entering English markets. The gap between the statute book and the wharf is the single most useful thing to hold on to about mercantilism, and it is the thing exam answers most often omit.`,
+Enforcement was another matter. The customs establishment in the Caribbean was small, badly paid and frequently local. Smuggling was not a marginal leakage. On some estimates it accounted for a large fraction of the Dutch and French sugar entering English markets. The gap between the statute book and the wharf is the single most useful thing to hold on to about mercantilism, and it is the thing exam answers most often omit.`,
       },
       {
         id: 'p-merc-3',
@@ -213,7 +213,7 @@ This is the line of argument that connects mercantilism to the imperial crises o
         id: 'p-rev-1',
         heading: 'The spectrum of refusal',
         topicIds: ['topic-revolt'],
-        text: `Resistance is usually taught as a list of revolts, which has the effect of making it look rare. It was not rare; it was continuous, and organised revolt was its least common form.
+        text: `Resistance is usually taught as a list of revolts, which has the effect of making it look rare. It was not rare. It was continuous, and organised revolt was its least common form.
 
 The spectrum runs from the barely visible to the unmistakable: deliberate slowness, feigned incomprehension, tool breakage, concealed cultivation, theft, abortion, flight for days, flight for good, maroon settlement, and armed rising. Each carries a different risk and a different prospect of success, and people moved between them according to circumstance.
 
@@ -235,14 +235,14 @@ The treaties are the difficulty. Recognition was typically purchased by agreeing
 
 Almost every surviving document was produced by the system being resisted: court records, runaway advertisements, punishment books, the correspondence of planters and officials. These record resistance only when it failed, or when it alarmed someone enough to write it down.
 
-The advertisements are more useful than they first appear. Written to enable recapture, they describe individuals with a precision that nothing else in the archive matches — skills, languages spoken, scars, likely destinations, named relatives in other parishes. Read against their purpose, they are among the best surviving evidence of who these people were and where they thought they could get to.`,
+The advertisements are more useful than they first appear. Written to enable recapture, they describe individuals with a precision that nothing else in the archive matches: skills, languages spoken, scars, likely destinations, named relatives in other parishes. Read against their purpose, they are among the best surviving evidence of who these people were and where they thought they could get to.`,
       },
     ],
   },
   {
     id: 'mat-debate-lecture',
     courseId: ATLANTIC_COURSE_ID,
-    title: 'Lecture 11 — Reading historians against each other',
+    title: 'Lecture 11: Reading historians against each other',
     kind: 'lecture-notes',
     origin: 'authored',
     attribution: 'Fictional lecture notes, Week 11',
@@ -257,7 +257,7 @@ The advertisements are more useful than they first appear. Written to enable rec
 
 A comparison requires you to name the axis on which they differ. Do they disagree about what happened, about which evidence counts, or about what the evidence means? Those are three quite different disagreements and they call for three different kinds of answer.
 
-Valderrama and Okonkwo do not disagree much about what happened. They disagree about which sources reveal the institution's function — and once you can say that sentence, you have an argument rather than a pair of paragraphs.`,
+Valderrama and Okonkwo do not disagree much about what happened. They disagree about which sources reveal the institution's function, and once you can say that sentence, you have an argument rather than a pair of paragraphs.`,
       },
       {
         id: 'p-deb-2',
@@ -278,7 +278,7 @@ None of the three is the correct one. A strong answer uses the tension between t
         text: `A structure that reliably works under exam conditions:
 
 1. State the disagreement in one sentence, naming the axis.
-2. Give each position its strongest form, with its best evidence. Steelman, do not strawman — the examiner has read both and will notice.
+2. Give each position its strongest form, with its best evidence. Steelman, do not strawman. The examiner has read both and will notice.
 3. Identify what would distinguish them: what evidence, if found, would favour one?
 4. Take a position and defend it on those terms.
 
@@ -289,7 +289,7 @@ Step three is the one that separates a good answer from a competent one, and it 
   {
     id: 'mat-student-note',
     courseId: ATLANTIC_COURSE_ID,
-    title: 'My notes — things I keep forgetting',
+    title: 'My notes: things I keep forgetting',
     kind: 'student-note',
     origin: 'pasted',
     topicIds: ['topic-encomienda', 'topic-debate'],
@@ -301,7 +301,7 @@ Step three is the one that separates a good answer from a competent one, and it 
         topicIds: ['topic-encomienda', 'topic-debate'],
         text: `encomienda = PEOPLE not land. keep writing "land grant" in essays, stop it.
 
-New Laws 1542 — tried to stop inheritance, mostly failed, colonists revolted in Peru.
+New Laws 1542: tried to stop inheritance, mostly failed, colonists revolted in Peru.
 
 V = fiscal/tax, O = coercion. the test between them is what changed after 1542 (paperwork vs actual labour). ← remember this, it's the bit that makes it a comparison
 

@@ -191,14 +191,14 @@ export function readSyllabus(text: string): SyllabusReading {
 
   const summary =
     topics.length === 0
-      ? 'No lines in this text matched a recognised outline shape, so nothing has been proposed. You can build the outline yourself below — that is the normal path for a syllabus written as prose.'
+      ? 'No lines in this text matched a recognised outline shape, so nothing has been proposed. You can build the outline yourself below, which is the normal path for a syllabus written as prose.'
       : `Matched ${topics.length} ${
           topics.length === 1 ? 'line' : 'lines'
         } that look like outline entries${
           high < topics.length
             ? `, ${high} of them confidently. Check the less certain ones before confirming.`
             : '.'
-        } This is line-by-line pattern matching, not comprehension — nothing here has read your syllabus.`;
+        } This is line-by-line pattern matching, not comprehension. Nothing here has read your syllabus.`;
 
   return { topics, skipped: skipped.slice(0, 20), summary, fromSample: false };
 }
@@ -266,7 +266,7 @@ export function readSampleSyllabus(): SyllabusReading {
       ...topic,
       summary: SAMPLE_SUMMARIES[topic.title] ?? '',
     })),
-    summary: `This is the labelled sample syllabus. The ${base.topics.length} topics below came from the same line matcher your own text would go through; the one-line descriptions are authored for the sample, because nothing here can write a summary of a topic it has only seen the title of.`,
+    summary: `This is the labelled sample syllabus. The ${base.topics.length} topics below came from the same line matcher your own text would go through. The one-line descriptions are authored for the sample, because nothing here can write a summary of a topic it has only seen the title of.`,
   };
 }
 

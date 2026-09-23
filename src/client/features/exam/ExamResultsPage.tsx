@@ -53,6 +53,23 @@ interface TopicGap {
   wrong: number;
 }
 
+/**
+ * The paper's marks, per topic.
+ *
+ * ── Two orderings, because they answer different questions ────────────────
+ *
+ * The list is sorted by *share* of the marks available, which is the right
+ * order for "how am I doing on each topic": a topic where you scored 1 of 4 is
+ * a bigger worry than one where you scored 9 of 12, even though the second lost
+ * more marks.
+ *
+ * The recommendation underneath is about where the next hour goes, and that is
+ * a question about *marks lost*, which is a different ranking. The two used to
+ * disagree: the copy said "X cost you the most" about whichever topic had the
+ * lowest percentage, which on a paper with one two-mark question and one
+ * thirty-mark question said the wrong thing confidently. They are now computed
+ * separately and each says what it actually means.
+ */
 function topicGaps(attempt: Attempt): TopicGap[] {
   const byTopic = new Map<string, TopicGap>();
   for (const qa of attempt.questions) {
@@ -64,9 +81,18 @@ function topicGaps(attempt: Attempt): TopicGap[] {
     if (qa.outcome !== 'correct') current.wrong += 1;
     byTopic.set(qa.topicId, current);
   }
-  return [...byTopic.values()].sort(
-    (a, b) => a.awarded / a.available - b.awarded / b.available,
-  );
+  return [...byTopic.values()].sort((a, b) => {
+    const shareA = a.available > 0 ? a.awarded / a.available : 0;
+    const shareB = b.available > 0 ? b.awarded / b.available : 0;
+    return shareA - shareB;
+  });
+}
+
+/** The topic that lost the most marks. What "worth the next hour" means. */
+function costliestTopic(gaps: TopicGap[]): TopicGap | undefined {
+  return [...gaps].sort(
+    (a, b) => b.available - b.awarded - (a.available - a.awarded),
+  )[0];
 }
 
 export function ExamResultsPage() {
@@ -84,7 +110,11 @@ export function ExamResultsPage() {
   const wrong = attempt.questions.filter((qa) => qa.outcome !== 'correct');
   const fraction =
     attempt.marksAvailable > 0 ? attempt.marksAwarded / attempt.marksAvailable : 0;
+  /* Lowest share: the topic the evidence is weakest on, which is what the
+     targeted actions should address. */
   const worst = gaps[0];
+  /* Most marks lost: what the closing sentence is actually about. */
+  const costliest = costliestTopic(gaps);
   const hasWritten = attempt.questions.some(
     (qa) =>
       qa.format === 'essay' ||
@@ -217,11 +247,19 @@ export function ExamResultsPage() {
           </Button>
         </div>
 
-        {worst && (
+        {costliest && costliest.available - costliest.awarded > 0 && (
           <p className="text-muted-foreground text-sm leading-relaxed">
-            {topicMap.get(worst.topicId)?.title} cost you the most —{' '}
-            {worst.available - worst.awarded} marks. That is where the next hour
-            is worth most.
+            {topicMap.get(costliest.topicId)?.title} cost the most marks:{' '}
+            {costliest.available - costliest.awarded} of{' '}
+            {costliest.available}. That is where the next hour is worth most.
+            {worst && worst.topicId !== costliest.topicId && (
+              <>
+                {' '}
+                The weakest topic by share was{' '}
+                {topicMap.get(worst.topicId)?.title}, at {worst.awarded} of{' '}
+                {worst.available}.
+              </>
+            )}
           </p>
         )}
       </Section>

@@ -28,7 +28,7 @@ import type {
  */
 
 export const SIMULATED_MARKING_NOTICE =
-  'Simulated marking. Written answers are checked against an authored rubric by looking for the words a strong answer usually contains — not by reading your argument. Treat the rubric points as a checklist, not a grade.';
+  'Simulated marking. Written answers are checked against an authored rubric by looking for the words a strong answer usually contains, not by reading your argument. Treat the rubric points as a checklist, not a grade.';
 
 /* ── Per-format marking ───────────────────────────────────────────────── */
 

@@ -223,7 +223,7 @@ export function CourseSettingsPage() {
                 <p className="text-sm font-medium">Assessment dates</p>
                 <p className="text-muted-foreground text-xs leading-relaxed">
                   {assessments.length > 0
-                    ? `${assessments.length} planned ${assessments.length === 1 ? 'assessment' : 'assessments'}. Each has its own date and coverage — this course no longer has a single exam date.`
+                    ? `${assessments.length} planned ${assessments.length === 1 ? 'assessment' : 'assessments'}. Each has its own date and coverage. This course no longer has a single exam date.`
                     : 'No assessments recorded. Add the dates this course actually has, and the planner will work back from them.'}
                 </p>
               </div>
@@ -265,7 +265,7 @@ export function CourseSettingsPage() {
                 <p className="text-muted-foreground text-xs leading-relaxed">
                   {course.archived
                     ? 'Bring it back into planning and the main course list.'
-                    : 'Keeps everything — materials, attempts, history — but leaves the course out of planning and the default list.'}
+                    : 'Keeps everything, including materials, attempts and history, but leaves the course out of planning and the default list.'}
                 </p>
               </div>
               <Button

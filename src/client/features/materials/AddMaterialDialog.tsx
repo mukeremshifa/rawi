@@ -96,7 +96,7 @@ export function splitIntoPassages(text: string, topicIds: string[]): Passage[] {
 
 const PREVIEW_TEXT = `This file was not read.
 
-Rawi's prototype reads plain text and Markdown in the browser. It has no PDF, Word or slide parser, and it will not pretend to have one — so nothing from inside this document has been extracted, indexed or shown to the tutor.
+Rawi's prototype reads plain text and Markdown in the browser. It has no PDF, Word or slide parser, and it will not pretend to have one, so nothing from inside this document has been extracted, indexed or shown to the tutor.
 
 The file is recorded here so you can see it in your library and attach it to topics. To work with its contents, open the original and paste the passages you want into a new material.`;
 
@@ -203,7 +203,7 @@ export function AddMaterialDialog({
     toast.success('Material added', {
       description:
         origin === 'preview'
-          ? 'Recorded as a file reference — its contents were not read.'
+          ? 'Recorded as a file reference. Its contents were not read.'
           : `${material.passages.length} passages.`,
     });
     reset();
@@ -230,7 +230,7 @@ export function AddMaterialDialog({
                 id="mat-title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Week 3 reading — the plantation complex"
+                placeholder="Week 3 reading: the plantation complex"
               />
             </div>
             <div className="flex flex-col gap-tight">

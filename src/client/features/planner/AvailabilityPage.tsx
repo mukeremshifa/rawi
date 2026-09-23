@@ -126,7 +126,7 @@ export function AvailabilityPage() {
         </AlertTitle>
         <AlertDescription>
           This is one budget across every course. A plan never schedules outside these
-          hours or on top of something already booked — if the work does not fit, it
+          hours or on top of something already booked. If the work does not fit, it
           says so rather than overfilling the week.
         </AlertDescription>
       </Alert>

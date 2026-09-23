@@ -32,7 +32,7 @@ export function WelcomePage() {
     <Page width="prose" className="py-page">
       <PageHeader
         title="Welcome to Rawi"
-        description="A study workspace for the courses you are taking — reading, tutoring, practice and exam rehearsal, planned across all of them."
+        description="A study workspace for the courses you are taking: reading, tutoring, practice and exam rehearsal, planned across all of them."
       />
 
       <div className="flex flex-col gap-snug">
@@ -40,8 +40,8 @@ export function WelcomePage() {
           <CardContent className="flex flex-col gap-snug">
             <span className="font-medium">Explore the sample courses</span>
             <p className="text-muted-foreground text-sm leading-relaxed">
-              Two fictional courses — a reading-heavy history survey and a
-              problem-based statistics course — with readings, authored question
+              Two fictional courses, a reading-heavy history survey and a
+              problem-based statistics course, with readings, authored question
               banks, four planned assessments between them and a fortnight of seeded
               study history. Enough for the planner, progress and recurring mistakes
               to have something real to show.
@@ -65,7 +65,7 @@ export function WelcomePage() {
               Add a course, paste its syllabus or build a week-by-week outline, and
               record the dates it actually has. Note that the authored question bank
               covers the sample courses’ topics, so your own topics will have no
-              practice questions behind them — the tutor, your own readings and the
+              practice questions behind them. The tutor, your own readings and the
               planner still work, and Rawi will say so rather than attaching unrelated
               questions.
             </p>

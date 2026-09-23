@@ -133,7 +133,7 @@ export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
 
 export const DIFFICULTY_BLURB: Record<Difficulty, string> = {
   recall: 'Definitions, dates and content you should be able to state.',
-  reasoning: 'Why and how — causal chains, comparisons, the use of evidence.',
+  reasoning: 'Why and how: causal chains, comparisons, the use of evidence.',
   stretch: 'The harder end: historiography, limitations, extended argument.',
 };
 
@@ -147,7 +147,7 @@ export const ORIGIN_LABEL: Record<MaterialOrigin, string> = {
   authored: 'Sample course material',
   pasted: 'Pasted by you',
   'text-file': 'Text file you added',
-  preview: 'Sample preview — file not read',
+  preview: 'Sample preview, file not read',
 };
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
@@ -250,10 +250,22 @@ export function FictionalNotice({ className }: { className?: string }) {
 /**
  * A link back to the passage a question or explanation came from.
  *
- * Renders nothing when the reference cannot be resolved — which happens when a
- * student deletes a material that a question cites. A dead link into a deleted
- * reading is worse than no link, and the question's explanation stands on its
- * own without it.
+ * ── Why the course comes from the material, not from context ──────────────
+ *
+ * Materials are course-owned and live at `/course/:courseId/materials/:id`, so
+ * a source link has to name the course. It takes that from the *resolved
+ * material* rather than from whichever course the student happens to be
+ * looking at. Those are almost always the same, and when they are not the
+ * material's own course is the correct answer: a global history list can cite
+ * a passage from a course you are not currently inside, and sending you to the
+ * active course's copy of that id would be wrong twice over.
+ *
+ * ── Why an unresolvable source still renders ──────────────────────────────
+ *
+ * A student who deletes a reading leaves questions citing it. The link used to
+ * disappear, which silently turned "this came from somewhere" into "this came
+ * from nowhere". It now says the source is unavailable, as plain text rather
+ * than an enabled link into a 404.
  */
 export function SourceLink({
   source,
@@ -263,11 +275,25 @@ export function SourceLink({
   className?: string;
 }) {
   const resolved = useSource(source);
-  if (!resolved || !source) return null;
+  if (!source) return null;
+
+  if (!resolved) {
+    return (
+      <span
+        className={cn(
+          'text-muted-foreground inline-flex items-center gap-hairline text-xs',
+          className,
+        )}
+      >
+        <BookOpenIcon className="size-3 shrink-0" aria-hidden />
+        <span className="truncate">Source no longer available</span>
+      </span>
+    );
+  }
 
   return (
     <Link
-      to={`/materials/${source.materialId}#${source.passageId}`}
+      to={`/course/${resolved.material.courseId}/materials/${source.materialId}#${source.passageId}`}
       className={cn(
         'text-muted-foreground hover:text-foreground inline-flex items-center gap-hairline text-xs underline-offset-4 hover:underline',
         className,
@@ -275,7 +301,7 @@ export function SourceLink({
     >
       <BookOpenIcon className="size-3 shrink-0" aria-hidden />
       <span className="truncate">
-        {resolved.material.title} — {resolved.passage.heading}
+        {resolved.material.title}: {resolved.passage.heading}
       </span>
     </Link>
   );

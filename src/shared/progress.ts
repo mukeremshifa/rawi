@@ -4,7 +4,9 @@ import type {
   Attempt,
   CheckIn,
   EvidenceLevel,
+  Material,
   PlannedAssessment,
+  Question,
   RecurringMistake,
   ReviewDue,
   StreakSummary,
@@ -13,6 +15,12 @@ import type {
   TutorSession,
 } from './types.ts';
 import { localISO } from './planner.ts';
+import {
+  NO_CONTENT_REASON,
+  bestActivity,
+  substitutionNote,
+  topicCapabilities,
+} from './capabilities.ts';
 
 /**
  * Everything derived from the attempt log.
@@ -50,7 +58,7 @@ export const EVIDENCE_DETAIL: Record<EvidenceLevel, string> = {
   practising:
     'You have worked on this, with the tutor or with hints available, but have not yet answered correctly under exam conditions.',
   'independent-once':
-    'You answered correctly under exam conditions, with no hints. One occasion — a later question will show whether it held.',
+    'You answered correctly under exam conditions, with no hints. One occasion so far, and a later question will show whether it held.',
   retained:
     'You answered a different question on this topic correctly, unaided, on a later day. That is the strongest evidence this prototype records.',
 };
@@ -478,8 +486,14 @@ export interface PlanInput {
   checkIns: CheckIn[];
   /** Today's planner sessions, which are the first thing suggested. */
   todaysSessions: PlannedSessionLike[];
-  /** Topic ids with at least one authored question, so we never suggest a dead end. */
-  topicsWithQuestions: Set<string>;
+  /**
+   * The question pool and materials, so a suggestion can check that the
+   * activity it names is actually possible for that topic before offering it.
+   * Without them every topic reads as having no content, which is the safe
+   * direction: the plan offers setup rather than a broken link.
+   */
+  questions?: Question[];
+  materials?: Material[];
   /** Set when a tutor session or exam is part-finished and can be resumed. */
   resumable?: { courseId: string; title: string; to: string; kind: Suggestion['kind'] };
   now?: Date;
@@ -511,7 +525,6 @@ export function buildPlan(input: PlanInput): Suggestion[] {
     attempts,
     assessments,
     checkIns,
-    topicsWithQuestions,
     todaysSessions,
   } = input;
   const now = input.now ?? new Date();
@@ -519,6 +532,17 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   const checkIn = todaysCheckIn(checkIns, now);
   const active = courses.filter((c) => !c.archived);
   const courseName = new Map(active.map((c) => [c.id, c.name]));
+
+  const allQuestions = input.questions ?? [];
+  const allMaterials = input.materials ?? [];
+
+  /** What a topic supports, scoped to its own course. */
+  const capabilitiesOf = (topic: Topic) =>
+    topicCapabilities(
+      topic.id,
+      allQuestions.filter((q) => q.courseId === topic.courseId),
+      allMaterials.filter((m) => m.courseId === topic.courseId),
+    );
 
   /* 1 — Resume. Nothing outranks work already started. */
   if (input.resumable) {
@@ -570,19 +594,30 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   /* 3 — First-run guidance, when there is genuinely nothing to go on. */
   if (attempts.length === 0 && active.length > 0) {
     const course = active[0]!;
-    const first = topics.find(
-      (t) => t.courseId === course.id && topicsWithQuestions.has(t.id),
-    );
-    if (first) {
+    /* The first thing a student is sent to has to work. A topic with questions
+       but no tutor script would open a session that says it cannot help, which
+       is a poor first impression and an avoidable one. */
+    const first = topics
+      .filter((t) => t.courseId === course.id)
+      .map((topic) => ({ topic, chosen: bestActivity('tutor', capabilitiesOf(topic)) }))
+      .find((row) => row.chosen !== null);
+
+    if (first?.chosen) {
+      const { topic, chosen } = first;
       suggestions.push({
         id: 'sug-first-session',
         courseId: course.id,
-        title: `Start with ${first.title}`,
+        title: `Start with ${topic.title}`,
         reason:
           'Nothing recorded yet, so this is a starting point rather than a recommendation. After a session or two the plan will have something to work from.',
         minutes: 20,
-        to: `/course/${course.id}/tutor/new?topic=${first.id}`,
-        kind: 'tutor',
+        to:
+          chosen === 'tutor'
+            ? `/course/${course.id}/tutor/new?topic=${topic.id}`
+            : chosen === 'read'
+              ? `/course/${course.id}/materials`
+              : `/course/${course.id}/practice/new?topic=${topic.id}`,
+        kind: chosen === 'tutor' ? 'tutor' : chosen === 'read' ? 'materials' : 'practice',
         weight: 80,
       });
     }
@@ -592,18 +627,52 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   if (checkIn?.mood === 'struggling' && checkIn.topicId) {
     const topic = topics.find((t) => t.id === checkIn.topicId);
     if (topic) {
-      suggestions.push({
-        id: `sug-struggle-${topic.id}`,
-        courseId: topic.courseId,
-        title: `Work through ${topic.title} with the tutor`,
-        reason:
-          'You said this one is not landing. More testing would not help — an explanation and a worked example will.',
-        minutes: 25,
-        to: `/course/${topic.courseId}/tutor/new?topic=${topic.id}`,
-        topicId: topic.id,
-        kind: 'tutor',
-        weight: 95,
-      });
+      const capabilities = capabilitiesOf(topic);
+      /* An explanation is what a struggling student needs, so the tutor is the
+         preference. Where there is no script the next best thing is the
+         reading, which at least explains. More testing is the last resort and
+         the reason says so. */
+      const chosen = bestActivity('tutor', capabilities);
+      if (chosen === 'tutor') {
+        suggestions.push({
+          id: `sug-struggle-${topic.id}`,
+          courseId: topic.courseId,
+          title: `Work through ${topic.title} with the tutor`,
+          reason:
+            'You said this one is not landing. More testing would not help: an explanation and a worked example will.',
+          minutes: 25,
+          to: `/course/${topic.courseId}/tutor/new?topic=${topic.id}`,
+          topicId: topic.id,
+          kind: 'tutor',
+          weight: 95,
+        });
+      } else if (chosen === 'read' || capabilities.read) {
+        suggestions.push({
+          id: `sug-struggle-${topic.id}`,
+          courseId: topic.courseId,
+          title: `Re-read the material on ${topic.title}`,
+          reason:
+            'You said this one is not landing. The tutor has no authored script for this topic, so the reading is the explanation available here.',
+          minutes: 20,
+          to: `/course/${topic.courseId}/materials`,
+          topicId: topic.id,
+          kind: 'materials',
+          weight: 95,
+        });
+      } else if (chosen) {
+        suggestions.push({
+          id: `sug-struggle-${topic.id}`,
+          courseId: topic.courseId,
+          title: `Work slowly through ${topic.title}`,
+          reason:
+            'You said this one is not landing. There is no tutor script and no reading for this topic, so this is practice with feedback rather than an explanation.',
+          minutes: 20,
+          to: `/course/${topic.courseId}/practice/new?topic=${topic.id}`,
+          topicId: topic.id,
+          kind: 'practice',
+          weight: 95,
+        });
+      }
     }
   }
 
@@ -611,15 +680,24 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   for (const mistake of recurringMistakes(attempts, () => undefined).slice(0, 2)) {
     const topic = topics.find((t) => t.id === mistake.topicId);
     if (!topic) continue;
+    /* Discussing the mistake is best, but only where the tutor has something
+       to say. Otherwise the useful action is another go at the question. */
+    const canTutor = capabilitiesOf(topic).tutor;
     suggestions.push({
       id: `sug-mistake-${mistake.questionId}`,
       courseId: topic.courseId,
       title: `Fix a repeated mistake in ${topic.title}`,
-      reason: `You have got this wrong ${mistake.times} times. That is the clearest signal in your history, so it goes first.`,
+      reason: `You have got this wrong ${mistake.times} times. That is the clearest signal in your history, so it goes first.${
+        canTutor
+          ? ''
+          : ' The tutor has no authored script for this topic, so this retries the question itself.'
+      }`,
       minutes: 15,
-      to: `/course/${topic.courseId}/tutor/new?topic=${topic.id}&question=${mistake.questionId}&attempt=${mistake.lastAttemptId}`,
+      to: canTutor
+        ? `/course/${topic.courseId}/tutor/new?topic=${topic.id}&question=${mistake.questionId}&attempt=${mistake.lastAttemptId}`
+        : `/course/${topic.courseId}/practice/new?questions=${mistake.questionId}&retry=${mistake.lastAttemptId}`,
       topicId: topic.id,
-      kind: 'tutor',
+      kind: canTutor ? 'tutor' : 'practice',
       weight: 85,
     });
   }
@@ -628,15 +706,25 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   const activeTopics = topics.filter((t) => active.some((c) => c.id === t.courseId));
   for (const review of dueReviews(activeTopics, attempts, now).slice(0, 2)) {
     const topic = activeTopics.find((t) => t.id === review.topicId);
-    if (!topic || !topicsWithQuestions.has(topic.id)) continue;
+    if (!topic) continue;
     if (suggestions.some((s) => s.topicId === topic.id)) continue;
+    /* A flashcard round needs flashcards, not merely some question for this
+       topic: the old test sent students to an empty flashcard set whenever the
+       topic's only questions were essays. */
+    const chosen = bestActivity('flashcards', capabilitiesOf(topic));
+    if (chosen !== 'flashcards' && chosen !== 'practice') continue;
     suggestions.push({
       id: `sug-review-${topic.id}`,
       courseId: topic.courseId,
       title: `Review ${topic.title}`,
-      reason: `Last worked ${review.daysSince} days ago. This prototype flags a topic for review after three days untouched.`,
+      reason: `Last worked ${review.daysSince} days ago. This prototype flags a topic for review after three days untouched.${substitutionNote(
+        'flashcards',
+        chosen,
+      )}`,
       minutes: 10,
-      to: `/course/${topic.courseId}/practice/new?topic=${topic.id}&activity=flashcards`,
+      to: `/course/${topic.courseId}/practice/new?topic=${topic.id}${
+        chosen === 'flashcards' ? '&activity=flashcards' : ''
+      }`,
       topicId: topic.id,
       kind: 'review',
       weight: 60 + Math.min(review.daysSince, 10),
@@ -657,10 +745,15 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   };
 
   for (const topic of activeTopics) {
-    if (!topicsWithQuestions.has(topic.id)) continue;
     const evidence = deriveEvidence(topic.id, attempts);
     if (evidence.level === 'retained') continue;
     if (suggestions.some((s) => s.topicId === topic.id)) continue;
+
+    /* Scoped to this topic's own course, so one subject's content cannot make
+       another subject's topic look workable. */
+    const capabilities = capabilitiesOf(topic);
+    const preferredActivity = evidence.level === 'not-checked' ? 'tutor' : 'practice';
+    const chosen = bestActivity(preferredActivity, capabilities);
 
     const covering = upcomingAssessments(
       assessments.filter((a) => a.courseId === topic.courseId),
@@ -684,24 +777,59 @@ export function buildPlan(input: PlanInput): Suggestion[] {
         : `Evidence here is “${EVIDENCE_LABEL[evidence.level].toLowerCase()}”. ${
             evidence.level === 'practising'
               ? 'You have worked on it but not yet answered unaided.'
-              : 'One unaided answer so far; a second on a different question would confirm it.'
+              : 'One unaided answer so far, and a second on a different question would confirm it.'
           }${assessmentClause}`;
+
+    /* Nothing behind this topic at all: say so and offer the setup that would
+       fix it, rather than a link into an empty activity. */
+    if (!chosen) {
+      suggestions.push({
+        id: `sug-setup-${topic.id}`,
+        courseId: topic.courseId,
+        title: `Add material for ${topic.title}`,
+        reason: NO_CONTENT_REASON,
+        minutes: 10,
+        to: `/course/${topic.courseId}/materials`,
+        topicId: topic.id,
+        kind: 'setup',
+        weight: Math.max(1, weight - 40),
+      });
+      continue;
+    }
+
+    const to =
+      chosen === 'tutor'
+        ? `/course/${topic.courseId}/tutor/new?topic=${topic.id}`
+        : chosen === 'read'
+          ? `/course/${topic.courseId}/materials`
+          : chosen === 'flashcards'
+            ? `/course/${topic.courseId}/practice/new?topic=${topic.id}&activity=flashcards`
+            : `/course/${topic.courseId}/practice/new?topic=${topic.id}`;
 
     suggestions.push({
       id: `sug-topic-${topic.id}`,
       courseId: topic.courseId,
-      title:
-        evidence.level === 'not-checked'
-          ? `Learn ${topic.title}`
-          : `Practise ${topic.title}`,
-      reason,
-      minutes: evidence.level === 'not-checked' ? 25 : 15,
-      to:
-        evidence.level === 'not-checked'
-          ? `/course/${topic.courseId}/tutor/new?topic=${topic.id}`
-          : `/course/${topic.courseId}/practice/new?topic=${topic.id}`,
+      title: `${
+        chosen === 'tutor'
+          ? 'Learn'
+          : chosen === 'read'
+            ? 'Read about'
+            : chosen === 'flashcards'
+              ? 'Review'
+              : 'Practise'
+      } ${topic.title}`,
+      reason: `${reason}${substitutionNote(preferredActivity, chosen)}`,
+      minutes: chosen === 'tutor' ? 25 : 15,
+      to,
       topicId: topic.id,
-      kind: evidence.level === 'not-checked' ? 'tutor' : 'practice',
+      kind:
+        chosen === 'tutor'
+          ? 'tutor'
+          : chosen === 'read'
+            ? 'materials'
+            : chosen === 'flashcards'
+              ? 'review'
+              : 'practice',
       weight,
     });
   }
@@ -742,7 +870,14 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   if (checkIn?.mood === 'less-time') {
     const available = minutesToday(30, checkIns, now);
     const course = checkIn.courseId ?? active[0]?.id;
-    if (course) {
+    /* Only offer the short round if that course actually has flashcards. */
+    const hasFlashcards =
+      course !== undefined &&
+      topics
+        .filter((t) => t.courseId === course)
+        .some((t) => capabilitiesOf(t).activities.includes('flashcards'));
+
+    if (course && hasFlashcards) {
       suggestions.unshift({
         id: 'sug-short',
         courseId: course,

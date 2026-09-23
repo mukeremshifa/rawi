@@ -116,7 +116,7 @@ export function NewCoursePage() {
               placeholder="Be able to explain the model rather than just apply it."
             />
             <p className="text-muted-foreground text-xs leading-relaxed">
-              In your own words. It is shown back to you on the course overview — it is
+              In your own words. It is shown back to you on the course overview, and it is
               not used to generate anything.
             </p>
           </div>

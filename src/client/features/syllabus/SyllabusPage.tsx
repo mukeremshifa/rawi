@@ -104,7 +104,7 @@ export function SyllabusPage() {
     setFileNote(source);
     if (result.topics.length === 0) {
       toast.info('Nothing matched', {
-        description: 'Build the outline by hand instead — the tab is below.',
+        description: 'Build the outline by hand instead. The tab is below.',
       });
     }
   };
@@ -266,7 +266,7 @@ export function SyllabusPage() {
     <Page className="py-page">
       <PageHeader
         title="Syllabus & topics"
-        description={`The outline for ${course.name}. Everything else — materials, practice, assessments and your history — points at these topics.`}
+        description={`The outline for ${course.name}. Everything else points at these topics: materials, practice, assessments and your history.`}
         actions={
           existing.length > 0 &&
           !draft && (
@@ -290,7 +290,7 @@ export function SyllabusPage() {
           ) : (
             <Section
               title={`Current outline (${existing.length} topics)`}
-              description="Grouped as you organised it. Topics with no authored questions are marked — the tutor and your own materials are the way into those."
+              description="Grouped as you organised it. Topics with no authored questions are marked. The tutor and your own materials are the way into those."
             >
               <div className="flex flex-col gap-base">
                 {groupByModule(existing).map(({ module, topics }) => (
@@ -339,7 +339,7 @@ export function SyllabusPage() {
                     This prototype has an authored question bank and cannot write
                     questions for a topic you added. Those topics still work with the
                     tutor where a script exists, can hold your own readings and notes,
-                    and can be covered by an assessment — they simply cannot generate a
+                    and can be covered by an assessment. They simply cannot generate a
                     quiz. Nothing unrelated will be attached to them to hide that.
                   </AlertDescription>
                 </Alert>
@@ -355,7 +355,7 @@ export function SyllabusPage() {
           title={reading ? 'Review the proposed outline' : 'Edit the outline'}
           description={
             reading
-              ? `Proposed from ${fileNote ?? 'your text'}. Nothing has been created yet — rename, reorder, group and delete, then confirm.`
+              ? `Proposed from ${fileNote ?? 'your text'}. Nothing has been created yet. Rename, reorder, group and delete, then confirm.`
               : 'Rename, reorder, group and delete. Topics keep their identity, so your history and materials stay attached.'
           }
         >
@@ -578,7 +578,7 @@ export function SyllabusPage() {
                   className="font-mono text-xs"
                 />
                 <p className="text-muted-foreground text-xs leading-relaxed">
-                  Lines like “Week 3: Estimation”, “Unit II — Conquest” or a numbered
+                  Lines like “Week 3: Estimation”, “Unit II: Conquest” or a numbered
                   list are recognised. This is pattern matching over the text, not a
                   model reading it, and you will see exactly what matched before
                   anything is created.

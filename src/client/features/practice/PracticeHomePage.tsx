@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   ClipboardListIcon,
   PlayIcon,
@@ -16,9 +16,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { DIFFICULTY_LABEL, formatRelative } from '@/components/domain';
-import { useAppState, useStore } from '@/store/store';
+import { useStore } from '@/store/store';
 import { useCoursePath } from '@/store/course-context';
 import {
+  useAttempts,
+  usePracticeSets,
   useRecentAttempts,
   useRecurringMistakes,
   useReviews,
@@ -68,13 +70,27 @@ const ACTIVITIES: { type: ActivityType; blurb: string }[] = [
 
 export function PracticeHomePage() {
   const path = useCoursePath();
-  const { savedPractice } = useAppState();
   const { dispatch } = useStore();
-  const navigate = useNavigate();
   const topicMap = useTopicMap();
   const reviews = useReviews();
   const mistakes = useRecurringMistakes();
   const recent = useRecentAttempts(6).filter((a) => a.kind === 'practice');
+  const allAttempts = useAttempts();
+  // Scoped, not global: this page is inside one course, and another course's
+  // sets appearing here is exactly the leak the scoped selectors exist to stop.
+  const savedPractice = usePracticeSets();
+
+  /*
+   * A recurring mistake can come from either kind of attempt, and the two have
+   * different results pages. Sending a practice attempt to the exam results
+   * route renders "not found", so the attempt's own kind decides.
+   */
+  const resultsPath = (attemptId: string) => {
+    const attempt = allAttempts.find((a) => a.id === attemptId);
+    return attempt?.kind === 'exam'
+      ? `/exams/results/${attemptId}`
+      : `/practice/results/${attemptId}`;
+  };
 
   return (
     <Page>
@@ -125,9 +141,7 @@ export function PracticeHomePage() {
                         </Link>
                       </Button>
                       <Button variant="outline" size="sm" asChild>
-                        <Link
-                          to={path(`/exams/results/${mistake.lastAttemptId}`)}
-                        >
+                        <Link to={path(resultsPath(mistake.lastAttemptId))}>
                           See attempt
                         </Link>
                       </Button>
@@ -217,16 +231,16 @@ export function PracticeHomePage() {
                       </span>
                     </div>
                     <div className="flex shrink-0 items-center gap-tight">
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          navigate(
-                            `/practice/new?activity=${set.config.activity}&topic=${set.config.topicIds.join(',')}`,
-                          )
-                        }
-                      >
-                        <PlayIcon />
-                        Open
+                      {/* Opens *this set*, by its own id. It used to rebuild
+                          the setup form from the set's settings, which both
+                          landed on a route that no longer exists and threw
+                          away the set's identity, its content and its
+                          attempt history. */}
+                      <Button size="sm" asChild>
+                        <Link to={path(`/practice/set/${set.id}`)}>
+                          <PlayIcon />
+                          Open
+                        </Link>
                       </Button>
                       <Button
                         variant="ghost"

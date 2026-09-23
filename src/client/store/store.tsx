@@ -114,6 +114,12 @@ export interface AppState {
   seeded: boolean;
   /** Set when a stored tree could not be restored. Cleared once handled. */
   restoreProblem?: RestoreProblem;
+  /**
+   * Something the upgrade could not carry forward but did not want to throw
+   * away. Holds an explanation and the original JSON, downloadable exactly as
+   * `restoreProblem` is. Cleared once the student has seen it.
+   */
+  carriedForward?: RestoreProblem;
 }
 
 function seedState(): AppState {
@@ -132,7 +138,16 @@ function seedState(): AppState {
         courseId: ATLANTIC_COURSE_ID,
         name: 'Comparison drill',
         savedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 4).toISOString(),
-        questionIds: [],
+        /* Resolved here rather than left empty. A saved set *is* its
+           questions: a set that carries only a configuration cannot be
+           started, and two attempts at it would not be comparable. */
+        questionIds: [
+          'q-enc-mc-2',
+          'q-deb-mc-1',
+          'q-deb-ord-1',
+          'q-enc-match-1',
+          'q-deb-match-1',
+        ],
         config: {
           activity: 'quiz',
           topicIds: ['topic-debate', 'topic-encomienda'],
@@ -203,6 +218,7 @@ export type Action =
   | { type: 'reset-demo' }
   | { type: 'start-fresh' }
   | { type: 'dismiss-restore-problem' }
+  | { type: 'dismiss-carried-forward' }
   | { type: 'set-active-course'; courseId: string | null }
   | { type: 'create-course'; course: Course; topics: Topic[] }
   | { type: 'update-course'; courseId: string; patch: Partial<Course> }
@@ -252,10 +268,25 @@ function completeLinkedSession(
   sessionId: string | undefined,
   attemptId: string,
   at: string,
+  /**
+   * The course the work belonged to. A link that names a session in another
+   * course is stale navigation state rather than a real link, and completing
+   * it would tick off a task the student did not do.
+   */
+  courseId?: string,
 ): PlannedSession[] {
   if (!sessionId) return sessions;
+
+  const target = sessions.find((s) => s.id === sessionId);
+  /* A deleted session, an already-finished one, or one belonging to another
+     course: all three complete nothing, silently. The attempt itself is
+     recorded either way, so no work is lost by declining the link. */
+  if (!target) return sessions;
+  if (target.status !== 'planned') return sessions;
+  if (courseId && target.courseId !== courseId) return sessions;
+
   return sessions.map((s) =>
-    s.id === sessionId && s.status === 'planned'
+    s.id === sessionId
       ? { ...s, status: 'completed' as const, completedAt: at, completedBy: attemptId }
       : s,
   );
@@ -271,6 +302,11 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'dismiss-restore-problem': {
       const { restoreProblem: _dropped, ...rest } = state;
+      return rest;
+    }
+
+    case 'dismiss-carried-forward': {
+      const { carriedForward: _dropped, ...rest } = state;
       return rest;
     }
 
@@ -381,19 +417,51 @@ function reducer(state: AppState, action: Action): AppState {
           action.attempt.plannedSessionId,
           action.attempt.id,
           at,
+          action.attempt.courseId,
         ),
       };
     }
 
+    /*
+     * A tutor session, and the planner session it may complete.
+     *
+     * ── When a tutor session counts as study ──────────────────────────────
+     *
+     * Not when it is opened, and not when it is merely left. Opening the tutor
+     * and walking away is not study, and if it completed a planned session the
+     * streak would be inflatable by clicking. So the bar is the same one
+     * `activityEvents` already uses for history: the session has ended *and*
+     * the student took at least two turns in it. That is the point at which
+     * something was actually worked through.
+     *
+     * The completion goes through `completeLinkedSession`, so it happens once,
+     * cannot move an earlier completion date, and declines a link that names
+     * another course's session.
+     */
     case 'upsert-tutor-session': {
       const exists = state.tutorSessions.some((s) => s.id === action.session.id);
+      const session = action.session;
+      const tutorSessions = exists
+        ? state.tutorSessions.map((s) => (s.id === session.id ? session : s))
+        : [...state.tutorSessions, session];
+
+      const studentTurns = session.messages.filter(
+        (m) => m.role === 'student',
+      ).length;
+      const reachedCompletion = Boolean(session.endedAt) && studentTurns >= 2;
+
       return {
         ...state,
-        tutorSessions: exists
-          ? state.tutorSessions.map((s) =>
-              s.id === action.session.id ? action.session : s,
+        tutorSessions,
+        sessions: reachedCompletion
+          ? completeLinkedSession(
+              state.sessions,
+              session.plannedSessionId,
+              session.id,
+              session.endedAt ?? new Date().toISOString(),
+              session.courseId,
             )
-          : [...state.tutorSessions, action.session],
+          : state.sessions,
       };
     }
 
@@ -574,6 +642,41 @@ interface LegacyState {
   examConfigs?: unknown[];
   checkIns?: unknown[];
   seeded?: boolean;
+  /** An unfinished paper the old build was in the middle of. */
+  activeExam?: unknown;
+}
+
+/**
+ * The question ids a config-only set resolves to.
+ *
+ * Deliberately a plain function over the pool rather than the `selectQuestions`
+ * selector: this runs during restore, before React exists. It mirrors the
+ * activity-to-format mapping the practice setup uses, and the *page* remains
+ * the place a set is repaired interactively. This one exists so that a store
+ * upgraded by this build arrives already correct.
+ */
+function resolveLegacySet(set: SavedPracticeSet, pool: Question[]): string[] {
+  const formats: Record<string, string[]> = {
+    flashcards: ['flashcard'],
+    quiz: ['multiple-choice', 'multiple-select', 'matching', 'ordering', 'fill-blank'],
+    'written-recall': ['written-recall'],
+    'source-analysis': ['source-analysis'],
+    essay: ['essay'],
+  };
+  const wanted = new Set(formats[set.config?.activity ?? 'quiz'] ?? []);
+  const topics = new Set(set.config?.topicIds ?? []);
+  const difficulties = new Set(set.config?.difficulties ?? []);
+
+  return pool
+    .filter(
+      (q) =>
+        q.courseId === set.courseId &&
+        wanted.has(q.format) &&
+        (topics.size === 0 || topics.has(q.topicId)) &&
+        (difficulties.size === 0 || difficulties.has(q.difficulty)),
+    )
+    .slice(0, set.config?.length || undefined)
+    .map((q) => q.id);
 }
 
 /**
@@ -654,13 +757,21 @@ function migrateV1(legacy: LegacyState): AppState {
     };
   });
 
-  const savedPractice = own<SavedPracticeSet>(legacy.savedPractice).map((s) => ({
-    ...s,
-    // v1 sets stored only a config. Leaving the ids empty is honest: the set
-    // resolves its content on the next attempt rather than claiming to hold
-    // questions it never recorded.
-    questionIds: Array.isArray(s.questionIds) ? s.questionIds : [],
-  }));
+  /*
+   * v1 sets stored only a configuration.
+   *
+   * Leaving `questionIds` empty was honest but useless: the content was never
+   * resolved anywhere, so every migrated set arrived with nothing in it and a
+   * disabled Start button. Resolving here, against the set's *own course*
+   * pool, gives it the content its settings describe. A set whose settings no
+   * longer match anything stays empty and the set page explains why rather
+   * than pretending.
+   */
+  const pool = [...SEED_QUESTIONS, ...STATS_QUESTIONS];
+  const savedPractice = own<SavedPracticeSet>(legacy.savedPractice).map((s) => {
+    if (Array.isArray(s.questionIds) && s.questionIds.length > 0) return s;
+    return { ...s, questionIds: resolveLegacySet(s, pool) };
+  });
 
   /* The old single exam date becomes a planned assessment. */
   const assessments: PlannedAssessment[] = legacyCourse.examDate
@@ -692,9 +803,29 @@ function migrateV1(legacy: LegacyState): AppState {
     })),
   };
 
+  /*
+   * An unfinished paper from the old build cannot be resumed.
+   *
+   * Its run predates the rules this checkpoint introduced: per-section
+   * deadlines, section locking, and the guarantee that an exam offered no
+   * assistance. Resuming it would either hand out fresh time or quietly claim
+   * its answers were independent evidence when the old build could not say
+   * whether hints had been used. Neither is acceptable, so the run is not
+   * restored. It is also not silently dropped: the raw record is kept and
+   * offered as a download, with the reason stated.
+   */
+  const carriedForward: RestoreProblem | undefined = legacy.activeExam
+    ? {
+        reason:
+          'You had an unfinished exam in progress. It cannot be resumed under this version’s exam rules: its timing and its record of whether help was used were kept differently, so continuing it would either grant fresh time or count assisted answers as independent evidence.',
+        raw: JSON.stringify(legacy.activeExam, null, 2),
+      }
+    : undefined;
+
   return {
     ...base,
     version: STORAGE_VERSION,
+    ...(carriedForward ? { carriedForward } : {}),
     courses: [course],
     activeCourseId: courseId,
     topics,
@@ -788,7 +919,7 @@ function persist(state: AppState) {
   try {
     // The restore problem is a report about a *previous* load, not part of the
     // tree. Writing it back would make one bad load permanent.
-    const { restoreProblem: _omit, ...persistable } = state;
+    const { restoreProblem: _omit, carriedForward: _alsoOmit, ...persistable } = state;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable));
   } catch {
     // A full or disabled storage should not take the app down. The session

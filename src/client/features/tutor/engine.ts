@@ -59,9 +59,7 @@ function scriptFor(topicId: string): TopicScript | undefined {
   return TUTOR_SCRIPT[topicId];
 }
 
-export function hasScript(topicId: string): boolean {
-  return topicId in TUTOR_SCRIPT;
-}
+export { hasTutorScript as hasScript } from '@shared/course/tutor-script.ts';
 
 function toMessage(
   turn: ScriptTurn,
@@ -116,6 +114,8 @@ export function openSession(params: {
   quote?: string;
   fromAttemptId?: string;
   fromQuestionId?: string;
+  /** The planner session this was opened from, when it was. */
+  plannedSessionId?: string;
 }): TutorSession {
   const script = scriptFor(params.topicId);
   const now = new Date().toISOString();
@@ -133,13 +133,16 @@ export function openSession(params: {
           role: 'tutor',
           stage: 'orient',
           meta: true,
-          text: 'This prototype’s tutor is a set of authored responses, and there are none written for this topic — the script covers the six topics of the sample course only.\n\nNothing here can teach you this topic. Practice and exams still work on any topic that has authored questions behind it.',
+          text: 'This prototype’s tutor is a set of authored responses, and there are none written for this topic. The script covers the six topics of the sample course only.\n\nNothing here can teach you this topic. Practice and exams still work on any topic that has authored questions behind it.',
         },
       ],
       stage: 'orient',
       startedAt: now,
       updatedAt: now,
       launchedAttemptIds: [],
+      ...(params.plannedSessionId
+        ? { plannedSessionId: params.plannedSessionId }
+        : {}),
       ...(params.source ? { source: params.source } : {}),
       ...(params.fromAttemptId ? { fromAttemptId: params.fromAttemptId } : {}),
       ...(params.fromQuestionId ? { fromQuestionId: params.fromQuestionId } : {}),
@@ -180,6 +183,9 @@ export function openSession(params: {
     ...(params.source ? { source: params.source } : {}),
     ...(params.fromAttemptId ? { fromAttemptId: params.fromAttemptId } : {}),
     ...(params.fromQuestionId ? { fromQuestionId: params.fromQuestionId } : {}),
+    ...(params.plannedSessionId
+      ? { plannedSessionId: params.plannedSessionId }
+      : {}),
   };
 }
 
@@ -281,7 +287,7 @@ export function respond(
           id: newId('msg'),
           role: 'tutor',
           stage,
-          text: 'Good — practice is where this becomes usable. I have set up a short set on what we have been working on. It will be waiting in Practice afterwards, and whatever you score there feeds into your progress.',
+          text: 'Good. Practice is where this becomes usable. I have set up a short set on what we have been working on. It will be waiting in Practice afterwards, and whatever you score there feeds into your progress.',
         },
       ],
       launchPractice: { topicIds: script.practiceTopicIds },

@@ -28,18 +28,21 @@ import {
   useAllMaterials,
   useAllPracticeSets,
   useAllExamConfigs,
+  useAllSessions,
   useAllTopics,
+  useAvailability,
 } from '@/store/selectors';
 import { newId } from '@/lib/id';
-import { formatMinutes } from '@shared/planner.ts';
+import { formatMinutes, localISO, sessionConflicts } from '@shared/planner.ts';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 /**
  * Creating and editing one study session.
  *
  * ── Why the link is chosen here rather than at open time ──────────────────
  *
- * A session says what it opens — a specific reading, a saved set, an exam
- * configuration, a topic to tutor — and the student picks that when they plan,
+ * A session says what it opens: a specific reading, a saved set, an exam
+ * configuration, a topic to tutor. The student picks that when they plan,
  * not when they sit down. That is the difference between a calendar entry and a
  * plan: "Thursday, 45 minutes, Rawi decides later" is a reminder, whereas
  * "Thursday, the confidence-intervals problem set" is something you can start
@@ -73,6 +76,8 @@ export function SessionDialog({
   const sets = useAllPracticeSets();
   const configs = useAllExamConfigs();
   const assessments = useAllAssessments();
+  const allSessions = useAllSessions();
+  const availability = useAvailability();
 
   const [courseId, setCourseId] = useState('');
   const [date, setDate] = useState('');
@@ -125,6 +130,38 @@ export function SessionDialog({
 
   const minutes = Number(duration) || 0;
   const valid = courseId && date && title.trim() && minutes > 0;
+
+  /*
+   * The same check automatic planning uses, shown rather than enforced.
+   *
+   * A student who deliberately double-books an evening is making a decision
+   * the planner has no business overruling. The rule the brief sets is that
+   * manual overrides are allowed with a clear warning, and that automatic
+   * planning must not introduce the conflict silently, which is why both call
+   * `sessionConflicts` and only one of them refuses.
+   */
+  const startMinutesNow = (() => {
+    const [h = '18', m = '00'] = time.split(':');
+    return Number(h) * 60 + Number(m);
+  })();
+
+  const conflicts =
+    valid && minutes > 0
+      ? sessionConflicts(
+          {
+            ...(session?.id ? { id: session.id } : {}),
+            date,
+            startMinutes: startMinutesNow,
+            durationMinutes: minutes,
+          },
+          {
+            sessions: allSessions,
+            assessments,
+            availability,
+            today: localISO(new Date()),
+          },
+        )
+      : [];
 
   const save = () => {
     if (!valid) return;
@@ -317,7 +354,7 @@ export function SessionDialog({
                 <option value="">No particular assessment</option>
                 {courseAssessments.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.title} — {a.date}
+                    {a.title}, {a.date}
                   </option>
                 ))}
               </Select>
@@ -357,7 +394,7 @@ export function SessionDialog({
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={2}
-              placeholder="Optional — why this, now?"
+              placeholder="Optional. Why this, now?"
             />
           </div>
 
@@ -366,6 +403,29 @@ export function SessionDialog({
               {formatMinutes(Number(time.split(':')[0]) * 60 + Number(time.split(':')[1]))}{' '}
               for {minutes} minutes.
             </p>
+          )}
+
+          {conflicts.length > 0 && (
+            <Alert>
+              <AlertTitle>
+                {conflicts.length === 1
+                  ? 'One thing to know about that time'
+                  : `${conflicts.length} things to know about that time`}
+              </AlertTitle>
+              <AlertDescription>
+                <span className="flex flex-col gap-hairline">
+                  {conflicts.map((conflict, i) => (
+                    <span key={i} className="text-xs">
+                      {conflict.message}
+                    </span>
+                  ))}
+                  <span className="text-xs">
+                    You can save it anyway. Automatic planning will not place work
+                    here, but your own decision stands.
+                  </span>
+                </span>
+              </AlertDescription>
+            </Alert>
           )}
         </div>
 

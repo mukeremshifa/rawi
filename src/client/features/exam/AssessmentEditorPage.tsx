@@ -129,7 +129,7 @@ export function AssessmentEditorPage() {
 
       <PageHeader
         title={existing ? 'Edit assessment' : 'Add a planned assessment'}
-        description={`A real milestone in ${course.name} — a quiz, a midterm, a final. Rehearsals are set up separately.`}
+        description={`A real milestone in ${course.name}: a quiz, a midterm, a final. Rehearsals are set up separately.`}
       />
 
       <Section title="What and when">
@@ -327,7 +327,7 @@ export function AssessmentEditorPage() {
                 linkedSessions.length > 0 && linkedConfigs.length > 0 ? ' and ' : ''
               }${linkedConfigs.length > 0 ? `${linkedConfigs.length} exam ${linkedConfigs.length === 1 ? 'configuration' : 'configurations'}` : ''} ${
                 linkedSessions.length + linkedConfigs.length === 1 ? 'points' : 'point'
-              } at this assessment. They are kept — they simply lose the link. Your attempts and history are untouched.`
+              } at this assessment. They are kept and simply lose the link. Your attempts and history are untouched.`
             : 'Nothing points at this assessment. Countdowns will move to the next one.'
         }
         confirmLabel="Delete assessment"

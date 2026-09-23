@@ -50,7 +50,7 @@ export const SEED_TOPICS: Topic[] = [
   {
     id: 'topic-columbian',
     courseId: ATLANTIC_COURSE_ID,
-    module: 'Week 1 — Contact',
+    module: 'Week 1: Contact',
     order: 0,
     title: 'The Columbian Exchange',
     summary:
@@ -61,7 +61,7 @@ export const SEED_TOPICS: Topic[] = [
   {
     id: 'topic-encomienda',
     courseId: ATLANTIC_COURSE_ID,
-    module: 'Week 2 — Conquest and labour',
+    module: 'Week 2: Conquest and labour',
     order: 1,
     title: 'Conquest and the encomienda system',
     summary:
@@ -72,7 +72,7 @@ export const SEED_TOPICS: Topic[] = [
   {
     id: 'topic-plantation',
     courseId: ATLANTIC_COURSE_ID,
-    module: 'Week 3 — The plantation complex',
+    module: 'Week 3: The plantation complex',
     order: 2,
     title: 'The plantation complex',
     summary:
@@ -83,7 +83,7 @@ export const SEED_TOPICS: Topic[] = [
   {
     id: 'topic-mercantilism',
     courseId: ATLANTIC_COURSE_ID,
-    module: 'Week 4 — Empire and trade',
+    module: 'Week 4: Empire and trade',
     order: 3,
     title: 'Mercantilism and imperial trade',
     summary:
@@ -94,7 +94,7 @@ export const SEED_TOPICS: Topic[] = [
   {
     id: 'topic-revolt',
     courseId: ATLANTIC_COURSE_ID,
-    module: 'Week 5 — Resistance',
+    module: 'Week 5: Resistance',
     order: 4,
     title: 'Resistance and revolt',
     summary:
@@ -105,7 +105,7 @@ export const SEED_TOPICS: Topic[] = [
   {
     id: 'topic-debate',
     courseId: ATLANTIC_COURSE_ID,
-    module: 'Week 6 — Historiography',
+    module: 'Week 6: Historiography',
     order: 5,
     title: 'Interpreting the Atlantic world',
     summary:

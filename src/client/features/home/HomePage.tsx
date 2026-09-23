@@ -34,7 +34,10 @@ import {
   useStreak,
   useUpcomingAssessments,
 } from '@/store/selectors';
-import { RestoreNotice } from '@/features/courses/RestoreNotice';
+import {
+  CarriedForwardNotice,
+  RestoreNotice,
+} from '@/features/courses/RestoreNotice';
 import { cn } from '@/lib/utils';
 
 /**
@@ -75,6 +78,8 @@ export function HomePage() {
     return (
       <Page className="py-page">
         <RestoreNotice />
+        <CarriedForwardNotice />
+      <CarriedForwardNotice />
         <PageHeader
           title="Rawi"
           description="A study workspace for the courses you are taking."
@@ -103,6 +108,7 @@ export function HomePage() {
   return (
     <Page className="py-page">
       <RestoreNotice />
+      <CarriedForwardNotice />
 
       <PageHeader
         title="Today"
@@ -363,7 +369,7 @@ export function HomePage() {
       {/* ── Recent activity ───────────────────────────────────────────── */}
       <Section
         title="Recent activity"
-        description="Completed work only — opening a page or generating a set does not appear here, and does not count toward your streak."
+        description="Completed work only. Opening a page or generating a set does not appear here, and does not count toward your streak."
         actions={
           <Button variant="ghost" size="sm" asChild>
             <Link to="/history">

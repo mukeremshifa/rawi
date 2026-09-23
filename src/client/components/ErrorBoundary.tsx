@@ -45,7 +45,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
           retryLabel="Reload"
         />
         <p className="text-muted-foreground text-sm leading-relaxed">
-          Nothing you had already submitted is affected — evidence is written when you
+          Nothing you had already submitted is affected. Evidence is written when you
           submit it, not when a screen renders.
         </p>
       </Page>

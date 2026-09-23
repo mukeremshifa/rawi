@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangleIcon, DownloadIcon } from 'lucide-react';
+import { AlertTriangleIcon, DownloadIcon, InfoIcon } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -51,7 +51,7 @@ export function RestoreNotice() {
         <span className="flex flex-col gap-snug">
           <span>
             {restoreProblem.reason} Rawi is showing the sample courses instead. Your
-            saved data has <strong>not</strong> been overwritten — it is still on this
+            saved data has <strong>not</strong> been overwritten. It is still on this
             device, and it stays untouched until you choose below.
           </span>
           <span className="flex flex-wrap gap-tight">
@@ -70,6 +70,64 @@ export function RestoreNotice() {
           <span className="text-xs">
             Continuing starts saving over the old data from this point on. Download a
             copy first if you want to keep it.
+          </span>
+        </span>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+/**
+ * Something the upgrade kept but could not restore.
+ *
+ * Distinct from `RestoreNotice` above, and deliberately not destructive in
+ * tone: nothing went wrong and nothing was lost. One record could not be
+ * carried into the new rules, and rather than dropping it quietly the upgrade
+ * kept it and says so, with the same download offer. The rest of the student's
+ * data upgraded normally, which is why this is a notice and not a blocker.
+ */
+export function CarriedForwardNotice() {
+  const { carriedForward } = useAppState();
+  const { dispatch } = useStore();
+  const [downloaded, setDownloaded] = useState(false);
+
+  if (!carriedForward) return null;
+
+  const download = () => {
+    const blob = new Blob([carriedForward.raw], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `rawi-unfinished-exam-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setDownloaded(true);
+  };
+
+  return (
+    <Alert>
+      <InfoIcon />
+      <AlertTitle>One thing could not be carried over</AlertTitle>
+      <AlertDescription>
+        <span className="flex flex-col gap-snug">
+          <span>{carriedForward.reason}</span>
+          <span>
+            Everything else upgraded normally. The unfinished paper itself is kept
+            here so you can download it, and it is not counted anywhere in your
+            progress or history.
+          </span>
+          <span className="flex flex-wrap gap-tight">
+            <Button size="sm" variant="outline" onClick={download}>
+              <DownloadIcon />
+              {downloaded ? 'Download again' : 'Download it'}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => dispatch({ type: 'dismiss-carried-forward' })}
+            >
+              Dismiss
+            </Button>
           </span>
         </span>
       </AlertDescription>

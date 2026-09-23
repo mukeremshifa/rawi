@@ -8,7 +8,6 @@ import type {
   Difficulty,
   FeedbackTiming,
   PracticeConfig,
-  QuestionFormat,
   SavedPracticeSet,
 } from '@shared/types.ts';
 
@@ -24,7 +23,13 @@ import { Badge } from '@/components/ui/badge';
 import { DIFFICULTY_BLURB, DIFFICULTY_LABEL } from '@/components/domain';
 import { useStore } from '@/store/store';
 import { useCourse, useCoursePath } from '@/store/course-context';
-import { selectQuestions, useMaterials, useQuestions, useTopics } from '@/store/selectors';
+import {
+  ACTIVITY_FORMATS,
+  selectQuestions,
+  useMaterials,
+  useQuestions,
+  useTopics,
+} from '@/store/selectors';
 import { newId } from '@/lib/id';
 
 /**
@@ -57,14 +62,6 @@ import { newId } from '@/lib/id';
  * "stretch" on a topic with two stretch questions and the length control caps
  * at two and says why.
  */
-
-const ACTIVITY_FORMATS: Record<ActivityType, QuestionFormat[]> = {
-  flashcards: ['flashcard'],
-  quiz: ['multiple-choice', 'multiple-select', 'matching', 'ordering', 'fill-blank'],
-  'written-recall': ['written-recall'],
-  'source-analysis': ['source-analysis'],
-  essay: ['essay'],
-};
 
 const ACTIVITY_LABEL: Record<ActivityType, string> = {
   flashcards: 'Flashcards',
@@ -365,7 +362,7 @@ export function PracticeSetupPage() {
             ) && (
               <p className="text-muted-foreground text-xs leading-relaxed">
                 Topics showing zero have no authored questions in this prototype.
-                Practice cannot be generated for them — the tutor and your own
+                Practice cannot be generated for them. The tutor and your own
                 materials are the way in.
               </p>
             )}
@@ -494,9 +491,9 @@ export function PracticeSetupPage() {
                   onChange={(e) => setFeedback(e.target.value as FeedbackTiming)}
                 >
                   <option value="immediate">
-                    After each question — learn as you go
+                    After each question, to learn as you go
                   </option>
-                  <option value="end">At the end — closer to exam conditions</option>
+                  <option value="end">At the end, closer to exam conditions</option>
                 </Select>
                 {written && feedback === 'immediate' && (
                   <p className="text-muted-foreground text-xs">
@@ -535,7 +532,7 @@ export function PracticeSetupPage() {
         </Button>
         {generating && (
           <span className="text-muted-foreground text-xs">
-            Selecting from the authored bank — there is no model involved.
+            Selecting from the authored bank. There is no model involved.
           </span>
         )}
       </div>

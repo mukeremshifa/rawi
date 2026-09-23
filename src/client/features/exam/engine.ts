@@ -185,7 +185,16 @@ export function withExtraTime(minutes: number, extraPercent: number): number {
  * Returns null when the config cannot produce a paper, so callers have one
  * thing to check rather than discovering an empty section mid-exam.
  */
-export function buildRun(config: ExamConfig, pool: Question[]): ExamRun | null {
+export function buildRun(
+  config: ExamConfig,
+  pool: Question[],
+  /**
+   * Where this run was launched from. Carried on the run so that submission,
+   * which can happen after a reload or from a timer, still knows which planner
+   * session it completes and which assessment it was rehearsing for.
+   */
+  context: { plannedSessionId?: string; assessmentId?: string } = {},
+): ExamRun | null {
   const sectionQuestions: Record<string, string[]> = {};
   const claimed: string[] = [];
 
@@ -212,6 +221,14 @@ export function buildRun(config: ExamConfig, pool: Question[]): ExamRun | null {
     courseId: config.courseId,
     configId: config.id,
     configSnapshot: config,
+    ...(context.plannedSessionId
+      ? { plannedSessionId: context.plannedSessionId }
+      : {}),
+    ...(context.assessmentId
+      ? { assessmentId: context.assessmentId }
+      : config.assessmentIds?.[0]
+        ? { assessmentId: config.assessmentIds[0] }
+        : {}),
     sectionQuestions,
     answers: {},
     flagged: [],
@@ -326,10 +343,10 @@ export function lockReason(
   const section = run.configSnapshot.sections[sectionIndex];
   if (!section) return null;
   if (sectionExpired(run, section.id, now)) {
-    return 'The time for this section has run out, so its answers are fixed. You can still read them; nothing is marked until you submit the whole paper.';
+    return 'The time for this section has run out, so its answers are fixed. You can still read them. Nothing is marked until you submit the whole paper.';
   }
   if (run.lockedSectionIds.includes(section.id)) {
-    return 'You finished this section, and this paper locks a section when you finish it. You can still read your answers; nothing is marked until you submit the whole paper.';
+    return 'You finished this section, and this paper locks a section when you finish it. You can still read your answers. Nothing is marked until you submit the whole paper.';
   }
   if (
     run.configSnapshot.navigation === 'sequential' &&
@@ -407,7 +424,15 @@ export function finishRun(
     marksAwarded: questions.reduce((sum, q) => sum + q.marksAwarded, 0),
     marksAvailable: questions.reduce((sum, q) => sum + q.marksAvailable, 0),
     finish,
-    ...(config.assessmentIds?.[0] ? { assessmentId: config.assessmentIds[0] } : {}),
+    /* The run's own link wins over the configuration's default: a rehearsal
+       launched from the planner for one assessment must not be filed under
+       whichever assessment the saved configuration happens to name first. */
+    ...(run.assessmentId
+      ? { assessmentId: run.assessmentId }
+      : config.assessmentIds?.[0]
+        ? { assessmentId: config.assessmentIds[0] }
+        : {}),
+    ...(run.plannedSessionId ? { plannedSessionId: run.plannedSessionId } : {}),
   };
 }
 

@@ -211,8 +211,8 @@ export function HistoryPage() {
 
                   {/*
                     Three separate statements, deliberately not combined. Exam
-                    marks are independent evidence; practice marks were earned
-                    with hints available; self-rated recall is the student's own
+                    marks are independent evidence, practice marks were earned
+                    with hints available, and self-rated recall is the student's own
                     judgement. One number across all three would mean nothing.
                   */}
                   <div className="text-muted-foreground flex flex-col gap-hairline text-xs leading-relaxed">

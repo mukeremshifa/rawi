@@ -343,6 +343,14 @@ export interface TutorSession {
   updatedAt: string;
   /** Set when the student ended the session and saw a summary. */
   endedAt?: string;
+  /**
+   * The planner session this was opened from, when it was.
+   *
+   * A tutor session completes its planner session when it *reaches a completed
+   * learning state*, not when it is opened. Opening the tutor and leaving is
+   * not study, and the streak would be trivially inflatable if it were.
+   */
+  plannedSessionId?: string;
   /** Practice sets launched from inside this session. */
   launchedAttemptIds: string[];
 }
@@ -505,6 +513,17 @@ export interface ExamRun {
   /** Sections whose answers are locked and can only be re-read. */
   lockedSectionIds: string[];
   sectionOutcomes: SectionOutcome[];
+  /**
+   * The planner session this paper was opened from, when it was.
+   *
+   * Carried on the run rather than passed at submission, because submission
+   * can happen after a reload, in another tab, or from a timer expiring while
+   * the student is elsewhere. The link has to survive all of those, and the
+   * run is the only thing that does.
+   */
+  plannedSessionId?: string;
+  /** The planned assessment this rehearsal was launched to prepare for. */
+  assessmentId?: string;
   /** Set when the paper is finished. Results read from the attempt. */
   finishedAt?: string;
   attemptId?: string;

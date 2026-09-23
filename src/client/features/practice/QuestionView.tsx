@@ -496,7 +496,7 @@ function WrittenInput({
         placeholder={
           question.format === 'essay'
             ? 'Write your answer. A plan with a clear thesis and named evidence earns more than unstructured prose.'
-            : 'Write from memory. Close the reading first — that is the point of the exercise.'
+            : 'Write from memory. Close the reading first, because that is the point of the exercise.'
         }
         className="leading-relaxed"
       />

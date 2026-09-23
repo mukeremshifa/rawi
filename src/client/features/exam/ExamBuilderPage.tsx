@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangleIcon,
   ArrowLeftIcon,
@@ -32,7 +32,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { FORMAT_LABEL } from '@/components/domain';
 import { useAppState, useStore } from '@/store/store';
-import { useCourse } from '@/store/course-context';
+import { useCourse, useCoursePath } from '@/store/course-context';
 import { selectQuestions, useMaterials, useQuestions, useTopics } from '@/store/selectors';
 import { newId } from '@/lib/id';
 import { buildRun, validateConfig } from './engine';
@@ -86,13 +86,20 @@ function blankSection(index: number): ExamSection {
 
 export function ExamBuilderPage() {
   const { configId } = useParams();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
   const { dispatch } = useStore();
   const course = useCourse();
+  const path = useCoursePath();
   const state = useAppState();
   const topics = useTopics();
   const materials = useMaterials();
   const pool = useQuestions();
+
+  /* Planner context, when a session sent the student here to build and sit a
+     rehearsal. Carried onto the run so completing it completes that session. */
+  const sessionId = params.get('session') ?? undefined;
+  const assessmentParam = params.get('assessment') ?? undefined;
 
   const existing = configId
     ? state.examConfigs.find((c) => c.id === configId)
@@ -171,11 +178,14 @@ export function ExamBuilderPage() {
   const save = () => {
     dispatch({ type: 'save-exam-config', config });
     toast.success('Exam saved', { description: 'Available from the Exams page.' });
-    navigate('/exams');
+    navigate(path('/exams'));
   };
 
   const start = () => {
-    const run = buildRun(config, pool);
+    const run = buildRun(config, pool, {
+      ...(sessionId ? { plannedSessionId: sessionId } : {}),
+      ...(assessmentParam ? { assessmentId: assessmentParam } : {}),
+    });
     if (!run) {
       toast.error('Cannot start', {
         description: 'No questions match this configuration.',
@@ -184,14 +194,14 @@ export function ExamBuilderPage() {
     }
     dispatch({ type: 'save-exam-config', config });
     dispatch({ type: 'set-active-exam', run });
-    navigate('/exams/run');
+    navigate(path('/exams/run'));
   };
 
   return (
     <Page width="prose" className="pb-page">
       <div>
         <Button variant="ghost" size="sm" asChild className="-ml-2">
-          <Link to="/exams">
+          <Link to={path('/exams')}>
             <ArrowLeftIcon />
             Exams
           </Link>
@@ -212,7 +222,7 @@ export function ExamBuilderPage() {
             id="exam-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Mock paper — week 9"
+            placeholder="Mock paper, week 9"
           />
         </div>
       </Section>
@@ -471,8 +481,8 @@ export function ExamBuilderPage() {
               value={book}
               onChange={(e) => setBook(e.target.value as BookMode)}
             >
-              <option value="closed">Closed book — no materials</option>
-              <option value="open">Open book — chosen materials available</option>
+              <option value="closed">Closed book, no materials</option>
+              <option value="open">Open book, chosen materials available</option>
             </Select>
           </div>
 
@@ -507,9 +517,9 @@ export function ExamBuilderPage() {
           {/*
             There is no tutor-assistance setting any more. An exam offers no
             hints, no explanations and no correctness indicators, which is what
-            makes its results independent evidence — so it is the absence of a
+            makes its results independent evidence, so it is the absence of a
             capability rather than a switch that happens to be off. Assisted
-            practice with hints is still available; it lives in Practice, where
+            practice with hints is still available, and it lives in Practice, where
             it is recorded as practice.
           */}
           <Alert>
@@ -518,7 +528,7 @@ export function ExamBuilderPage() {
               They control what this prototype shows you inside the exam screen.
               Nothing is marked and no feedback appears until you submit the whole
               paper. There is no proctoring, no browser lockdown and nothing stopping
-              you opening your notes in another tab — it is a rehearsal, not a
+              you opening your notes in another tab. It is a rehearsal, not a
               secured assessment.
             </AlertDescription>
           </Alert>
@@ -534,9 +544,9 @@ export function ExamBuilderPage() {
               value={navigation}
               onChange={(e) => setNavigation(e.target.value as NavigationMode)}
             >
-              <option value="free">Free — jump to any question, go back</option>
+              <option value="free">Free: jump to any question, go back</option>
               <option value="sequential">
-                Sequential — forward only, no backtracking
+                Sequential: forward only, no backtracking
               </option>
             </Select>
           </div>
@@ -568,7 +578,7 @@ export function ExamBuilderPage() {
               </span>
               <span className="text-muted-foreground text-xs leading-relaxed">
                 With this on, pressing “Finish section” fixes that section’s answers
-                — you can still read them but not change them, and you are asked to
+                so you can still read them but not change them, and you are asked to
                 confirm before it happens. With it off, every section stays open
                 until you submit the paper. Either way, nothing is marked until the
                 whole paper is submitted.
@@ -578,8 +588,8 @@ export function ExamBuilderPage() {
 
           {/*
             The combination worth naming. Free navigation and locking are not
-            contradictory — you move freely until you choose to finish something
-            — but the interaction is where a student is most likely to lose work
+            contradictory, because you move freely until you choose to finish something
+            but the interaction is where a student is most likely to lose work
             they thought was safe, so it is spelled out rather than left implied.
           */}
           {lockSectionsOnFinish && navigation === 'free' && (
@@ -593,7 +603,7 @@ export function ExamBuilderPage() {
             <p className="text-muted-foreground text-xs leading-relaxed">
               With per-section timing, each section’s clock starts when you first
               open it and keeps running whether or not you are looking at it. When it
-              expires that section locks; returning to it later does not restart it,
+              expires that section locks, and returning to it later does not restart it,
               and reloading the page does not grant more time.
             </p>
           )}
@@ -602,7 +612,7 @@ export function ExamBuilderPage() {
             <Label>Feedback</Label>
             <p className="text-muted-foreground text-xs leading-relaxed">
               Marks, rubrics, explanations and topic gaps are released after the whole
-              paper is submitted — always, and not configurably. Releasing them
+              paper is submitted, always, and not configurably. Releasing them
               section by section would mean answering later questions already knowing
               how the earlier ones went, which is not what an exam measures.
             </p>

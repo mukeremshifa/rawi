@@ -249,7 +249,7 @@ function CheckInCard() {
             {trimmed.defer.length > 0 && (
               <p className="text-muted-foreground text-xs leading-relaxed">
                 Setting aside {trimmed.defer.length}{' '}
-                {trimmed.defer.length === 1 ? 'session' : 'sessions'} —{' '}
+                {trimmed.defer.length === 1 ? 'session' : 'sessions'}:{' '}
                 {trimmed.defer.map((s) => s.title).join(', ')}. Move{' '}
                 {trimmed.defer.length === 1 ? 'it' : 'them'} in the planner rather than
                 losing {trimmed.defer.length === 1 ? 'it' : 'them'}.
@@ -301,7 +301,7 @@ export function OverviewPage() {
         <EmptyState
           icon={<ListTreeIcon />}
           title="This course has no topics yet"
-          description="Topics are what everything else points at — materials, practice, assessments and your progress. Paste a syllabus, read a text file, or build a week-by-week outline yourself."
+          description="Topics are what everything else points at: materials, practice, assessments and your progress. Paste a syllabus, read a text file, or build a week-by-week outline yourself."
           action={
             <Button asChild>
               <Link to={path('/syllabus')}>Set up the outline</Link>

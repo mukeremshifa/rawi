@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangleIcon,
   CalendarPlusIcon,
@@ -32,6 +32,7 @@ import {
   useRecentAttempts,
 } from '@/store/selectors';
 import { buildRun, validateConfig } from './engine';
+import { cn } from '@/lib/utils';
 
 /**
  * The exams page: presets, saved papers, an active paper, and history.
@@ -54,10 +55,13 @@ function ConfigCard({
   config,
   onStart,
   onDelete,
+  highlighted,
 }: {
   config: ExamConfig;
   onStart: () => void;
   onDelete?: () => void;
+  /** True when the planner sent the student here to sit this one. */
+  highlighted?: boolean;
 }) {
   const pool = useQuestions();
   const path = useCoursePath();
@@ -66,7 +70,12 @@ function ConfigCard({
   const questions = config.sections.reduce((sum, s) => sum + s.count, 0);
 
   return (
-    <Card className={blocked ? 'border-destructive/40' : undefined}>
+    <Card
+      className={cn(
+        blocked && 'border-destructive/40',
+        highlighted && 'ring-ring border-primary ring-2',
+      )}
+    >
       <CardContent className="flex flex-col gap-snug">
         <div className="flex flex-wrap items-start justify-between gap-tight">
           <div className="flex min-w-0 flex-col gap-hairline">
@@ -125,7 +134,7 @@ function ConfigCard({
         <div className="flex flex-wrap items-center gap-tight pt-tight">
           <Button size="sm" onClick={onStart} disabled={blocked}>
             <PlayIcon />
-            Start
+            {highlighted ? 'Start this rehearsal' : 'Start'}
           </Button>
           <Button variant="outline" size="sm" asChild>
             <Link to={path(`/exams/build/${config.id}`)}>
@@ -161,6 +170,19 @@ export function ExamsHomePage() {
   const history = useRecentAttempts().filter((a) => a.kind === 'exam');
   const [abandoning, setAbandoning] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [params] = useSearchParams();
+
+  /*
+   * A planner launch names the configuration it meant and the session it came
+   * from. Both used to be dropped on arrival, so the student landed on a list
+   * of every rehearsal with no indication which one they had just clicked, and
+   * completing one finished no planner session. They are now read here and
+   * carried into the run.
+   */
+  const launchConfigId = params.get('config') ?? undefined;
+  const launchSessionId = params.get('session') ?? undefined;
+  const launchAssessmentId = params.get('assessment') ?? undefined;
+  const launchConfig = configs.find((c) => c.id === launchConfigId);
 
   const start = (config: ExamConfig) => {
     if (state.activeExam) {
@@ -169,7 +191,16 @@ export function ExamsHomePage() {
       });
       return;
     }
-    const run = buildRun(config, pool);
+    /* The planner context applies only to the configuration it named. Starting
+       a different paper from this page is unrelated work and must not inherit
+       the link, or it would complete a session it has nothing to do with. */
+    const fromPlanner = config.id === launchConfigId;
+    const run = buildRun(config, pool, {
+      ...(fromPlanner && launchSessionId ? { plannedSessionId: launchSessionId } : {}),
+      ...(fromPlanner && launchAssessmentId
+        ? { assessmentId: launchAssessmentId }
+        : {}),
+    });
     if (!run) {
       toast.error('Cannot start this exam', {
         description: 'No questions match its configuration.',
@@ -208,6 +239,27 @@ export function ExamsHomePage() {
         }
       />
 
+      {/* Says which rehearsal was meant, rather than leaving the student to
+          guess which of several the planner sent them to. */}
+      {launchConfig && !state.activeExam && (
+        <Alert>
+          <AlertTitle>Ready to sit {launchConfig.name}</AlertTitle>
+          <AlertDescription>
+            <span className="flex flex-col gap-snug">
+              <span>
+                Your planner opened this one. Starting it from here records the
+                result against that planned session, once.
+              </span>
+              <span className="flex flex-wrap gap-tight">
+                <Button size="sm" onClick={() => start(launchConfig)}>
+                  Start {launchConfig.name}
+                </Button>
+              </span>
+            </span>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {state.activeExam && (
         <Alert>
           <AlertTitle>You have an exam in progress</AlertTitle>
@@ -238,7 +290,7 @@ export function ExamsHomePage() {
       {/* ── Planned assessments: the real milestones ─────────────── */}
       <Section
         title="Planned assessments"
-        description={`Real dates in ${course.name} — a quiz, a midterm, a final. These drive countdowns and the planner; the rehearsals below are how you prepare for them.`}
+        description={`Real dates in ${course.name}: a quiz, a midterm, a final. These drive countdowns and the planner, and the rehearsals below are how you prepare for them.`}
       >
         {upcoming.length === 0 && past.length === 0 ? (
           <EmptyState
@@ -285,7 +337,7 @@ export function ExamsHomePage() {
             {past.length > 0 && (
               <>
                 <p className="text-muted-foreground pt-tight text-xs">
-                  Past assessments — kept and readable, but no longer driving
+                  Past assessments, kept and readable, but no longer driving
                   countdowns.
                 </p>
                 {past.map((assessment) => (
@@ -315,6 +367,7 @@ export function ExamsHomePage() {
             <ConfigCard
               key={config.id}
               config={config}
+              highlighted={config.id === launchConfigId}
               onStart={() => start(config)}
             />
           ))}
@@ -328,6 +381,7 @@ export function ExamsHomePage() {
               <ConfigCard
                 key={config.id}
                 config={config}
+                highlighted={config.id === launchConfigId}
                 onStart={() => start(config)}
                 onDelete={() => setDeleting(config.id)}
               />

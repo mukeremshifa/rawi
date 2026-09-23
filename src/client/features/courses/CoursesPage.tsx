@@ -25,7 +25,7 @@ import {
   useCourses,
 } from '@/store/selectors';
 import { deriveEvidence, upcomingAssessments } from '@shared/progress.ts';
-import { RestoreNotice } from './RestoreNotice';
+import { CarriedForwardNotice, RestoreNotice } from './RestoreNotice';
 
 /**
  * Every course, with enough status to choose between them.
@@ -58,6 +58,7 @@ export function CoursesPage() {
   return (
     <Page className="py-page">
       <RestoreNotice />
+      <CarriedForwardNotice />
 
       <PageHeader
         title="Your courses"
@@ -234,7 +235,7 @@ export function CoursesPage() {
             <p className="text-muted-foreground min-w-48 flex-1 text-xs leading-relaxed">
               {seeded
                 ? 'You are looking at the two sample courses, their authored readings, question banks and seeded history. Everything is fictional and stored only in this browser.'
-                : 'Your own courses are stored in this browser. Resetting replaces everything — every course, material, attempt, planner session and assessment — with the two sample courses.'}
+                : 'Your own courses are stored in this browser. Resetting replaces everything, meaning every course, material, attempt, planner session and assessment, with the two sample courses.'}
             </p>
             <Button variant="outline" size="sm" onClick={() => setConfirmReset(true)}>
               <RotateCcwIcon />
@@ -250,7 +251,7 @@ export function CoursesPage() {
         title="Reset everything?"
         description={`This clears all ${courses.length} ${
           courses.length === 1 ? 'course' : 'courses'
-        } and everything in them — materials, notes, practice sets, attempts, planner sessions, availability and assessments — and restores the two sample courses. It cannot be undone.`}
+        } and everything in them, including materials, notes, practice sets, attempts, planner sessions, availability and assessments, and restores the two sample courses. It cannot be undone.`}
         confirmLabel="Reset to the sample courses"
         onConfirm={() => {
           setConfirmReset(false);

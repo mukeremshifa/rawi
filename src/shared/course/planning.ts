@@ -52,7 +52,7 @@ export const SEED_ASSESSMENTS: PlannedAssessment[] = [
   {
     id: 'assess-stat-quiz-2',
     courseId: STATS_COURSE_ID,
-    title: 'Quiz 2 — estimation and testing',
+    title: 'Quiz 2: estimation and testing',
     type: 'quiz',
     date: seedDate(5),
     time: '10:00',
@@ -60,7 +60,7 @@ export const SEED_ASSESSMENTS: PlannedAssessment[] = [
     topicIds: ['stat-intervals', 'stat-testing'],
     weightPercent: 15,
     notes:
-      'In the lab, closed book. Calculators allowed. Covers weeks 3 and 4 only — the causal material is not examined until the practical.',
+      'In the lab, closed book. Calculators allowed. Covers weeks 3 and 4 only. The causal material is not examined until the practical.',
     createdAt: seedDate(-20),
   },
   {
@@ -92,7 +92,7 @@ export const SEED_ASSESSMENTS: PlannedAssessment[] = [
     topicIds: ['stat-sampling', 'stat-intervals', 'stat-testing', 'stat-multiple', 'stat-causal'],
     weightPercent: 40,
     notes:
-      'Date confirmed, time not yet published. Whole-course coverage; the emphasis is on interpreting output rather than computing it.',
+      'Date confirmed, time not yet published. Whole-course coverage, and the emphasis is on interpreting output rather than computing it.',
     createdAt: seedDate(-20),
   },
   {
@@ -118,14 +118,14 @@ export const SEED_ASSESSMENTS: PlannedAssessment[] = [
   {
     id: 'assess-stat-quiz-1',
     courseId: STATS_COURSE_ID,
-    title: 'Quiz 1 — sampling and description',
+    title: 'Quiz 1: sampling and description',
     type: 'quiz',
     date: seedDate(-9),
     time: '10:00',
     durationMinutes: 30,
     topicIds: ['stat-sampling', 'stat-describing'],
     weightPercent: 10,
-    notes: 'Sat and returned. 21/30 — the sampling-frame question went wrong.',
+    notes: 'Sat and returned. 21/30. The sampling-frame question went wrong.',
     createdAt: seedDate(-30),
   },
 ];
@@ -247,7 +247,7 @@ export function statsAttempts(): Attempt[] {
       courseId: STATS_COURSE_ID,
       kind: 'practice',
       mode: 'self-rated',
-      title: 'Flashcards — week 1 to 3 terms',
+      title: 'Flashcards: week 1 to 3 terms',
       topicIds: ['stat-sampling', 'stat-describing', 'stat-intervals'],
       startedAt: at(6),
       completedAt: at(6),
@@ -419,7 +419,7 @@ export function statsAttempts(): Attempt[] {
       courseId: STATS_COURSE_ID,
       kind: 'practice',
       mode: 'practice',
-      title: 'Quiz — p-values and multiple testing',
+      title: 'Quiz: p-values and multiple testing',
       topicIds: ['stat-testing', 'stat-multiple'],
       startedAt: at(1),
       completedAt: at(1),
@@ -472,7 +472,7 @@ export function statsAttempts(): Attempt[] {
       courseId: STATS_COURSE_ID,
       kind: 'practice',
       mode: 'practice',
-      title: 'Retry — p-value interpretation',
+      title: 'Retry: p-value interpretation',
       topicIds: ['stat-testing'],
       startedAt: at(0, 9),
       completedAt: at(0, 9),

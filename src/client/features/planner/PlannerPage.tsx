@@ -22,6 +22,7 @@ import {
   addDays,
   localISO,
   planWeek,
+  proposalIsStale,
   replacedByPlan,
   weekDates,
   weekStart,
@@ -99,6 +100,7 @@ export function PlannerPage() {
   const [proposal, setProposal] = useState<PlanProposal | null>(null);
   const [confirmApply, setConfirmApply] = useState(false);
   const [removing, setRemoving] = useState<PlannedSession | undefined>(undefined);
+  const [showAllUnscheduled, setShowAllUnscheduled] = useState(false);
 
   const dates = weekDates(monday);
 
@@ -137,13 +139,15 @@ export function PlannerPage() {
         assessments: state.assessments,
         availability,
         sessions,
-        topicsWithQuestions: new Set(state.questions.map((q) => q.topicId)),
+        questions: state.questions,
+        materials: state.materials,
         weekStart: monday,
         today,
       },
       {},
     );
     setProposal(result);
+    setShowAllUnscheduled(false);
     if (result.sessions.length === 0 && result.unscheduled.length === 0) {
       toast.info('Nothing to plan', {
         description:
@@ -154,6 +158,27 @@ export function PlannerPage() {
 
   const apply = () => {
     if (!proposal) return;
+
+    /*
+     * A proposal describes the week as it was when it was generated. If
+     * availability, an assessment or a commitment changed in between, applying
+     * it would write over the thing that just changed. So the proposal is
+     * re-checked here and refused rather than allowed to win silently.
+     */
+    const stale = proposalIsStale(proposal, {
+      sessions,
+      assessments: state.assessments,
+      availability,
+      today,
+    });
+    if (stale.length > 0) {
+      setProposal(null);
+      toast.error('This plan is out of date', {
+        description: `${stale[0]!.message} Your week changed after the plan was generated, so nothing was applied. Generate it again to plan around what is there now.`,
+      });
+      return;
+    }
+
     // Remove what this plan supersedes, then write the new sessions. Both in
     // the same interaction, so the week never briefly holds both.
     for (const old of replacedByPlan(sessions, proposal, today)) {
@@ -163,7 +188,7 @@ export function PlannerPage() {
     toast.success('Week planned', {
       description: `${proposal.sessions.length} ${
         proposal.sessions.length === 1 ? 'session' : 'sessions'
-      } added. Edit or move any of them — once you do, they stop being regenerated.`,
+      } added. Edit or move any of them, and once you do they stop being regenerated.`,
     });
     setProposal(null);
   };
@@ -209,6 +234,22 @@ export function PlannerPage() {
   /** What a session's link opens, as a route. */
   const linkFor = (session: PlannedSession): string | null => {
     const base = `/course/${session.courseId}`;
+
+    /*
+     * A rehearsal with no saved configuration still needs somewhere to go.
+     *
+     * Generated rehearsal sessions name an assessment rather than one specific
+     * exam configuration, because which paper to sit is the student's choice.
+     * Sending them to the exam area with that assessment named is a real
+     * action; leaving the session with no Open button was the alternative, and
+     * an urgent-looking entry you cannot click is worse than no entry.
+     */
+    if (!session.link && session.activity === 'exam') {
+      return `${base}/exams?session=${session.id}${
+        session.assessmentId ? `&assessment=${session.assessmentId}` : ''
+      }`;
+    }
+
     if (!session.link) return null;
     switch (session.link.kind) {
       case 'material':
@@ -216,7 +257,9 @@ export function PlannerPage() {
       case 'practice-set':
         return `${base}/practice/set/${session.link.setId}?session=${session.id}`;
       case 'exam-config':
-        return `${base}/exams?config=${session.link.configId}&session=${session.id}`;
+        return `${base}/exams?config=${session.link.configId}&session=${session.id}${
+          session.assessmentId ? `&assessment=${session.assessmentId}` : ''
+        }`;
       case 'tutor':
         return `${base}/tutor/new?topic=${session.link.topicId}&session=${session.id}`;
       case 'practice-new':
@@ -226,13 +269,87 @@ export function PlannerPage() {
     }
   };
 
-  const SessionRow = ({
-    session,
-    compact,
-  }: {
-    session: PlannedSession;
-    compact?: boolean;
-  }) => {
+  /**
+   * A session as it appears in a weekly column.
+   *
+   * ── Why this is a different component and not a `compact` flag ────────────
+   *
+   * A seventh of a desktop width is about 150px. The day-list row carries a
+   * course tag, a reason, a badge row and six buttons, and none of that fits:
+   * at that width the title wrapped into its neighbours and the actions
+   * overflowed the column. So the weekly card shows only what identifies the
+   * session, and the whole card is the control that opens it. Everything else
+   * stays one click away in the day view or the edit dialog, which is reachable
+   * from here by keyboard and by touch.
+   *
+   * The title truncates to one line and carries its full text in `title`, so
+   * nothing is lost, and the status shows as a dot rather than a badge because
+   * a badge is most of a column.
+   */
+  const WeekCard = ({ session }: { session: PlannedSession }) => {
+    const course = courseMap.get(session.courseId);
+    const done = session.status === 'completed';
+    const skipped = session.status === 'skipped';
+    const isFocused = session.id === focusId;
+    const isOverdue = session.status === 'planned' && session.date < today;
+
+    return (
+      <button
+        type="button"
+        onClick={() => openEdit(session)}
+        title={`${session.title} · ${formatTimeOfDay(session.startMinutes)} · ${
+          course?.name ?? ''
+        }`}
+        className={cn(
+          'hover:bg-accent/50 focus-visible:ring-ring flex w-full min-w-0 flex-col gap-hairline rounded-md border border-l-4 p-tight text-left outline-none transition-colors focus-visible:ring-2',
+          done && 'bg-muted/40',
+          skipped && 'opacity-60',
+          isOverdue && 'border-dashed',
+          isFocused && 'ring-ring ring-2',
+        )}
+        style={
+          course ? { borderLeftColor: `var(--accent-${course.accent})` } : undefined
+        }
+      >
+        <span className="flex items-center gap-hairline">
+          <span className="text-muted-foreground font-mono text-[0.7rem] tabular-nums">
+            {formatTimeOfDay(session.startMinutes)}
+          </span>
+          <span className="flex-1" />
+          {done && <CheckIcon className="text-muted-foreground size-3 shrink-0" aria-hidden />}
+          {skipped && (
+            <SkipForwardIcon className="text-muted-foreground size-3 shrink-0" aria-hidden />
+          )}
+        </span>
+        <span
+          className={cn(
+            'w-full truncate text-xs leading-snug',
+            done && 'line-through',
+          )}
+        >
+          {session.title}
+        </span>
+        <span className="flex min-w-0 items-center gap-hairline">
+          {course && <CourseDot accent={course.accent} />}
+          <span className="text-muted-foreground truncate text-[0.7rem]">
+            {ACTIVITY_LABEL[session.activity]} · {formatMinutes(session.durationMinutes)}
+          </span>
+        </span>
+        <span className="sr-only">
+          {done
+            ? 'Completed.'
+            : skipped
+              ? 'Skipped.'
+              : isOverdue
+                ? 'Missed.'
+                : 'Planned.'}{' '}
+          Opens the edit dialog for this session.
+        </span>
+      </button>
+    );
+  };
+
+  const SessionRow = ({ session }: { session: PlannedSession }) => {
     const course = courseMap.get(session.courseId);
     const done = session.status === 'completed';
     const skipped = session.status === 'skipped';
@@ -261,17 +378,15 @@ export function PlannerPage() {
           >
             {session.title}
           </span>
-          {!compact && (
-            <Badge variant="secondary" className="font-normal">
-              {ACTIVITY_LABEL[session.activity]}
-            </Badge>
-          )}
+          <Badge variant="secondary" className="font-normal">
+            {ACTIVITY_LABEL[session.activity]}
+          </Badge>
           <span className="text-muted-foreground font-mono text-xs tabular-nums">
             {formatMinutes(session.durationMinutes)}
           </span>
         </div>
 
-        {course && !compact && (
+        {course && (
           <CourseTag
             name={course.name}
             accent={course.accent}
@@ -279,7 +394,7 @@ export function PlannerPage() {
           />
         )}
 
-        {session.reason && !compact && (
+        {session.reason && (
           <p className="text-muted-foreground text-xs leading-relaxed">
             {session.reason}
           </p>
@@ -361,7 +476,7 @@ export function PlannerPage() {
     <Page className="py-page">
       <PageHeader
         title="Planner"
-        description="Your study week, across every course. Availability and sessions are yours; the plan is a suggestion you can edit."
+        description="Your study week, across every course. Availability and sessions are yours, and the plan is a suggestion you can edit."
         actions={
           <div className="flex flex-wrap items-center gap-tight">
             <Button variant="outline" asChild>
@@ -542,15 +657,30 @@ export function PlannerPage() {
                   </AlertTitle>
                   <AlertDescription>
                     <span className="flex flex-col gap-hairline">
-                      {proposal.unscheduled.map((work, i) => {
+                      {(showAllUnscheduled
+                        ? proposal.unscheduled
+                        : proposal.unscheduled.slice(0, 5)
+                      ).map((work, i) => {
                         const course = courseMap.get(work.courseId);
                         return (
                           <span key={i} className="text-xs">
                             <strong>{work.title}</strong>
-                            {course && ` (${course.name})`} — {work.reason}
+                            {course && ` (${course.name})`}: {work.reason}
                           </span>
                         );
                       })}
+                      {proposal.unscheduled.length > 5 && (
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          className="self-start"
+                          onClick={() => setShowAllUnscheduled((v) => !v)}
+                        >
+                          {showAllUnscheduled
+                            ? 'Show fewer'
+                            : `Show the other ${proposal.unscheduled.length - 5}`}
+                        </Button>
+                      )}
                       <span className="text-xs">
                         Add availability, shorten your sessions, or accept that this week
                         does not hold everything.
@@ -637,7 +767,11 @@ export function PlannerPage() {
         {/* The week grid. Seven columns on desktop, stacked on mobile — the
             same sessions either way. */}
         <TabsContent value="week" className="pt-base">
-          <div className="grid gap-tight md:grid-cols-7">
+          {/* One intentional horizontal scroller. Columns keep a readable
+              minimum width rather than shrinking their text, so a crowded
+              Thursday scrolls into view instead of squeezing every day. */}
+          <div className="-mx-gutter overflow-x-auto px-gutter pb-tight md:mx-0 md:px-0">
+            <div className="grid grid-cols-1 gap-tight md:w-full md:min-w-[45rem] md:grid-cols-7">
             {dates.map((date) => {
               const days = visible
                 .filter((s) => s.date === date)
@@ -676,12 +810,13 @@ export function PlannerPage() {
                     </span>
                   ) : (
                     days.map((session) => (
-                      <SessionRow key={session.id} session={session} compact />
+                      <WeekCard key={session.id} session={session} />
                     ))
                   )}
                 </div>
               );
             })}
+            </div>
           </div>
         </TabsContent>
 

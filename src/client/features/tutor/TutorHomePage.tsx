@@ -137,7 +137,7 @@ export function TutorHomePage() {
                 ) : (
                   <div
                     title="The tutor's responses are authored per topic, and there are none for this one."
-                    aria-label={`${topic.title} — no authored tutor script`}
+                    aria-label={`${topic.title}: no authored tutor script`}
                   >
                     {card}
                   </div>

@@ -88,15 +88,15 @@ export interface TopicScript {
 
 const ENC: TopicScript = {
   greeting:
-    'Right — the encomienda. Your notes say you keep writing "land grant" in essays, so let us start exactly there, because that one word changes every argument built on top of it.',
+    'Right, the encomienda. Your notes say you keep writing "land grant" in essays, so let us start exactly there, because that one word changes every argument built on top of it.',
   fromPassage:
-    'You are looking at the encomienda passage. Let us work through it properly rather than reading it again — re-reading is the thing that makes material feel familiar without making it usable.',
+    'You are looking at the encomienda passage. Let us work through it properly rather than reading it again. Re-reading is the thing that makes material feel familiar without making it usable.',
   fromMistake:
     'This came up in your exam and the answer did not land. That is useful information, not a verdict. Let us find out where the chain broke.',
   stages: {
     orient: {
       open: {
-        text: 'Before we start: everything I say here is written in advance for this prototype. I am a scripted tutor, not a live model — I recognise a set of things you might ask and I will tell you plainly when you say something I do not have a branch for.\n\nWith that said. What do you want out of this one — the definition nailed down, or the Valderrama/Okonkwo comparison?',
+        text: 'Before we start: everything I say here is written in advance for this prototype. I am a scripted tutor, not a live model. I recognise a set of things you might ask and I will tell you plainly when you say something I do not have a branch for.\n\nWith that said. What do you want out of this one: the definition nailed down, or the Valderrama/Okonkwo comparison?',
         nextStage: 'understand',
         suggestions: [
           { label: 'Start with the definition', intent: 'explain' },
@@ -116,7 +116,7 @@ const ENC: TopicScript = {
         ],
       },
       simpler: {
-        text: 'Simpler version.\n\nYou were not given a farm. You were given the right to make a specific village work for you and hand over goods, and in return you were supposed to protect them and convert them.\n\nThe village still owned its fields. You owned an entitlement to what they produced and to their labour — and the king could take that entitlement back.',
+        text: 'Simpler version.\n\nYou were not given a farm. You were given the right to make a specific village work for you and hand over goods, and in return you were supposed to protect them and convert them.\n\nThe village still owned its fields. You owned an entitlement to what they produced and to their labour, and the king could take that entitlement back.',
         source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-1' },
         suggestions: [
           { label: 'Why does that distinction matter?', intent: 'why' },
@@ -124,7 +124,7 @@ const ENC: TopicScript = {
         ],
       },
       example: {
-        text: 'Concretely: a conquistador is assigned the community of a named valley. He does not receive a deed. He receives the right to collect a fixed tribute — maize, cloth, sometimes silver — and to call on a rota of labourers for the mines.\n\nIf he dies, under the New Laws the grant is meant to revert to the Crown rather than pass to his son. That is precisely what the colonists in Peru revolted over in the 1540s, which tells you how much the grant was worth to them.',
+        text: 'Concretely: a conquistador is assigned the community of a named valley. He does not receive a deed. He receives the right to collect a fixed tribute, maize, cloth, sometimes silver, and to call on a rota of labourers for the mines.\n\nIf he dies, under the New Laws the grant is meant to revert to the Crown rather than pass to his son. That is precisely what the colonists in Peru revolted over in the 1540s, which tells you how much the grant was worth to them.',
         source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-1' },
         suggestions: [
           { label: 'Test me on it', intent: 'check' },
@@ -132,7 +132,7 @@ const ENC: TopicScript = {
         ],
       },
       why: {
-        text: 'Because the whole Valderrama/Okonkwo argument sits on it.\n\nIf it were a land grant, it would look feudal and permanent, and the Crown’s ability to abolish it in 1542 would be inexplicable. As a revocable entitlement to labour and tribute, abolition makes sense — and then the interesting question becomes *why* the Crown wanted it back.\n\nValderrama says: because it was a tax-collection device, and once you have salaried officials you no longer need it. Okonkwo says: the Crown recovered the paperwork and the forced labour carried on regardless under the repartimiento and the mita.',
+        text: 'Because the whole Valderrama/Okonkwo argument sits on it.\n\nIf it were a land grant, it would look feudal and permanent, and the Crown’s ability to abolish it in 1542 would be inexplicable. As a revocable entitlement to labour and tribute, abolition makes sense, and then the interesting question becomes *why* the Crown wanted it back.\n\nValderrama says: because it was a tax-collection device, and once you have salaried officials you no longer need it. Okonkwo says: the Crown recovered the paperwork and the forced labour carried on regardless under the repartimiento and the mita.',
         nextStage: 'reason',
         source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-4' },
         suggestions: [
@@ -150,18 +150,18 @@ const ENC: TopicScript = {
         ],
       },
       hint: {
-        text: 'The thing it granted is animate. The thing it did not grant is not.\n\nAnd there were two obligations going the other way — one worldly, one religious.',
+        text: 'The thing it granted is animate. The thing it did not grant is not.\n\nAnd there were two obligations going the other way: one worldly, one religious.',
         suggestions: [{ label: 'I still am not sure', intent: 'answer' }],
       },
       answer: {
-        text: 'It granted the right to **tribute and labour** from a named group of people, with obligations to protect and to instruct them in Christianity. It did **not** grant land; that remained legally indigenous.\n\nNo penalty for asking — that is what I am here for. But let me ask you a different one shortly, because reading an answer and producing one are not the same skill, and the exam only tests the second.',
+        text: 'It granted the right to **tribute and labour** from a named group of people, with obligations to protect and to instruct them in Christianity. It did **not** grant land. That remained legally indigenous.\n\nNo penalty for asking, that is what I am here for. But let me ask you a different one shortly, because reading an answer and producing one are not the same skill, and the exam only tests the second.',
         nextStage: 'reason',
         suggestions: [{ label: 'Push me on the reasoning', intent: 'why' }],
       },
     },
     reason: {
       open: {
-        text: 'Now the part your notes say you cannot do under time pressure.\n\nValderrama and Okonkwo look at the same institution and describe it differently. **What do they actually disagree about?** Not what each says — what the disagreement is *about*.',
+        text: 'Now the part your notes say you cannot do under time pressure.\n\nValderrama and Okonkwo look at the same institution and describe it differently. **What do they actually disagree about?** Not what each says, but what the disagreement is *about*.',
         source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-4' },
         suggestions: [
           { label: 'Give me a hint', intent: 'hint' },
@@ -173,7 +173,7 @@ const ENC: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'They disagree about **which sources reveal the institution’s function**.\n\nValderrama reads fiscal records — tribute schedules, the Crown’s attempts to commute labour into cash — and concludes the thing was a revenue device. Okonkwo says those records show what the Crown *hoped to collect and wished the arrangement to be called*, and turns to residencia hearings and mission mortality registers instead.\n\nOnce you can write that sentence, you have an argument rather than two paragraphs.',
+        text: 'They disagree about **which sources reveal the institution’s function**.\n\nValderrama reads fiscal records, tribute schedules, the Crown’s attempts to commute labour into cash, and concludes the thing was a revenue device. Okonkwo says those records show what the Crown *hoped to collect and wished the arrangement to be called*, and turns to residencia hearings and mission mortality registers instead.\n\nOnce you can write that sentence, you have an argument rather than two paragraphs.',
         nextStage: 'apply',
         source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-4' },
         suggestions: [{ label: 'Let me try applying it', intent: 'continue' }],
@@ -199,7 +199,7 @@ const ENC: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'Okonkwo, and the evidence is the **survival of forced labour after abolition** — the repartimiento replacing the encomienda, and the mita continuing.\n\nHer argument in one line: if the coercion outlives the tax device, the coercion was not a by-product of it.',
+        text: 'Okonkwo, and the evidence is the **survival of forced labour after abolition**: the repartimiento replacing the encomienda, and the mita continuing.\n\nHer argument in one line: if the coercion outlives the tax device, the coercion was not a by-product of it.',
         nextStage: 'reflect',
         suggestions: [
           { label: 'Practise this properly', intent: 'practice' },
@@ -220,7 +220,7 @@ const ENC: TopicScript = {
   misconception: {
     triggers: ['land', 'acre', 'estate', 'property', 'territory', 'farm', 'plot'],
     correction: {
-      text: 'Stop there — that is the exact slip your own notes warn you about, and it is worth catching now rather than in the exam.\n\nYou have said **land**. The encomienda did not grant land. It granted the right to tribute and labour from a named group of *people*, and the land stayed legally theirs.\n\nThis is not pedantry. If it were a land grant, the Crown abolishing it in 1542 makes no sense, and Valderrama’s whole fiscal argument collapses. Try the answer again with that corrected.',
+      text: 'Stop there: that is the exact slip your own notes warn you about, and it is worth catching now rather than in the exam.\n\nYou have said **land**. The encomienda did not grant land. It granted the right to tribute and labour from a named group of *people*, and the land stayed legally theirs.\n\nThis is not pedantry. If it were a land grant, the Crown abolishing it in 1542 makes no sense, and Valderrama’s whole fiscal argument collapses. Try the answer again with that corrected.',
       source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-1' },
       suggestions: [
         { label: 'Let me try again', intent: 'check' },
@@ -229,7 +229,7 @@ const ENC: TopicScript = {
     },
   },
   correct: {
-    text: 'That is right, and specifically right in the way that earns marks: you named what was granted *and* what was not.\n\nLet me push you somewhere harder, because recall is not your problem — construction under time pressure is.',
+    text: 'That is right, and specifically right in the way that earns marks: you named what was granted *and* what was not.\n\nLet me push you somewhere harder, because recall is not your problem. Construction under time pressure is.',
     nextStage: 'reason',
     suggestions: [{ label: 'Go on then', intent: 'continue' }],
   },
@@ -238,7 +238,7 @@ const ENC: TopicScript = {
 
 const DEB: TopicScript = {
   greeting:
-    'Comparing interpretations. This is the one you flagged as hardest, and it is genuinely the hardest thing this course asks of you — so let us be systematic about it rather than hoping it goes better next time.',
+    'Comparing interpretations. This is the one you flagged as hardest, and it is genuinely the hardest thing this course asks of you, so let us be systematic about it rather than hoping it goes better next time.',
   fromPassage:
     'You are on the historiography passage. Good place to start: this is where the course tells you what a comparison actually requires.',
   fromMistake:
@@ -246,7 +246,7 @@ const DEB: TopicScript = {
   stages: {
     orient: {
       open: {
-        text: 'A note first: I am a scripted tutor in a prototype. The branches below were written in advance, and if you type something I do not recognise I will say so rather than bluff.\n\nNow — when you write a comparison answer, what do you currently do? Summarise one then the other, or something else?',
+        text: 'A note first: I am a scripted tutor in a prototype. The branches below were written in advance, and if you type something I do not recognise I will say so rather than bluff.\n\nNow: when you write a comparison answer, what do you currently do? Summarise one then the other, or something else?',
         nextStage: 'understand',
         suggestions: [
           { label: 'Yes, that is what I do', intent: 'check' },
@@ -256,7 +256,7 @@ const DEB: TopicScript = {
     },
     understand: {
       open: {
-        text: 'Here is the diagnosis the lecture gives, and it is blunt: **two summaries next to each other is not a comparison**. It is two summaries next to each other.\n\nA comparison requires you to name the **axis** — the thing they differ *about*. There are only three options:\n\n1. They disagree about **what happened**.\n2. They disagree about **which evidence counts**.\n3. They disagree about **what the evidence means**.\n\nThose call for three different answers. Naming which one you are dealing with is the first sentence of a good essay.',
+        text: 'Here is the diagnosis the lecture gives, and it is blunt: **two summaries next to each other is not a comparison**. It is two summaries next to each other.\n\nA comparison requires you to name the **axis**: the thing they differ *about*. There are only three options:\n\n1. They disagree about **what happened**.\n2. They disagree about **which evidence counts**.\n3. They disagree about **what the evidence means**.\n\nThose call for three different answers. Naming which one you are dealing with is the first sentence of a good essay.',
         nextStage: 'recall',
         source: { materialId: 'mat-debate-lecture', passageId: 'p-deb-1' },
         suggestions: [
@@ -266,14 +266,14 @@ const DEB: TopicScript = {
         ],
       },
       simpler: {
-        text: 'Simpler.\n\nBefore you write a word about either historian, finish this sentence: "They disagree about ______."\n\nIf you cannot finish it, you do not yet have a comparison — you have two descriptions. Finishing that sentence *is* the work.',
+        text: 'Simpler.\n\nBefore you write a word about either historian, finish this sentence: "They disagree about ______."\n\nIf you cannot finish it, you do not yet have a comparison. You have two descriptions. Finishing that sentence *is* the work.',
         suggestions: [
           { label: 'Give me an example', intent: 'example' },
           { label: 'Test me on it', intent: 'check' },
         ],
       },
       example: {
-        text: 'Worked example, Valderrama versus Okonkwo.\n\nWeak: "Valderrama argues the encomienda was fiscal. Okonkwo argues it was coercive." — Two facts in a row. No axis.\n\nStrong: "Valderrama and Okonkwo agree on what the encomienda was and on the fact of severe coercion. They disagree about **which archive reveals its function** — fiscal records, or residencia hearings and mortality registers."\n\nThe second sentence tells the examiner you know what kind of argument you are in.',
+        text: 'Worked example, Valderrama versus Okonkwo.\n\nWeak: "Valderrama argues the encomienda was fiscal. Okonkwo argues it was coercive." Two facts in a row. No axis.\n\nStrong: "Valderrama and Okonkwo agree on what the encomienda was and on the fact of severe coercion. They disagree about **which archive reveals its function**: fiscal records, or residencia hearings and mortality registers."\n\nThe second sentence tells the examiner you know what kind of argument you are in.',
         nextStage: 'recall',
         source: { materialId: 'mat-debate-lecture', passageId: 'p-deb-1' },
         suggestions: [{ label: 'Test me on it', intent: 'check' }],
@@ -293,7 +293,7 @@ const DEB: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: '1. **State the disagreement in one sentence**, naming the axis.\n2. **Give each position its strongest form**, with its best evidence. Steelman — the examiner has read both and will notice a weakened version.\n3. **Identify what would distinguish them**: what evidence, if found, would favour one?\n4. **Take a position** and defend it on those terms.\n\nStep three is the one almost nobody writes, and it is the one that moves an answer up a band.',
+        text: '1. **State the disagreement in one sentence**, naming the axis.\n2. **Give each position its strongest form**, with its best evidence. Steelman: the examiner has read both and will notice a weakened version.\n3. **Identify what would distinguish them**: what evidence, if found, would favour one?\n4. **Take a position** and defend it on those terms.\n\nStep three is the one almost nobody writes, and it is the one that moves an answer up a band.',
         nextStage: 'reason',
         source: { materialId: 'mat-debate-lecture', passageId: 'p-deb-3' },
         suggestions: [{ label: 'Why is step three so decisive?', intent: 'why' }],
@@ -301,7 +301,7 @@ const DEB: TopicScript = {
     },
     reason: {
       open: {
-        text: 'Why does step three carry so much weight? Have a go before I answer — what does naming the distinguishing evidence prove about you as a reader?',
+        text: 'Why does step three carry so much weight? Have a go before I answer. What does naming the distinguishing evidence prove about you as a reader?',
         suggestions: [
           { label: 'Give me a hint', intent: 'hint' },
           { label: 'Tell me the answer', intent: 'answer' },
@@ -312,13 +312,13 @@ const DEB: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'Because it proves you have understood both positions well enough to know **what they are claims about**.\n\nReporting two views needs only comprehension. Saying "if X were found, Valderrama’s reading would be in trouble" requires you to have grasped what each position predicts — and that is the difference between summarising history and doing it.\n\nFor these two, the distinguishing evidence is what happened to indigenous labour after 1542.',
+        text: 'Because it proves you have understood both positions well enough to know **what they are claims about**.\n\nReporting two views needs only comprehension. Saying "if X were found, Valderrama’s reading would be in trouble" requires you to have grasped what each position predicts, and that is the difference between summarising history and doing it.\n\nFor these two, the distinguishing evidence is what happened to indigenous labour after 1542.',
         nextStage: 'apply',
         source: { materialId: 'mat-debate-lecture', passageId: 'p-deb-3' },
         suggestions: [{ label: 'Let me try one', intent: 'continue' }],
       },
       why: {
-        text: 'Because it proves you have understood both positions well enough to know what they are claims *about*.\n\nReporting two views needs comprehension. Saying what evidence would favour one requires knowing what each predicts — that is the step that reads as historical thinking rather than revision.',
+        text: 'Because it proves you have understood both positions well enough to know what they are claims *about*.\n\nReporting two views needs comprehension. Saying what evidence would favour one requires knowing what each predicts, and that is the step that reads as historical thinking rather than revision.',
         nextStage: 'apply',
         suggestions: [{ label: 'Let me try one', intent: 'continue' }],
       },
@@ -338,7 +338,7 @@ const DEB: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'The axis: **which evidence counts**. Mbeki accepts Larssen’s credit and insurance facts and denies that the ledger can show the system’s full shape, because it was kept by people for whom labour was a cost line.\n\nThe distinguishing evidence: **the expense of surveillance and punishment**. No rational commercial system carries a large recurring cost against a threat that is not real — so if the commercial model cannot account for that cost, something the ledger does not record is doing work.\n\nThat is a complete comparison in two moves.',
+        text: 'The axis: **which evidence counts**. Mbeki accepts Larssen’s credit and insurance facts and denies that the ledger can show the system’s full shape, because it was kept by people for whom labour was a cost line.\n\nThe distinguishing evidence: **the expense of surveillance and punishment**. No rational commercial system carries a large recurring cost against a threat that is not real, so if the commercial model cannot account for that cost, something the ledger does not record is doing work.\n\nThat is a complete comparison in two moves.',
         nextStage: 'reflect',
         source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-3' },
         suggestions: [
@@ -349,7 +349,7 @@ const DEB: TopicScript = {
     },
     reflect: {
       open: {
-        text: 'What you have now that you did not have an hour ago: a **procedure**. Axis, steelman both, distinguishing evidence, judgement.\n\nThat matters because your problem was never comprehension — it was that under exam pressure you had nothing to fall back on and defaulted to summarising. Now there is a shape to reach for.\n\nThe step to rehearse is the third one. Practise it on a pair you have not been taught: pick two historians, ask what would settle it.',
+        text: 'What you have now that you did not have an hour ago: a **procedure**. Axis, steelman both, distinguishing evidence, judgement.\n\nThat matters because your problem was never comprehension. It was that under exam pressure you had nothing to fall back on and defaulted to summarising. Now there is a shape to reach for.\n\nThe step to rehearse is the third one. Practise it on a pair you have not been taught: pick two historians, ask what would settle it.',
         suggestions: [
           { label: 'Practise this now', intent: 'practice' },
           { label: 'End and save the summary', intent: 'summary' },
@@ -360,7 +360,7 @@ const DEB: TopicScript = {
   misconception: {
     triggers: ['summar', 'first i write', 'then i write', 'one then the other', 'both sides', 'describe each'],
     correction: {
-      text: 'That is the pattern the lecture singles out, so you are in large company — and it is costing you a band.\n\nSummarising A then summarising B produces two paragraphs that never meet. The examiner already knows what both historians said; what they are marking is whether you can say what the two are *arguing about*.\n\nTry again: finish the sentence "They disagree about ______" before you write anything else.',
+      text: 'That is the pattern the lecture singles out, so you are in large company, and it is costing you a band.\n\nSummarising A then summarising B produces two paragraphs that never meet. The examiner already knows what both historians said. What they are marking is whether you can say what the two are *arguing about*.\n\nTry again: finish the sentence "They disagree about ______" before you write anything else.',
       source: { materialId: 'mat-debate-lecture', passageId: 'p-deb-1' },
       suggestions: [
         { label: 'Show me the right structure', intent: 'answer' },
@@ -369,7 +369,7 @@ const DEB: TopicScript = {
     },
   },
   correct: {
-    text: 'Yes — and note what you just did. You named the axis before describing either position, which is the move that makes everything after it read as an argument.\n\nLet me give you a harder pair.',
+    text: 'Yes, and note what you just did. You named the axis before describing either position, which is the move that makes everything after it read as an argument.\n\nLet me give you a harder pair.',
     nextStage: 'apply',
     suggestions: [{ label: 'Go on', intent: 'continue' }],
   },
@@ -378,7 +378,7 @@ const DEB: TopicScript = {
 
 const COL: TopicScript = {
   greeting:
-    'The Columbian Exchange. The facts here are easy and the causal chain is not — and the exam asks about the chain.',
+    'The Columbian Exchange. The facts here are easy and the causal chain is not, and the exam asks about the chain.',
   fromPassage:
     'You are reading the Exchange material. Let us turn it into something you could write under time pressure.',
   fromMistake:
@@ -386,7 +386,7 @@ const COL: TopicScript = {
   stages: {
     orient: {
       open: {
-        text: 'Quick disclosure: I am a scripted tutor in a prototype — authored branches, not a live model. I will say so when you ask something I have no branch for.\n\nWhat do you want here: the content of the Exchange, or the causal argument about slavery?',
+        text: 'Quick disclosure: I am a scripted tutor in a prototype: authored branches, not a live model. I will say so when you ask something I have no branch for.\n\nWhat do you want here: the content of the Exchange, or the causal argument about slavery?',
         nextStage: 'understand',
         suggestions: [
           { label: 'The causal argument', intent: 'explain' },
@@ -410,7 +410,7 @@ const COL: TopicScript = {
         suggestions: [{ label: 'Test me on it', intent: 'check' }],
       },
       example: {
-        text: 'Eastward: maize, potatoes, cassava, tomatoes — crops that raised the calorie ceiling of Old World agriculture and underwrote two centuries of population growth.\n\nWestward: wheat, sugar cane, cattle, horses, swine — and the pathogens of a continent that had lived beside domesticated herds for millennia.\n\nThat last clause is the whole explanation of the asymmetry. It is about animal domestication, not about the populations.',
+        text: 'Eastward: maize, potatoes, cassava, tomatoes, crops that raised the calorie ceiling of Old World agriculture and underwrote two centuries of population growth.\n\nWestward: wheat, sugar cane, cattle, horses, swine, and the pathogens of a continent that had lived beside domesticated herds for millennia.\n\nThat last clause is the whole explanation of the asymmetry. It is about animal domestication, not about the populations.',
         source: { materialId: 'mat-exchange-reading', passageId: 'p-exch-1' },
         suggestions: [{ label: 'Test me on it', intent: 'check' }],
       },
@@ -424,7 +424,7 @@ const COL: TopicScript = {
         ],
       },
       hint: {
-        text: 'It is about what people had been living next to for thousands of years. Not about people at all, in fact — about animals.',
+        text: 'It is about what people had been living next to for thousands of years. Not about people at all, in fact. About animals.',
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
@@ -448,7 +448,7 @@ const COL: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: '**Recovery.** Same pathogens, different outcomes — and what varied was the weight of colonial demands.\n\nWhere demands on surviving labour were lightest, populations recovered soonest. In the Caribbean sugar islands, where demands were heaviest, recovery did not happen at all.\n\nSo biology sets the initial mortality and colonial policy determines what follows. An explanation that stops at the virus has stopped one step early — and that sentence is worth memorising, because it is a ready-made conclusion.',
+        text: '**Recovery.** Same pathogens, different outcomes, and what varied was the weight of colonial demands.\n\nWhere demands on surviving labour were lightest, populations recovered soonest. In the Caribbean sugar islands, where demands were heaviest, recovery did not happen at all.\n\nSo biology sets the initial mortality and colonial policy determines what follows. An explanation that stops at the virus has stopped one step early, and that sentence is worth memorising, because it is a ready-made conclusion.',
         nextStage: 'apply',
         source: { materialId: 'mat-exchange-reading', passageId: 'p-exch-3' },
         suggestions: [{ label: 'Let me apply it', intent: 'continue' }],
@@ -468,7 +468,7 @@ const COL: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'Concede, then divide.\n\n"The initial mortality was biological in origin and no account can dispense with that. But the claim explains the first century and not the second: where colonial labour demands were light, populations recovered; in the sugar islands they did not. The pathogens were constant and the outcomes were not."\n\nConcede–divide–evidence. It works on any over-stated exam proposition.',
+        text: 'Concede, then divide.\n\n"The initial mortality was biological in origin and no account can dispense with that. But the claim explains the first century and not the second: where colonial labour demands were light, populations recovered. In the sugar islands they did not. The pathogens were constant and the outcomes were not."\n\nConcede–divide–evidence. It works on any over-stated exam proposition.',
         nextStage: 'reflect',
         suggestions: [
           { label: 'Practise this properly', intent: 'practice' },
@@ -478,7 +478,7 @@ const COL: TopicScript = {
     },
     reflect: {
       open: {
-        text: 'Two things to carry out of this.\n\nThe causal order — demand first, then collapse of supply, then the trade expanding into the gap. And the concede-then-divide opening, which is a reusable structure rather than a fact about this topic.\n\nThe order is what will slip. Come back to it in a few days.',
+        text: 'Two things to carry out of this.\n\nThe causal order: demand first, then collapse of supply, then the trade expanding into the gap. And the concede-then-divide opening, which is a reusable structure rather than a fact about this topic.\n\nThe order is what will slip. Come back to it in a few days.',
         suggestions: [
           { label: 'Practise this now', intent: 'practice' },
           { label: 'End and save the summary', intent: 'summary' },
@@ -489,7 +489,7 @@ const COL: TopicScript = {
   misconception: {
     triggers: ['disease caused slavery', 'disease led to slavery', 'caused slavery', 'because of disease they', 'smallpox caused'],
     correction: {
-      text: 'Careful — you have inverted the chain, and this is the specific error the reading was written to head off.\n\nDisease did **not** cause slavery. The demand for labour already existed; the plantation economy had created it. What epidemic mortality did was destroy the *supply* that had been meeting that demand, leaving a gap the slave trade expanded into.\n\nThe difference sounds pedantic and is worth several marks: one version makes slavery an accident of epidemiology, the other makes it a commercial decision. Try again.',
+      text: 'Careful: you have inverted the chain, and this is the specific error the reading was written to head off.\n\nDisease did **not** cause slavery. The demand for labour already existed. The plantation economy had created it. What epidemic mortality did was destroy the *supply* that had been meeting that demand, leaving a gap the slave trade expanded into.\n\nThe difference sounds pedantic and is worth several marks: one version makes slavery an accident of epidemiology, the other makes it a commercial decision. Try again.',
       source: { materialId: 'mat-exchange-reading', passageId: 'p-exch-2' },
       suggestions: [
         { label: 'Let me try again', intent: 'check' },
@@ -498,7 +498,7 @@ const COL: TopicScript = {
     },
   },
   correct: {
-    text: 'Exactly — and you kept the order right, which is the thing most answers get wrong.\n\nLet me take you somewhere harder.',
+    text: 'Exactly, and you kept the order right, which is the thing most answers get wrong.\n\nLet me take you somewhere harder.',
     nextStage: 'reason',
     suggestions: [{ label: 'Go on', intent: 'continue' }],
   },
@@ -507,7 +507,7 @@ const COL: TopicScript = {
 
 const PLANT: TopicScript = {
   greeting:
-    'The plantation complex. The trap here is starting with profit — the explanation actually starts with plant biology.',
+    'The plantation complex. The trap here is starting with profit. The explanation actually starts with plant biology.',
   fromPassage:
     'You are on the plantation reading. Let us get the chain from cane chemistry to coerced labour straight.',
   fromMistake:
@@ -515,7 +515,7 @@ const PLANT: TopicScript = {
   stages: {
     orient: {
       open: {
-        text: 'Disclosure first: scripted tutor, authored branches, prototype. I will tell you when you have asked something outside the script.\n\nWhere do you want to start — why sugar specifically, or Larssen versus Mbeki?',
+        text: 'Disclosure first: scripted tutor, authored branches, prototype. I will tell you when you have asked something outside the script.\n\nWhere do you want to start: why sugar specifically, or Larssen versus Mbeki?',
         nextStage: 'understand',
         suggestions: [
           { label: 'Why sugar specifically', intent: 'explain' },
@@ -535,7 +535,7 @@ const PLANT: TopicScript = {
         ],
       },
       simpler: {
-        text: 'Simpler: sugar cane goes off almost immediately after cutting.\n\nSo you cannot cut it and take it to a mill elsewhere — the mill has to be right there, it is expensive, and everyone has to work to its timetable. That means a big estate with a large workforce under tight coordination. Which is why sugar and not tobacco.',
+        text: 'Simpler: sugar cane goes off almost immediately after cutting.\n\nSo you cannot cut it and take it to a mill elsewhere: the mill has to be right there, it is expensive, and everyone has to work to its timetable. That means a big estate with a large workforce under tight coordination. Which is why sugar and not tobacco.',
         suggestions: [{ label: 'Test me on it', intent: 'check' }],
       },
       example: {
@@ -566,7 +566,7 @@ const PLANT: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'Cane must be **milled within roughly a day of cutting** or sucrose content falls sharply.\n\nFrom that: mill beside the field, workforce on the mill’s schedule, heavy fixed capital, therefore scale — and therefore no viable small version, unlike tobacco.',
+        text: 'Cane must be **milled within roughly a day of cutting** or sucrose content falls sharply.\n\nFrom that: mill beside the field, workforce on the mill’s schedule, heavy fixed capital, therefore scale, and therefore no viable small version, unlike tobacco.',
         nextStage: 'reason',
         source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-1' },
         suggestions: [{ label: 'Push me further', intent: 'why' }],
@@ -586,13 +586,13 @@ const PLANT: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'No — and getting this right is a marks-bearing distinction.\n\nShe does not dispute his facts. She says the account is written **from the ledger’s point of view**, and the ledger was kept by people for whom labour was a cost line. Read alone it makes the enslaved an input. Read against runaway advertisements and punishment books, a different system appears.\n\nThe axis is *which evidence counts*, not *what happened*. An answer that has her calling him wrong has misdescribed the debate.',
+        text: 'No, and getting this right is a marks-bearing distinction.\n\nShe does not dispute his facts. She says the account is written **from the ledger’s point of view**, and the ledger was kept by people for whom labour was a cost line. Read alone it makes the enslaved an input. Read against runaway advertisements and punishment books, a different system appears.\n\nThe axis is *which evidence counts*, not *what happened*. An answer that has her calling him wrong has misdescribed the debate.',
         nextStage: 'apply',
         source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-3' },
         suggestions: [{ label: 'Let me apply it', intent: 'continue' }],
       },
       why: {
-        text: 'Because "incomplete" and "wrong" are different objections requiring different answers — and the ability to tell them apart is most of what a historiography question is testing.',
+        text: 'Because "incomplete" and "wrong" are different objections requiring different answers, and the ability to tell them apart is most of what a historiography question is testing.',
         nextStage: 'apply',
         suggestions: [{ label: 'Let me apply it', intent: 'continue' }],
       },
@@ -611,7 +611,7 @@ const PLANT: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'It is evidence of **feigned illness as everyday resistance** — and it is unusually good evidence precisely because the owner had no interest in recording resistance.\n\nHe is complaining about costs. The resistance is visible in the gap between what he is told and what he believes. A document written to serve the system records, against its own purpose, the refusal that was constraining it.\n\nThat is Mbeki’s method in one move, and it is a transferable technique.',
+        text: 'It is evidence of **feigned illness as everyday resistance**, and it is unusually good evidence precisely because the owner had no interest in recording resistance.\n\nHe is complaining about costs. The resistance is visible in the gap between what he is told and what he believes. A document written to serve the system records, against its own purpose, the refusal that was constraining it.\n\nThat is Mbeki’s method in one move, and it is a transferable technique.',
         nextStage: 'reflect',
         source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-3' },
         suggestions: [
@@ -633,7 +633,7 @@ const PLANT: TopicScript = {
   misconception: {
     triggers: ['profit', 'money', 'because it was lucrative', 'demand for sugar', 'europeans wanted sugar'],
     correction: {
-      text: 'You have started with demand, and that is the trap this topic sets.\n\nEuropean appetite for sugar explains why anyone grew it. It does not explain why sugar produced **that particular labour form** — tobacco was also profitable and produced smallholdings.\n\nThe explanation has to start with the agronomy: cane must be milled within about a day of cutting. That forces the mill beside the field, a coordinated workforce on the mill’s clock, and heavy fixed capital. Profit selected the crop; the crop selected the form.',
+      text: 'You have started with demand, and that is the trap this topic sets.\n\nEuropean appetite for sugar explains why anyone grew it. It does not explain why sugar produced **that particular labour form**. Tobacco was also profitable and produced smallholdings.\n\nThe explanation has to start with the agronomy: cane must be milled within about a day of cutting. That forces the mill beside the field, a coordinated workforce on the mill’s clock, and heavy fixed capital. Profit selected the crop. The crop selected the form.',
       source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-1' },
       suggestions: [
         { label: 'Let me try again', intent: 'check' },
@@ -642,7 +642,7 @@ const PLANT: TopicScript = {
     },
   },
   correct: {
-    text: 'Right — and you began with the constraint rather than the profit, which is the ordering that makes it an explanation.\n\nLet me push further.',
+    text: 'Right, and you began with the constraint rather than the profit, which is the ordering that makes it an explanation.\n\nLet me push further.',
     nextStage: 'reason',
     suggestions: [{ label: 'Go on', intent: 'continue' }],
   },
@@ -659,7 +659,7 @@ const MERC: TopicScript = {
   stages: {
     orient: {
       open: {
-        text: 'Scripted tutor, authored branches, prototype — I will say so when you go outside the script.\n\nThe doctrine, or the practice?',
+        text: 'Scripted tutor, authored branches, prototype. I will say so when you go outside the script.\n\nThe doctrine, or the practice?',
         nextStage: 'understand',
         suggestions: [
           { label: 'The doctrine', intent: 'explain' },
@@ -669,7 +669,7 @@ const MERC: TopicScript = {
     },
     understand: {
       open: {
-        text: 'Three propositions, held together:\n\n1. National wealth is measured by the stock of **bullion** a state holds.\n2. Trade is close to **zero-sum** — one nation’s surplus is another’s deficit.\n3. **Colonies exist** to supply the metropole with raw materials and to buy its manufactures.\n\nAnd immediately the warning: stated that baldly it sounds foolish, and it is worth resisting the temptation to treat it so. It described a world where state capacity meant paying armies in coin, and the coin was genuinely scarce.',
+        text: 'Three propositions, held together:\n\n1. National wealth is measured by the stock of **bullion** a state holds.\n2. Trade is close to **zero-sum**: one nation’s surplus is another’s deficit.\n3. **Colonies exist** to supply the metropole with raw materials and to buy its manufactures.\n\nAnd immediately the warning: stated that baldly it sounds foolish, and it is worth resisting the temptation to treat it so. It described a world where state capacity meant paying armies in coin, and the coin was genuinely scarce.',
         nextStage: 'recall',
         source: { materialId: 'mat-mercantilism-lecture', passageId: 'p-merc-1' },
         suggestions: [
@@ -679,11 +679,11 @@ const MERC: TopicScript = {
         ],
       },
       simpler: {
-        text: 'Simpler: wealth is the gold in your vault, trade is a fight over a fixed pot, and colonies are there to make the mother country richer.\n\nAnd it was not stupid — if your army only fights when paid in actual coin, having the coin really is what power means.',
+        text: 'Simpler: wealth is the gold in your vault, trade is a fight over a fixed pot, and colonies are there to make the mother country richer.\n\nAnd it was not stupid: if your army only fights when paid in actual coin, having the coin really is what power means.',
         suggestions: [{ label: 'Test me on it', intent: 'check' }],
       },
       example: {
-        text: 'The Navigation Acts required three things: colonial trade in **English ships**; **enumerated goods** — sugar and tobacco first — landed in England before resale; and colonial imports of European manufactures routed through English ports.\n\nEnforcement was another matter entirely. The Caribbean customs establishment was small, badly paid and frequently local. Smuggling was not a marginal leakage — on some estimates a large fraction of the Dutch and French sugar in English markets.\n\n**The gap between the statute book and the wharf** is the single most useful thing to hold on to here, and it is what exam answers most often omit.',
+        text: 'The Navigation Acts required three things: colonial trade in **English ships**, then **enumerated goods**, sugar and tobacco first among them, landed in England before resale. And colonial imports of European manufactures routed through English ports.\n\nEnforcement was another matter entirely. The Caribbean customs establishment was small, badly paid and frequently local. Smuggling was not a marginal leakage: on some estimates a large fraction of the Dutch and French sugar in English markets.\n\n**The gap between the statute book and the wharf** is the single most useful thing to hold on to here, and it is what exam answers most often omit.',
         nextStage: 'recall',
         source: { materialId: 'mat-mercantilism-lecture', passageId: 'p-merc-2' },
         suggestions: [{ label: 'Test me on it', intent: 'check' }],
@@ -702,7 +702,7 @@ const MERC: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'English ships; enumerated goods landed in England before resale; European manufactures routed through English ports.\n\nShipping, enumeration, entrepôt — three words that will get you all three back under pressure.',
+        text: 'English ships, enumerated goods landed in England before resale, and European manufactures routed through English ports.\n\nShipping, enumeration, entrepôt: three words that will get you all three back under pressure.',
         nextStage: 'reason',
         source: { materialId: 'mat-mercantilism-lecture', passageId: 'p-merc-2' },
         suggestions: [{ label: 'Push me further', intent: 'why' }],
@@ -722,7 +722,7 @@ const MERC: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'Because a connection is not a mechanism.\n\nThe real link: a system forcing colonial producers to sell into one market at that market’s prices creates a colonial merchant class with a standing interest in the system failing. That is genuine.\n\nBut an answer that goes straight from statute to revolution has skipped every step that would make it an *explanation* — how a commercial grievance becomes a political movement, who organised it, why then and not fifty years earlier.\n\nConcede the link, then say what is missing. That shape is worth more than picking a side.',
+        text: 'Because a connection is not a mechanism.\n\nThe real link: a system forcing colonial producers to sell into one market at that market’s prices creates a colonial merchant class with a standing interest in the system failing. That is genuine.\n\nBut an answer that goes straight from statute to revolution has skipped every step that would make it an *explanation*: how a commercial grievance becomes a political movement, who organised it, why then and not fifty years earlier.\n\nConcede the link, then say what is missing. That shape is worth more than picking a side.',
         nextStage: 'apply',
         source: { materialId: 'mat-mercantilism-lecture', passageId: 'p-merc-3' },
         suggestions: [{ label: 'Let me apply it', intent: 'continue' }],
@@ -742,7 +742,7 @@ const MERC: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'Between the **statute book** and the **wharf** — between mercantilism as policy and mercantilism as practice.\n\nAs a body of law it was comprehensive. As an enforced reality it leaked badly, through a customs service that was small, underpaid and local. Any answer that does not separate the two is answering a question about legislation while appearing to answer one about the economy.',
+        text: 'Between the **statute book** and the **wharf**: between mercantilism as policy and mercantilism as practice.\n\nAs a body of law it was comprehensive. As an enforced reality it leaked badly, through a customs service that was small, underpaid and local. Any answer that does not separate the two is answering a question about legislation while appearing to answer one about the economy.',
         nextStage: 'reflect',
         source: { materialId: 'mat-mercantilism-lecture', passageId: 'p-merc-2' },
         suggestions: [
@@ -764,7 +764,7 @@ const MERC: TopicScript = {
   misconception: {
     triggers: ['stupid', 'wrong', 'foolish', 'nonsense', 'obviously bad', 'ridiculous', 'didn’t make sense', 'did not make sense'],
     correction: {
-      text: 'Careful — you are judging it against economics that had not been written yet, and examiners mark that down hard.\n\nMercantilism described a world in which state capacity depended on paying armies in coin, and coin was genuinely scarce. Given that, a policy of accumulating bullion is not foolish; it is a reasonable response to the constraint actually faced.\n\nSay why contemporaries found it persuasive, *then* say where it fails. Anachronistic dismissal tells the examiner about your century, not theirs.',
+      text: 'Careful. You are judging it against economics that had not been written yet, and examiners mark that down hard.\n\nMercantilism described a world in which state capacity depended on paying armies in coin, and coin was genuinely scarce. Given that, a policy of accumulating bullion is not foolish. It is a reasonable response to the constraint actually faced.\n\nSay why contemporaries found it persuasive, *then* say where it fails. Anachronistic dismissal tells the examiner about your century, not theirs.',
       source: { materialId: 'mat-mercantilism-lecture', passageId: 'p-merc-1' },
       suggestions: [
         { label: 'Let me try again', intent: 'check' },
@@ -773,7 +773,7 @@ const MERC: TopicScript = {
     },
   },
   correct: {
-    text: 'Good — and you gave the doctrine its fair hearing before criticising it, which is what the lecture asks for.\n\nOn to something harder.',
+    text: 'Good, and you gave the doctrine its fair hearing before criticising it, which is what the lecture asks for.\n\nOn to something harder.',
     nextStage: 'reason',
     suggestions: [{ label: 'Go on', intent: 'continue' }],
   },
@@ -800,7 +800,7 @@ const REV: TopicScript = {
     },
     understand: {
       open: {
-        text: 'Mbeki’s opening move is a criticism of how the topic is usually taught.\n\nTeach resistance as a **list of revolts** and it looks rare. It was not rare; it was continuous, and organised revolt was its *least* common form.\n\nThe spectrum: deliberate slowness, feigned incomprehension, tool breakage, concealed cultivation, theft, abortion, flight for days, flight for good, maroon settlement, armed rising. Each carries a different risk and a different prospect of success, and people moved between them as circumstances changed.\n\nCounting only the last and concluding resistance was exceptional is **a methodological error, not a finding**.',
+        text: 'Mbeki’s opening move is a criticism of how the topic is usually taught.\n\nTeach resistance as a **list of revolts** and it looks rare. It was not rare. It was continuous, and organised revolt was its *least* common form.\n\nThe spectrum: deliberate slowness, feigned incomprehension, tool breakage, concealed cultivation, theft, abortion, flight for days, flight for good, maroon settlement, armed rising. Each carries a different risk and a different prospect of success, and people moved between them as circumstances changed.\n\nCounting only the last and concluding resistance was exceptional is **a methodological error, not a finding**.',
         nextStage: 'recall',
         source: { materialId: 'mat-revolt-reading', passageId: 'p-rev-1' },
         suggestions: [
@@ -814,7 +814,7 @@ const REV: TopicScript = {
         suggestions: [{ label: 'Test me on it', intent: 'check' }],
       },
       why: {
-        text: 'Because almost every surviving document was produced by **the system being resisted**: court records, runaway advertisements, punishment books, planter correspondence.\n\nThose record resistance only when it *failed*, or when it alarmed someone enough to write it down. Successful, quiet resistance leaves no trace at all. So the archive systematically over-represents failure and under-represents everything else — and any count drawn from it inherits that bias.\n\nSaying this plainly in an answer is worth marks on its own.',
+        text: 'Because almost every surviving document was produced by **the system being resisted**: court records, runaway advertisements, punishment books, planter correspondence.\n\nThose record resistance only when it *failed*, or when it alarmed someone enough to write it down. Successful, quiet resistance leaves no trace at all. So the archive systematically over-represents failure and under-represents everything else, and any count drawn from it inherits that bias.\n\nSaying this plainly in an answer is worth marks on its own.',
         nextStage: 'reason',
         source: { materialId: 'mat-revolt-reading', passageId: 'p-rev-3' },
         suggestions: [
@@ -836,7 +836,7 @@ const REV: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'Because it **makes resistance look rare**. Organised revolt was its least common form; the spectrum ran from slowdown and feigned incomprehension through flight to maroon settlement and armed rising.\n\nCounting only the most visible form is a methodological error, not a finding.',
+        text: 'Because it **makes resistance look rare**. Organised revolt was its least common form. The spectrum ran from slowdown and feigned incomprehension through flight to maroon settlement and armed rising.\n\nCounting only the most visible form is a methodological error, not a finding.',
         nextStage: 'reason',
         source: { materialId: 'mat-revolt-reading', passageId: 'p-rev-1' },
         suggestions: [{ label: 'Push me further', intent: 'why' }],
@@ -856,7 +856,7 @@ const REV: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'Recognition was typically purchased by agreeing to **return future runaways**.\n\nSo a community that had escaped bondage became, in law, an instrument of its enforcement. Historians who read resistance as a single opposed force cannot accommodate that.\n\nMbeki’s own position: autonomy was won by people making the choices available to them rather than the choices we would wish they had had — and a history written to supply heroes will not be able to see it.',
+        text: 'Recognition was typically purchased by agreeing to **return future runaways**.\n\nSo a community that had escaped bondage became, in law, an instrument of its enforcement. Historians who read resistance as a single opposed force cannot accommodate that.\n\nMbeki’s own position: autonomy was won by people making the choices available to them rather than the choices we would wish they had had, and a history written to supply heroes will not be able to see it.',
         nextStage: 'apply',
         source: { materialId: 'mat-revolt-reading', passageId: 'p-rev-2' },
         suggestions: [{ label: 'Let me apply it', intent: 'continue' }],
@@ -881,7 +881,7 @@ const REV: TopicScript = {
         suggestions: [{ label: 'Tell me the answer', intent: 'answer' }],
       },
       answer: {
-        text: 'Valuable because recapture **required precision**: trade, languages, distinguishing marks, family ties in other parishes. Nothing else in the archive describes individuals that closely, and it is reliable exactly because the advertiser needed it to be.\n\nWhat it cannot tell you: Jupiter’s reasons, in his own words. We have his destination *as guessed by the man who owned him*. And we only have the advertisement because the flight was noticed — the successful escapes are silent.\n\nRead against its purpose, a document of control becomes the best evidence of the person it was written to capture.',
+        text: 'Valuable because recapture **required precision**: trade, languages, distinguishing marks, family ties in other parishes. Nothing else in the archive describes individuals that closely, and it is reliable exactly because the advertiser needed it to be.\n\nWhat it cannot tell you: Jupiter’s reasons, in his own words. We have his destination *as guessed by the man who owned him*. And we only have the advertisement because the flight was noticed. The successful escapes are silent.\n\nRead against its purpose, a document of control becomes the best evidence of the person it was written to capture.',
         nextStage: 'reflect',
         source: { materialId: 'mat-revolt-reading', passageId: 'p-rev-3' },
         suggestions: [
@@ -892,7 +892,7 @@ const REV: TopicScript = {
     },
     reflect: {
       open: {
-        text: 'Three to keep: the spectrum rather than the list; the archive records failure and alarm; reading a document against its purpose.\n\nThe treaty problem is the one to return to — it is the most sophisticated thing on this topic and the easiest to lose.',
+        text: 'Three to keep: the spectrum rather than the list, the archive records failure and alarm, and reading a document against its purpose.\n\nThe treaty problem is the one to return to. It is the most sophisticated thing on this topic and the easiest to lose.',
         suggestions: [
           { label: 'Practise this now', intent: 'practice' },
           { label: 'End and save the summary', intent: 'summary' },
@@ -903,7 +903,7 @@ const REV: TopicScript = {
   misconception: {
     triggers: ['revolts were rare', 'not much resistance', 'few revolts', 'accepted their', 'passive', 'rarely resisted'],
     correction: {
-      text: 'That conclusion comes from the method, not from the past — and it is exactly what Mbeki’s first chapter is written against.\n\nOrganised revolt was rare. **Resistance was not.** Slowdown, feigned incomprehension, tool breakage, concealed cultivation, theft and short flight were continuous, and they are nearly invisible in an archive kept by the people being resisted.\n\nSo "there were few revolts, therefore resistance was rare" moves from a fact about the record to a claim about behaviour. Try that again.',
+      text: 'That conclusion comes from the method, not from the past, and it is exactly what Mbeki’s first chapter is written against.\n\nOrganised revolt was rare. **Resistance was not.** Slowdown, feigned incomprehension, tool breakage, concealed cultivation, theft and short flight were continuous, and they are nearly invisible in an archive kept by the people being resisted.\n\nSo "there were few revolts, therefore resistance was rare" moves from a fact about the record to a claim about behaviour. Try that again.',
       source: { materialId: 'mat-revolt-reading', passageId: 'p-rev-1' },
       suggestions: [
         { label: 'Let me try again', intent: 'check' },
@@ -912,12 +912,25 @@ const REV: TopicScript = {
     },
   },
   correct: {
-    text: 'Yes — and you treated the gap in the record as a fact about the record rather than about the people. That is the distinction this topic is really testing.\n\nSomething harder.',
+    text: 'Yes, and you treated the gap in the record as a fact about the record rather than about the people. That is the distinction this topic is really testing.\n\nSomething harder.',
     nextStage: 'reason',
     suggestions: [{ label: 'Go on', intent: 'continue' }],
   },
   practiceTopicIds: ['topic-revolt', 'topic-debate'],
 };
+
+/**
+ * Whether the tutor has anything authored for a topic.
+ *
+ * Lives beside the script rather than in the client engine because the
+ * planners need it too. Recommending "Learn X with the tutor" for a topic the
+ * script does not cover produces a session whose first message says it cannot
+ * help, which is an honest dead end and still a dead end. Checking the
+ * capability before suggesting the activity is the fix.
+ */
+export function hasTutorScript(topicId: string): boolean {
+  return topicId in TUTOR_SCRIPT;
+}
 
 export const TUTOR_SCRIPT: Record<string, TopicScript> = {
   'topic-encomienda': ENC,
@@ -997,7 +1010,7 @@ export function looksLikeAnswer(input: string): boolean {
 
 /** The fallback, said out loud when nothing matched. */
 export const UNRECOGNISED =
-  'I do not have a branch for that. This prototype’s tutor is a set of authored responses rather than a live model, so it only recognises a limited set of moves — I would rather say that than invent something that sounds like an answer.\n\nHere is what I can do from where we are:';
+  'I do not have a branch for that. This prototype’s tutor is a set of authored responses rather than a live model, so it only recognises a limited set of moves. I would rather say that than invent something that sounds like an answer.\n\nHere is what I can do from where we are:';
 
 export const SCRIPTED_NOTICE =
-  'Simulated tutor. Every response is authored in advance and selected by topic and stage — not generated.';
+  'Simulated tutor. Every response is authored in advance and selected by topic and stage, not generated.';

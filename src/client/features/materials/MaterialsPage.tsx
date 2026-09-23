@@ -82,7 +82,7 @@ export function MaterialsPage() {
         <EmptyState
           icon={<BookOpenIcon />}
           title="Nothing in your library yet"
-          description="Paste a reading in, or add a plain text file. You can also skip this entirely — tutoring and practice work from topics alone."
+          description="Paste a reading in, or add a plain text file. You can also skip this entirely, because tutoring and practice work from topics alone."
           action={
             <div className="flex flex-wrap justify-center gap-tight">
               <Button onClick={() => setAdding(true)}>Add material</Button>

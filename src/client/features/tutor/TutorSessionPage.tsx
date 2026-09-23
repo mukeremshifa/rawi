@@ -384,7 +384,7 @@ export function TutorSessionPage() {
                 <span>Enter to send, Shift+Enter for a new line.</span>
                 <Separator orientation="vertical" className="h-3" />
                 <span>
-                  Asking for a hint costs you nothing here — this is supported
+                  Asking for a hint costs you nothing here, because this is supported
                   learning, not an assessment.
                 </span>
               </div>
