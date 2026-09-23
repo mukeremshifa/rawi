@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { DIFFICULTY_LABEL, formatRelative } from '@/components/domain';
 import { useAppState, useStore } from '@/store/store';
+import { useCoursePath } from '@/store/course-context';
 import {
   useRecentAttempts,
   useRecurringMistakes,
@@ -66,6 +67,7 @@ const ACTIVITIES: { type: ActivityType; blurb: string }[] = [
 ];
 
 export function PracticeHomePage() {
+  const path = useCoursePath();
   const { savedPractice } = useAppState();
   const { dispatch } = useStore();
   const navigate = useNavigate();
@@ -81,7 +83,7 @@ export function PracticeHomePage() {
         description="Choose an activity and what it draws on. Results feed your progress and today’s plan."
         actions={
           <Button asChild>
-            <Link to="/practice/new">
+            <Link to={path('/practice/new')}>
               <PlusIcon />
               New set
             </Link>
@@ -116,7 +118,7 @@ export function PracticeHomePage() {
                     <div className="flex shrink-0 gap-tight">
                       <Button size="sm" asChild>
                         <Link
-                          to={`/practice/new?questions=${mistake.questionId}&retry=${mistake.lastAttemptId}`}
+                          to={path(`/practice/new?questions=${mistake.questionId}&retry=${mistake.lastAttemptId}`)}
                         >
                           <RotateCcwIcon />
                           Retry
@@ -124,7 +126,7 @@ export function PracticeHomePage() {
                       </Button>
                       <Button variant="outline" size="sm" asChild>
                         <Link
-                          to={`/exams/results/${mistake.lastAttemptId}`}
+                          to={path(`/exams/results/${mistake.lastAttemptId}`)}
                         >
                           See attempt
                         </Link>
@@ -150,7 +152,7 @@ export function PracticeHomePage() {
               return (
                 <Button key={review.topicId} variant="outline" size="sm" asChild>
                   <Link
-                    to={`/practice/new?topic=${topic.id}&activity=flashcards`}
+                    to={path(`/practice/new?topic=${topic.id}&activity=flashcards`)}
                   >
                     {topic.title}
                     <Badge variant="secondary" className="font-mono tabular-nums">
@@ -169,7 +171,7 @@ export function PracticeHomePage() {
           {ACTIVITIES.map(({ type, blurb }) => (
             <Link
               key={type}
-              to={`/practice/new?activity=${type}`}
+              to={path(`/practice/new?activity=${type}`)}
               className="hover:bg-accent/50 focus-visible:ring-ring flex flex-col gap-tight rounded-lg border p-gutter outline-none transition-colors focus-visible:ring-2"
             >
               <span className="font-medium">{ACTIVITY_LABEL[type]}</span>
@@ -253,7 +255,7 @@ export function PracticeHomePage() {
             description="Choose an activity above. Results are stored on this device and change what the overview suggests."
             action={
               <Button asChild>
-                <Link to="/practice/new">Set up practice</Link>
+                <Link to={path('/practice/new')}>Set up practice</Link>
               </Button>
             }
           />
@@ -262,7 +264,7 @@ export function PracticeHomePage() {
             {recent.map((attempt) => (
               <li key={attempt.id}>
                 <Link
-                  to={`/practice/results/${attempt.id}`}
+                  to={path(`/practice/results/${attempt.id}`)}
                   className="hover:bg-accent/50 focus-visible:ring-ring flex items-center justify-between gap-tight rounded-md border p-snug outline-none transition-colors focus-visible:ring-2"
                 >
                   <div className="flex min-w-0 flex-col">

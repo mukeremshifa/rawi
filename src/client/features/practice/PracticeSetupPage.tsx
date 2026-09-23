@@ -1,15 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangleIcon, ArrowLeftIcon, PlayIcon, SaveIcon } from 'lucide-react';
+import { AlertTriangleIcon, ArrowLeftIcon, SparklesIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 import type {
   ActivityType,
-  Attempt,
   Difficulty,
   FeedbackTiming,
   PracticeConfig,
   QuestionFormat,
+  SavedPracticeSet,
 } from '@shared/types.ts';
 
 import { Page, PageHeader, Section } from '@/components/layout';
@@ -21,45 +21,46 @@ import { Select } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { DIFFICULTY_BLURB, DIFFICULTY_LABEL } from '@/components/domain';
 import { useStore } from '@/store/store';
-import {
-  selectQuestions,
-  useMaterials,
-  useQuestions,
-  useTopics,
-} from '@/store/selectors';
+import { useCourse, useCoursePath } from '@/store/course-context';
+import { selectQuestions, useMaterials, useQuestions, useTopics } from '@/store/selectors';
 import { newId } from '@/lib/id';
 
 /**
- * The shared practice setup.
+ * Setting up and generating a practice set.
+ *
+ * ── The flow, and why Save is gone ────────────────────────────────────────
+ *
+ * Title → settings → **Generate** → a saved set you are taken to. There is no
+ * separate Save button, because the previous Start/Save split asked the student
+ * to understand a distinction that did nothing for them: a set they had
+ * "started" but not "saved" vanished when they navigated away, and a set they
+ * had saved was a configuration rather than the questions they had just seen.
+ *
+ * Generation now produces a durable, named object with resolved content, and
+ * that is the only thing it produces. Starting an attempt is a separate action
+ * taken *on* the set, which is what makes "another attempt at the same set"
+ * meaningful.
+ *
+ * ── Why generation cannot run twice ───────────────────────────────────────
+ *
+ * `generating` is a ref set synchronously, not state. A second click in the
+ * same tick — a double-press, an impatient double-tap — sees the ref already
+ * true and returns. State would not have updated yet at that point, which is
+ * precisely the window in which duplicates are created.
  *
  * ── Every control must change something ───────────────────────────────────
  *
- * The brief is explicit that controls must not be decorative, so this screen
- * recomputes the matching question count on every change and shows it live.
- * That is not a nicety — it is the mechanism that makes the constraint
- * *visible*: pick "stretch" on a topic with two stretch questions and the
- * length control immediately caps at two and says why.
- *
- * ── Activity type decides the formats ─────────────────────────────────────
- *
- * The activity is the primary choice and the format filter follows from it,
- * rather than asking a student to tick nine format checkboxes. "Quiz" means the
- * five objective formats; the written activities each mean one. A student who
- * wants a specific format picks the activity that contains it.
+ * The screen recomputes the matching question count on every change and shows
+ * it live. That is the mechanism that makes the constraint *visible*: pick
+ * "stretch" on a topic with two stretch questions and the length control caps
+ * at two and says why.
  */
 
 const ACTIVITY_FORMATS: Record<ActivityType, QuestionFormat[]> = {
   flashcards: ['flashcard'],
-  quiz: [
-    'multiple-choice',
-    'multiple-select',
-    'matching',
-    'ordering',
-    'fill-blank',
-  ],
+  quiz: ['multiple-choice', 'multiple-select', 'matching', 'ordering', 'fill-blank'],
   'written-recall': ['written-recall'],
   'source-analysis': ['source-analysis'],
   essay: ['essay'],
@@ -77,7 +78,8 @@ const ACTIVITY_BLURB: Record<ActivityType, string> = {
   flashcards: 'Reveal, rate your own recall, and come back to the hard ones.',
   quiz: 'Multiple choice and select, matching, ordering and fill-in-the-blank.',
   'written-recall': 'Explain an idea or summarise an argument from memory.',
-  'source-analysis': 'Identify claims, evidence, perspective and limitations in an extract.',
+  'source-analysis':
+    'Identify claims, evidence, perspective and limitations in an extract.',
   essay: 'Develop a thesis, plan an answer, or write a full response.',
 };
 
@@ -87,12 +89,14 @@ export function PracticeSetupPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { dispatch } = useStore();
+  const course = useCourse();
+  const path = useCoursePath();
   const topics = useTopics();
   const materials = useMaterials();
   const pool = useQuestions();
 
-  /* Preselection from a link — a passage action, a plan suggestion, a tutor
-     hand-off, or a retry of a specific mistake. */
+  /* Preselection from a link — a passage action, a plan suggestion, a planner
+     session, a tutor hand-off, or a retry of a specific mistake. */
   const presetTopics = (params.get('topic') ?? '')
     .split(',')
     .map((t) => t.trim())
@@ -100,6 +104,7 @@ export function PracticeSetupPage() {
   const presetMaterial = params.get('material');
   const presetActivity = params.get('activity') as ActivityType | null;
   const retryAttemptId = params.get('retry');
+  const sessionId = params.get('session') ?? undefined;
   const retryQuestionIds = (params.get('questions') ?? '')
     .split(',')
     .map((q) => q.trim())
@@ -118,7 +123,10 @@ export function PracticeSetupPage() {
   const [length, setLength] = useState(6);
   const [hintsAllowed, setHintsAllowed] = useState(true);
   const [feedback, setFeedback] = useState<FeedbackTiming>('immediate');
-  const [setName, setSetName] = useState('');
+  const [title, setTitle] = useState('');
+  const [titleTouched, setTitleTouched] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const generatingRef = useRef(false);
 
   const filter = useMemo(
     () => ({
@@ -154,7 +162,7 @@ export function PracticeSetupPage() {
   const effectiveLength = Math.min(length, available.length);
   const capped = length > available.length && available.length > 0;
 
-  /** Exactly the questions a Start would run, so the summary cannot disagree. */
+  /** Exactly the questions a Generate would resolve, so the summary agrees. */
   const chosen = useMemo(
     () =>
       retryQuestionIds.length > 0
@@ -165,66 +173,64 @@ export function PracticeSetupPage() {
     [pool, filter, effectiveLength, retryQuestionIds, available, nothingSelected],
   );
 
-  const start = () => {
+  const trimmedTitle = title.trim();
+  const titleError = !trimmedTitle
+    ? 'Give this set a name, so you can find it again.'
+    : null;
+  const canGenerate = chosen.length > 0 && !titleError && !generating;
+
+  /**
+   * Generates the set, saves it once, and opens it.
+   *
+   * The delay is cosmetic and the copy says so — it is there because a
+   * generation that completes in zero milliseconds reads as though nothing
+   * happened. What it must not do is claim success without content, so the
+   * empty case is checked before anything is written.
+   */
+  const generate = () => {
+    if (generatingRef.current) return;
+    if (!trimmedTitle) {
+      setTitleTouched(true);
+      return;
+    }
     if (chosen.length === 0) return;
 
-    const attempt: Attempt = {
-      id: newId('att'),
-      kind: 'practice',
-      mode: activity === 'flashcards' ? 'self-rated' : 'practice',
-      title:
-        retryQuestionIds.length > 0
-          ? `Retry — ${ACTIVITY_LABEL[activity]}`
-          : `${ACTIVITY_LABEL[activity]} — ${
-              topicIds.length === topics.length
-                ? 'all topics'
-                : topicIds
-                    .map((id) => topics.find((t) => t.id === id)?.title)
-                    .filter(Boolean)
-                    .join(', ')
-            }`,
-      topicIds: [...new Set(chosen.map((q) => q.topicId))],
-      startedAt: new Date().toISOString(),
-      questions: [],
-      marksAwarded: 0,
-      marksAvailable: chosen.reduce((sum, q) => sum + q.marks, 0),
-      ...(retryAttemptId ? { remediatesAttemptId: retryAttemptId } : {}),
-    };
+    generatingRef.current = true;
+    setGenerating(true);
 
-    // The run page reads the question list and the settings from history
-    // state, so a set is reproducible on back-navigation without another id in
-    // the URL.
-    navigate(`/practice/run/${attempt.id}`, {
-      state: {
-        attempt,
-        questionIds: chosen.map((q) => q.id),
-        hintsAllowed,
-        feedback,
-      },
-    });
-  };
-
-  const saveSet = () => {
     const config: PracticeConfig = {
       activity,
       topicIds,
       materialIds,
-      length: effectiveLength,
+      length: chosen.length,
       difficulties,
       hintsAllowed,
       feedback,
     };
-    dispatch({
-      type: 'save-practice',
-      set: {
-        id: newId('saved'),
-        name: setName.trim() || `${ACTIVITY_LABEL[activity]} set`,
-        config,
-        savedAt: new Date().toISOString(),
-      },
-    });
-    setSetName('');
-    toast.success('Set saved', { description: 'It will appear in Practice.' });
+
+    const set: SavedPracticeSet = {
+      id: newId('set'),
+      courseId: course.id,
+      name: trimmedTitle,
+      config,
+      questionIds: chosen.map((q) => q.id),
+      savedAt: new Date().toISOString(),
+    };
+
+    window.setTimeout(() => {
+      dispatch({ type: 'save-practice', set });
+      toast.success('Set generated', {
+        description: `${set.questionIds.length} ${
+          set.questionIds.length === 1 ? 'question' : 'questions'
+        }, saved as “${set.name}”.`,
+      });
+      navigate(
+        `${path(`/practice/set/${set.id}`)}${
+          retryAttemptId ? `?retry=${retryAttemptId}` : sessionId ? `?session=${sessionId}` : ''
+        }`,
+        { replace: true },
+      );
+    }, 450);
   };
 
   const written = activity !== 'flashcards' && activity !== 'quiz';
@@ -233,7 +239,7 @@ export function PracticeSetupPage() {
     <Page width="prose" className="pb-page">
       <div>
         <Button variant="ghost" size="sm" asChild className="-ml-2">
-          <Link to="/practice">
+          <Link to={path('/practice')}>
             <ArrowLeftIcon />
             Practice
           </Link>
@@ -241,13 +247,35 @@ export function PracticeSetupPage() {
       </div>
 
       <PageHeader
-        title={retryQuestionIds.length > 0 ? 'Retry these questions' : 'Set up practice'}
+        title={retryQuestionIds.length > 0 ? 'Retry these questions' : 'New practice set'}
         description={
           retryQuestionIds.length > 0
-            ? 'The questions you got wrong, in the same formats.'
-            : 'Every control here changes which questions you get.'
+            ? 'The questions you got wrong, in the same formats. Generating saves them as a set you can come back to.'
+            : 'Name it, choose what it draws on, and generate. The set is saved automatically.'
         }
       />
+
+      <Section title="Name">
+        <div className="flex flex-col gap-tight">
+          <Label htmlFor="practice-title">
+            Set name <span className="text-destructive">*</span>
+          </Label>
+          <Input
+            id="practice-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => setTitleTouched(true)}
+            placeholder="Week 3 problem set"
+            aria-invalid={titleTouched && !!titleError}
+            aria-describedby={titleError ? 'practice-title-error' : undefined}
+          />
+          {titleTouched && titleError && (
+            <p id="practice-title-error" className="text-destructive text-xs">
+              {titleError}
+            </p>
+          )}
+        </div>
+      </Section>
 
       {retryQuestionIds.length > 0 ? (
         <Alert>
@@ -331,6 +359,16 @@ export function PracticeSetupPage() {
                 );
               })}
             </div>
+            {topics.some(
+              (t) =>
+                selectQuestions(pool, { topicIds: [t.id] }).length === 0,
+            ) && (
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                Topics showing zero have no authored questions in this prototype.
+                Practice cannot be generated for them — the tutor and your own
+                materials are the way in.
+              </p>
+            )}
           </Section>
 
           {materials.length > 0 && (
@@ -379,9 +417,7 @@ export function PracticeSetupPage() {
                       checked={difficulties.includes(level)}
                       onCheckedChange={(checked) =>
                         setDifficulties((prev) =>
-                          checked
-                            ? [...prev, level]
-                            : prev.filter((d) => d !== level),
+                          checked ? [...prev, level] : prev.filter((d) => d !== level),
                         )
                       }
                     />
@@ -426,9 +462,8 @@ export function PracticeSetupPage() {
               {capped && (
                 <p className="text-warning-foreground flex items-start gap-tight text-xs">
                   <AlertTriangleIcon className="mt-0.5 size-3 shrink-0" aria-hidden />
-                  Only {available.length} questions match these settings, so the
-                  set will have {available.length}. Add topics or difficulties to
-                  get more.
+                  Only {available.length} questions match these settings, so the set
+                  will have {available.length}. Add topics or difficulties to get more.
                 </p>
               )}
             </div>
@@ -445,8 +480,8 @@ export function PracticeSetupPage() {
                 <div className="flex flex-col gap-hairline">
                   <span className="text-sm font-medium">Allow hints</span>
                   <span className="text-muted-foreground text-xs leading-relaxed">
-                    Hints do not reduce your marks. They are recorded, so this
-                    work counts as practice rather than as independent evidence.
+                    Hints do not reduce your marks. They are recorded, so this work
+                    counts as practice rather than as independent evidence.
                   </span>
                 </div>
               </label>
@@ -461,14 +496,12 @@ export function PracticeSetupPage() {
                   <option value="immediate">
                     After each question — learn as you go
                   </option>
-                  <option value="end">
-                    At the end — closer to exam conditions
-                  </option>
+                  <option value="end">At the end — closer to exam conditions</option>
                 </Select>
                 {written && feedback === 'immediate' && (
                   <p className="text-muted-foreground text-xs">
-                    Written answers are checked against an authored rubric by
-                    keyword. Useful as a checklist, not as a grade.
+                    Written answers are checked against an authored rubric by keyword.
+                    Useful as a checklist, not as a grade.
                   </p>
                 )}
               </div>
@@ -480,42 +513,30 @@ export function PracticeSetupPage() {
       {available.length === 0 && (
         <Alert variant="destructive">
           <AlertTriangleIcon />
-          <AlertTitle>No questions match</AlertTitle>
+          <AlertTitle>Nothing to generate from</AlertTitle>
           <AlertDescription>
             {topicIds.length === 0
               ? 'Select at least one topic.'
               : difficulties.length === 0
                 ? 'Select at least one difficulty.'
-                : `There are no ${ACTIVITY_LABEL[activity].toLowerCase()} questions for these topics at these difficulties. Try a different activity, or widen the difficulty range.`}
+                : `There are no ${ACTIVITY_LABEL[activity].toLowerCase()} questions for these topics at these difficulties. Try a different activity, or widen the difficulty range. No set will be created until there is something to put in it.`}
           </AlertDescription>
         </Alert>
       )}
 
       <div className="flex flex-wrap items-center gap-tight">
-        <Button onClick={start} disabled={available.length === 0}>
-          <PlayIcon />
-          Start {effectiveLength || ''}{' '}
-          {effectiveLength === 1 ? 'question' : 'questions'}
+        <Button onClick={generate} disabled={!canGenerate}>
+          <SparklesIcon />
+          {generating
+            ? 'Generating…'
+            : `Generate ${effectiveLength || ''} ${
+                effectiveLength === 1 ? 'question' : 'questions'
+              }`}
         </Button>
-        {retryQuestionIds.length === 0 && (
-          <>
-            <Separator orientation="vertical" className="h-6" />
-            <Input
-              value={setName}
-              onChange={(e) => setSetName(e.target.value)}
-              placeholder="Name this set"
-              className="w-44"
-              aria-label="Name for the saved set"
-            />
-            <Button
-              variant="outline"
-              onClick={saveSet}
-              disabled={available.length === 0}
-            >
-              <SaveIcon />
-              Save set
-            </Button>
-          </>
+        {generating && (
+          <span className="text-muted-foreground text-xs">
+            Selecting from the authored bank — there is no model involved.
+          </span>
         )}
       </div>
 
@@ -526,8 +547,9 @@ export function PracticeSetupPage() {
             {effectiveLength} {ACTIVITY_LABEL[activity].toLowerCase()}{' '}
             {effectiveLength === 1 ? 'question' : 'questions'} worth{' '}
             {chosen.reduce((sum, q) => sum + q.marks, 0)} marks, across{' '}
-            {new Set(chosen.map((q) => q.topicId)).size} topics. Results are
-            recorded and will change your progress and today’s plan.
+            {new Set(chosen.map((q) => q.topicId)).size} topics, saved as a set you can
+            attempt more than once. Results are recorded and will change your progress
+            and today’s plan.
           </span>
         </CardContent>
       </Card>

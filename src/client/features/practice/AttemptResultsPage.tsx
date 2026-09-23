@@ -20,6 +20,7 @@ import {
   formatRelative,
 } from '@/components/domain';
 import { useAttempt, useQuestionMap, useTopicMap } from '@/store/selectors';
+import { useCoursePath } from '@/store/course-context';
 import { hasScript } from '@/features/tutor/engine';
 import { QuestionFeedback } from './QuestionFeedback';
 import { NotFoundPage } from '@/routes';
@@ -59,6 +60,7 @@ function weakestTopics(attempt: Attempt): { topicId: string; lost: number }[] {
 }
 
 export function AttemptResultsPage() {
+  const path = useCoursePath();
   const { attemptId } = useParams();
   const attempt = useAttempt(attemptId);
   const questionMap = useQuestionMap();
@@ -75,7 +77,7 @@ export function AttemptResultsPage() {
     <Page className="max-w-3xl pb-page">
       <div>
         <Button variant="ghost" size="sm" asChild className="-ml-2">
-          <Link to="/practice">
+          <Link to={path('/practice')}>
             <ArrowLeftIcon />
             Practice
           </Link>
@@ -123,9 +125,9 @@ export function AttemptResultsPage() {
           {wrong.length > 0 && (
             <Button asChild>
               <Link
-                to={`/practice/new?retry=${attempt.id}&questions=${wrong
+                to={path(`/practice/new?retry=${attempt.id}&questions=${wrong
                   .map((qa) => qa.questionId)
-                  .join(',')}`}
+                  .join(',')}`)}
               >
                 <RotateCcwIcon />
                 Retry the {wrong.length} you missed
@@ -134,21 +136,21 @@ export function AttemptResultsPage() {
           )}
           {weak[0] && hasScript(weak[0].topicId) && (
             <Button variant="outline" asChild>
-              <Link to={`/tutor/new?topic=${weak[0].topicId}&attempt=${attempt.id}`}>
+              <Link to={path(`/tutor/new?topic=${weak[0].topicId}&attempt=${attempt.id}`)}>
                 <MessageSquareIcon />
                 Work on {topicMap.get(weak[0].topicId)?.title} with the tutor
               </Link>
             </Button>
           )}
           <Button variant="outline" asChild>
-            <Link to="/practice/new">
+            <Link to={path('/practice/new')}>
               <DumbbellIcon />
               New practice set
             </Link>
           </Button>
           {wrong.length === 0 && (
             <Button variant="outline" asChild>
-              <Link to="/exams">Try it under exam conditions</Link>
+              <Link to={path('/exams')}>Try it under exam conditions</Link>
             </Button>
           )}
         </div>
