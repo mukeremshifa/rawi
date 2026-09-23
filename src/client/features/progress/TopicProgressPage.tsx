@@ -176,11 +176,11 @@ export function TopicProgressPage() {
               return (
                 <li key={`${attempt.id}-${qa.questionId}-${index}`}>
                   <Link
-                    to={
+                    to={path(
                       attempt.kind === 'exam'
                         ? `/exams/results/${attempt.id}`
-                        : `/practice/results/${attempt.id}`
-                    }
+                        : `/practice/results/${attempt.id}`,
+                    )}
                     className="hover:bg-accent/50 focus-visible:ring-ring flex flex-col gap-tight rounded-lg border p-snug outline-none transition-colors focus-visible:ring-2"
                   >
                     <div className="flex flex-wrap items-center gap-tight">

@@ -285,11 +285,11 @@ export function ProgressPage() {
           {recent.map((attempt) => (
             <li key={attempt.id}>
               <Link
-                to={
+                to={path(
                   attempt.kind === 'exam'
                     ? `/exams/results/${attempt.id}`
-                    : `/practice/results/${attempt.id}`
-                }
+                    : `/practice/results/${attempt.id}`,
+                )}
                 className="hover:bg-accent/50 focus-visible:ring-ring flex items-center justify-between gap-tight rounded-md border p-snug outline-none transition-colors focus-visible:ring-2"
               >
                 <div className="flex min-w-0 flex-col">

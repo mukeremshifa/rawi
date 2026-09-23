@@ -201,7 +201,9 @@ export function AttemptResultsPage() {
                       attempt={qa}
                       {...(hasScript(qa.topicId)
                         ? {
-                            discussTo: `/tutor/new?topic=${qa.topicId}&question=${qa.questionId}&attempt=${attempt.id}`,
+                            discussTo: path(
+                              `/tutor/new?topic=${qa.topicId}&question=${qa.questionId}&attempt=${attempt.id}`,
+                            ),
                           }
                         : {})}
                     />

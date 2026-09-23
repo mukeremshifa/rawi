@@ -320,11 +320,16 @@ export function TutorSessionPage() {
                   <div className="flex flex-wrap gap-tight pt-tight">
                     {summary.nextStep && (
                       <Button size="sm" asChild>
-                        <Link to={summary.nextStep.to}>{summary.nextStep.label}</Link>
+                        {/* The summary names a route within this course, so it
+                            is scoped here rather than in the engine, which has
+                            no course context of its own. */}
+                        <Link to={path(summary.nextStep.to)}>
+                          {summary.nextStep.label}
+                        </Link>
                       </Button>
                     )}
                     <Button variant="outline" size="sm" asChild>
-                      <Link to="/">Back to overview</Link>
+                      <Link to={path('')}>Back to overview</Link>
                     </Button>
                   </div>
                 </CardContent>
