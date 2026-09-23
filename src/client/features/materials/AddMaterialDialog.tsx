@@ -22,6 +22,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useStore } from '@/store/store';
+import { useCourse, useCoursePath } from '@/store/course-context';
 import { useTopics } from '@/store/selectors';
 import { newId } from '@/lib/id';
 
@@ -107,6 +108,8 @@ export function AddMaterialDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { dispatch } = useStore();
+  const course = useCourse();
+  const path = useCoursePath();
   const topics = useTopics();
   const navigate = useNavigate();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -176,6 +179,7 @@ export function AddMaterialDialog({
     const id = newId('mat');
     const material: Material = {
       id,
+      courseId: course.id,
       title: title.trim(),
       kind,
       origin,
@@ -204,7 +208,7 @@ export function AddMaterialDialog({
     });
     reset();
     onOpenChange(false);
-    navigate(`/materials/${id}`);
+    navigate(path(`/materials/${id}`));
   };
 
   return (

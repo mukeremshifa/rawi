@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   ArrowRightIcon,
   CalendarClockIcon,
   ClockIcon,
   InfoIcon,
-  RotateCcwIcon,
+  ListTreeIcon,
   SettingsIcon,
   SparklesIcon,
 } from 'lucide-react';
@@ -14,10 +14,10 @@ import { toast } from 'sonner';
 import type { CheckInMood } from '@shared/types.ts';
 import {
   PLAN_EXPLANATION,
-  daysUntilExam,
-  minutesToday,
   todaysCheckIn,
+  upcomingAssessments,
 } from '@shared/progress.ts';
+import { localISO, trimDay } from '@shared/planner.ts';
 
 import { Page, PageHeader, Section } from '@/components/layout';
 import { EmptyState } from '@/components/states';
@@ -28,80 +28,90 @@ import { Select } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
+  DueChip,
   EvidenceChip,
   EvidenceMeter,
   formatMinutes,
   formatRelative,
+  formatTimeOfDay,
 } from '@/components/domain';
 import { useAppState, useStore } from '@/store/store';
+import { useCourse, useCoursePath } from '@/store/course-context';
 import {
+  useAssessments,
+  useAvailability,
   useEvidence,
   usePlan,
   useRecentAttempts,
   useReviews,
+  useSessions,
   useTopicMap,
   useTopics,
 } from '@/store/selectors';
 import { newId } from '@/lib/id';
 
 /**
- * The overview: what to do today, and why.
+ * A course's overview: what to do in this course, and why.
  *
- * ── The organising idea ───────────────────────────────────────────────────
+ * ── How this differs from Home ────────────────────────────────────────────
  *
- * Every suggestion carries its reason on the card rather than behind a tooltip.
- * The brief asks for visible reasons, and a reason a student has to hover to
- * find is a reason they will not read — which matters here because the reason
- * is the only thing distinguishing a study plan from a list of buttons.
+ * Home answers "what am I doing today" across every course. This answers
+ * "where am I in this course" — its topics, its evidence, its deadlines, its
+ * recent work. The overlap is deliberately small: the suggestion list here is
+ * the global plan *filtered to this course*, not a second ranking, so the two
+ * screens cannot recommend different things.
  *
- * The check-in sits directly beside the plan for the same reason: its whole
- * purpose is to change what the plan says, and that relationship is only
- * legible if the cause and the effect are on the same screen.
+ * ── The check-in ──────────────────────────────────────────────────────────
+ *
+ * A check-in changes what is suggested, and — this is the part the brief
+ * specifically asks for — it now connects to the **planner** rather than
+ * producing a private schedule of its own. Saying you have 20 minutes today
+ * shows which of today's planned sessions fit in 20 minutes and which are being
+ * set aside, from the real planner sessions, rather than inventing a parallel
+ * plan the calendar knows nothing about.
  */
 
-const MOOD_OPTIONS: { value: CheckInMood; label: string; blurb: string }[] = [
+const MOODS: { value: CheckInMood; label: string; blurb: string }[] = [
   {
     value: 'on-track',
-    label: 'About as usual',
-    blurb: 'Keep the plan as it is.',
+    label: 'On track',
+    blurb: 'No change to the ordinary ranking.',
   },
   {
     value: 'less-time',
-    label: 'I have less time today',
-    blurb: 'Shorter activities move to the front.',
+    label: 'Short of time today',
+    blurb: 'Shows what fits in the time you have, from what you already planned.',
   },
   {
     value: 'struggling',
-    label: 'Something is not landing',
-    blurb: 'Swaps testing for an explanation on the topic you name.',
+    label: 'Struggling with something',
+    blurb: 'Moves that topic to the top and switches it from testing to teaching.',
   },
   {
     value: 'confident',
     label: 'Feeling on top of it',
-    blurb: 'Moves timed exam practice up.',
+    blurb: 'Moves timed rehearsal up.',
   },
 ];
 
 function CheckInCard() {
-  const { course, checkIns } = useAppState();
+  const course = useCourse();
+  const { checkIns } = useAppState();
   const { dispatch } = useStore();
   const topics = useTopics();
+  const availability = useAvailability();
+  const sessions = useSessions();
+  const today = localISO(new Date());
 
   const existing = todaysCheckIn(checkIns);
   const [mood, setMood] = useState<CheckInMood>(existing?.mood ?? 'on-track');
   const [topicId, setTopicId] = useState(existing?.topicId ?? '');
   const [minutes, setMinutes] = useState(
-    String(existing?.minutesToday ?? course?.dailyMinutes ?? 45),
+    String(existing?.minutesToday ?? availability.sessionMinutes),
   );
   const [note, setNote] = useState(existing?.note ?? '');
-
-  if (!course) return null;
 
   const submit = () => {
     dispatch({
@@ -109,53 +119,60 @@ function CheckInCard() {
       checkIn: {
         id: newId('check'),
         mood,
-        ...(mood === 'struggling' && topicId ? { topicId } : {}),
-        ...(mood === 'less-time' ? { minutesToday: Number(minutes) || 15 } : {}),
-        ...(note.trim() ? { note: note.trim() } : {}),
         at: new Date().toISOString(),
+        courseId: course.id,
+        ...(mood === 'struggling' && topicId ? { topicId } : {}),
+        ...(mood === 'less-time' ? { minutesToday: Number(minutes) || 20 } : {}),
+        ...(note.trim() ? { note: note.trim() } : {}),
       },
     });
     toast.success('Check-in saved', {
-      description: 'Today’s suggestions have been reordered.',
+      description: 'Today’s suggestions have changed to match.',
     });
   };
 
-  const selected = MOOD_OPTIONS.find((o) => o.value === mood);
+  /*
+   * The short-time case reads the planner rather than replacing it. `trimDay`
+   * keeps as much of today's real schedule as fits the reduced budget and names
+   * what it is setting aside, which is what "connect to the planner" means in
+   * practice: one schedule, less of it, and the student can see which part.
+   */
+  const trimmed =
+    existing?.mood === 'less-time' && existing.minutesToday !== undefined
+      ? trimDay(sessions, today, existing.minutesToday)
+      : null;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-tight">
+        <CardTitle className="flex items-center gap-tight text-sm">
           <SparklesIcon className="size-4" aria-hidden />
-          Check in
+          How is today going?
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-base">
-        <p className="text-muted-foreground text-sm leading-relaxed">
-          {existing
-            ? 'You checked in earlier today. Changing this updates the plan again.'
-            : 'How is today going? This changes what gets suggested, not just the time estimate.'}
-        </p>
-
-        <div className="flex flex-col gap-tight">
-          <Label htmlFor="checkin-mood">Today</Label>
-          <Select
-            id="checkin-mood"
-            value={mood}
-            onChange={(e) => setMood(e.target.value as CheckInMood)}
-          >
-            {MOOD_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-          {selected && (
-            <p className="text-muted-foreground text-xs">{selected.blurb}</p>
-          )}
+        <div className="grid gap-tight sm:grid-cols-2">
+          {MOODS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setMood(option.value)}
+              aria-pressed={mood === option.value}
+              className={`focus-visible:ring-ring flex flex-col gap-hairline rounded-lg border p-snug text-left outline-none transition-colors focus-visible:ring-2 ${
+                mood === option.value
+                  ? 'border-primary bg-primary/5'
+                  : 'hover:bg-accent/50'
+              }`}
+            >
+              <span className="text-sm font-medium">{option.label}</span>
+              <span className="text-muted-foreground text-xs leading-relaxed">
+                {option.blurb}
+              </span>
+            </button>
+          ))}
         </div>
 
-        {mood === 'struggling' && (
+        {mood === 'struggling' && topics.length > 0 && (
           <div className="flex flex-col gap-tight">
             <Label htmlFor="checkin-topic">Which topic?</Label>
             <Select
@@ -163,10 +180,10 @@ function CheckInCard() {
               value={topicId}
               onChange={(e) => setTopicId(e.target.value)}
             >
-              <option value="">Choose a topic…</option>
-              {topics.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.title}
+              <option value="">Choose a topic</option>
+              {topics.map((topic) => (
+                <option key={topic.id} value={topic.id}>
+                  {topic.title}
                 </option>
               ))}
             </Select>
@@ -175,13 +192,14 @@ function CheckInCard() {
 
         {mood === 'less-time' && (
           <div className="flex flex-col gap-tight">
-            <Label htmlFor="checkin-minutes">Minutes available today</Label>
+            <Label htmlFor="checkin-minutes">Minutes you have today</Label>
             <Select
               id="checkin-minutes"
               value={minutes}
               onChange={(e) => setMinutes(e.target.value)}
+              className="w-40"
             >
-              {['10', '15', '20', '30'].map((m) => (
+              {['10', '15', '20', '30', '45'].map((m) => (
                 <option key={m} value={m}>
                   {m} minutes
                 </option>
@@ -194,311 +212,398 @@ function CheckInCard() {
           <Label htmlFor="checkin-note">Anything else? (optional)</Label>
           <Textarea
             id="checkin-note"
-            rows={2}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Kept blanking on the comparison structure…"
+            rows={2}
           />
         </div>
 
-        <Button
-          onClick={submit}
-          disabled={mood === 'struggling' && !topicId}
-          className="self-start"
-        >
-          {existing ? 'Update check-in' : 'Save check-in'}
+        <Button onClick={submit} className="self-start">
+          {existing ? 'Update today’s check-in' : 'Save check-in'}
         </Button>
+
+        {trimmed && (
+          <div className="flex flex-col gap-tight rounded-lg border p-snug">
+            <p className="text-sm font-medium">
+              In {existing?.minutesToday} minutes, from what you planned
+            </p>
+            {trimmed.keep.length === 0 ? (
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                Nothing you planned for today fits in that time. The short suggestions
+                below are the alternative.
+              </p>
+            ) : (
+              trimmed.keep.map((session) => (
+                <Link
+                  key={session.id}
+                  to={`/planner?session=${session.id}`}
+                  className="hover:bg-accent/50 focus-visible:ring-ring flex items-center gap-tight rounded-md px-1 py-0.5 text-xs outline-none focus-visible:ring-2"
+                >
+                  <span className="min-w-0 flex-1 truncate">{session.title}</span>
+                  <span className="font-mono tabular-nums">
+                    {formatMinutes(session.durationMinutes)}
+                  </span>
+                </Link>
+              ))
+            )}
+            {trimmed.defer.length > 0 && (
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                Setting aside {trimmed.defer.length}{' '}
+                {trimmed.defer.length === 1 ? 'session' : 'sessions'} —{' '}
+                {trimmed.defer.map((s) => s.title).join(', ')}. Move{' '}
+                {trimmed.defer.length === 1 ? 'it' : 'them'} in the planner rather than
+                losing {trimmed.defer.length === 1 ? 'it' : 'them'}.
+              </p>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
 }
 
 export function OverviewPage() {
-  const state = useAppState();
-  const { resetDemo } = useStore();
-  const navigate = useNavigate();
+  const course = useCourse();
+  const path = useCoursePath();
   const plan = usePlan();
   const reviews = useReviews();
   const evidence = useEvidence();
   const topics = useTopics();
   const topicMap = useTopicMap();
   const recent = useRecentAttempts(4);
+  const assessments = useAssessments();
+  const sessions = useSessions();
+  const today = localISO(new Date());
 
-  if (!state.course) {
+  /* This course's slice of the one global ranking — never a second ranking. */
+  const coursePlan = plan.filter((s) => s.courseId === course.id);
+  const upcoming = upcomingAssessments(assessments);
+  const next = upcoming[0];
+  const todaysSessions = sessions.filter(
+    (s) => s.date === today && s.status === 'planned',
+  );
+
+  if (topics.length === 0) {
     return (
-      <Page width="prose" className="py-page">
+      <Page className="py-page">
         <PageHeader
-          title="Set up your course"
-          description="Rawi needs to know what you are studying and when the exam is before it can suggest anything."
+          title={course.name}
+          description={course.description || course.goal}
+          actions={
+            <Button variant="outline" asChild>
+              <Link to={path('/settings')}>
+                <SettingsIcon />
+                Settings
+              </Link>
+            </Button>
+          }
         />
-        <Button onClick={() => navigate('/setup')} className="self-start">
-          Start setup
-        </Button>
+        <EmptyState
+          icon={<ListTreeIcon />}
+          title="This course has no topics yet"
+          description="Topics are what everything else points at — materials, practice, assessments and your progress. Paste a syllabus, read a text file, or build a week-by-week outline yourself."
+          action={
+            <Button asChild>
+              <Link to={path('/syllabus')}>Set up the outline</Link>
+            </Button>
+          }
+        />
       </Page>
     );
   }
 
-  const course = state.course;
-  const days = daysUntilExam(course);
-  const available = minutesToday(course, state.checkIns);
-  const checkIn = todaysCheckIn(state.checkIns);
-
   return (
-    <Page>
+    <Page className="py-page">
       <PageHeader
         title={course.name}
-        description={course.goal}
+        description={course.goal || course.description}
         actions={
-          <>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/setup">
-                <SettingsIcon />
-                Course settings
+          <div className="flex items-center gap-tight">
+            <Button variant="outline" asChild>
+              <Link to={path('/syllabus')}>
+                <ListTreeIcon />
+                Topics
               </Link>
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                resetDemo();
-                toast.success('Demo reset', {
-                  description: 'Local data has been cleared and reseeded.',
-                });
-              }}
-            >
-              <RotateCcwIcon />
-              Reset demo
+            <Button variant="ghost" size="icon-sm" asChild aria-label="Course settings">
+              <Link to={path('/settings')}>
+                <SettingsIcon />
+              </Link>
             </Button>
-          </>
+          </div>
         }
       />
 
-      {/* The three numbers a student wants without navigating. */}
-      <div className="grid gap-base sm:grid-cols-3">
+      {/* ── Deadlines for this course ─────────────────────────────────── */}
+      <div className="grid gap-tight sm:grid-cols-2 lg:grid-cols-3">
         <Card>
-          <CardContent className="flex items-center gap-snug">
-            <CalendarClockIcon className="text-muted-foreground size-5" aria-hidden />
-            <div className="flex flex-col">
-              <span className="font-mono text-xl tabular-nums">
-                {days === 0 ? 'Today' : days}
-              </span>
-              <span className="text-muted-foreground text-xs">
-                {days === 0 ? 'Exam is today' : `days until the exam`}
-              </span>
-            </div>
+          <CardContent className="flex flex-col gap-hairline">
+            <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+              <CalendarClockIcon className="size-3.5" aria-hidden />
+              Next assessment
+            </span>
+            {next ? (
+              <>
+                <Link
+                  to={path(`/exams/assessment/${next.id}`)}
+                  className="focus-visible:ring-ring rounded text-sm font-medium outline-none hover:underline focus-visible:ring-2"
+                >
+                  {next.title}
+                </Link>
+                <span className="flex items-center gap-tight">
+                  <DueChip date={next.date} />
+                  {next.time && (
+                    <span className="text-muted-foreground text-xs">{next.time}</span>
+                  )}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-sm">None recorded</span>
+                <Link
+                  to={path('/exams/assessment')}
+                  className="text-muted-foreground text-xs underline"
+                >
+                  Add one
+                </Link>
+              </>
+            )}
           </CardContent>
         </Card>
+
         <Card>
-          <CardContent className="flex items-center gap-snug">
-            <ClockIcon className="text-muted-foreground size-5" aria-hidden />
-            <div className="flex flex-col">
-              <span className="font-mono text-xl tabular-nums">
-                {formatMinutes(available)}
-              </span>
-              <span className="text-muted-foreground text-xs">
-                {checkIn?.minutesToday !== undefined
-                  ? 'available today, from your check-in'
-                  : 'your usual daily time'}
-              </span>
-            </div>
+          <CardContent className="flex flex-col gap-hairline">
+            <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+              <ClockIcon className="size-3.5" aria-hidden />
+              Planned today
+            </span>
+            <span className="font-mono text-2xl tabular-nums">
+              {todaysSessions.length}
+            </span>
+            <span className="text-muted-foreground text-xs leading-relaxed">
+              {todaysSessions.length > 0
+                ? `${formatMinutes(
+                    todaysSessions.reduce((sum, s) => sum + s.durationMinutes, 0),
+                  )} for this course. `
+                : 'Nothing scheduled for this course today. '}
+              <Link to="/planner" className="underline">
+                Planner
+              </Link>
+            </span>
           </CardContent>
         </Card>
+
         <Card>
-          <CardContent className="flex items-center gap-snug">
-            <RotateCcwIcon className="text-muted-foreground size-5" aria-hidden />
-            <div className="flex flex-col">
-              <span className="font-mono text-xl tabular-nums">{reviews.length}</span>
-              <span className="text-muted-foreground text-xs">
-                {reviews.length === 1 ? 'topic due for review' : 'topics due for review'}
-              </span>
-            </div>
+          <CardContent className="flex flex-col gap-hairline">
+            <span className="text-muted-foreground text-xs">Due for review</span>
+            <span className="font-mono text-2xl tabular-nums">{reviews.length}</span>
+            <span className="text-muted-foreground text-xs leading-relaxed">
+              Topics untouched for three days or more.
+            </span>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-section lg:grid-cols-[1.6fr_1fr]">
-        <div className="flex flex-col gap-section">
-          <Section
-            title="Suggested today"
-            description={`Ordered for the ${formatMinutes(available)} you have.`}
-            actions={
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="ghost" size="sm">
-                    <InfoIcon />
-                    How this is ordered
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="max-w-sm text-sm leading-relaxed">
-                  {PLAN_EXPLANATION}
-                </PopoverContent>
-              </Popover>
-            }
-          >
-            {plan.length === 0 ? (
-              <EmptyState
-                icon={<SparklesIcon />}
-                title="Nothing to suggest yet"
-                description="Add a reading or start a tutor session, and the plan will have something to work from."
-                action={
-                  <Button asChild>
-                    <Link to="/materials">Go to materials</Link>
-                  </Button>
-                }
-              />
-            ) : (
-              <ol className="flex flex-col gap-snug">
-                {plan.map((suggestion, index) => (
-                  <li key={suggestion.id}>
-                    <Card
-                      className={
-                        index === 0 ? 'border-primary/40 bg-primary/[0.03]' : undefined
-                      }
-                    >
-                      <CardContent className="flex flex-wrap items-start justify-between gap-base">
-                        <div className="flex min-w-0 flex-col gap-tight">
-                          <div className="flex flex-wrap items-center gap-tight">
-                            {index === 0 && <Badge>Start here</Badge>}
-                            <span className="font-medium">{suggestion.title}</span>
-                          </div>
-                          <p className="text-muted-foreground max-w-prose text-sm leading-relaxed">
-                            {suggestion.reason}
-                          </p>
-                          <span className="text-muted-foreground font-mono text-xs tabular-nums">
-                            about {suggestion.minutes} min
-                          </span>
-                        </div>
-                        <Button
-                          variant={index === 0 ? 'default' : 'outline'}
-                          size="sm"
-                          asChild
-                        >
-                          <Link to={suggestion.to}>
-                            Start
-                            <ArrowRightIcon />
-                          </Link>
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </Section>
+      {todaysSessions.length > 0 && (
+        <Section title="Planned for today in this course">
+          <div className="flex flex-col gap-tight">
+            {todaysSessions.map((session) => (
+              <Link
+                key={session.id}
+                to={`/planner?session=${session.id}`}
+                className="hover:bg-accent/50 focus-visible:ring-ring flex flex-wrap items-center gap-snug rounded-lg border p-snug outline-none transition-colors focus-visible:ring-2"
+              >
+                <span className="text-muted-foreground font-mono text-xs tabular-nums">
+                  {formatTimeOfDay(session.startMinutes)}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm">{session.title}</span>
+                <span className="text-muted-foreground font-mono text-xs tabular-nums">
+                  {formatMinutes(session.durationMinutes)}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </Section>
+      )}
 
-          <Section
-            title="Topics"
-            description="Evidence is a description of what your attempts show, not a score."
-            actions={
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/progress">See progress</Link>
+      {/* ── Suggestions, this course's share ──────────────────────────── */}
+      <Section
+        title="Suggested next"
+        actions={
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="How these are ordered">
+                <InfoIcon />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="max-w-sm text-sm leading-relaxed">
+              {PLAN_EXPLANATION}
+            </PopoverContent>
+          </Popover>
+        }
+      >
+        {coursePlan.length === 0 ? (
+          <EmptyState
+            title="Nothing outstanding here"
+            description="Nothing in this course is due for review or short of evidence. Your other courses may have work waiting."
+            action={
+              <Button variant="outline" asChild>
+                <Link to="/">See everything</Link>
               </Button>
             }
-          >
-            <div className="grid gap-snug sm:grid-cols-2">
-              {topics.map((topic) => {
-                const ev = evidence.get(topic.id);
-                return (
-                  <Link
-                    key={topic.id}
-                    to={`/progress/topic/${topic.id}`}
-                    className="hover:bg-accent/50 focus-visible:ring-ring flex flex-col gap-snug rounded-lg border p-gutter outline-none transition-colors focus-visible:ring-2"
-                  >
-                    <div className="flex items-start justify-between gap-tight">
-                      <span className="font-medium">{topic.title}</span>
-                      {topic.priority === 'high' && (
-                        <Badge variant="outline" className="shrink-0">
-                          High priority
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-muted-foreground line-clamp-2 text-xs leading-relaxed">
-                      {topic.summary}
-                    </p>
+          />
+        ) : (
+          <div className="grid gap-tight md:grid-cols-2">
+            {coursePlan.map((suggestion) => (
+              <Link
+                key={suggestion.id}
+                to={suggestion.to}
+                className="hover:bg-accent/50 focus-visible:ring-ring flex flex-col gap-tight rounded-lg border p-gutter outline-none transition-colors focus-visible:ring-2"
+              >
+                <span className="flex items-center gap-tight">
+                  <Badge variant="secondary" className="font-normal capitalize">
+                    {suggestion.kind}
+                  </Badge>
+                  <span className="flex-1" />
+                  <span className="text-muted-foreground font-mono text-xs tabular-nums">
+                    {formatMinutes(suggestion.minutes)}
+                  </span>
+                </span>
+                <span className="text-sm font-medium">{suggestion.title}</span>
+                <span className="text-muted-foreground text-xs leading-relaxed">
+                  {suggestion.reason}
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      <CheckInCard />
+
+      {/* ── Topics and evidence ───────────────────────────────────────── */}
+      <Section
+        title="Topics"
+        description="Evidence levels are described rather than scored, and every one can be opened to see the attempts behind it."
+        actions={
+          <Button variant="ghost" size="sm" asChild>
+            <Link to={path('/progress')}>
+              All progress
+              <ArrowRightIcon />
+            </Link>
+          </Button>
+        }
+      >
+        <div className="flex flex-col gap-tight">
+          {topics.map((topic) => {
+            const topicEvidence = evidence.get(topic.id);
+            return (
+              <Link
+                key={topic.id}
+                to={path(`/progress/topic/${topic.id}`)}
+                className="hover:bg-accent/50 focus-visible:ring-ring flex flex-wrap items-center gap-snug rounded-lg border p-snug outline-none transition-colors focus-visible:ring-2"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm">{topic.title}</span>
+                  {topic.module && (
+                    <span className="text-muted-foreground text-xs">{topic.module}</span>
+                  )}
+                </span>
+                {topic.priority === 'high' && (
+                  <Badge variant="secondary" className="font-normal">
+                    High priority
+                  </Badge>
+                )}
+                {topicEvidence && (
+                  <>
                     <EvidenceMeter
-                      level={ev?.level ?? 'not-checked'}
+                      level={topicEvidence.level}
                       label={topic.title}
+                      className="w-24"
                     />
-                    <EvidenceChip level={ev?.level ?? 'not-checked'} />
-                  </Link>
-                );
-              })}
-            </div>
-          </Section>
+                    <EvidenceChip level={topicEvidence.level} />
+                  </>
+                )}
+              </Link>
+            );
+          })}
         </div>
+      </Section>
 
-        <div className="flex flex-col gap-section">
-          <CheckInCard />
+      {/* ── Recent work in this course ────────────────────────────────── */}
+      {recent.length > 0 && (
+        <Section
+          title="Recent work"
+          actions={
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/history">
+                Full history
+                <ArrowRightIcon />
+              </Link>
+            </Button>
+          }
+        >
+          <Card>
+            <CardContent className="flex flex-col gap-tight">
+              {recent.map((attempt) => (
+                <Link
+                  key={attempt.id}
+                  to={path(
+                    attempt.kind === 'exam'
+                      ? `/exams/results/${attempt.id}`
+                      : `/practice/results/${attempt.id}`,
+                  )}
+                  className="hover:bg-accent/50 focus-visible:ring-ring -mx-snug flex flex-wrap items-center gap-snug rounded-md px-snug py-1.5 outline-none focus-visible:ring-2"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm">{attempt.title}</span>
+                  <Badge variant="secondary" className="font-normal">
+                    {attempt.mode === 'exam'
+                      ? 'Exam conditions'
+                      : attempt.mode === 'self-rated'
+                        ? 'Self-rated'
+                        : 'Practice'}
+                  </Badge>
+                  {attempt.marksAvailable > 0 && (
+                    <span className="font-mono text-xs tabular-nums">
+                      {attempt.marksAwarded}/{attempt.marksAvailable}
+                    </span>
+                  )}
+                  <Separator orientation="vertical" className="h-3" />
+                  <span className="text-muted-foreground text-xs">
+                    {formatRelative(attempt.completedAt!)}
+                  </span>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
+        </Section>
+      )}
 
-          <Section title="Recent work">
-            {recent.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                Nothing recorded yet.
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-tight">
-                {recent.map((attempt) => (
-                  <li key={attempt.id}>
-                    <Link
-                      to={
-                        attempt.kind === 'exam'
-                          ? `/exams/results/${attempt.id}`
-                          : `/practice/results/${attempt.id}`
-                      }
-                      className="hover:bg-accent/50 focus-visible:ring-ring flex flex-col gap-hairline rounded-md border p-snug outline-none transition-colors focus-visible:ring-2"
-                    >
-                      <span className="truncate text-sm font-medium">
-                        {attempt.title}
-                      </span>
-                      <span className="text-muted-foreground flex items-center gap-tight text-xs">
-                        <span className="font-mono tabular-nums">
-                          {attempt.marksAwarded}/{attempt.marksAvailable}
-                        </span>
-                        <Separator orientation="vertical" className="h-3" />
-                        <span>{formatRelative(attempt.completedAt ?? attempt.startedAt)}</span>
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          {reviews.length > 0 && (
-            <Section
-              title="Due for review"
-              description="Flagged after three days without work on a topic."
-            >
-              <ul className="flex flex-col gap-tight">
-                {reviews.map((review) => {
-                  const topic = topicMap.get(review.topicId);
-                  if (!topic) return null;
-                  return (
-                    <li
-                      key={review.topicId}
-                      className="flex items-center justify-between gap-tight rounded-md border p-snug"
-                    >
-                      <div className="flex min-w-0 flex-col">
-                        <span className="truncate text-sm">{topic.title}</span>
-                        <span className="text-muted-foreground font-mono text-xs tabular-nums">
-                          {review.daysSince} days ago
-                        </span>
-                      </div>
-                      <Button variant="outline" size="sm" asChild>
-                        <Link
-                          to={`/practice/new?topic=${topic.id}&activity=flashcards`}
-                        >
-                          Review
-                        </Link>
-                      </Button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </Section>
-          )}
-        </div>
-      </div>
+      {topicMap.size > 0 && reviews.length > 0 && (
+        <Section
+          title="Due for review"
+          description="Worked on, then left for three days or more. The rule is that simple, and it is stated rather than dressed up as a forgetting curve."
+        >
+          <div className="flex flex-col gap-tight">
+            {reviews.map((review) => {
+              const topic = topicMap.get(review.topicId);
+              if (!topic) return null;
+              return (
+                <Link
+                  key={review.topicId}
+                  to={path(`/practice/new?topic=${review.topicId}&activity=flashcards`)}
+                  className="hover:bg-accent/50 focus-visible:ring-ring flex flex-wrap items-center gap-snug rounded-lg border p-snug outline-none transition-colors focus-visible:ring-2"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm">{topic.title}</span>
+                  <span className="text-muted-foreground text-xs">
+                    {review.daysSince} days ago
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </Section>
+      )}
     </Page>
   );
 }

@@ -25,6 +25,7 @@ import {
   useTopics,
 } from '@/store/selectors';
 import { useAppState } from '@/store/store';
+import { useCoursePath } from '@/store/course-context';
 
 /**
  * Progress: what the attempt log actually shows.
@@ -45,6 +46,7 @@ import { useAppState } from '@/store/store';
  * answer three clicks deep rather than none.
  */
 export function ProgressPage() {
+  const path = useCoursePath();
   const { attempts, tutorSessions } = useAppState();
   const topics = useTopics();
   const topicMap = useTopicMap();
@@ -83,10 +85,10 @@ export function ProgressPage() {
           action={
             <div className="flex flex-wrap justify-center gap-tight">
               <Button asChild>
-                <Link to="/practice/new">Start practice</Link>
+                <Link to={path('/practice/new')}>Start practice</Link>
               </Button>
               <Button variant="outline" asChild>
-                <Link to="/exams">Take an exam</Link>
+                <Link to={path('/exams')}>Take an exam</Link>
               </Button>
             </div>
           }
@@ -152,7 +154,7 @@ export function ProgressPage() {
             return (
               <li key={topic.id}>
                 <Link
-                  to={`/progress/topic/${topic.id}`}
+                  to={path(`/progress/topic/${topic.id}`)}
                   className="hover:bg-accent/50 focus-visible:ring-ring flex flex-col gap-snug rounded-lg border p-gutter outline-none transition-colors focus-visible:ring-2"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-tight">
@@ -218,7 +220,7 @@ export function ProgressPage() {
                       </span>
                       <span className="text-muted-foreground flex items-center gap-tight text-xs">
                         <Link
-                          to={`/progress/topic/${mistake.topicId}`}
+                          to={path(`/progress/topic/${mistake.topicId}`)}
                           className="underline-offset-4 hover:underline"
                         >
                           {topicMap.get(mistake.topicId)?.title}
@@ -232,7 +234,7 @@ export function ProgressPage() {
                     <div className="flex shrink-0 gap-tight">
                       <Button size="sm" variant="outline" asChild>
                         <Link
-                          to={`/practice/new?questions=${mistake.questionId}&retry=${mistake.lastAttemptId}`}
+                          to={path(`/practice/new?questions=${mistake.questionId}&retry=${mistake.lastAttemptId}`)}
                         >
                           Retry
                         </Link>
@@ -256,7 +258,7 @@ export function ProgressPage() {
               .map((session) => (
                 <li key={session.id}>
                   <Link
-                    to={`/tutor/${session.id}`}
+                    to={path(`/tutor/${session.id}`)}
                     className="hover:bg-accent/50 focus-visible:ring-ring flex items-center justify-between gap-tight rounded-md border p-snug outline-none transition-colors focus-visible:ring-2"
                   >
                     <div className="flex min-w-0 flex-col">

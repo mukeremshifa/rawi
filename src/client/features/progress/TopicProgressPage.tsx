@@ -22,6 +22,7 @@ import {
   formatRelative,
 } from '@/components/domain';
 import { useAppState } from '@/store/store';
+import { useCoursePath } from '@/store/course-context';
 import {
   useAttempts,
   useEvidence,
@@ -48,6 +49,7 @@ import { NotFoundPage } from '@/routes';
  * the brief warns against.
  */
 export function TopicProgressPage() {
+  const path = useCoursePath();
   const { topicId } = useParams();
   const topic = useTopic(topicId);
   const topicMap = useTopicMap();
@@ -84,7 +86,7 @@ export function TopicProgressPage() {
     <Page className="max-w-3xl pb-page">
       <div>
         <Button variant="ghost" size="sm" asChild className="-ml-2">
-          <Link to="/progress">
+          <Link to={path('/progress')}>
             <ArrowLeftIcon />
             Progress
           </Link>
@@ -98,14 +100,14 @@ export function TopicProgressPage() {
           <>
             {hasScript(topicId) && (
               <Button variant="outline" size="sm" asChild>
-                <Link to={`/tutor/new?topic=${topicId}`}>
+                <Link to={path(`/tutor/new?topic=${topicId}`)}>
                   <MessageSquareIcon />
                   Tutor
                 </Link>
               </Button>
             )}
             <Button size="sm" asChild>
-              <Link to={`/practice/new?topic=${topicId}`}>
+              <Link to={path(`/practice/new?topic=${topicId}`)}>
                 <DumbbellIcon />
                 Practise
               </Link>
@@ -227,7 +229,7 @@ export function TopicProgressPage() {
             {sessions.map((session) => (
               <li key={session.id}>
                 <Link
-                  to={`/tutor/${session.id}`}
+                  to={path(`/tutor/${session.id}`)}
                   className="hover:bg-accent/50 focus-visible:ring-ring flex items-center justify-between gap-tight rounded-md border p-snug outline-none transition-colors focus-visible:ring-2"
                 >
                   <span className="text-sm">
@@ -250,7 +252,7 @@ export function TopicProgressPage() {
             {relatedMaterials.map((material) => (
               <li key={material.id}>
                 <Link
-                  to={`/materials/${material.id}`}
+                  to={path(`/materials/${material.id}`)}
                   className="hover:bg-accent/50 focus-visible:ring-ring flex items-center gap-snug rounded-md border p-snug outline-none transition-colors focus-visible:ring-2"
                 >
                   <BookOpenIcon
@@ -275,7 +277,7 @@ export function TopicProgressPage() {
               const related = topicMap.get(id);
               return related ? (
                 <Button key={id} variant="outline" size="sm" asChild>
-                  <Link to={`/progress/topic/${id}`}>{related.title}</Link>
+                  <Link to={path(`/progress/topic/${id}`)}>{related.title}</Link>
                 </Button>
               ) : null;
             })}

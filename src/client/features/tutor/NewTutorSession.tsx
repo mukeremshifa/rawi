@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useStore } from '@/store/store';
+import { useCourse, useCoursePath } from '@/store/course-context';
 import { openSession } from './engine';
 
 /**
@@ -25,6 +26,8 @@ import { openSession } from './engine';
 export function NewTutorSession() {
   const [params] = useSearchParams();
   const { dispatch } = useStore();
+  const course = useCourse();
+  const path = useCoursePath();
   const navigate = useNavigate();
   const created = useRef<string | null>(null);
 
@@ -39,6 +42,7 @@ export function NewTutorSession() {
     if (!topicId || created.current) return;
 
     const session = openSession({
+      courseId: course.id,
       topicId,
       ...(materialId && passageId
         ? { source: { materialId, passageId } }
@@ -50,8 +54,10 @@ export function NewTutorSession() {
 
     created.current = session.id;
     dispatch({ type: 'upsert-tutor-session', session });
-    navigate(`/tutor/${session.id}`, { replace: true });
+    navigate(path(`/tutor/${session.id}`), { replace: true });
   }, [
+    course.id,
+    path,
     topicId,
     materialId,
     passageId,
@@ -62,6 +68,6 @@ export function NewTutorSession() {
     navigate,
   ]);
 
-  if (!topicId) return <Navigate to="/tutor" replace />;
+  if (!topicId) return <Navigate to={path('/tutor')} replace />;
   return null;
 }

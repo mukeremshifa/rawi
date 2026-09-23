@@ -110,6 +110,7 @@ function fallbackSuggestions(script: TopicScript, stage: TutorStage): TutorSugge
 
 /** Creates the opening turn of a new session. */
 export function openSession(params: {
+  courseId: string;
   topicId: string;
   source?: SourceRef;
   quote?: string;
@@ -124,6 +125,7 @@ export function openSession(params: {
     // rather than opening a session that will fail on the next turn.
     return {
       id: newId('ses'),
+      courseId: params.courseId,
       topicId: params.topicId,
       messages: [
         {
@@ -168,6 +170,7 @@ export function openSession(params: {
 
   return {
     id: newId('ses'),
+    courseId: params.courseId,
     topicId: params.topicId,
     messages,
     stage: 'orient',

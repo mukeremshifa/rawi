@@ -14,6 +14,7 @@ import {
   formatRelative,
 } from '@/components/domain';
 import { useAppState } from '@/store/store';
+import { useCoursePath } from '@/store/course-context';
 import { useEvidence, useTopicMap, useTopics } from '@/store/selectors';
 import { hasScript } from './engine';
 
@@ -26,6 +27,7 @@ import { hasScript } from './engine';
  * where their topic went.
  */
 export function TutorHomePage() {
+  const path = useCoursePath();
   const { tutorSessions } = useAppState();
   const topics = useTopics();
   const topicMap = useTopicMap();
@@ -71,7 +73,7 @@ export function TutorHomePage() {
                         </span>
                       </div>
                       <Button size="sm" asChild>
-                        <Link to={`/tutor/${session.id}`}>
+                        <Link to={path(`/tutor/${session.id}`)}>
                           <PlayIcon />
                           Resume
                         </Link>
@@ -127,7 +129,7 @@ export function TutorHomePage() {
               <div key={topic.id}>
                 {available ? (
                   <Link
-                    to={`/tutor/new?topic=${topic.id}`}
+                    to={path(`/tutor/new?topic=${topic.id}`)}
                     className="focus-visible:ring-ring block rounded-lg outline-none focus-visible:ring-2"
                   >
                     {card}
@@ -154,7 +156,7 @@ export function TutorHomePage() {
               return (
                 <li key={session.id}>
                   <Link
-                    to={`/tutor/${session.id}`}
+                    to={path(`/tutor/${session.id}`)}
                     className="hover:bg-accent/50 focus-visible:ring-ring flex items-center justify-between gap-tight rounded-md border p-snug outline-none transition-colors focus-visible:ring-2"
                   >
                     <div className="flex min-w-0 flex-col">
@@ -184,7 +186,7 @@ export function TutorHomePage() {
           description="The tutor's responses are written per topic, and the script covers the sample course only. Practice and exams still work on any topic with questions behind it."
           action={
             <Button variant="outline" asChild>
-              <Link to="/practice">Go to practice</Link>
+              <Link to={path('/practice')}>Go to practice</Link>
             </Button>
           }
         />

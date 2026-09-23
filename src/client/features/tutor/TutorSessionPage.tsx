@@ -28,6 +28,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { MEDIA_WIDE, useMediaQuery } from '@/components/layout';
 import { SimulatedNotice, SourceLink } from '@/components/domain';
 import { useStore } from '@/store/store';
+import { useCoursePath } from '@/store/course-context';
 import { useSource, useTopic, useTutorSession } from '@/store/selectors';
 import { respond, studentMessage, summarise } from './engine';
 import { NotFoundPage } from '@/routes';
@@ -95,6 +96,7 @@ function StageArc({ current }: { current: TutorSession['stage'] }) {
 }
 
 function ContextPanel({ session }: { session: TutorSession }) {
+  const path = useCoursePath();
   const topic = useTopic(session.topicId);
   const resolved = useSource(session.source);
 
@@ -112,7 +114,7 @@ function ContextPanel({ session }: { session: TutorSession }) {
             {topic.summary}
           </p>
           <Button variant="outline" size="sm" asChild className="self-start">
-            <Link to={`/practice/new?topic=${topic.id}`}>
+            <Link to={path(`/practice/new?topic=${topic.id}`)}>
               <DumbbellIcon />
               Practise this topic
             </Link>
@@ -124,7 +126,7 @@ function ContextPanel({ session }: { session: TutorSession }) {
         <div className="flex flex-col gap-tight">
           <h2 className="text-sm font-semibold">The passage</h2>
           <Link
-            to={`/materials/${resolved.material.id}#${resolved.passage.id}`}
+            to={path(`/materials/${resolved.material.id}#${resolved.passage.id}`)}
             className="text-muted-foreground hover:text-foreground flex items-center gap-hairline text-xs underline-offset-4 hover:underline"
           >
             <BookOpenIcon className="size-3 shrink-0" aria-hidden />
@@ -151,6 +153,7 @@ function ContextPanel({ session }: { session: TutorSession }) {
 }
 
 export function TutorSessionPage() {
+  const path = useCoursePath();
   const { sessionId } = useParams();
   const session = useTutorSession(sessionId);
   const { dispatch } = useStore();
@@ -194,7 +197,7 @@ export function TutorSessionPage() {
       toast.success('Practice set ready', {
         description: 'Opening the setup so you can adjust it first.',
       });
-      navigate(`/practice/new?topic=${topics}&from=${session.id}`);
+      navigate(path(`/practice/new?topic=${topics}&from=${session.id}`));
     }
   };
 
@@ -221,7 +224,7 @@ export function TutorSessionPage() {
         {/* Header */}
         <div className="flex shrink-0 flex-wrap items-center gap-snug border-b px-gutter py-snug">
           <Button variant="ghost" size="sm" asChild className="-ml-2">
-            <Link to="/tutor">
+            <Link to={path('/tutor')}>
               <ArrowLeftIcon />
               Tutor
             </Link>

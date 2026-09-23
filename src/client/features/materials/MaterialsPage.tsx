@@ -23,6 +23,7 @@ import {
   formatRelative,
 } from '@/components/domain';
 import { useMaterials, useTopicMap } from '@/store/selectors';
+import { useCoursePath } from '@/store/course-context';
 import { AddMaterialDialog } from './AddMaterialDialog';
 
 /**
@@ -40,6 +41,7 @@ const KIND_ICON: Record<MaterialKind, typeof BookOpenIcon> = {
 };
 
 export function MaterialsPage() {
+  const path = useCoursePath();
   const materials = useMaterials();
   const topicMap = useTopicMap();
   const [query, setQuery] = useState('');
@@ -85,7 +87,7 @@ export function MaterialsPage() {
             <div className="flex flex-wrap justify-center gap-tight">
               <Button onClick={() => setAdding(true)}>Add material</Button>
               <Button variant="outline" asChild>
-                <Link to="/tutor">Start from a topic instead</Link>
+                <Link to={path('/tutor')}>Start from a topic instead</Link>
               </Button>
             </div>
           }
@@ -142,7 +144,7 @@ export function MaterialsPage() {
                 return (
                   <li key={material.id}>
                     <Link
-                      to={`/materials/${material.id}`}
+                      to={path(`/materials/${material.id}`)}
                       className="hover:bg-accent/50 focus-visible:ring-ring flex h-full flex-col gap-snug rounded-lg border p-gutter outline-none transition-colors focus-visible:ring-2"
                     >
                       <div className="flex items-start gap-snug">

@@ -25,6 +25,7 @@ import {
 } from '@/components/domain';
 import { useMaterial, useTopicMap } from '@/store/selectors';
 import { useStore } from '@/store/store';
+import { useCourse, useCoursePath } from '@/store/course-context';
 import { newId } from '@/lib/id';
 import { NotFoundPage } from '@/routes';
 
@@ -54,6 +55,8 @@ interface Selection {
 }
 
 export function MaterialPage() {
+  const path = useCoursePath();
+  const course = useCourse();
   const { materialId } = useParams();
   const material = useMaterial(materialId);
   const topicMap = useTopicMap();
@@ -139,7 +142,7 @@ export function MaterialPage() {
       passage: passageId,
     });
     if (quote) params.set('quote', quote.slice(0, 240));
-    navigate(`/tutor/new?${params.toString()}`);
+    navigate(path(`/tutor/new?${params.toString()}`));
   };
 
   const practise = (passageId: string) => {
@@ -151,7 +154,7 @@ export function MaterialPage() {
       });
       return;
     }
-    navigate(`/practice/new?topic=${topicId}&material=${material.id}`);
+    navigate(path(`/practice/new?topic=${topicId}&material=${material.id}`));
   };
 
   const saveNote = (passageId: string, quote: string) => {
@@ -161,6 +164,7 @@ export function MaterialPage() {
       type: 'add-material',
       material: {
         id,
+        courseId: course.id,
         title: `Note on ${material.title}`,
         kind: 'student-note',
         origin: 'pasted',
@@ -180,7 +184,7 @@ export function MaterialPage() {
     window.getSelection()?.removeAllRanges();
     toast.success('Note saved', {
       description: 'Added to your materials as a note.',
-      action: { label: 'Open', onClick: () => navigate(`/materials/${id}`) },
+      action: { label: 'Open', onClick: () => navigate(path(`/materials/${id}`)) },
     });
   };
 
@@ -188,7 +192,7 @@ export function MaterialPage() {
     <Page className="max-w-3xl">
       <div>
         <Button variant="ghost" size="sm" asChild className="-ml-2">
-          <Link to="/materials">
+          <Link to={path('/materials')}>
             <ArrowLeftIcon />
             Materials
           </Link>
@@ -234,7 +238,7 @@ export function MaterialPage() {
         {material.topicIds.map((id) => {
           const topic = topicMap.get(id);
           return topic ? (
-            <Link key={id} to={`/progress/topic/${id}`}>
+            <Link key={id} to={path(`/progress/topic/${id}`)}>
               <Badge variant="secondary" className="font-normal">
                 {topic.title}
               </Badge>
