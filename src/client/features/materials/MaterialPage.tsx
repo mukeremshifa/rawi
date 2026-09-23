@@ -20,6 +20,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Separator } from '@/components/ui/separator';
 import {
   FictionalNotice,
+  ImportedNotice,
   KIND_LABEL,
   ORIGIN_LABEL,
   formatDate,
@@ -326,6 +327,9 @@ export function MaterialPage() {
       ) : (
         <>
           {material.origin === 'authored' && <FictionalNotice />}
+          {material.origin === 'imported' && (
+            <ImportedNotice source={material.fileName} />
+          )}
 
           <div
             ref={containerRef}

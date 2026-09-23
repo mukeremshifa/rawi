@@ -40,17 +40,31 @@ prompt instead of a link into an empty activity.
 
 The sample courses, their readings and the authors they quote are fictional.
 The prototype reads plain text and Markdown in the browser. It has no PDF or
-Word parser, and says so rather than showing invented extracted text.
+Word parser, and says so rather than showing invented extracted text. One
+seeded course carries real lecture text that was converted outside the app,
+and it is labelled as imported rather than fictional, which is a different
+statement from Rawi having learned to read PDFs. It has not.
 
-## The sample courses
+## The seeded courses
 
-Opening the app seeds two courses: "The Atlantic World, 1500–1800", a
-reading-heavy survey, and "Statistical Inference for Social Research", a
-problem-based methods course. Between them they carry thirteen readings, an
-authored question bank across nine question formats, four planned assessments,
-a part-planned study week and a fortnight of history, so progress, deadlines,
-due reviews and cross-course planning all have something to show. `/welcome`
-offers a from-scratch setup instead.
+Opening the app seeds three courses. Two are fictional samples: "The Atlantic
+World, 1500–1800", a reading-heavy survey, and "Statistical Inference for
+Social Research", a problem-based methods course. Between them they carry
+thirteen readings, an authored question bank across nine question formats, four
+planned assessments, a part-planned study week and a fortnight of history, so
+progress, deadlines, due reviews and cross-course planning all have something
+to show. `/welcome` offers a from-scratch setup instead.
+
+The third, "CENG 401: Network Servers and Architectures", is real. Its three
+materials are the lecture decks converted to Markdown outside the app and
+seeded in, so the words are the lecturer's rather than written for the
+prototype. It carries ten topics, 82 authored questions, four ready-to-start
+practice sets, two rehearsal configurations and one planned assessment, and it
+starts with no study history at all, because none has happened yet. Its
+assessment records a date and deliberately no start time or duration, because
+those were never supplied and inventing them would be a fact the prototype made
+up. The rehearsal settings are study choices and say so: they do not claim to
+reproduce the real paper's format.
 
 ## Areas
 
@@ -94,14 +108,21 @@ and it is resolved against its own course's questions on upgrade so that it can
 actually be opened. An unfinished exam from that version cannot resume under the
 current exam rules, so it is kept and offered as a download with the reason
 stated rather than dropped. Data that genuinely cannot be read is reported with
-the option to download it, never silently replaced. **Reset demo**, in Courses, clears
-everything and restores the sample courses.
+the option to download it, never silently replaced.
+
+A seeded course added by a later build reaches a workspace that already exists,
+rather than only a fresh one. That pass adds records whose ids are missing and
+changes nothing else, so it can run on every load without duplicating anything,
+and your attempts, renamed sets and edits in every course survive it. A
+workspace you deliberately emptied through "Start fresh" stays empty.
+
+**Reset demo**, in Courses, clears everything and restores the seeded courses.
 
 ## Layout
 
 - `src/shared/`: domain types, marking, progress derivation, the planner and
   the syllabus reader.
-- `src/shared/course/`: the seeded courses, question banks and tutor script.
+- `src/shared/course/`: the seeded courses, question banks and tutor scripts.
 - `src/client/store/`: the local state tree, its migration, and course scoping.
 - `src/client/features/`: home, courses, planner, history, and the per-course
   areas.

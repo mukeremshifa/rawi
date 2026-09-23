@@ -1,4 +1,5 @@
 import type { SourceRef, TutorIntent, TutorStage, TutorSuggestion } from '../types.ts';
+import { CENG401_TUTOR_SCRIPT } from './ceng401-tutor.ts';
 
 /**
  * The tutor's authored script.
@@ -932,6 +933,13 @@ export function hasTutorScript(topicId: string): boolean {
   return topicId in TUTOR_SCRIPT;
 }
 
+/*
+ * The six Atlantic topics are written above. CENG 401's three live in their
+ * own file and are merged in here. Splitting them by course keeps each file a
+ * readable length and means a course's scripts sit next to its content, at the
+ * cost of one import. `hasTutorScript` reads this merged table, so a topic is
+ * covered if and only if it appears in one of the two halves.
+ */
 export const TUTOR_SCRIPT: Record<string, TopicScript> = {
   'topic-encomienda': ENC,
   'topic-debate': DEB,
@@ -939,6 +947,7 @@ export const TUTOR_SCRIPT: Record<string, TopicScript> = {
   'topic-plantation': PLANT,
   'topic-mercantilism': MERC,
   'topic-revolt': REV,
+  ...CENG401_TUTOR_SCRIPT,
 };
 
 /* ── Intent classification ────────────────────────────────────────────── */

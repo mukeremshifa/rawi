@@ -234,7 +234,7 @@ export function CoursesPage() {
           <CardContent className="flex flex-wrap items-center gap-base">
             <p className="text-muted-foreground min-w-48 flex-1 text-xs leading-relaxed">
               {seeded
-                ? 'You are looking at the two sample courses, their authored readings, question banks and seeded history. Everything is fictional and stored only in this browser.'
+                ? 'You are looking at the seeded courses. The two sample courses, their readings and their history are fictional. CENG 401 carries real lecture text converted outside the app. Everything is stored only in this browser.'
                 : 'Your own courses are stored in this browser. Resetting replaces everything, meaning every course, material, attempt, planner session and assessment, with the two sample courses.'}
             </p>
             <Button variant="outline" size="sm" onClick={() => setConfirmReset(true)}>

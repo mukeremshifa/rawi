@@ -145,6 +145,7 @@ export const KIND_LABEL: Record<MaterialKind, string> = {
 
 export const ORIGIN_LABEL: Record<MaterialOrigin, string> = {
   authored: 'Sample course material',
+  imported: 'Converted from your own file',
   pasted: 'Pasted by you',
   'text-file': 'Text file you added',
   preview: 'Sample preview, file not read',
@@ -230,6 +231,51 @@ export function SimulatedNotice({
 /** The standing label on the fictional course content. */
 export function FictionalNotice({ className }: { className?: string }) {
   return (
+    <OriginNotice className={className}>
+      Fictional course material written for this prototype. The historians,
+      books and documents quoted here do not exist.
+    </OriginNotice>
+  );
+}
+
+/**
+ * The standing label on material converted from a real file.
+ *
+ * The opposite warning to `FictionalNotice`, and needed for the same reason.
+ * This text is genuinely the lecturer's, so calling it fictional would be a
+ * lie. What a reader does need to know is that Rawi still has no PDF parser:
+ * the conversion happened outside the app, and a conversion can drop a
+ * subscript or interleave a column, so the original is where a disagreement
+ * gets settled.
+ */
+export function ImportedNotice({
+  source,
+  className,
+}: {
+  /** What was converted, named exactly. */
+  source?: string;
+  className?: string;
+}) {
+  return (
+    <OriginNotice className={className}>
+      {source ? `${source} was ` : 'This was '}
+      converted to text outside Rawi and seeded in, so these are the original
+      words rather than anything written for the prototype. Rawi still has no
+      PDF reader of its own. Conversion can flatten a subscript or interleave a
+      column, so check the original slide if something looks wrong.
+    </OriginNotice>
+  );
+}
+
+/** Shared frame for the two standing notices above a material's text. */
+function OriginNotice({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
     <p
       className={cn(
         'text-muted-foreground flex items-start gap-tight text-xs leading-relaxed',
@@ -237,10 +283,7 @@ export function FictionalNotice({ className }: { className?: string }) {
       )}
     >
       <InfoIcon className="mt-0.5 size-3 shrink-0" aria-hidden />
-      <span>
-        Fictional course material written for this prototype. The historians,
-        books and documents quoted here do not exist.
-      </span>
+      <span>{children}</span>
     </p>
   );
 }

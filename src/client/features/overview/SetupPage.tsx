@@ -38,13 +38,15 @@ export function WelcomePage() {
       <div className="flex flex-col gap-snug">
         <Card>
           <CardContent className="flex flex-col gap-snug">
-            <span className="font-medium">Explore the sample courses</span>
+            <span className="font-medium">Explore the seeded courses</span>
             <p className="text-muted-foreground text-sm leading-relaxed">
               Two fictional courses, a reading-heavy history survey and a
               problem-based statistics course, with readings, authored question
               banks, four planned assessments between them and a fortnight of seeded
               study history. Enough for the planner, progress and recurring mistakes
-              to have something real to show.
+              to have something real to show. Alongside them, CENG 401 carries real
+              lecture material converted outside the app, with its own question bank
+              and no study history yet.
             </p>
             <Button
               className="self-start"

@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   FictionalNotice,
+  ImportedNotice,
   KIND_LABEL,
   ORIGIN_LABEL,
   formatRelative,
@@ -63,6 +64,13 @@ export function MaterialsPage() {
     });
   }, [materials, kind, query]);
 
+  /* The two notices are about *this course's* library, not about the
+     prototype in general. A course whose readings were converted from the
+     student's own lecture files must not be called fictional, and a course
+     that has both gets both lines. */
+  const hasAuthored = materials.some((m) => m.origin === 'authored');
+  const hasImported = materials.some((m) => m.origin === 'imported');
+
   return (
     <Page>
       <PageHeader
@@ -76,7 +84,8 @@ export function MaterialsPage() {
         }
       />
 
-      <FictionalNotice />
+      {hasAuthored && <FictionalNotice />}
+      {hasImported && <ImportedNotice />}
 
       {materials.length === 0 ? (
         <EmptyState

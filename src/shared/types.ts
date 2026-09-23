@@ -87,12 +87,25 @@ export type MaterialKind = 'reading' | 'lecture-notes' | 'student-note';
  * cannot parse a PDF, so anything that is not real text says so.
  *
  *   authored   seeded course content, written for this prototype
+ *   imported   real source text converted to Markdown outside the app and
+ *              seeded in. The words are genuinely the author's, and Rawi did
+ *              not do the converting, so the label says both.
  *   pasted     the student pasted text in
  *   text-file  a .txt/.md file read in the browser with the File API
  *   preview    an unsupported file type. The text is a labelled sample, and
  *              every surface that shows it says the file was not parsed.
+ *
+ * `authored` and `imported` are kept apart because they carry opposite
+ * warnings. Authored material is invented and must say so. Imported material
+ * is real and must not be called fictional, while still making clear that the
+ * conversion happened elsewhere rather than in a parser Rawi does not have.
  */
-export type MaterialOrigin = 'authored' | 'pasted' | 'text-file' | 'preview';
+export type MaterialOrigin =
+  | 'authored'
+  | 'imported'
+  | 'pasted'
+  | 'text-file'
+  | 'preview';
 
 export interface Passage {
   id: string;
@@ -109,7 +122,10 @@ export interface Material {
   title: string;
   kind: MaterialKind;
   origin: MaterialOrigin;
-  /** Fictional attribution, always labelled as such in the UI. */
+  /**
+   * Where the text came from. Fictional for authored material, and labelled
+   * as such in the UI; a real citation for imported material.
+   */
   attribution?: string;
   /** The original filename, when one exists. Shown for previews. */
   fileName?: string;

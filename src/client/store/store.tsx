@@ -42,6 +42,18 @@ import {
   seedSessions,
   statsAttempts,
 } from '@shared/course/planning.ts';
+import {
+  CENG401_COURSE,
+  CENG401_COURSE_ID,
+  CENG401_MATERIALS,
+  CENG401_TOPICS,
+} from '@shared/course/ceng401.ts';
+import { CENG401_QUESTIONS } from '@shared/course/ceng401-questions.ts';
+import {
+  CENG401_ASSESSMENT,
+  CENG401_EXAM_PRESETS,
+  CENG401_PRACTICE_SETS,
+} from '@shared/course/ceng401-study.ts';
 
 /**
  * The whole prototype's state, in one store.
@@ -122,14 +134,28 @@ export interface AppState {
   carriedForward?: RestoreProblem;
 }
 
+/**
+ * Every question this build ships, across all three seeded courses.
+ *
+ * One list, used in three places: the fresh seed, the restore path that
+ * refreshes the authored pool, and the v1 migration that resolves saved sets
+ * against it. Defining it once is what keeps those three from disagreeing
+ * about what counts as an authored question.
+ */
+const AUTHORED_QUESTIONS: Question[] = [
+  ...SEED_QUESTIONS,
+  ...STATS_QUESTIONS,
+  ...CENG401_QUESTIONS,
+];
+
 function seedState(): AppState {
   return {
     version: STORAGE_VERSION,
-    courses: [SEED_COURSE, STATS_COURSE],
+    courses: [SEED_COURSE, STATS_COURSE, CENG401_COURSE],
     activeCourseId: null,
-    topics: [...SEED_TOPICS, ...STATS_TOPICS],
-    materials: [...SEED_MATERIALS, ...STATS_MATERIALS],
-    questions: [...SEED_QUESTIONS, ...STATS_QUESTIONS],
+    topics: [...SEED_TOPICS, ...STATS_TOPICS, ...CENG401_TOPICS],
+    materials: [...SEED_MATERIALS, ...STATS_MATERIALS, ...CENG401_MATERIALS],
+    questions: AUTHORED_QUESTIONS,
     attempts: [...SEED_ATTEMPTS, ...statsAttempts()],
     tutorSessions: [],
     savedPractice: [
@@ -174,11 +200,12 @@ function seedState(): AppState {
           feedback: 'immediate',
         },
       },
+      ...CENG401_PRACTICE_SETS,
     ],
     practiceRuns: [],
-    examConfigs: SEED_EXAM_PRESETS,
+    examConfigs: [...SEED_EXAM_PRESETS, ...CENG401_EXAM_PRESETS],
     activeExam: null,
-    assessments: SEED_ASSESSMENTS,
+    assessments: [...SEED_ASSESSMENTS, CENG401_ASSESSMENT],
     availability: SEED_AVAILABILITY,
     sessions: seedSessions(),
     checkIns: [],
@@ -767,7 +794,7 @@ function migrateV1(legacy: LegacyState): AppState {
    * longer match anything stays empty and the set page explains why rather
    * than pretending.
    */
-  const pool = [...SEED_QUESTIONS, ...STATS_QUESTIONS];
+  const pool = AUTHORED_QUESTIONS;
   const savedPractice = own<SavedPracticeSet>(legacy.savedPractice).map((s) => {
     if (Array.isArray(s.questionIds) && s.questionIds.length > 0) return s;
     return { ...s, questionIds: resolveLegacySet(s, pool) };
@@ -842,6 +869,59 @@ function migrateV1(legacy: LegacyState): AppState {
 }
 
 /**
+ * Adds CENG 401 to a restored tree, without touching anything already in it.
+ *
+ * ── Why `seedState()` alone was not enough ────────────────────────────────
+ *
+ * Restore spreads `...candidate` over `...seedState()`, so every array the
+ * stored tree carries *replaces* the seeded one wholesale. That is correct for
+ * user data, and it means a workspace saved before this build would keep its
+ * two-course `courses` array and never see a third, however the seed changes.
+ * Only `questions` escaped that, because it is explicitly recomputed.
+ *
+ * So the course is installed as a separate, explicit pass over the restored
+ * tree. Adding it to `seedState()` handles a fresh workspace and a reset; this
+ * handles every workspace that already exists.
+ *
+ * ── Idempotent by id, and non-destructive by construction ─────────────────
+ *
+ * Each record is added only if its id is absent, so a second, third or
+ * hundredth reload adds nothing: the course cannot accumulate duplicates. The
+ * function never removes or rewrites a record, so a saved attempt, a renamed
+ * set or an edited topic in *any* course, including this one, survives
+ * untouched. If the student deleted one of these materials on purpose it will
+ * come back, which is the same behaviour the other seeded courses already have
+ * and is the honest cost of shipping content as code.
+ *
+ * `attempts`, `tutorSessions` and `practiceRuns` are deliberately absent: the
+ * course starts with no history, because the student has not studied in it
+ * yet and inventing evidence would corrupt the one thing progress is for.
+ */
+function installCeng401(state: AppState): AppState {
+  /* A workspace that was deliberately emptied through "Start fresh" has no
+     courses at all, and pushing a course into it would undo that choice. */
+  if (!state.seeded && state.courses.length === 0) return state;
+
+  const addMissing = <T extends { id: string }>(existing: T[], incoming: T[]): T[] => {
+    const present = new Set(existing.map((item) => item.id));
+    const toAdd = incoming.filter((item) => !present.has(item.id));
+    return toAdd.length === 0 ? existing : [...existing, ...toAdd];
+  };
+
+  const hasCourse = state.courses.some((c) => c.id === CENG401_COURSE_ID);
+
+  return {
+    ...state,
+    courses: hasCourse ? state.courses : [...state.courses, CENG401_COURSE],
+    topics: addMissing(state.topics, CENG401_TOPICS),
+    materials: addMissing(state.materials, CENG401_MATERIALS),
+    savedPractice: addMissing(state.savedPractice, CENG401_PRACTICE_SETS),
+    examConfigs: addMissing(state.examConfigs, CENG401_EXAM_PRESETS),
+    assessments: addMissing(state.assessments, [CENG401_ASSESSMENT]),
+  };
+}
+
+/**
  * Reads the stored tree, migrating it if it is older than this build.
  *
  * Returns the state to use, or a `RestoreProblem` describing why it could not
@@ -867,7 +947,9 @@ function restore(): { state: AppState } | { problem: RestoreProblem } | null {
     const candidate = parsed as Partial<AppState> & { version?: number };
 
     if (candidate.version === 1) {
-      return { state: migrateV1(parsed as unknown as LegacyState) };
+      /* A v1 tree predates multiple courses entirely, so it needs the same
+         install pass a v2 tree does once its own course is carried over. */
+      return { state: installCeng401(migrateV1(parsed as unknown as LegacyState)) };
     }
 
     if (candidate.version !== STORAGE_VERSION) {
@@ -897,19 +979,19 @@ function restore(): { state: AppState } | { problem: RestoreProblem } | null {
      * edited — but a *created* course's questions would be lost by taking the
      * seed alone, so anything that is not a seeded question is kept.
      */
-    const seededIds = new Set([...SEED_QUESTIONS, ...STATS_QUESTIONS].map((q) => q.id));
+    const seededIds = new Set(AUTHORED_QUESTIONS.map((q) => q.id));
     const storedExtra = (candidate.questions ?? []).filter(
       (q) => q && !seededIds.has(q.id),
     );
 
-    return {
-      state: {
-        ...seedState(),
-        ...candidate,
-        questions: [...SEED_QUESTIONS, ...STATS_QUESTIONS, ...storedExtra],
-        version: STORAGE_VERSION,
-      } as AppState,
-    };
+    const restored = {
+      ...seedState(),
+      ...candidate,
+      questions: [...AUTHORED_QUESTIONS, ...storedExtra],
+      version: STORAGE_VERSION,
+    } as AppState;
+
+    return { state: installCeng401(restored) };
   } catch {
     return { problem: { reason: 'The saved data could not be parsed as JSON.', raw } };
   }
