@@ -1,4 +1,5 @@
 import type { Material } from '../types.ts';
+import { ATLANTIC_COURSE_ID } from './topics.ts';
 
 /**
  * The seeded library.
@@ -31,6 +32,7 @@ const ADDED = new Date(Date.now() - 1000 * 60 * 60 * 24 * 12).toISOString();
 export const SEED_MATERIALS: Material[] = [
   {
     id: 'mat-exchange-reading',
+    courseId: ATLANTIC_COURSE_ID,
     title: 'The Exchange and its Aftermath',
     kind: 'reading',
     origin: 'authored',
@@ -68,6 +70,7 @@ Where colonial demands on labour were lightest, indigenous populations recovered
   },
   {
     id: 'mat-encomienda-reading',
+    courseId: ATLANTIC_COURSE_ID,
     title: 'Grant, Tribute and Labour: the encomienda reconsidered',
     kind: 'reading',
     origin: 'authored',
@@ -118,6 +121,7 @@ The test that separates them is what happened after 1542. If the encomienda was 
   },
   {
     id: 'mat-plantation-reading',
+    courseId: ATLANTIC_COURSE_ID,
     title: 'Sugar and the Commercial System',
     kind: 'reading',
     origin: 'authored',
@@ -157,6 +161,7 @@ Her argument is not sentimental. It is that the commercial model cannot explain 
   },
   {
     id: 'mat-mercantilism-lecture',
+    courseId: ATLANTIC_COURSE_ID,
     title: 'Lecture 7 — Mercantilism: the theory and the practice',
     kind: 'lecture-notes',
     origin: 'authored',
@@ -196,6 +201,7 @@ This is the line of argument that connects mercantilism to the imperial crises o
   },
   {
     id: 'mat-revolt-reading',
+    courseId: ATLANTIC_COURSE_ID,
     title: 'Refusal: resistance in the Atlantic world',
     kind: 'reading',
     origin: 'authored',
@@ -235,6 +241,7 @@ The advertisements are more useful than they first appear. Written to enable rec
   },
   {
     id: 'mat-debate-lecture',
+    courseId: ATLANTIC_COURSE_ID,
     title: 'Lecture 11 — Reading historians against each other',
     kind: 'lecture-notes',
     origin: 'authored',
@@ -281,6 +288,7 @@ Step three is the one that separates a good answer from a competent one, and it 
   },
   {
     id: 'mat-student-note',
+    courseId: ATLANTIC_COURSE_ID,
     title: 'My notes — things I keep forgetting',
     kind: 'student-note',
     origin: 'pasted',

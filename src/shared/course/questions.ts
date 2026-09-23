@@ -1,4 +1,5 @@
 import type { Question } from '../types.ts';
+import { ATLANTIC_COURSE_ID } from './topics.ts';
 
 /**
  * The authored question bank.
@@ -25,6 +26,7 @@ export const SEED_QUESTIONS: Question[] = [
   /* ── Columbian Exchange ─────────────────────────────────────────────── */
   {
     id: 'q-col-fc-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'flashcard',
     topicId: 'topic-columbian',
     difficulty: 'recall',
@@ -38,6 +40,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-col-fc-2',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'flashcard',
     topicId: 'topic-columbian',
     difficulty: 'recall',
@@ -51,6 +54,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-col-mc-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'multiple-choice',
     topicId: 'topic-columbian',
     difficulty: 'reasoning',
@@ -70,6 +74,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-col-ms-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'multiple-select',
     topicId: 'topic-columbian',
     difficulty: 'reasoning',
@@ -90,6 +95,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-col-fb-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'fill-blank',
     topicId: 'topic-columbian',
     difficulty: 'recall',
@@ -108,6 +114,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-col-wr-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'written-recall',
     topicId: 'topic-columbian',
     difficulty: 'reasoning',
@@ -148,6 +155,7 @@ export const SEED_QUESTIONS: Question[] = [
   /* ── Encomienda ─────────────────────────────────────────────────────── */
   {
     id: 'q-enc-fc-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'flashcard',
     topicId: 'topic-encomienda',
     difficulty: 'recall',
@@ -161,6 +169,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-enc-fc-2',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'flashcard',
     topicId: 'topic-encomienda',
     difficulty: 'recall',
@@ -174,6 +183,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-enc-mc-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'multiple-choice',
     topicId: 'topic-encomienda',
     difficulty: 'recall',
@@ -192,6 +202,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-enc-mc-2',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'multiple-choice',
     topicId: 'topic-encomienda',
     difficulty: 'reasoning',
@@ -211,6 +222,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-enc-match-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'matching',
     topicId: 'topic-encomienda',
     difficulty: 'reasoning',
@@ -228,6 +240,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-enc-fb-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'fill-blank',
     topicId: 'topic-encomienda',
     difficulty: 'recall',
@@ -241,6 +254,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-enc-wr-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'written-recall',
     topicId: 'topic-encomienda',
     difficulty: 'reasoning',
@@ -278,6 +292,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-enc-sa-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'source-analysis',
     topicId: 'topic-encomienda',
     difficulty: 'reasoning',
@@ -320,6 +335,7 @@ export const SEED_QUESTIONS: Question[] = [
   /* ── Plantation complex ─────────────────────────────────────────────── */
   {
     id: 'q-pl-fc-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'flashcard',
     topicId: 'topic-plantation',
     difficulty: 'recall',
@@ -333,6 +349,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-pl-mc-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'multiple-choice',
     topicId: 'topic-plantation',
     difficulty: 'reasoning',
@@ -352,6 +369,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-pl-ord-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'ordering',
     topicId: 'topic-plantation',
     difficulty: 'reasoning',
@@ -371,6 +389,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-pl-ms-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'multiple-select',
     topicId: 'topic-plantation',
     difficulty: 'stretch',
@@ -390,6 +409,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-pl-sa-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'source-analysis',
     topicId: 'topic-plantation',
     difficulty: 'stretch',
@@ -430,6 +450,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-pl-fb-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'fill-blank',
     topicId: 'topic-plantation',
     difficulty: 'recall',
@@ -443,6 +464,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-pl-wr-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'written-recall',
     topicId: 'topic-plantation',
     difficulty: 'reasoning',
@@ -482,6 +504,7 @@ export const SEED_QUESTIONS: Question[] = [
   /* ── Mercantilism ───────────────────────────────────────────────────── */
   {
     id: 'q-mer-fc-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'flashcard',
     topicId: 'topic-mercantilism',
     difficulty: 'recall',
@@ -495,6 +518,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-mer-mc-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'multiple-choice',
     topicId: 'topic-mercantilism',
     difficulty: 'reasoning',
@@ -514,6 +538,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-mer-ms-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'multiple-select',
     topicId: 'topic-mercantilism',
     difficulty: 'reasoning',
@@ -533,6 +558,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-mer-fb-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'fill-blank',
     topicId: 'topic-mercantilism',
     difficulty: 'reasoning',
@@ -547,6 +573,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-mer-wr-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'written-recall',
     topicId: 'topic-mercantilism',
     difficulty: 'stretch',
@@ -587,6 +614,7 @@ export const SEED_QUESTIONS: Question[] = [
   /* ── Resistance and revolt ──────────────────────────────────────────── */
   {
     id: 'q-rev-fc-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'flashcard',
     topicId: 'topic-revolt',
     difficulty: 'recall',
@@ -600,6 +628,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-rev-mc-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'multiple-choice',
     topicId: 'topic-revolt',
     difficulty: 'stretch',
@@ -618,6 +647,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-rev-ord-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'ordering',
     topicId: 'topic-revolt',
     difficulty: 'reasoning',
@@ -637,6 +667,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-rev-sa-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'source-analysis',
     topicId: 'topic-revolt',
     difficulty: 'reasoning',
@@ -678,6 +709,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-rev-wr-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'written-recall',
     topicId: 'topic-revolt',
     difficulty: 'reasoning',
@@ -717,6 +749,7 @@ export const SEED_QUESTIONS: Question[] = [
   /* ── Interpretation and historiography ──────────────────────────────── */
   {
     id: 'q-deb-fc-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'flashcard',
     topicId: 'topic-debate',
     difficulty: 'recall',
@@ -730,6 +763,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-deb-mc-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'multiple-choice',
     topicId: 'topic-debate',
     difficulty: 'reasoning',
@@ -749,6 +783,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-deb-ord-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'ordering',
     topicId: 'topic-debate',
     difficulty: 'reasoning',
@@ -766,6 +801,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-deb-match-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'matching',
     topicId: 'topic-debate',
     difficulty: 'reasoning',
@@ -783,6 +819,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-deb-essay-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'essay',
     topicId: 'topic-debate',
     difficulty: 'stretch',
@@ -837,6 +874,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-deb-essay-2',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'essay',
     topicId: 'topic-debate',
     difficulty: 'stretch',
@@ -883,6 +921,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-deb-essay-3',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'essay',
     topicId: 'topic-debate',
     difficulty: 'reasoning',
@@ -929,6 +968,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-deb-wr-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'written-recall',
     topicId: 'topic-debate',
     difficulty: 'reasoning',
@@ -966,6 +1006,7 @@ export const SEED_QUESTIONS: Question[] = [
   },
   {
     id: 'q-deb-sa-1',
+    courseId: ATLANTIC_COURSE_ID,
     format: 'source-analysis',
     topicId: 'topic-debate',
     difficulty: 'stretch',

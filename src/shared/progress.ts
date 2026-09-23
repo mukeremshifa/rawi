@@ -1,14 +1,18 @@
 import type {
+  ActivityEvent,
+  Suggestion,
   Attempt,
   CheckIn,
-  Course,
   EvidenceLevel,
+  PlannedAssessment,
   RecurringMistake,
   ReviewDue,
-  Suggestion,
+  StreakSummary,
   Topic,
   TopicEvidence,
+  TutorSession,
 } from './types.ts';
+import { localISO } from './planner.ts';
 
 /**
  * Everything derived from the attempt log.
@@ -112,7 +116,18 @@ export function deriveEvidence(topicId: string, attempts: Attempt[]): TopicEvide
           break;
         case 'exam':
           independent += 1;
-          if (qa.outcome === 'correct' && !qa.usedHint) {
+          /*
+           * An attempt whose assistance history is not known cannot promote a
+           * topic to independent evidence. Runs from before assistance was
+           * tracked reliably carry `assistanceRecord: 'unknown'`, and treating
+           * their `usedHint: false` as trustworthy would quietly convert
+           * assisted work into the strongest claim the app makes.
+           */
+          if (
+            qa.outcome === 'correct' &&
+            !qa.usedHint &&
+            attempt.assistanceRecord !== 'unknown'
+          ) {
             independentCorrect += 1;
             unaidedWins.push({
               questionId: qa.questionId,
@@ -134,6 +149,7 @@ export function deriveEvidence(topicId: string, attempts: Attempt[]): TopicEvide
 
   const last = relevant[0];
   return {
+    courseId: last?.courseId ?? '',
     topicId,
     level,
     tutored,
@@ -178,6 +194,7 @@ export function dueReviews(
     const days = daysBetween(evidence.lastWorkedAt, today);
     if (days >= 3) {
       due.push({
+        courseId: topic.courseId,
         topicId: topic.id,
         daysSince: days,
         ...(evidence.attemptIds[0] ? { lastAttemptId: evidence.attemptIds[0] } : {}),
@@ -203,7 +220,13 @@ export function recurringMistakes(
 ): RecurringMistake[] {
   const byQuestion = new Map<
     string,
-    { topicId: string; times: number; lastAttemptId: string; lastAt: string }
+    {
+      courseId: string;
+      topicId: string;
+      times: number;
+      lastAttemptId: string;
+      lastAt: string;
+    }
   >();
 
   const ordered = [...attempts]
@@ -216,6 +239,7 @@ export function recurringMistakes(
       if (qa.outcome === 'skipped') continue;
       const existing = byQuestion.get(qa.questionId);
       byQuestion.set(qa.questionId, {
+        courseId: attempt.courseId,
         topicId: qa.topicId,
         times: (existing?.times ?? 0) + 1,
         lastAttemptId: attempt.id,
@@ -227,6 +251,7 @@ export function recurringMistakes(
   return [...byQuestion.entries()]
     .filter(([, v]) => v.times >= 2)
     .map(([questionId, v]) => ({
+      courseId: v.courseId,
       questionId,
       topicId: v.topicId,
       prompt: promptFor(questionId) ?? 'This question',
@@ -237,119 +262,344 @@ export function recurringMistakes(
     .sort((a, b) => b.times - a.times || (a.lastAt < b.lastAt ? 1 : -1));
 }
 
-/* ── The plan ─────────────────────────────────────────────────────────── */
+/* ── Assessments ──────────────────────────────────────────────────────── */
 
-export function daysUntilExam(course: Course, now: Date = new Date()): number {
-  return Math.max(0, daysBetween(now.toISOString(), `${course.examDate}T23:59:59`));
-}
-
-/** Minutes available today, after any check-in adjustment. */
-export function minutesToday(course: Course, checkIns: CheckIn[]): number {
-  const today = new Date().toISOString().slice(0, 10);
-  const todays = checkIns.filter((c) => c.at.slice(0, 10) === today);
-  const latest = todays[todays.length - 1];
-  if (latest?.minutesToday !== undefined) return latest.minutesToday;
-  return course.dailyMinutes;
-}
-
-/** The most recent check-in from today, if any. */
-export function todaysCheckIn(checkIns: CheckIn[]): CheckIn | undefined {
-  const today = new Date().toISOString().slice(0, 10);
-  return [...checkIns].reverse().find((c) => c.at.slice(0, 10) === today);
-}
-
-export interface PlanInput {
-  course: Course;
-  topics: Topic[];
-  attempts: Attempt[];
-  checkIns: CheckIn[];
-  /** Topic ids with at least one authored question, so we never suggest a dead end. */
-  topicsWithQuestions: Set<string>;
-  hasMaterials: boolean;
-  /** Set when a tutor session or exam is part-finished and can be resumed. */
-  resumable?: { title: string; to: string; kind: Suggestion['kind'] };
+/** Whole days from today until an assessment. Negative once it has passed. */
+export function daysUntil(date: string, now: Date = new Date()): number {
+  const today = localISO(now);
+  return Math.round(
+    (new Date(`${date}T12:00:00`).getTime() - new Date(`${today}T12:00:00`).getTime()) /
+      DAY_MS,
+  );
 }
 
 /**
- * Today's suggested work, in priority order, with a stated reason for each.
+ * The next assessment that has not happened yet.
+ *
+ * Past assessments stay in the list and stay inspectable — the brief asks for
+ * that — but they must not become the default deadline, so anything before
+ * today is filtered here rather than merely sorted below.
+ */
+export function nextAssessment(
+  assessments: PlannedAssessment[],
+  now: Date = new Date(),
+): PlannedAssessment | undefined {
+  const today = localISO(now);
+  return [...assessments]
+    .filter((a) => a.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+}
+
+export function upcomingAssessments(
+  assessments: PlannedAssessment[],
+  now: Date = new Date(),
+): PlannedAssessment[] {
+  const today = localISO(now);
+  return [...assessments]
+    .filter((a) => a.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function pastAssessments(
+  assessments: PlannedAssessment[],
+  now: Date = new Date(),
+): PlannedAssessment[] {
+  const today = localISO(now);
+  return [...assessments]
+    .filter((a) => a.date < today)
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/* ── Activity and streaks ─────────────────────────────────────────────── */
+
+/**
+ * What counts as study, for the streak and for history.
+ *
+ * ── Why this is a function and not a filter written at each call site ─────
+ *
+ * The brief requires that page visits, generated sets and repeated submissions
+ * of the same completion do not inflate a streak. All three are avoided by
+ * counting *completed attempts* and *tutor sessions with real exchanges*, and
+ * nothing else — but only if every caller agrees on that. Putting the rule here
+ * means the streak, the history list and the "did I study today" check cannot
+ * drift apart.
+ *
+ * A tutor session needs at least two student turns to count. One is the
+ * greeting; a session that was opened and abandoned is not study, and the
+ * scripted tutor opens with a message either way.
+ */
+export function activityEvents(
+  attempts: Attempt[],
+  tutorSessions: TutorSession[],
+): ActivityEvent[] {
+  const events: ActivityEvent[] = [];
+
+  for (const attempt of attempts) {
+    if (!attempt.completedAt) continue;
+    events.push({
+      id: attempt.id,
+      courseId: attempt.courseId,
+      at: attempt.completedAt,
+      kind:
+        attempt.kind === 'exam' ? 'exam' : attempt.kind === 'tutor' ? 'tutor' : 'practice',
+      title: attempt.title,
+      topicIds: attempt.topicIds,
+      marksAwarded: attempt.marksAwarded,
+      marksAvailable: attempt.marksAvailable,
+      mode: attempt.mode,
+      to:
+        attempt.kind === 'exam'
+          ? `/course/${attempt.courseId}/exams/results/${attempt.id}`
+          : `/course/${attempt.courseId}/practice/results/${attempt.id}`,
+      minutes: durationMinutes(attempt.startedAt, attempt.completedAt),
+    });
+  }
+
+  for (const session of tutorSessions) {
+    const studentTurns = session.messages.filter((m) => m.role === 'student').length;
+    if (studentTurns < 2) continue;
+    events.push({
+      id: session.id,
+      courseId: session.courseId,
+      at: session.endedAt ?? session.updatedAt,
+      kind: 'tutor',
+      title: 'Tutor session',
+      topicIds: [session.topicId],
+      to: `/course/${session.courseId}/tutor/${session.id}`,
+      minutes: durationMinutes(session.startedAt, session.endedAt ?? session.updatedAt),
+    });
+  }
+
+  return events.sort((a, b) => (a.at < b.at ? 1 : -1));
+}
+
+/**
+ * Minutes between two timestamps, clamped to something a person could do.
+ *
+ * A session left open overnight would otherwise report fourteen hours of
+ * study. Anything over three hours is treated as an abandoned tab rather than
+ * a marathon, and the cap is stated wherever totals are shown.
+ */
+function durationMinutes(from: string, to: string): number {
+  const ms = new Date(to).getTime() - new Date(from).getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return 0;
+  return Math.min(180, Math.round(ms / 60000));
+}
+
+/**
+ * The streak, over local calendar days.
+ *
+ * ── Two decisions worth stating ───────────────────────────────────────────
+ *
+ * Days are *local* days, via `localISO`, because a student studying at 11pm
+ * expects that to count for the day they think it is rather than for tomorrow
+ * in UTC.
+ *
+ * A streak survives today being empty. It breaks only once a whole day has
+ * passed with nothing in it, so opening the app in the morning does not show a
+ * streak of zero to someone who studied last night and has not started yet.
+ */
+export function streak(events: ActivityEvent[], now: Date = new Date()): StreakSummary {
+  const days = [...new Set(events.map((e) => localISO(e.at)))].sort((a, b) =>
+    a < b ? 1 : -1,
+  );
+
+  const today = localISO(now);
+  const yesterday = localISO(new Date(now.getTime() - DAY_MS));
+
+  const gapBetween = (later: string, earlier: string) =>
+    Math.round(
+      (new Date(`${later}T12:00:00`).getTime() -
+        new Date(`${earlier}T12:00:00`).getTime()) /
+        DAY_MS,
+    );
+
+  let current = 0;
+  const first = days[0];
+  if (first === today || first === yesterday) {
+    current = 1;
+    for (let i = 1; i < days.length; i += 1) {
+      if (gapBetween(days[i - 1]!, days[i]!) === 1) current += 1;
+      else break;
+    }
+  }
+
+  let longest = 0;
+  let run = 0;
+  for (let i = 0; i < days.length; i += 1) {
+    run = i === 0 || gapBetween(days[i - 1]!, days[i]!) !== 1 ? 1 : run + 1;
+    longest = Math.max(longest, run);
+  }
+
+  return { current, longest, activeDays: days, todayCounted: days[0] === today };
+}
+
+/* ── The plan ─────────────────────────────────────────────────────────── */
+
+/** Minutes available today, after any check-in adjustment. */
+export function minutesToday(
+  plannedMinutes: number,
+  checkIns: CheckIn[],
+  now: Date = new Date(),
+): number {
+  const today = localISO(now);
+  const todays = checkIns.filter((c) => localISO(c.at) === today);
+  const latest = todays[todays.length - 1];
+  if (latest?.minutesToday !== undefined) return latest.minutesToday;
+  return plannedMinutes;
+}
+
+/** The most recent check-in from today, if any. */
+export function todaysCheckIn(
+  checkIns: CheckIn[],
+  now: Date = new Date(),
+): CheckIn | undefined {
+  const today = localISO(now);
+  return [...checkIns].reverse().find((c) => localISO(c.at) === today);
+}
+
+/** The subset of a planner session this module needs. */
+export interface PlannedSessionLike {
+  id: string;
+  courseId: string;
+  title: string;
+  activity: string;
+  durationMinutes: number;
+  topicIds: string[];
+  status: string;
+  reason?: string;
+}
+
+export interface PlanInput {
+  courses: { id: string; name: string; archived?: boolean }[];
+  topics: Topic[];
+  attempts: Attempt[];
+  assessments: PlannedAssessment[];
+  checkIns: CheckIn[];
+  /** Today's planner sessions, which are the first thing suggested. */
+  todaysSessions: PlannedSessionLike[];
+  /** Topic ids with at least one authored question, so we never suggest a dead end. */
+  topicsWithQuestions: Set<string>;
+  /** Set when a tutor session or exam is part-finished and can be resumed. */
+  resumable?: { courseId: string; title: string; to: string; kind: Suggestion['kind'] };
+  now?: Date;
+}
+
+/**
+ * Today's suggested work, across every course, with a stated reason for each.
+ *
+ * ── How this relates to the planner ───────────────────────────────────────
+ *
+ * The planner owns the schedule; this owns "what should I do right now". They
+ * are not two schedulers: **anything already planned for today is what this
+ * suggests first**, and the derived suggestions only fill in behind it. That is
+ * the brief's requirement that a check-in connect to the planner rather than
+ * spawning a competing plan, and it is why a student who has planned their week
+ * sees their own plan on the overview rather than a second opinion about it.
  *
  * ── How the ordering is decided ───────────────────────────────────────────
  *
- * Weights, summed from a few local rules, then sorted. The rules in descending
- * force:
- *
- *   1. Resume something unfinished. Nothing outranks work already started.
- *   2. A recurring mistake. Twice wrong is the clearest signal in the log.
- *   3. The check-in. "Struggling with X" moves X to the top and switches the
- *      activity from testing to tutoring, because more testing is the wrong
- *      answer to "I don't understand this".
- *   4. Reviews that have come due.
- *   5. Topics with weak evidence, weighted by the student's own priority.
- *   6. A rehearsal exam when the real one is close.
- *
- * The reasons are written out rather than templated from the weights, because
- * "Because weight 4.5" is not a reason a student can act on.
+ * Weights, summed from a few local rules, then sorted. In descending force:
+ * unfinished work, then today's planned sessions, then the check-in, then
+ * repeated mistakes, then reviews that have come due, then topics with weak
+ * evidence weighted by assessment proximity and the student's own priority.
  */
 export function buildPlan(input: PlanInput): Suggestion[] {
-  const { course, topics, attempts, checkIns, topicsWithQuestions, hasMaterials } = input;
+  const {
+    courses,
+    topics,
+    attempts,
+    assessments,
+    checkIns,
+    topicsWithQuestions,
+    todaysSessions,
+  } = input;
+  const now = input.now ?? new Date();
   const suggestions: Suggestion[] = [];
-  const available = minutesToday(course, checkIns);
-  const checkIn = todaysCheckIn(checkIns);
-  const untilExam = daysUntilExam(course);
+  const checkIn = todaysCheckIn(checkIns, now);
+  const active = courses.filter((c) => !c.archived);
+  const courseName = new Map(active.map((c) => [c.id, c.name]));
 
-  /* 1 — Resume. */
+  /* 1 — Resume. Nothing outranks work already started. */
   if (input.resumable) {
     suggestions.push({
       id: 'sug-resume',
+      courseId: input.resumable.courseId,
       title: input.resumable.title,
-      reason: 'You left this part-finished. Picking it up is cheaper than starting again.',
-      minutes: Math.min(20, available),
+      reason:
+        'You left this part-finished. Picking it up is cheaper than starting again.',
+      minutes: 20,
       to: input.resumable.to,
       kind: input.resumable.kind,
       weight: 100,
     });
   }
 
-  /* 2 — First-run guidance, when there is genuinely nothing to go on. */
-  if (attempts.length === 0) {
-    if (!hasMaterials) {
-      suggestions.push({
-        id: 'sug-add-material',
-        title: 'Add a reading, or start from a topic',
-        reason:
-          'There is nothing in your library yet. You can paste a reading in, or skip it — topic practice works without any sources.',
-        minutes: 5,
-        to: '/materials',
-        kind: 'materials',
-        weight: 90,
-      });
-    }
-    const first = topics.find((t) => topicsWithQuestions.has(t.id));
+  /* 2 — What the student planned for today. Their decision beats ours. */
+  for (const session of todaysSessions) {
+    if (session.status !== 'planned') continue;
+    suggestions.push({
+      id: `sug-session-${session.id}`,
+      courseId: session.courseId,
+      title: session.title,
+      reason:
+        session.reason ??
+        `You planned this for today${
+          courseName.has(session.courseId)
+            ? ` in ${courseName.get(session.courseId)}`
+            : ''
+        }.`,
+      minutes: session.durationMinutes,
+      to: `/planner?session=${session.id}`,
+      kind:
+        session.activity === 'tutor'
+          ? 'tutor'
+          : session.activity === 'exam'
+            ? 'exam'
+            : session.activity === 'read'
+              ? 'materials'
+              : session.activity === 'flashcards'
+                ? 'review'
+                : 'practice',
+      weight: 90,
+      sessionId: session.id,
+      ...(session.topicIds[0] ? { topicId: session.topicIds[0] } : {}),
+    });
+  }
+
+  /* 3 — First-run guidance, when there is genuinely nothing to go on. */
+  if (attempts.length === 0 && active.length > 0) {
+    const course = active[0]!;
+    const first = topics.find(
+      (t) => t.courseId === course.id && topicsWithQuestions.has(t.id),
+    );
     if (first) {
       suggestions.push({
         id: 'sug-first-session',
+        courseId: course.id,
         title: `Start with ${first.title}`,
         reason:
           'Nothing recorded yet, so this is a starting point rather than a recommendation. After a session or two the plan will have something to work from.',
-        minutes: Math.min(20, available),
-        to: `/tutor/new?topic=${first.id}`,
+        minutes: 20,
+        to: `/course/${course.id}/tutor/new?topic=${first.id}`,
         kind: 'tutor',
         weight: 80,
       });
     }
   }
 
-  /* 3 — The check-in, which overrides the ordinary ranking. */
+  /* 4 — The check-in, which overrides the ordinary ranking. */
   if (checkIn?.mood === 'struggling' && checkIn.topicId) {
     const topic = topics.find((t) => t.id === checkIn.topicId);
     if (topic) {
       suggestions.push({
         id: `sug-struggle-${topic.id}`,
+        courseId: topic.courseId,
         title: `Work through ${topic.title} with the tutor`,
         reason:
           'You said this one is not landing. More testing would not help — an explanation and a worked example will.',
-        minutes: Math.min(25, available),
-        to: `/tutor/new?topic=${topic.id}`,
+        minutes: 25,
+        to: `/course/${topic.courseId}/tutor/new?topic=${topic.id}`,
         topicId: topic.id,
         kind: 'tutor',
         weight: 95,
@@ -357,40 +607,43 @@ export function buildPlan(input: PlanInput): Suggestion[] {
     }
   }
 
-  /* 4 — Recurring mistakes. */
-  const mistakes = recurringMistakes(attempts, () => undefined);
-  for (const mistake of mistakes.slice(0, 2)) {
+  /* 5 — Recurring mistakes. */
+  for (const mistake of recurringMistakes(attempts, () => undefined).slice(0, 2)) {
     const topic = topics.find((t) => t.id === mistake.topicId);
     if (!topic) continue;
     suggestions.push({
       id: `sug-mistake-${mistake.questionId}`,
+      courseId: topic.courseId,
       title: `Fix a repeated mistake in ${topic.title}`,
       reason: `You have got this wrong ${mistake.times} times. That is the clearest signal in your history, so it goes first.`,
-      minutes: Math.min(15, available),
-      to: `/tutor/new?topic=${topic.id}&question=${mistake.questionId}&attempt=${mistake.lastAttemptId}`,
+      minutes: 15,
+      to: `/course/${topic.courseId}/tutor/new?topic=${topic.id}&question=${mistake.questionId}&attempt=${mistake.lastAttemptId}`,
       topicId: topic.id,
       kind: 'tutor',
       weight: 85,
     });
   }
 
-  /* 5 — Reviews that have come due. */
-  for (const review of dueReviews(topics, attempts).slice(0, 2)) {
-    const topic = topics.find((t) => t.id === review.topicId);
+  /* 6 — Reviews that have come due. */
+  const activeTopics = topics.filter((t) => active.some((c) => c.id === t.courseId));
+  for (const review of dueReviews(activeTopics, attempts, now).slice(0, 2)) {
+    const topic = activeTopics.find((t) => t.id === review.topicId);
     if (!topic || !topicsWithQuestions.has(topic.id)) continue;
+    if (suggestions.some((s) => s.topicId === topic.id)) continue;
     suggestions.push({
       id: `sug-review-${topic.id}`,
+      courseId: topic.courseId,
       title: `Review ${topic.title}`,
       reason: `Last worked ${review.daysSince} days ago. This prototype flags a topic for review after three days untouched.`,
-      minutes: Math.min(10, available),
-      to: `/practice/new?topic=${topic.id}&activity=flashcards`,
+      minutes: 10,
+      to: `/course/${topic.courseId}/practice/new?topic=${topic.id}&activity=flashcards`,
       topicId: topic.id,
       kind: 'review',
       weight: 60 + Math.min(review.daysSince, 10),
     });
   }
 
-  /* 6 — Weak topics, weighted by the student's own priority. */
+  /* 7 — Weak topics, weighted by assessment proximity and stated priority. */
   const priorityWeight: Record<Topic['priority'], number> = {
     high: 14,
     normal: 6,
@@ -403,85 +656,127 @@ export function buildPlan(input: PlanInput): Suggestion[] {
     retained: 0,
   };
 
-  for (const topic of topics) {
+  for (const topic of activeTopics) {
     if (!topicsWithQuestions.has(topic.id)) continue;
     const evidence = deriveEvidence(topic.id, attempts);
     if (evidence.level === 'retained') continue;
     if (suggestions.some((s) => s.topicId === topic.id)) continue;
 
-    const weight = levelWeight[evidence.level] + priorityWeight[topic.priority];
+    const covering = upcomingAssessments(
+      assessments.filter((a) => a.courseId === topic.courseId),
+      now,
+    ).find((a) => a.topicIds.length === 0 || a.topicIds.includes(topic.id));
+    const daysAway = covering ? daysUntil(covering.date, now) : 999;
+    const proximity = daysAway <= 7 ? 20 : daysAway <= 14 ? 12 : daysAway <= 28 ? 6 : 0;
+
+    const weight =
+      levelWeight[evidence.level] + priorityWeight[topic.priority] + proximity;
+
+    const assessmentClause = covering
+      ? ` ${covering.title} is in ${daysAway} day${daysAway === 1 ? '' : 's'} and covers it.`
+      : '';
+
     const reason =
       evidence.level === 'not-checked'
-        ? `Nothing recorded on this topic yet${topic.priority === 'high' ? ', and you have marked it high priority' : ''}.`
-        : `Evidence here is "${EVIDENCE_LABEL[evidence.level].toLowerCase()}"${
-            topic.priority === 'high' ? ', and you marked it high priority' : ''
-          }. ${
+        ? `Nothing recorded on this topic yet${
+            topic.priority === 'high' ? ', and you have marked it high priority' : ''
+          }.${assessmentClause}`
+        : `Evidence here is “${EVIDENCE_LABEL[evidence.level].toLowerCase()}”. ${
             evidence.level === 'practising'
               ? 'You have worked on it but not yet answered unaided.'
               : 'One unaided answer so far; a second on a different question would confirm it.'
-          }`;
+          }${assessmentClause}`;
 
     suggestions.push({
       id: `sug-topic-${topic.id}`,
+      courseId: topic.courseId,
       title:
         evidence.level === 'not-checked'
           ? `Learn ${topic.title}`
           : `Practise ${topic.title}`,
       reason,
-      minutes: Math.min(evidence.level === 'not-checked' ? 25 : 15, available),
+      minutes: evidence.level === 'not-checked' ? 25 : 15,
       to:
         evidence.level === 'not-checked'
-          ? `/tutor/new?topic=${topic.id}`
-          : `/practice/new?topic=${topic.id}`,
+          ? `/course/${topic.courseId}/tutor/new?topic=${topic.id}`
+          : `/course/${topic.courseId}/practice/new?topic=${topic.id}`,
       topicId: topic.id,
       kind: evidence.level === 'not-checked' ? 'tutor' : 'practice',
       weight,
     });
   }
 
-  /* 7 — A rehearsal, when the exam is close enough to matter. */
-  if (untilExam <= 21 && attempts.length > 0) {
-    const lastExam = [...attempts].reverse().find((a) => a.kind === 'exam');
+  /* 8 — A rehearsal, when an assessment is close enough for pace to matter. */
+  const soon = nextAssessment(
+    assessments.filter((a) => active.some((c) => c.id === a.courseId)),
+    now,
+  );
+  if (soon && attempts.length > 0) {
+    const daysAway = daysUntil(soon.date, now);
+    const lastExam = [...attempts]
+      .filter((a) => a.kind === 'exam' && a.courseId === soon.courseId)
+      .sort((a, b) => ((a.completedAt ?? '') < (b.completedAt ?? '') ? 1 : -1))[0];
     const daysSinceExam = lastExam?.completedAt
-      ? daysBetween(lastExam.completedAt, new Date().toISOString())
+      ? daysBetween(lastExam.completedAt, now.toISOString())
       : 99;
-    if (daysSinceExam >= 2) {
+    if (daysAway <= 21 && daysSinceExam >= 2) {
       suggestions.push({
         id: 'sug-exam',
-        title: 'Sit a timed rehearsal',
+        courseId: soon.courseId,
+        title: `Sit a timed rehearsal for ${soon.title}`,
         reason:
-          untilExam <= 7
-            ? `The exam is ${untilExam} day${untilExam === 1 ? '' : 's'} away. Timed practice is now worth more than more reading.`
-            : `${untilExam} days to the exam, and your last timed attempt was ${daysSinceExam} days ago. Writing under time is a separate skill from knowing the material.`,
-        minutes: Math.min(available, 25),
-        to: '/exams',
+          daysAway <= 7
+            ? `${soon.title} is ${
+                daysAway === 0 ? 'today' : `${daysAway} day${daysAway === 1 ? '' : 's'} away`
+              }. Timed practice is now worth more than more reading.`
+            : `${daysAway} days to ${soon.title}, and your last timed attempt was ${daysSinceExam} days ago. Writing under time is a separate skill from knowing the material.`,
+        minutes: 25,
+        to: `/course/${soon.courseId}/exams`,
         kind: 'exam',
-        weight: untilExam <= 7 ? 70 : 40,
+        weight: daysAway <= 7 ? 70 : 40,
       });
     }
   }
 
-  /* 8 — Reduced time changes what is offered, not just the estimate. */
+  /* 9 — Reduced time changes what is offered, not just the estimate. */
   if (checkIn?.mood === 'less-time') {
-    suggestions.unshift({
-      id: 'sug-short',
-      title: 'A short flashcard round',
-      reason: `You said you have about ${available} minutes today. This fits, and keeps the streak of contact with the material.`,
-      minutes: Math.min(10, available),
-      to: '/practice/new?activity=flashcards',
-      kind: 'review',
-      weight: 96,
-    });
+    const available = minutesToday(30, checkIns, now);
+    const course = checkIn.courseId ?? active[0]?.id;
+    if (course) {
+      suggestions.unshift({
+        id: 'sug-short',
+        courseId: course,
+        title: 'A short flashcard round',
+        reason: `You said you have about ${available} minutes today. This fits, and keeps the streak of contact with the material.`,
+        minutes: Math.min(10, available),
+        to: `/course/${course}/practice/new?activity=flashcards`,
+        kind: 'review',
+        weight: 96,
+      });
+    }
   }
 
+  /*
+   * Near-identical suggestions are collapsed.
+   *
+   * Two rules can independently reach the same topic — a due review and a weak
+   * evidence level, say — and showing both makes the plan look padded. The
+   * higher-weighted one survives, since it carries the more urgent reason.
+   */
+  const seen = new Set<string>();
   return suggestions
     .sort((a, b) => b.weight - a.weight)
-    .filter(
-      (s, i, all) => all.findIndex((o) => o.id === s.id) === i,
-    )
-    .slice(0, 5);
+    .filter((s) => {
+      const key = s.sessionId
+        ? `session:${s.sessionId}`
+        : `${s.kind}:${s.topicId ?? s.to}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 6);
 }
 
 /** A one-line description of how the plan was put together, for the UI. */
 export const PLAN_EXPLANATION =
-  'Suggestions are ordered by simple local rules: unfinished work first, then repeated mistakes, then what you said at check-in, then reviews that have come due, then topics with the weakest evidence weighted by the priority you set.';
+  'Suggestions are ordered by simple local rules: unfinished work first, then whatever you planned for today, then repeated mistakes, then what you said at check-in, then reviews that have come due, then topics with the weakest evidence weighted by how close the assessment covering them is.';

@@ -1,4 +1,6 @@
 import type { Attempt, ExamConfig } from '../types.ts';
+import { ATLANTIC_COURSE_ID } from './topics.ts';
+import { STATS_COURSE_ID } from './stats.ts';
 
 /**
  * The returning student's prior work.
@@ -30,6 +32,7 @@ const day = (n: number) => new Date(Date.now() - 1000 * 60 * 60 * 24 * n).toISOS
 export const SEED_EXAM_PRESETS: ExamConfig[] = [
   {
     id: 'preset-quick',
+    courseId: ATLANTIC_COURSE_ID,
     name: 'Quick check — 15 minutes',
     preset: true,
     savedAt: day(30),
@@ -50,13 +53,13 @@ export const SEED_EXAM_PRESETS: ExamConfig[] = [
     extraTimePercent: 0,
     book: 'closed',
     allowedMaterialIds: [],
-    tutorAllowed: false,
     navigation: 'free',
     flaggingEnabled: true,
-    feedback: 'final',
+    lockSectionsOnFinish: false,
   },
   {
     id: 'preset-paper',
+    courseId: ATLANTIC_COURSE_ID,
     name: 'Full paper — two sections',
     preset: true,
     savedAt: day(30),
@@ -75,7 +78,7 @@ export const SEED_EXAM_PRESETS: ExamConfig[] = [
         id: 'sec-paper-2',
         title: 'Section B — Extended writing',
         instructions:
-          'Answer the questions in this section in continuous prose. Marks are awarded against a rubric released after submission.',
+          'Answer the questions in this section in continuous prose. Marks and rubrics are released once the whole paper is submitted.',
         formats: ['source-analysis', 'essay'],
         topicIds: [],
         count: 2,
@@ -87,13 +90,13 @@ export const SEED_EXAM_PRESETS: ExamConfig[] = [
     extraTimePercent: 0,
     book: 'closed',
     allowedMaterialIds: [],
-    tutorAllowed: false,
     navigation: 'free',
     flaggingEnabled: true,
-    feedback: 'per-section',
+    lockSectionsOnFinish: true,
   },
   {
     id: 'preset-rehearsal',
+    courseId: ATLANTIC_COURSE_ID,
     name: 'Untimed rehearsal — essay only',
     preset: true,
     savedAt: day(30),
@@ -114,10 +117,37 @@ export const SEED_EXAM_PRESETS: ExamConfig[] = [
     extraTimePercent: 0,
     book: 'open',
     allowedMaterialIds: ['mat-debate-lecture', 'mat-encomienda-reading'],
-    tutorAllowed: true,
     navigation: 'free',
     flaggingEnabled: false,
-    feedback: 'final',
+    lockSectionsOnFinish: false,
+  },
+  {
+    id: 'preset-stat-quiz',
+    courseId: STATS_COURSE_ID,
+    name: 'Quiz conditions — 20 minutes',
+    preset: true,
+    savedAt: day(30),
+    sections: [
+      {
+        id: 'sec-stat-quiz-1',
+        title: 'Estimation and testing',
+        instructions:
+          'Answer all questions. Closed book, 20 minutes. Nothing is marked until you submit the whole paper.',
+        formats: ['multiple-choice', 'multiple-select', 'fill-blank', 'matching', 'ordering'],
+        topicIds: [],
+        count: 5,
+        minutes: 20,
+      },
+    ],
+    timing: 'overall',
+    totalMinutes: 20,
+    extraTimePercent: 0,
+    book: 'closed',
+    allowedMaterialIds: [],
+    navigation: 'free',
+    flaggingEnabled: true,
+    lockSectionsOnFinish: false,
+    assessmentIds: ['assess-stat-quiz-2'],
   },
 ];
 
@@ -132,6 +162,8 @@ export const SEED_EXAM_PRESETS: ExamConfig[] = [
 export const SEED_ATTEMPTS: Attempt[] = [
   {
     id: 'att-seed-1',
+    courseId: ATLANTIC_COURSE_ID,
+    assistanceRecord: 'tracked',
     kind: 'practice',
     mode: 'self-rated',
     title: 'Flashcards — Columbian Exchange',
@@ -165,6 +197,8 @@ export const SEED_ATTEMPTS: Attempt[] = [
   },
   {
     id: 'att-seed-2',
+    courseId: ATLANTIC_COURSE_ID,
+    assistanceRecord: 'tracked',
     kind: 'practice',
     mode: 'practice',
     title: 'Quiz — Encomienda',
@@ -208,6 +242,8 @@ export const SEED_ATTEMPTS: Attempt[] = [
   },
   {
     id: 'att-seed-3',
+    courseId: ATLANTIC_COURSE_ID,
+    assistanceRecord: 'tracked',
     kind: 'exam',
     mode: 'exam',
     title: 'Quick check — 15 minutes',
@@ -306,6 +342,8 @@ export const SEED_ATTEMPTS: Attempt[] = [
   },
   {
     id: 'att-seed-4',
+    courseId: ATLANTIC_COURSE_ID,
+    assistanceRecord: 'tracked',
     kind: 'practice',
     mode: 'self-rated',
     title: 'Flashcards — mixed review',
@@ -349,6 +387,8 @@ export const SEED_ATTEMPTS: Attempt[] = [
   },
   {
     id: 'att-seed-5',
+    courseId: ATLANTIC_COURSE_ID,
+    assistanceRecord: 'tracked',
     kind: 'practice',
     mode: 'practice',
     title: 'Written recall — plantation complex',
@@ -376,6 +416,8 @@ export const SEED_ATTEMPTS: Attempt[] = [
   },
   {
     id: 'att-seed-6',
+    courseId: ATLANTIC_COURSE_ID,
+    assistanceRecord: 'tracked',
     kind: 'exam',
     mode: 'exam',
     title: 'Quick check — 15 minutes',
