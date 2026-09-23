@@ -14,7 +14,6 @@ import type {
   BookMode,
   ExamConfig,
   ExamSection,
-  FeedbackRelease,
   NavigationMode,
   QuestionFormat,
   TimingMode,
@@ -33,6 +32,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { FORMAT_LABEL } from '@/components/domain';
 import { useAppState, useStore } from '@/store/store';
+import { useCourse } from '@/store/course-context';
 import { selectQuestions, useMaterials, useQuestions, useTopics } from '@/store/selectors';
 import { newId } from '@/lib/id';
 import { buildRun, validateConfig } from './engine';
@@ -88,6 +88,7 @@ export function ExamBuilderPage() {
   const { configId } = useParams();
   const navigate = useNavigate();
   const { dispatch } = useStore();
+  const course = useCourse();
   const state = useAppState();
   const topics = useTopics();
   const materials = useMaterials();
@@ -110,18 +111,18 @@ export function ExamBuilderPage() {
   const [allowedMaterialIds, setAllowed] = useState<string[]>(
     existing?.allowedMaterialIds ?? [],
   );
-  const [tutorAllowed, setTutorAllowed] = useState(existing?.tutorAllowed ?? false);
   const [navigation, setNavigation] = useState<NavigationMode>(
     existing?.navigation ?? 'free',
   );
   const [flaggingEnabled, setFlagging] = useState(existing?.flaggingEnabled ?? true);
-  const [feedback, setFeedback] = useState<FeedbackRelease>(
-    existing?.feedback ?? 'final',
+  const [lockSectionsOnFinish, setLockSections] = useState(
+    existing?.lockSectionsOnFinish ?? false,
   );
 
   const config: ExamConfig = useMemo(
     () => ({
       id: existing && !existing.preset ? existing.id : newId('exam'),
+      courseId: course.id,
       name: name.trim() || 'Untitled exam',
       sections,
       timing,
@@ -129,10 +130,9 @@ export function ExamBuilderPage() {
       extraTimePercent,
       book,
       allowedMaterialIds,
-      tutorAllowed,
       navigation,
       flaggingEnabled,
-      feedback,
+      lockSectionsOnFinish,
       savedAt: new Date().toISOString(),
     }),
     [
@@ -144,10 +144,9 @@ export function ExamBuilderPage() {
       extraTimePercent,
       book,
       allowedMaterialIds,
-      tutorAllowed,
       navigation,
       flaggingEnabled,
-      feedback,
+      lockSectionsOnFinish,
     ],
   );
 
@@ -505,26 +504,20 @@ export function ExamBuilderPage() {
             </fieldset>
           )}
 
-          <label className="flex items-start gap-snug rounded-lg border p-snug">
-            <Checkbox
-              className="mt-0.5"
-              checked={tutorAllowed}
-              onCheckedChange={(checked) => setTutorAllowed(!!checked)}
-            />
-            <div className="flex flex-col gap-hairline">
-              <span className="text-sm font-medium">Tutor assistance available</span>
-              <span className="text-muted-foreground text-xs leading-relaxed">
-                Adds a hint control during the exam. Using it marks the answer as
-                assisted, so it will not count as independent evidence.
-              </span>
-            </div>
-          </label>
-
+          {/*
+            There is no tutor-assistance setting any more. An exam offers no
+            hints, no explanations and no correctness indicators, which is what
+            makes its results independent evidence — so it is the absence of a
+            capability rather than a switch that happens to be off. Assisted
+            practice with hints is still available; it lives in Practice, where
+            it is recorded as practice.
+          */}
           <Alert>
             <AlertTitle>What these restrictions actually do</AlertTitle>
             <AlertDescription>
               They control what this prototype shows you inside the exam screen.
-              There is no proctoring, no browser lockdown and nothing stopping
+              Nothing is marked and no feedback appears until you submit the whole
+              paper. There is no proctoring, no browser lockdown and nothing stopping
               you opening your notes in another tab — it is a rehearsal, not a
               secured assessment.
             </AlertDescription>
@@ -563,24 +556,56 @@ export function ExamBuilderPage() {
             </div>
           </label>
 
+          <label className="flex items-start gap-snug rounded-lg border p-snug">
+            <Checkbox
+              className="mt-0.5"
+              checked={lockSectionsOnFinish}
+              onCheckedChange={(checked) => setLockSections(!!checked)}
+            />
+            <div className="flex flex-col gap-hairline">
+              <span className="text-sm font-medium">
+                Finishing a section locks its answers
+              </span>
+              <span className="text-muted-foreground text-xs leading-relaxed">
+                With this on, pressing “Finish section” fixes that section’s answers
+                — you can still read them but not change them, and you are asked to
+                confirm before it happens. With it off, every section stays open
+                until you submit the paper. Either way, nothing is marked until the
+                whole paper is submitted.
+              </span>
+            </div>
+          </label>
+
+          {/*
+            The combination worth naming. Free navigation and locking are not
+            contradictory — you move freely until you choose to finish something
+            — but the interaction is where a student is most likely to lose work
+            they thought was safe, so it is spelled out rather than left implied.
+          */}
+          {lockSectionsOnFinish && navigation === 'free' && (
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              You can still move between sections freely. Locking only happens when
+              you press “Finish section”, and you will be warned first.
+            </p>
+          )}
+
+          {timing === 'per-section' && (
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              With per-section timing, each section’s clock starts when you first
+              open it and keeps running whether or not you are looking at it. When it
+              expires that section locks; returning to it later does not restart it,
+              and reloading the page does not grant more time.
+            </p>
+          )}
+
           <div className="flex flex-col gap-tight">
-            <Label htmlFor="exam-feedback">When feedback is released</Label>
-            <Select
-              id="exam-feedback"
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value as FeedbackRelease)}
-            >
-              <option value="final">After the whole paper is submitted</option>
-              <option value="per-section">
-                After each section — that section is then locked
-              </option>
-            </Select>
-            {feedback === 'per-section' && (
-              <p className="text-muted-foreground text-xs">
-                Once a section’s feedback is released its answers cannot be
-                changed, which is what keeps the marks meaningful.
-              </p>
-            )}
+            <Label>Feedback</Label>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              Marks, rubrics, explanations and topic gaps are released after the whole
+              paper is submitted — always, and not configurably. Releasing them
+              section by section would mean answering later questions already knowing
+              how the earlier ones went, which is not what an exam measures.
+            </p>
           </div>
         </div>
       </Section>

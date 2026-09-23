@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangleIcon,
+  CalendarPlusIcon,
   CopyIcon,
   GraduationCapIcon,
   PlayIcon,
@@ -11,7 +12,7 @@ import {
 import { toast } from 'sonner';
 
 import type { ExamConfig } from '@shared/types.ts';
-import { daysUntilExam } from '@shared/progress.ts';
+import { pastAssessments, upcomingAssessments } from '@shared/progress.ts';
 
 import { Page, PageHeader, Section } from '@/components/layout';
 import { EmptyState } from '@/components/states';
@@ -21,9 +22,15 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { formatRelative } from '@/components/domain';
+import { ASSESSMENT_LABEL, DueChip, formatRelative } from '@/components/domain';
 import { useAppState, useStore } from '@/store/store';
-import { useQuestions, useRecentAttempts } from '@/store/selectors';
+import { useCourse, useCoursePath } from '@/store/course-context';
+import {
+  useAssessments,
+  useExamConfigs,
+  useQuestions,
+  useRecentAttempts,
+} from '@/store/selectors';
 import { buildRun, validateConfig } from './engine';
 
 /**
@@ -53,6 +60,7 @@ function ConfigCard({
   onDelete?: () => void;
 }) {
   const pool = useQuestions();
+  const path = useCoursePath();
   const validation = validateConfig(config, pool);
   const blocked = validation.problems.length > 0;
   const questions = config.sections.reduce((sum, s) => sum + s.count, 0);
@@ -95,19 +103,14 @@ function ConfigCard({
               Sequential
             </Badge>
           )}
-          {config.feedback === 'per-section' && (
+          {config.lockSectionsOnFinish && (
             <Badge variant="outline" className="font-normal">
-              Feedback per section
+              Finishing a section locks it
             </Badge>
           )}
           {config.extraTimePercent > 0 && (
             <Badge variant="outline" className="font-normal">
               +{config.extraTimePercent}% time
-            </Badge>
-          )}
-          {config.tutorAllowed && (
-            <Badge variant="outline" className="font-normal">
-              Tutor assistance
             </Badge>
           )}
         </div>
@@ -125,7 +128,7 @@ function ConfigCard({
             Start
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link to={`/exams/build/${config.id}`}>
+            <Link to={path(`/exams/build/${config.id}`)}>
               <CopyIcon />
               {config.preset ? 'Customise' : 'Edit'}
             </Link>
@@ -150,7 +153,11 @@ export function ExamsHomePage() {
   const state = useAppState();
   const { dispatch } = useStore();
   const navigate = useNavigate();
+  const course = useCourse();
+  const path = useCoursePath();
   const pool = useQuestions();
+  const configs = useExamConfigs();
+  const assessments = useAssessments();
   const history = useRecentAttempts().filter((a) => a.kind === 'exam');
   const [abandoning, setAbandoning] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -170,25 +177,34 @@ export function ExamsHomePage() {
       return;
     }
     dispatch({ type: 'set-active-exam', run });
-    navigate('/exams/run');
+    navigate(path('/exams/run'));
   };
 
-  const presets = state.examConfigs.filter((c) => c.preset);
-  const custom = state.examConfigs.filter((c) => !c.preset);
-  const daysLeft = state.course ? daysUntilExam(state.course) : null;
+  const presets = configs.filter((c) => c.preset);
+  const custom = configs.filter((c) => !c.preset);
+  const upcoming = upcomingAssessments(assessments);
+  const past = pastAssessments(assessments);
 
   return (
     <Page>
       <PageHeader
         title="Exams"
-        description="Timed rehearsal under conditions you set. Results count as independent evidence."
+        description="Your real assessment dates, and the rehearsals you build to prepare for them."
         actions={
-          <Button asChild>
-            <Link to="/exams/build">
-              <PlusIcon />
-              Build an exam
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-tight">
+            <Button variant="outline" asChild>
+              <Link to={path('/exams/assessment')}>
+                <CalendarPlusIcon />
+                Add an assessment
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link to={path('/exams/build')}>
+                <PlusIcon />
+                Build a rehearsal
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -205,7 +221,7 @@ export function ExamsHomePage() {
             </span>
             <span className="flex flex-wrap gap-tight">
               <Button size="sm" asChild>
-                <Link to="/exams/run">Resume</Link>
+                <Link to={path('/exams/run')}>Resume</Link>
               </Button>
               <Button
                 variant="outline"
@@ -219,17 +235,80 @@ export function ExamsHomePage() {
         </Alert>
       )}
 
-      {daysLeft !== null && daysLeft <= 14 && (
-        <p className="text-muted-foreground text-sm">
-          {daysLeft === 0
-            ? 'Your exam is today.'
-            : `${daysLeft} day${daysLeft === 1 ? '' : 's'} until your exam. Timed practice is worth more than more reading at this point.`}
-        </p>
-      )}
+      {/* ── Planned assessments: the real milestones ─────────────── */}
+      <Section
+        title="Planned assessments"
+        description={`Real dates in ${course.name} — a quiz, a midterm, a final. These drive countdowns and the planner; the rehearsals below are how you prepare for them.`}
+      >
+        {upcoming.length === 0 && past.length === 0 ? (
+          <EmptyState
+            icon={<CalendarPlusIcon />}
+            title="No assessments recorded"
+            description="Add the dates this course actually has and the planner will work back from them, prioritising whatever each one covers."
+            action={
+              <Button asChild>
+                <Link to={path('/exams/assessment')}>
+                  <CalendarPlusIcon />
+                  Add an assessment
+                </Link>
+              </Button>
+            }
+          />
+        ) : (
+          <div className="flex flex-col gap-tight">
+            {upcoming.map((assessment) => (
+              <Link
+                key={assessment.id}
+                to={path(`/exams/assessment/${assessment.id}`)}
+                className="hover:bg-accent/50 focus-visible:ring-ring flex flex-wrap items-center gap-snug rounded-lg border p-snug outline-none transition-colors focus-visible:ring-2"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">
+                    {assessment.title}
+                  </span>
+                  <span className="text-muted-foreground text-xs">
+                    {ASSESSMENT_LABEL[assessment.type]}
+                    {assessment.time && ` · ${assessment.time}`}
+                    {assessment.durationMinutes !== undefined &&
+                      ` · ${assessment.durationMinutes} min`}
+                    {assessment.topicIds.length > 0
+                      ? ` · covers ${assessment.topicIds.length} topics`
+                      : ' · whole course'}
+                    {assessment.weightPercent !== undefined &&
+                      ` · ${assessment.weightPercent}%`}
+                  </span>
+                </span>
+                <DueChip date={assessment.date} />
+              </Link>
+            ))}
+
+            {past.length > 0 && (
+              <>
+                <p className="text-muted-foreground pt-tight text-xs">
+                  Past assessments — kept and readable, but no longer driving
+                  countdowns.
+                </p>
+                {past.map((assessment) => (
+                  <Link
+                    key={assessment.id}
+                    to={path(`/exams/assessment/${assessment.id}`)}
+                    className="hover:bg-accent/50 focus-visible:ring-ring flex flex-wrap items-center gap-snug rounded-lg border border-dashed p-snug opacity-75 outline-none transition-colors focus-visible:ring-2"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-sm">
+                      {assessment.title}
+                    </span>
+                    <DueChip date={assessment.date} />
+                  </Link>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </Section>
 
       <Section
-        title="Presets"
-        description="Ready-made papers. Customise one to keep your own version."
+        title="Rehearsal presets"
+        description="Ready-made papers to practise under exam conditions. Nothing is marked until you submit the whole paper. Customise one to keep your own version."
       >
         <div className="grid gap-snug lg:grid-cols-2">
           {presets.map((config) => (
@@ -243,7 +322,7 @@ export function ExamsHomePage() {
       </Section>
 
       {custom.length > 0 && (
-        <Section title="Your papers">
+        <Section title="Your rehearsal papers">
           <div className="grid gap-snug lg:grid-cols-2">
             {custom.map((config) => (
               <ConfigCard
@@ -257,7 +336,10 @@ export function ExamsHomePage() {
         </Section>
       )}
 
-      <Section title="Past papers">
+      <Section
+        title="Rehearsal attempts"
+        description="Every run you have sat. These are your own practice under exam conditions, not the assessments themselves."
+      >
         {history.length === 0 ? (
           <EmptyState
             icon={<GraduationCapIcon />}
@@ -269,7 +351,7 @@ export function ExamsHomePage() {
             {history.map((attempt) => (
               <li key={attempt.id}>
                 <Link
-                  to={`/exams/results/${attempt.id}`}
+                  to={path(`/exams/results/${attempt.id}`)}
                   className="hover:bg-accent/50 focus-visible:ring-ring flex items-center justify-between gap-tight rounded-md border p-snug outline-none transition-colors focus-visible:ring-2"
                 >
                   <div className="flex min-w-0 flex-col">

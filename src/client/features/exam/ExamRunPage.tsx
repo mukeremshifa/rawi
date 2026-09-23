@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import {
   AlertTriangleIcon,
@@ -8,12 +8,12 @@ import {
   CheckIcon,
   ClockIcon,
   FlagIcon,
-  LightbulbIcon,
+  LockIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import type { AnswerValue, ExamRun } from '@shared/types.ts';
-import { hasContent, toQuestionAttempt } from '@shared/marking.ts';
+import { hasContent } from '@shared/marking.ts';
 
 import { Prose } from '@/components/Prose';
 import { Button } from '@/components/ui/button';
@@ -33,22 +33,43 @@ import {
 import { MEDIA_WIDE, useMediaQuery } from '@/components/layout';
 import { FORMAT_LABEL, formatClock } from '@/components/domain';
 import { useAppState, useStore } from '@/store/store';
-import { useMaterials, useQuestionMap } from '@/store/selectors';
+import { useCourse } from '@/store/course-context';
+import { useAllMaterials, useQuestionMap } from '@/store/selectors';
 import { QuestionView } from '@/features/practice/QuestionView';
-import { QuestionFeedback } from '@/features/practice/QuestionFeedback';
-import { finishRun, sectionAnsweredCount, sectionDeadline } from './engine';
+import {
+  deadlineFor,
+  enterSection,
+  finishRun,
+  locate,
+  lockReason,
+  paperExpired,
+  sectionExpired,
+  sectionLocked,
+  summarisePaper,
+} from './engine';
 import { cn } from '@/lib/utils';
 
 /**
  * Sitting an exam.
  *
- * ── The priority order on screen ──────────────────────────────────────────
+ * ── Assessment conditions, and what that removes ──────────────────────────
  *
- * The brief lists what the environment must prioritise, and the layout follows
- * it literally: time remaining and marks in a fixed bar that never scrolls
- * away, instructions at the top of each section, the question and its answer
- * entry in the generous middle, and navigation plus flags in a map that is a
- * rail on desktop and a sheet on mobile.
+ * No hints, no tutor, no correctness indicators, no explanations, no marks —
+ * nothing until the whole paper is submitted. That is not a UI decision made
+ * here; it is a property of the data this screen has. The run holds answers and
+ * flags and nothing that could reveal a result, and `finishRun` is the only
+ * function in the feature that marks anything. There is no branch on this
+ * screen that *could* show feedback, which is a stronger guarantee than a
+ * conditional that happens to be false.
+ *
+ * ── Navigation ────────────────────────────────────────────────────────────
+ *
+ * Free navigation means free: between questions *and* between sections, in
+ * both directions, for as long as those sections remain open. Moving to
+ * another section is just moving — it does not finish anything, does not lock
+ * anything and does not start anything the student did not ask to start. The
+ * one thing entering a section does is start its clock, once, if the paper is
+ * timed per section.
  *
  * ── Answer preservation ───────────────────────────────────────────────────
  *
@@ -59,12 +80,11 @@ import { cn } from '@/lib/utils';
  *
  * ── Expiry ────────────────────────────────────────────────────────────────
  *
- * One interval ticks a clock. When a whole-paper deadline passes the paper is
- * submitted exactly as it stands. When a *section* deadline passes, that
- * section is closed and the run advances to the next — and if it was the last,
- * the paper submits. Both paths end in the same results state, which is what
- * the brief asks for: a timed finish and a manual finish must not produce two
- * different kinds of outcome.
+ * One interval ticks a clock. Deadlines are absolute timestamps stored on the
+ * run, so a reload recomputes remaining time from the wall clock rather than
+ * restarting anything — leaving the page for ten minutes costs ten minutes.
+ * When the whole paper expires it is submitted exactly as it stands; when a
+ * single section expires it locks and the student stays where they are.
  */
 
 const TICK_MS = 500;
@@ -72,18 +92,21 @@ const TICK_MS = 500;
 export function ExamRunPage() {
   const { activeExam } = useAppState();
   const { dispatch } = useStore();
+  const course = useCourse();
   const navigate = useNavigate();
   const questionMap = useQuestionMap();
-  const materials = useMaterials();
+  const materials = useAllMaterials();
   const wide = useMediaQuery(MEDIA_WIDE);
 
   const [now, setNow] = useState(() => Date.now());
+  const [confirmFinishSection, setConfirmFinishSection] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [materialsOpen, setMaterialsOpen] = useState(false);
-  const [hinted, setHinted] = useState<Set<string>>(new Set());
   /** Guards against the expiry effect firing twice before the state settles. */
   const finishing = useRef(false);
+  /** Section ids we have already announced as expired, so the toast fires once. */
+  const announced = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), TICK_MS);
@@ -91,7 +114,8 @@ export function ExamRunPage() {
   }, []);
 
   const config = activeExam?.configSnapshot;
-  const section = config?.sections[activeExam?.currentSectionIndex ?? 0];
+  const sectionIndex = activeExam?.currentSectionIndex ?? 0;
+  const section = config?.sections[sectionIndex];
 
   const update = useCallback(
     (patch: Partial<ExamRun>) => {
@@ -101,134 +125,120 @@ export function ExamRunPage() {
     [activeExam, dispatch],
   );
 
+  /**
+   * Submits the paper, once.
+   *
+   * Both the manual path and every expiry path come through here, so a timer
+   * that fires while the confirm dialog is open cannot produce a second
+   * attempt: `finishing` is set synchronously, and the store's `record-attempt`
+   * is idempotent by id as a second line of defence.
+   */
   const submit = useCallback(
     (finish: 'manual' | 'expired') => {
       if (!activeExam || finishing.current) return;
       finishing.current = true;
 
-      const attempt = finishRun(activeExam, questionMap, finish, hinted);
+      const attempt = finishRun(activeExam, questionMap, finish);
       dispatch({ type: 'record-attempt', attempt });
       dispatch({ type: 'set-active-exam', run: null });
 
       toast[finish === 'expired' ? 'warning' : 'success'](
         finish === 'expired' ? 'Time expired — paper submitted' : 'Paper submitted',
-        {
-          description: `${attempt.marksAwarded} of ${attempt.marksAvailable} marks.`,
-        },
+        { description: 'Your marks and feedback are on the results page.' },
       );
-      navigate(`/exams/results/${attempt.id}`, { replace: true });
+      navigate(`/course/${course.id}/exams/results/${attempt.id}`, { replace: true });
     },
-    [activeExam, questionMap, hinted, dispatch, navigate],
+    [activeExam, questionMap, dispatch, navigate, course.id],
   );
 
-  /** Closes the current section and moves on, or submits if it was the last. */
-  const closeSection = useCallback(
-    (reason: 'submitted' | 'expired') => {
-      if (!activeExam || !config || !section) return;
-      const nextIndex = activeExam.currentSectionIndex + 1;
-      const outcome = {
-        sectionId: section.id,
-        ended: reason,
-        endedAt: new Date().toISOString(),
-      };
-
-      if (nextIndex >= config.sections.length) {
-        update({ sectionOutcomes: [...activeExam.sectionOutcomes, outcome] });
-        // The run in the store is one render behind, so finish from a merged
-        // copy rather than waiting for the dispatch to land.
-        const merged: ExamRun = {
-          ...activeExam,
-          sectionOutcomes: [...activeExam.sectionOutcomes, outcome],
-        };
-        finishing.current = true;
-        const attempt = finishRun(
-          merged,
-          questionMap,
-          reason === 'expired' ? 'expired' : 'manual',
-          hinted,
-        );
-        dispatch({ type: 'record-attempt', attempt });
-        dispatch({ type: 'set-active-exam', run: null });
-        toast[reason === 'expired' ? 'warning' : 'success'](
-          reason === 'expired'
-            ? 'Final section expired — paper submitted'
-            : 'Paper submitted',
-          { description: `${attempt.marksAwarded} of ${attempt.marksAvailable} marks.` },
-        );
-        navigate(`/exams/results/${attempt.id}`, { replace: true });
-        return;
-      }
-
-      const deadline = sectionDeadline(config, nextIndex);
-      update({
-        currentSectionIndex: nextIndex,
-        currentQuestionIndex: 0,
-        sectionOutcomes: [...activeExam.sectionOutcomes, outcome],
-        lockedSectionIds:
-          config.feedback === 'per-section'
-            ? [...activeExam.lockedSectionIds, section.id]
-            : activeExam.lockedSectionIds,
-        ...(deadline ? { sectionDeadlineAt: deadline } : {}),
-      });
-
-      if (reason === 'expired') {
-        toast.warning(`Time up on ${section.title}`, {
-          description:
-            config.feedback === 'per-section'
-              ? 'Its answers are locked. Feedback is below.'
-              : 'Moving to the next section.',
-        });
-      }
-    },
-    [activeExam, config, section, update, questionMap, hinted, dispatch, navigate],
-  );
+  /*
+   * Starting a section's clock, on entry.
+   *
+   * In an effect rather than in the navigation handler because a *reload* onto
+   * a section that has never been opened also has to start it — and because the
+   * initial render of the run counts as entering section one.
+   */
+  useEffect(() => {
+    if (!activeExam || finishing.current) return;
+    const started = enterSection(activeExam, activeExam.currentSectionIndex);
+    if (started !== activeExam) {
+      dispatch({ type: 'set-active-exam', run: started });
+    }
+  }, [activeExam, dispatch]);
 
   /* The expiry watcher. One effect, both kinds of deadline. */
   useEffect(() => {
     if (!activeExam || finishing.current) return;
 
-    if (activeExam.deadlineAt && now >= new Date(activeExam.deadlineAt).getTime()) {
+    if (paperExpired(activeExam, now)) {
       submit('expired');
       return;
     }
-    if (
-      activeExam.sectionDeadlineAt &&
-      now >= new Date(activeExam.sectionDeadlineAt).getTime()
-    ) {
-      closeSection('expired');
+
+    /*
+     * A section that has expired is locked by `sectionLocked` without any state
+     * change, so nothing has to be written for the rules to hold. What is worth
+     * doing is telling the student it happened — once — which is what the
+     * `announced` set is for. It survives re-renders and does not survive a
+     * reload, so a student returning to an already-expired paper gets the
+     * banner rather than a stale toast.
+     */
+    for (const [index, s] of activeExam.configSnapshot.sections.entries()) {
+      if (sectionExpired(activeExam, s.id, now) && !announced.current.has(s.id)) {
+        announced.current.add(s.id);
+        if (index === activeExam.currentSectionIndex) {
+          toast.warning(`Time up on ${s.title}`, {
+            description:
+              'Its answers are fixed. Nothing is marked until you submit the whole paper.',
+          });
+        }
+      }
     }
-  }, [now, activeExam, submit, closeSection]);
+  }, [now, activeExam, submit]);
+
+  const summary = useMemo(
+    () => (activeExam ? summarisePaper(activeExam, now) : null),
+    // `now` ticks twice a second; the summary only depends on it through the
+    // lock state, which changes rarely. Recomputing a handful of counts at that
+    // rate is cheaper than tracking which deadline is next.
+    [activeExam, now],
+  );
 
   /*
    * The "no active exam" guard.
    *
-   * ── Why `finishing` is part of the condition ──────────────────────────────
-   *
    * Submitting clears the active run and then navigates to the results. Those
    * are two steps, and between them this component re-renders with no run — so
    * a guard that only checks `activeExam` fires its redirect first and the
-   * student lands on the exams list instead of their results. The timed-expiry
-   * path hit this every time, which is exactly the path where seeing the
-   * results matters most.
-   *
-   * `finishing` is set synchronously before either dispatch, so it is already
-   * true on that intermediate render and the guard stands down and lets the
-   * pending navigation win.
+   * student lands on the exams list instead of their results. `finishing` is
+   * set synchronously before either dispatch, so it is already true on that
+   * intermediate render and the guard stands down.
    */
   if (finishing.current) return null;
 
-  if (!activeExam || !config || !section) {
-    return <Navigate to="/exams" replace />;
+  if (!activeExam || !config || !section || !summary) {
+    return <Navigate to={`/course/${course.id}/exams`} replace />;
+  }
+
+  /*
+   * An exam belonging to another course cannot be sat from this course's URL.
+   * Redirecting to where it actually lives is better than either refusing or,
+   * worse, rendering it here under the wrong course's navigation.
+   */
+  if (activeExam.courseId !== course.id) {
+    return <Navigate to={`/course/${activeExam.courseId}/exams/run`} replace />;
   }
 
   const questionIds = activeExam.sectionQuestions[section.id] ?? [];
   const questionId = questionIds[activeExam.currentQuestionIndex];
   const question = questionId ? questionMap.get(questionId) : undefined;
-  const sectionLocked = activeExam.lockedSectionIds.includes(section.id);
 
-  const deadline = activeExam.sectionDeadlineAt ?? activeExam.deadlineAt;
+  const locked = sectionLocked(activeExam, sectionIndex, now);
+  const lockedBecause = lockReason(activeExam, sectionIndex, now);
+
+  const deadline = deadlineFor(activeExam, section.id);
   const remaining = deadline ? new Date(deadline).getTime() - now : null;
-  const urgent = remaining !== null && remaining < 60_000;
+  const urgent = remaining !== null && remaining > 0 && remaining < 60_000;
 
   const totalMarks = config.sections.reduce(
     (sum, s) =>
@@ -240,15 +250,18 @@ export function ExamRunPage() {
     0,
   );
 
-  const answeredInSection = sectionAnsweredCount(activeExam, section.id);
   const lastQuestion = activeExam.currentQuestionIndex === questionIds.length - 1;
-  const lastSection = activeExam.currentSectionIndex === config.sections.length - 1;
+  const lastSection = sectionIndex === config.sections.length - 1;
+  const openSections = config.sections.filter(
+    (_, i) => !sectionLocked(activeExam, i, now),
+  ).length;
 
   const setAnswer = (value: AnswerValue) => {
-    if (!questionId || sectionLocked) return;
+    if (!questionId || locked) return;
     update({ answers: { ...activeExam.answers, [questionId]: value } });
   };
 
+  /** Moves within the current section. */
   const goTo = (index: number) => {
     if (config.navigation === 'sequential' && index < activeExam.currentQuestionIndex) {
       toast.info('Sequential paper', {
@@ -257,6 +270,36 @@ export function ExamRunPage() {
       return;
     }
     update({ currentQuestionIndex: index });
+  };
+
+  /**
+   * Moves to another section.
+   *
+   * This is *only* a move. It does not finish the section being left, does not
+   * lock it and does not mark anything — which is the behaviour the brief
+   * specifically calls for, and the opposite of what the previous build did.
+   */
+  const goToSection = (index: number, questionIndex = 0) => {
+    if (index === sectionIndex && questionIndex === activeExam.currentQuestionIndex) {
+      return;
+    }
+    if (config.navigation === 'sequential' && index < sectionIndex) {
+      toast.info('Sequential paper', {
+        description: 'This exam does not allow returning to an earlier section.',
+      });
+      return;
+    }
+    const target = config.sections[index];
+    if (!target) return;
+
+    // Starting the destination's clock here as well as in the effect means the
+    // deadline is already on the run in the same transition as the move, so the
+    // timer never renders blank for a frame.
+    const entered = enterSection(
+      { ...activeExam, currentSectionIndex: index, currentQuestionIndex: questionIndex },
+      index,
+    );
+    dispatch({ type: 'set-active-exam', run: entered });
   };
 
   const toggleFlag = () => {
@@ -268,41 +311,111 @@ export function ExamRunPage() {
     });
   };
 
-  const unanswered = questionIds.filter(
-    (id) => !hasContent(activeExam.answers[id]),
-  ).length;
+  /** Finishing a section locks it, when the configuration says so. */
+  const finishSection = () => {
+    if (!config.lockSectionsOnFinish) {
+      // Without locking there is nothing to finish: move on, or submit if this
+      // was the last open section.
+      const nextOpen = config.sections.findIndex(
+        (_, i) => i > sectionIndex && !sectionLocked(activeExam, i, now),
+      );
+      if (nextOpen === -1) setConfirmSubmit(true);
+      else goToSection(nextOpen);
+      return;
+    }
 
-  const marked =
-    sectionLocked && question && questionId
-      ? toQuestionAttempt(
-          question,
-          activeExam.answers[questionId] ?? { kind: 'none' },
-          hinted.has(questionId),
+    const locking = [...activeExam.lockedSectionIds, section.id];
+    const remainingOpen = config.sections.filter(
+      (s, i) => !locking.includes(s.id) && !sectionLocked(activeExam, i, now),
+    );
+
+    if (remainingOpen.length === 0) {
+      // Locking the last open section would leave a paper nobody can work on,
+      // so that action submits instead — and the dialog says so beforehand.
+      submit('manual');
+      return;
+    }
+
+    const nextIndex = config.sections.findIndex(
+      (s, i) => !locking.includes(s.id) && !sectionLocked(activeExam, i, now) && i > sectionIndex,
+    );
+    const target = nextIndex === -1
+      ? config.sections.findIndex(
+          (s, i) => !locking.includes(s.id) && !sectionLocked(activeExam, i, now),
         )
-      : null;
+      : nextIndex;
+
+    const moved: ExamRun = {
+      ...activeExam,
+      lockedSectionIds: locking,
+      sectionOutcomes: [
+        ...activeExam.sectionOutcomes,
+        { sectionId: section.id, ended: 'submitted', endedAt: new Date().toISOString() },
+      ],
+      currentSectionIndex: target === -1 ? sectionIndex : target,
+      currentQuestionIndex: 0,
+    };
+    dispatch({
+      type: 'set-active-exam',
+      run: target === -1 ? moved : enterSection(moved, target),
+    });
+    toast.info(`${section.title} locked`, {
+      description: 'You can still read it. Nothing is marked until the paper is submitted.',
+    });
+  };
+
+  /** Jumps to a flagged question wherever it is, if it is still reachable. */
+  const goToFlagged = (id: string) => {
+    const at = locate(activeExam, id);
+    if (!at) return;
+    if (config.navigation === 'sequential' && at.sectionIndex < sectionIndex) {
+      toast.info('Sequential paper', {
+        description: 'That question is in a section you have already passed.',
+      });
+      return;
+    }
+    goToSection(at.sectionIndex, at.questionIndex);
+    setMapOpen(false);
+  };
 
   const QuestionMap = (
     <div className="flex flex-col gap-section p-gutter">
       {config.sections.map((s, sIndex) => {
         const ids = activeExam.sectionQuestions[s.id] ?? [];
-        const isCurrent = sIndex === activeExam.currentSectionIndex;
-        const isPast = sIndex < activeExam.currentSectionIndex;
+        const isCurrent = sIndex === sectionIndex;
+        const sLocked = sectionLocked(activeExam, sIndex, now);
+        const sDeadline = deadlineFor(activeExam, s.id);
+        const sRemaining =
+          config.timing === 'per-section' && sDeadline
+            ? new Date(sDeadline).getTime() - now
+            : null;
+
         return (
           <div key={s.id} className="flex flex-col gap-tight">
             <div className="flex items-center justify-between gap-tight">
-              <span
+              <button
+                type="button"
+                onClick={() => {
+                  goToSection(sIndex);
+                  setMapOpen(false);
+                }}
                 className={cn(
-                  'text-sm font-medium',
-                  !isCurrent && 'text-muted-foreground',
+                  'focus-visible:ring-ring rounded text-left text-sm outline-none focus-visible:ring-2',
+                  isCurrent ? 'font-medium' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
                 {s.title}
-              </span>
-              {isPast && (
-                <Badge variant="secondary" className="font-normal">
-                  {activeExam.lockedSectionIds.includes(s.id) ? 'Locked' : 'Done'}
+              </button>
+              {sLocked ? (
+                <Badge variant="secondary" className="gap-1 font-normal">
+                  <LockIcon className="size-3" aria-hidden />
+                  Locked
                 </Badge>
-              )}
+              ) : sRemaining !== null ? (
+                <span className="text-muted-foreground font-mono text-xs tabular-nums">
+                  {formatClock(sRemaining)}
+                </span>
+              ) : null}
             </div>
             <div className="flex flex-wrap gap-hairline">
               {ids.map((id, qIndex) => {
@@ -313,21 +426,20 @@ export function ExamRunPage() {
                   <button
                     key={id}
                     type="button"
-                    disabled={!isCurrent}
                     onClick={() => {
-                      goTo(qIndex);
+                      goToSection(sIndex, qIndex);
                       setMapOpen(false);
                     }}
                     aria-current={active ? 'true' : undefined}
                     aria-label={`${s.title}, question ${qIndex + 1}${
                       answered ? ', answered' : ', not answered'
-                    }${flagged ? ', flagged' : ''}`}
+                    }${flagged ? ', flagged' : ''}${sLocked ? ', locked' : ''}`}
                     className={cn(
                       'focus-visible:ring-ring relative size-8 rounded-md border font-mono text-xs tabular-nums outline-none transition-colors focus-visible:ring-2',
                       active && 'border-primary bg-primary text-primary-foreground',
                       !active && answered && 'bg-secondary',
-                      !active && !answered && isCurrent && 'hover:bg-accent',
-                      !isCurrent && 'opacity-50',
+                      !active && !answered && 'hover:bg-accent',
+                      sLocked && !active && 'opacity-60',
                     )}
                   >
                     {qIndex + 1}
@@ -345,14 +457,37 @@ export function ExamRunPage() {
         );
       })}
 
+      {/* Flags, listed across every section, because the brief asks that they
+          help a student find work anywhere in the paper before submitting. */}
       {activeExam.flagged.length > 0 && (
         <div className="flex flex-col gap-tight">
           <span className="text-sm font-medium">
             Flagged ({activeExam.flagged.length})
           </span>
-          <p className="text-muted-foreground text-xs leading-relaxed">
-            Marked to come back to. They are listed again before you submit.
-          </p>
+          <div className="flex flex-col gap-hairline">
+            {activeExam.flagged.map((id) => {
+              const at = locate(activeExam, id);
+              const s = at ? config.sections[at.sectionIndex] : undefined;
+              const reachable =
+                at !== null &&
+                (config.navigation !== 'sequential' || at.sectionIndex >= sectionIndex);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  disabled={!reachable}
+                  onClick={() => goToFlagged(id)}
+                  className={cn(
+                    'focus-visible:ring-ring rounded-md border px-snug py-1 text-left text-xs outline-none transition-colors focus-visible:ring-2',
+                    reachable ? 'hover:bg-accent' : 'opacity-50',
+                  )}
+                >
+                  {s?.title} · question {(at?.questionIndex ?? 0) + 1}
+                  {!reachable && ' (passed)'}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -362,10 +497,11 @@ export function ExamRunPage() {
           {config.navigation === 'free' ? 'free navigation' : 'sequential'}
         </span>
         <span>
-          {config.feedback === 'per-section'
-            ? 'Feedback after each section'
-            : 'Feedback after submission'}
+          {config.lockSectionsOnFinish
+            ? 'Finishing a section locks its answers'
+            : 'Sections stay open until you submit'}
         </span>
+        <span>Marks and feedback are released after you submit the paper.</span>
         {config.extraTimePercent > 0 && (
           <span>Extra time: +{config.extraTimePercent}%</span>
         )}
@@ -403,7 +539,7 @@ export function ExamRunPage() {
             >
               <ClockIcon className="size-3.5" aria-hidden />
               <span className="font-mono text-sm tabular-nums">
-                {formatClock(remaining)}
+                {formatClock(Math.max(0, remaining))}
               </span>
               {config.timing === 'per-section' && (
                 <span className="text-muted-foreground text-xs">this section</span>
@@ -454,7 +590,7 @@ export function ExamRunPage() {
             <Sheet open={mapOpen} onOpenChange={setMapOpen}>
               <SheetTrigger asChild>
                 <Button variant="outline" size="sm">
-                  Questions
+                  Paper
                 </Button>
               </SheetTrigger>
               <SheetContent side="right" className="w-80 overflow-y-auto p-0">
@@ -468,7 +604,7 @@ export function ExamRunPage() {
 
           <Button size="sm" onClick={() => setConfirmSubmit(true)}>
             <CheckIcon />
-            {lastSection ? 'Finish' : 'Submit section'}
+            Submit paper
           </Button>
         </div>
 
@@ -490,14 +626,11 @@ export function ExamRunPage() {
               </Alert>
             )}
 
-            {sectionLocked && (
+            {locked && lockedBecause && (
               <Alert>
-                <AlertTriangleIcon />
-                <AlertTitle>This section is locked</AlertTitle>
-                <AlertDescription>
-                  Its feedback has been released, so the answers can no longer be
-                  changed.
-                </AlertDescription>
+                <LockIcon />
+                <AlertTitle>This section is closed</AlertTitle>
+                <AlertDescription>{lockedBecause}</AlertDescription>
               </Alert>
             )}
 
@@ -516,7 +649,7 @@ export function ExamRunPage() {
                       {question.marks} {question.marks === 1 ? 'mark' : 'marks'}
                     </span>
                     <div className="flex-1" />
-                    {config.flaggingEnabled && !sectionLocked && (
+                    {config.flaggingEnabled && (
                       <Button
                         variant={
                           questionId && activeExam.flagged.includes(questionId)
@@ -534,37 +667,22 @@ export function ExamRunPage() {
                     )}
                   </div>
 
+                  {/*
+                    `hintsAllowed` is hard false. An exam offers no assistance,
+                    so this is not a setting being read — it is the absence of a
+                    capability, which is why no configuration can turn it on.
+                  */}
                   <QuestionView
                     question={question}
                     answer={questionId ? activeExam.answers[questionId] : undefined}
                     onChange={setAnswer}
-                    readOnly={sectionLocked}
-                    hintsAllowed={config.tutorAllowed && !sectionLocked}
-                    onHintUsed={() =>
-                      questionId &&
-                      setHinted((prev) => new Set(prev).add(questionId))
-                    }
+                    readOnly={locked}
+                    hintsAllowed={false}
                   />
-
-                  {config.tutorAllowed && !sectionLocked && (
-                    <p className="text-muted-foreground flex items-start gap-tight text-xs">
-                      <LightbulbIcon className="mt-0.5 size-3 shrink-0" aria-hidden />
-                      Tutor assistance is enabled for this paper. Taking a hint
-                      records the answer as assisted rather than independent.
-                    </p>
-                  )}
                 </CardContent>
               </Card>
             ) : (
               <p className="text-muted-foreground">This question is unavailable.</p>
-            )}
-
-            {sectionLocked && marked && question && (
-              <Card>
-                <CardContent>
-                  <QuestionFeedback question={question} attempt={marked} />
-                </CardContent>
-              </Card>
             )}
 
             <div className="flex flex-wrap items-center gap-tight">
@@ -587,19 +705,34 @@ export function ExamRunPage() {
                 <ArrowRightIcon />
               </Button>
               <div className="flex-1" />
-              {lastQuestion && (
+              {lastQuestion && !lastSection && (
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    config.lockSectionsOnFinish
+                      ? setConfirmFinishSection(true)
+                      : finishSection()
+                  }
+                >
+                  {config.lockSectionsOnFinish
+                    ? `Finish ${section.title}`
+                    : 'Next section'}
+                </Button>
+              )}
+              {lastQuestion && lastSection && (
                 <Button variant="secondary" onClick={() => setConfirmSubmit(true)}>
-                  {lastSection ? 'Finish the paper' : `Finish ${section.title}`}
+                  Submit the paper
                 </Button>
               )}
             </div>
 
-            {config.navigation === 'sequential' && (
-              <p className="text-muted-foreground text-xs">
-                This paper is sequential: once you move on you cannot return to
-                an earlier question.
-              </p>
-            )}
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              {config.navigation === 'sequential'
+                ? 'This paper is sequential: once you move on you cannot return to an earlier question or section. '
+                : `Free navigation: you can move between questions and between the ${openSections} open section${openSections === 1 ? '' : 's'} in any order. `}
+              Nothing is marked and no feedback is shown until you submit the whole
+              paper.
+            </p>
           </div>
         </div>
       </div>
@@ -609,40 +742,94 @@ export function ExamRunPage() {
       )}
 
       <ConfirmDialog
-        open={confirmSubmit}
-        onOpenChange={setConfirmSubmit}
-        title={lastSection ? 'Submit the paper?' : `Finish ${section.title}?`}
+        open={confirmFinishSection}
+        onOpenChange={setConfirmFinishSection}
+        title={`Finish ${section.title}?`}
         description={
           <span className="flex flex-col gap-tight">
             <span>
-              {answeredInSection} of {questionIds.length} answered in this
-              section.
-              {unanswered > 0 &&
-                ` ${unanswered} ${unanswered === 1 ? 'question has' : 'questions have'} no answer and will score zero.`}
+              This paper locks a section when you finish it.{' '}
+              <strong>
+                Its {questionIds.length} answers will be fixed and you will not be able
+                to change them
+              </strong>
+              , though you can still read them.
             </span>
-            {activeExam.flagged.length > 0 && (
-              <span>
-                {activeExam.flagged.length}{' '}
-                {activeExam.flagged.length === 1 ? 'question is' : 'questions are'}{' '}
-                still flagged.
-              </span>
-            )}
             <span>
-              {lastSection
-                ? 'Submitting marks the whole paper and opens your results.'
-                : config.feedback === 'per-section'
-                  ? 'This section will be locked and its feedback released.'
-                  : 'You will move to the next section and cannot return to this one.'}
+              {summary.sections[sectionIndex]?.answered ?? 0} of {questionIds.length}{' '}
+              answered in this section.
+            </span>
+            <span>
+              Nothing is marked yet. Marks and feedback come after the whole paper is
+              submitted.
             </span>
           </span>
         }
-        confirmLabel={lastSection ? 'Submit paper' : 'Finish section'}
+        confirmLabel="Finish and lock"
         onConfirm={() => {
-          setConfirmSubmit(false);
-          if (lastSection) submit('manual');
-          else closeSection('submitted');
+          setConfirmFinishSection(false);
+          finishSection();
         }}
       />
+
+      <ConfirmDialog
+        open={confirmSubmit}
+        onOpenChange={setConfirmSubmit}
+        title="Submit the paper?"
+        description={
+          <span className="flex flex-col gap-tight">
+            {/* The whole paper, not just this section — which is the review the
+                brief asks for. */}
+            <span>
+              {summary.answered} of {summary.total} questions answered across the whole
+              paper.
+              {summary.unanswered > 0 &&
+                ` ${summary.unanswered} ${summary.unanswered === 1 ? 'has' : 'have'} no answer and will score zero.`}
+            </span>
+            {summary.sections.length > 1 && (
+              <span className="flex flex-col gap-hairline">
+                {summary.sections.map((s) => (
+                  <span key={s.id} className="text-xs">
+                    {s.title}: {s.answered}/{s.total} answered
+                    {s.flagged > 0 && `, ${s.flagged} flagged`}
+                    {s.locked && ', locked'}
+                  </span>
+                ))}
+              </span>
+            )}
+            {summary.flagged > 0 && (
+              <span>
+                {summary.flagged}{' '}
+                {summary.flagged === 1 ? 'question is' : 'questions are'} still flagged.
+              </span>
+            )}
+            <span>Submitting marks the whole paper and opens your results.</span>
+          </span>
+        }
+        confirmLabel="Submit paper"
+        onConfirm={() => {
+          setConfirmSubmit(false);
+          submit('manual');
+        }}
+      />
+
+      {/* A last-resort escape for a paper whose every section has expired but
+          which the watcher has not yet submitted — a reload lands here first. */}
+      {summary.sections.every((s) => s.locked) && (
+        <div className="bg-background/80 fixed inset-0 z-50 flex items-center justify-center p-gutter">
+          <Card className="max-w-md">
+            <CardContent className="flex flex-col gap-base">
+              <AlertTriangleIcon className="text-warning size-5" aria-hidden />
+              <h2 className="font-serif text-xl">Every section is closed</h2>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                There is nothing left to answer on this paper. Submitting it will mark
+                what you have and open your results.
+              </p>
+              <Button onClick={() => submit('expired')}>Submit and see results</Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

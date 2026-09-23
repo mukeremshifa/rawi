@@ -11,7 +11,19 @@ import { selectQuestions } from '@/store/selectors';
 import { newId } from '@/lib/id';
 
 /**
- * Exam construction, validation and completion.
+ * Exam construction, validation, timing and completion.
+ *
+ * ── The rule this file now enforces ───────────────────────────────────────
+ *
+ * **Nothing is marked until the whole paper is submitted.** The previous
+ * checkpoint could release feedback section by section and could offer tutor
+ * hints inside a paper; both are gone. What finishing a section can still do is
+ * *lock* it, and that is a separate, explicit setting whose consequence is
+ * stated before the student confirms.
+ *
+ * That leaves the run holding no marking state at all, which is the point: a
+ * run is answers, flags, position and deadlines, and the single `finishRun`
+ * call at the end is the only place a mark is ever computed.
  *
  * ── Why validation lives here and not in the builder component ────────────
  *
@@ -20,13 +32,6 @@ import { newId } from '@/lib/id';
  * impossible — a student can delete a material or a topic after saving), and
  * `buildRun` itself (to refuse rather than produce a broken paper). Putting it
  * in a component would have meant the other two silently skipping it.
- *
- * ── The one that keeps biting ─────────────────────────────────────────────
- *
- * A section asking for more questions than the pool holds. It is easy to do —
- * pick "essay" and a single topic and the pool is one — and the failure is
- * invisible until the paper is running. So it is the first thing checked, per
- * section, with the shortfall named.
  */
 
 export interface Validation {
@@ -131,15 +136,32 @@ export function validateConfig(config: ExamConfig, pool: Question[]): Validation
     );
   }
 
-  if (config.feedback === 'per-section' && config.navigation === 'free') {
+  /*
+   * The combinations involving locking. Each is allowed and each is worth
+   * explaining, because the interaction between navigation, timing and locking
+   * is where a student is most likely to lose work they thought was safe.
+   */
+  if (config.lockSectionsOnFinish && config.navigation === 'free') {
     warnings.push(
-      'With per-section feedback, finishing a section locks its answers — so free navigation only applies within the section you are on.',
+      'Free navigation with locking on: you can move between sections freely, but once you press “Finish section” that section’s answers are fixed. You will be asked to confirm before that happens.',
     );
   }
 
-  if (config.feedback === 'per-section' && config.sections.length === 1) {
+  if (config.lockSectionsOnFinish && config.sections.length === 1) {
     warnings.push(
-      'Per-section feedback on a single-section paper is the same as feedback at the end.',
+      'On a single-section paper, finishing the section and submitting the paper are the same action, so locking has no separate effect.',
+    );
+  }
+
+  if (config.timing === 'per-section') {
+    warnings.push(
+      'Each section’s clock starts when you first open it and keeps running whether or not you are on it. When it expires that section is locked, and returning to it later does not restart it.',
+    );
+  }
+
+  if (config.navigation === 'sequential') {
+    warnings.push(
+      'Sequential navigation: you cannot return to an earlier question or an earlier section, and flagged questions can only be revisited while you are still on their section.',
     );
   }
 
@@ -187,6 +209,7 @@ export function buildRun(config: ExamConfig, pool: Question[]): ExamRun | null {
 
   return {
     id: newId('run'),
+    courseId: config.courseId,
     configId: config.id,
     configSnapshot: config,
     sectionQuestions,
@@ -197,6 +220,20 @@ export function buildRun(config: ExamConfig, pool: Question[]): ExamRun | null {
     currentQuestionIndex: 0,
     lockedSectionIds: [],
     sectionOutcomes: [],
+    /*
+     * Only the first section's clock starts now. The others start when the
+     * student first opens them, which is what `enterSection` is for — starting
+     * them all at once would run down a later section's time while the student
+     * is still working on an earlier one.
+     */
+    sectionDeadlines:
+      config.timing === 'per-section' && first
+        ? {
+            [first.id]: new Date(
+              now + withExtraTime(first.minutes, config.extraTimePercent) * 60_000,
+            ).toISOString(),
+          }
+        : {},
     ...(config.timing === 'overall'
       ? {
           deadlineAt: new Date(
@@ -204,28 +241,117 @@ export function buildRun(config: ExamConfig, pool: Question[]): ExamRun | null {
           ).toISOString(),
         }
       : {}),
-    ...(config.timing === 'per-section' && first
-      ? {
-          sectionDeadlineAt: new Date(
-            now + withExtraTime(first.minutes, config.extraTimePercent) * 60_000,
-          ).toISOString(),
-        }
-      : {}),
   };
 }
 
-/** The deadline for a newly entered section, or undefined when untimed. */
-export function sectionDeadline(
-  config: ExamConfig,
-  sectionIndex: number,
-  from: number = Date.now(),
-): string | undefined {
-  if (config.timing !== 'per-section') return undefined;
+/**
+ * Starts a section's clock the first time it is entered.
+ *
+ * ── Why this is idempotent ────────────────────────────────────────────────
+ *
+ * The brief requires that leaving a page and coming back does not grant new
+ * time. With free navigation a student can leave a timed section and return to
+ * it, and a naive implementation recomputes the deadline on entry — handing out
+ * the full allowance again, every time. So a section that already has a
+ * deadline keeps it, expired or not, and this returns the run unchanged.
+ */
+export function enterSection(run: ExamRun, sectionIndex: number): ExamRun {
+  const config = run.configSnapshot;
   const section = config.sections[sectionIndex];
-  if (!section) return undefined;
-  return new Date(
-    from + withExtraTime(section.minutes, config.extraTimePercent) * 60_000,
-  ).toISOString();
+  if (!section) return run;
+  if (config.timing !== 'per-section') return run;
+  if (run.sectionDeadlines[section.id]) return run;
+
+  return {
+    ...run,
+    sectionDeadlines: {
+      ...run.sectionDeadlines,
+      [section.id]: new Date(
+        Date.now() + withExtraTime(section.minutes, config.extraTimePercent) * 60_000,
+      ).toISOString(),
+    },
+  };
+}
+
+/** The deadline for a section, or undefined when it has not started or is untimed. */
+export function deadlineFor(run: ExamRun, sectionId: string): string | undefined {
+  return run.configSnapshot.timing === 'per-section'
+    ? run.sectionDeadlines[sectionId]
+    : run.deadlineAt;
+}
+
+/** Whether a section's own clock has run out. */
+export function sectionExpired(
+  run: ExamRun,
+  sectionId: string,
+  now: number = Date.now(),
+): boolean {
+  if (run.configSnapshot.timing !== 'per-section') return false;
+  const deadline = run.sectionDeadlines[sectionId];
+  return deadline !== undefined && now >= new Date(deadline).getTime();
+}
+
+/**
+ * Whether a section can still be answered.
+ *
+ * Three ways to lose a section: it was explicitly finished under a config that
+ * locks, its own timer expired, or the paper is sequential and the student has
+ * moved past it. Collecting them here means the runner asks one question
+ * instead of three, and the read-only view cannot disagree with the input.
+ */
+export function sectionLocked(
+  run: ExamRun,
+  sectionIndex: number,
+  now: number = Date.now(),
+): boolean {
+  const section = run.configSnapshot.sections[sectionIndex];
+  if (!section) return true;
+  if (run.lockedSectionIds.includes(section.id)) return true;
+  if (sectionExpired(run, section.id, now)) return true;
+  if (
+    run.configSnapshot.navigation === 'sequential' &&
+    sectionIndex < run.currentSectionIndex
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Why a section is locked, for the banner that explains it. */
+export function lockReason(
+  run: ExamRun,
+  sectionIndex: number,
+  now: number = Date.now(),
+): string | null {
+  const section = run.configSnapshot.sections[sectionIndex];
+  if (!section) return null;
+  if (sectionExpired(run, section.id, now)) {
+    return 'The time for this section has run out, so its answers are fixed. You can still read them; nothing is marked until you submit the whole paper.';
+  }
+  if (run.lockedSectionIds.includes(section.id)) {
+    return 'You finished this section, and this paper locks a section when you finish it. You can still read your answers; nothing is marked until you submit the whole paper.';
+  }
+  if (
+    run.configSnapshot.navigation === 'sequential' &&
+    sectionIndex < run.currentSectionIndex
+  ) {
+    return 'This paper is sequential, so earlier sections cannot be returned to.';
+  }
+  return null;
+}
+
+/**
+ * Whether the whole paper is out of time.
+ *
+ * For an overall timer this is the paper deadline. For per-section timing it is
+ * every section having expired — which is the case a reload after a long
+ * absence produces, and which must submit rather than leave a paper that can
+ * never be worked on again.
+ */
+export function paperExpired(run: ExamRun, now: number = Date.now()): boolean {
+  if (run.deadlineAt && now >= new Date(run.deadlineAt).getTime()) return true;
+  if (run.configSnapshot.timing !== 'per-section') return false;
+  return run.configSnapshot.sections.every((s) => sectionExpired(run, s.id, now));
 }
 
 /* ── Marking a finished paper ─────────────────────────────────────────── */
@@ -241,15 +367,18 @@ export function sectionDeadline(
  * discarded on finish and the attempt — questions, answers, marks, mode — is
  * what persists.
  *
- * `mode` is `exam` unless the tutor was available, in which case any hint taken
- * makes individual answers assisted. That distinction is what stops open-book,
- * tutor-assisted rehearsal from being counted as independent evidence.
+ * ── Assistance ────────────────────────────────────────────────────────────
+ *
+ * There is no assistance to record any more: an exam offers no hints, so every
+ * answer is independent by construction and the attempt is marked
+ * `assistanceRecord: 'tracked'` with `usedHint: false` throughout. That claim
+ * is now true of the mechanism rather than of a flag someone remembered to set,
+ * which is why the field can be trusted for runs created by this build.
  */
 export function finishRun(
   run: ExamRun,
   pool: Map<string, Question>,
   finish: 'manual' | 'expired',
-  hintedQuestionIds: Set<string>,
 ): Attempt {
   const config = run.configSnapshot;
   const questions: QuestionAttempt[] = [];
@@ -259,18 +388,18 @@ export function finishRun(
       const question = pool.get(questionId);
       if (!question) continue;
       const answer = run.answers[questionId] ?? { kind: 'none' as const };
-      questions.push(
-        toQuestionAttempt(question, answer, hintedQuestionIds.has(questionId)),
-      );
+      questions.push(toQuestionAttempt(question, answer, false));
     }
   }
 
   return {
     id: newId('att'),
+    courseId: run.courseId,
     kind: 'exam',
     mode: 'exam',
     title: config.name,
     examConfigId: config.id,
+    assistanceRecord: 'tracked',
     topicIds: [...new Set(questions.map((q) => q.topicId))],
     startedAt: run.startedAt,
     completedAt: new Date().toISOString(),
@@ -278,6 +407,7 @@ export function finishRun(
     marksAwarded: questions.reduce((sum, q) => sum + q.marksAwarded, 0),
     marksAvailable: questions.reduce((sum, q) => sum + q.marksAvailable, 0),
     finish,
+    ...(config.assessmentIds?.[0] ? { assessmentId: config.assessmentIds[0] } : {}),
   };
 }
 
@@ -286,6 +416,20 @@ export function flatQuestionIds(run: ExamRun): string[] {
   return run.configSnapshot.sections.flatMap(
     (section) => run.sectionQuestions[section.id] ?? [],
   );
+}
+
+/** Where a question sits in the paper, so a flag can navigate to it. */
+export function locate(
+  run: ExamRun,
+  questionId: string,
+): { sectionIndex: number; questionIndex: number } | null {
+  const sections = run.configSnapshot.sections;
+  for (let s = 0; s < sections.length; s += 1) {
+    const ids = run.sectionQuestions[sections[s]!.id] ?? [];
+    const q = ids.indexOf(questionId);
+    if (q !== -1) return { sectionIndex: s, questionIndex: q };
+  }
+  return null;
 }
 
 /** How many questions in a section have an answer with content in it. */
@@ -311,4 +455,52 @@ export function sectionAnsweredCount(run: ExamRun, sectionId: string): number {
         return true;
     }
   }).length;
+}
+
+/**
+ * The whole paper's state at submission time, for the final review.
+ *
+ * The brief requires the pre-submission review to account for the *entire*
+ * paper rather than the current section, which is what this produces: totals
+ * across every section, plus the per-section breakdown a student needs to
+ * decide whether to go back.
+ */
+export interface PaperSummary {
+  total: number;
+  answered: number;
+  unanswered: number;
+  flagged: number;
+  sections: {
+    id: string;
+    title: string;
+    total: number;
+    answered: number;
+    flagged: number;
+    locked: boolean;
+  }[];
+}
+
+export function summarisePaper(run: ExamRun, now: number = Date.now()): PaperSummary {
+  const sections = run.configSnapshot.sections.map((section, index) => {
+    const ids = run.sectionQuestions[section.id] ?? [];
+    return {
+      id: section.id,
+      title: section.title,
+      total: ids.length,
+      answered: sectionAnsweredCount(run, section.id),
+      flagged: ids.filter((id) => run.flagged.includes(id)).length,
+      locked: sectionLocked(run, index, now),
+    };
+  });
+
+  const total = sections.reduce((sum, s) => sum + s.total, 0);
+  const answered = sections.reduce((sum, s) => sum + s.answered, 0);
+
+  return {
+    total,
+    answered,
+    unanswered: total - answered,
+    flagged: run.flagged.length,
+    sections,
+  };
 }

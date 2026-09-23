@@ -24,6 +24,7 @@ import {
   formatRelative,
 } from '@/components/domain';
 import { useAppState } from '@/store/store';
+import { useCoursePath } from '@/store/course-context';
 import { useAttempt, useQuestionMap, useTopicMap } from '@/store/selectors';
 import { QuestionFeedback } from '@/features/practice/QuestionFeedback';
 import { hasScript } from '@/features/tutor/engine';
@@ -69,6 +70,7 @@ function topicGaps(attempt: Attempt): TopicGap[] {
 }
 
 export function ExamResultsPage() {
+  const path = useCoursePath();
   const { attemptId } = useParams();
   const attempt = useAttempt(attemptId);
   const { examConfigs } = useAppState();
@@ -94,7 +96,7 @@ export function ExamResultsPage() {
     <Page className="max-w-3xl pb-page">
       <div>
         <Button variant="ghost" size="sm" asChild className="-ml-2">
-          <Link to="/exams">
+          <Link to={path('/exams')}>
             <ArrowLeftIcon />
             Exams
           </Link>
@@ -156,7 +158,7 @@ export function ExamResultsPage() {
               <li key={gap.topicId} className="flex flex-col gap-tight">
                 <div className="flex flex-wrap items-baseline justify-between gap-tight">
                   <Link
-                    to={`/progress/topic/${gap.topicId}`}
+                    to={path(`/progress/topic/${gap.topicId}`)}
                     className="text-sm font-medium underline-offset-4 hover:underline"
                   >
                     {topic?.title ?? gap.topicId}
@@ -181,7 +183,7 @@ export function ExamResultsPage() {
         <div className="flex flex-wrap gap-tight">
           {worst && hasScript(worst.topicId) && (
             <Button asChild>
-              <Link to={`/tutor/new?topic=${worst.topicId}&attempt=${attempt.id}`}>
+              <Link to={path(`/tutor/new?topic=${worst.topicId}&attempt=${attempt.id}`)}>
                 <MessageSquareIcon />
                 Work through {topicMap.get(worst.topicId)?.title}
               </Link>
@@ -190,9 +192,9 @@ export function ExamResultsPage() {
           {wrong.length > 0 && (
             <Button variant="outline" asChild>
               <Link
-                to={`/practice/new?retry=${attempt.id}&questions=${wrong
+                to={path(`/practice/new?retry=${attempt.id}&questions=${wrong
                   .map((qa) => qa.questionId)
-                  .join(',')}`}
+                  .join(',')}`)}
               >
                 <RotateCcwIcon />
                 Practise the {wrong.length} you missed
@@ -201,14 +203,14 @@ export function ExamResultsPage() {
           )}
           {worst && (
             <Button variant="outline" asChild>
-              <Link to={`/practice/new?topic=${worst.topicId}`}>
+              <Link to={path(`/practice/new?topic=${worst.topicId}`)}>
                 <DumbbellIcon />
                 Targeted practice
               </Link>
             </Button>
           )}
           <Button variant="outline" asChild>
-            <Link to="/exams">
+            <Link to={path('/exams')}>
               <GraduationCapIcon />
               Sit another paper
             </Link>
@@ -246,7 +248,7 @@ export function ExamResultsPage() {
                       </Badge>
                       <Separator orientation="vertical" className="h-3" />
                       <Link
-                        to={`/progress/topic/${qa.topicId}`}
+                        to={path(`/progress/topic/${qa.topicId}`)}
                         className="text-muted-foreground text-xs underline-offset-4 hover:underline"
                       >
                         {topicMap.get(qa.topicId)?.title}
