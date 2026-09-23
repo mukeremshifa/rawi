@@ -95,7 +95,20 @@ export function PageHeader({
       <div className="flex min-w-0 flex-col gap-hairline">
         <h1 className="font-serif text-3xl tracking-tight">{title}</h1>
         {description && (
-          <p className="text-muted-foreground text-sm leading-relaxed">{description}</p>
+          /*
+           * A `div`, not a `p`.
+           *
+           * Callers pass rich descriptions — a row of separated facts, a
+           * countdown next to a course name — and a `div` or a block-level
+           * element inside a `p` is invalid HTML. The browser silently closes
+           * the paragraph early, React warns about it, and the layout breaks
+           * in ways that look like a styling bug rather than a nesting one.
+           * Since this slot genuinely accepts arbitrary nodes, the container
+           * has to be one that can hold them.
+           */
+          <div className="text-muted-foreground text-sm leading-relaxed">
+            {description}
+          </div>
         )}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-tight">{actions}</div>}
@@ -130,8 +143,11 @@ export function SectionHeader({
     >
       <div className="flex min-w-0 flex-col gap-hairline">
         <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
+        {/* A `div` for the same reason as `PageHeader`'s description. */}
         {description && (
-          <p className="text-muted-foreground text-xs leading-relaxed">{description}</p>
+          <div className="text-muted-foreground text-xs leading-relaxed">
+            {description}
+          </div>
         )}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-tight">{actions}</div>}

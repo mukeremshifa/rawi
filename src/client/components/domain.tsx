@@ -3,15 +3,19 @@ import { Link } from 'react-router-dom';
 import { BookOpenIcon, FlaskConicalIcon, InfoIcon } from 'lucide-react';
 
 import type {
+  AssessmentType,
+  CourseAccent,
   Difficulty,
   EvidenceLevel,
   MaterialKind,
   MaterialOrigin,
   Outcome,
   QuestionFormat,
+  SessionActivity,
   SourceRef,
 } from '@shared/types.ts';
 import { EVIDENCE_DETAIL, EVIDENCE_LABEL, EVIDENCE_TONE } from '@shared/progress.ts';
+import { localISO } from '@shared/planner.ts';
 
 import { Badge } from '@/components/ui/badge';
 import { Meter, EmptyMeter } from '@/components/Meter';
@@ -339,4 +343,184 @@ export function formatMinutes(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
+/** Alias kept because several screens read better with the shorter name. */
+export const relativeDay = formatRelative;
+
+/** A day label for a calendar column: "Mon 14". */
+export function formatDayShort(iso: string): string {
+  return new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+  });
+}
+
+/** A date label that leads with today/tomorrow, for deadlines. */
+export function formatDueDate(iso: string, now: Date = new Date()): string {
+  const days = Math.round(
+    (new Date(`${iso}T12:00:00`).getTime() -
+      new Date(`${localISO(now)}T12:00:00`).getTime()) /
+      86_400_000,
+  );
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  if (days === -1) return 'Yesterday';
+  if (days > 1 && days <= 13) return `In ${days} days`;
+  if (days < -1 && days >= -13) return `${Math.abs(days)} days ago`;
+  return formatDate(`${iso}T12:00:00`);
+}
+
+/** `570` → `"09:30"`, in the student's own clock convention. */
+export function formatTimeOfDay(minutes: number): string {
+  const d = new Date();
+  d.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+/* ── Courses ──────────────────────────────────────────────────────────── */
+
+/**
+ * The accent classes for a course.
+ *
+ * Courses are told apart by colour in every aggregated view — the planner, the
+ * home page, the history list — so the mapping lives here rather than being
+ * re-decided per screen. The tokens are defined in `globals.css`; this is the
+ * lookup that turns a course's stored accent name into the classes a component
+ * applies.
+ */
+export const COURSE_ACCENT: Record<
+  CourseAccent,
+  { dot: string; border: string; soft: string; text: string }
+> = {
+  indigo: {
+    dot: 'bg-[var(--accent-indigo)]',
+    border: 'border-l-[var(--accent-indigo)]',
+    soft: 'bg-[var(--accent-indigo-soft)]',
+    text: 'text-[var(--accent-indigo)]',
+  },
+  amber: {
+    dot: 'bg-[var(--accent-amber)]',
+    border: 'border-l-[var(--accent-amber)]',
+    soft: 'bg-[var(--accent-amber-soft)]',
+    text: 'text-[var(--accent-amber)]',
+  },
+  teal: {
+    dot: 'bg-[var(--accent-teal)]',
+    border: 'border-l-[var(--accent-teal)]',
+    soft: 'bg-[var(--accent-teal-soft)]',
+    text: 'text-[var(--accent-teal)]',
+  },
+  rose: {
+    dot: 'bg-[var(--accent-rose)]',
+    border: 'border-l-[var(--accent-rose)]',
+    soft: 'bg-[var(--accent-rose-soft)]',
+    text: 'text-[var(--accent-rose)]',
+  },
+  violet: {
+    dot: 'bg-[var(--accent-violet)]',
+    border: 'border-l-[var(--accent-violet)]',
+    soft: 'bg-[var(--accent-violet-soft)]',
+    text: 'text-[var(--accent-violet)]',
+  },
+};
+
+/** The small coloured dot that labels a course in an aggregated list. */
+export function CourseDot({
+  accent,
+  className,
+}: {
+  accent: CourseAccent;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn('size-2 shrink-0 rounded-full', COURSE_ACCENT[accent].dot, className)}
+    />
+  );
+}
+
+/** A course's name with its dot, for cross-course lists. */
+export function CourseTag({
+  name,
+  accent,
+  className,
+}: {
+  name: string;
+  accent: CourseAccent;
+  className?: string;
+}) {
+  return (
+    <span className={cn('flex min-w-0 items-center gap-1.5 text-xs', className)}>
+      <CourseDot accent={accent} />
+      <span className="truncate">{name}</span>
+    </span>
+  );
+}
+
+/* ── Assessments and sessions ─────────────────────────────────────────── */
+
+export const ASSESSMENT_LABEL: Record<AssessmentType, string> = {
+  quiz: 'Quiz',
+  midterm: 'Midterm',
+  final: 'Final',
+  essay: 'Essay',
+  presentation: 'Presentation',
+  other: 'Assessment',
+};
+
+export const ACTIVITY_LABEL: Record<SessionActivity, string> = {
+  tutor: 'Tutor',
+  read: 'Reading',
+  practice: 'Practice',
+  flashcards: 'Flashcards',
+  exam: 'Rehearsal',
+  review: 'Review',
+  other: 'Study',
+};
+
+/**
+ * How close an assessment is, as a tone.
+ *
+ * Used for the countdown chip. Deliberately three bands rather than a gradient:
+ * a colour that changes every day reads as decoration, and the only distinction
+ * a student acts on is "this week / this fortnight / later".
+ */
+export function assessmentTone(days: number): 'urgent' | 'soon' | 'later' {
+  if (days <= 3) return 'urgent';
+  if (days <= 10) return 'soon';
+  return 'later';
+}
+
+/** A countdown chip for a planned assessment. */
+export function DueChip({ date, className }: { date: string; className?: string }) {
+  const days = Math.round(
+    (new Date(`${date}T12:00:00`).getTime() -
+      new Date(`${localISO(new Date())}T12:00:00`).getTime()) /
+      86_400_000,
+  );
+  const tone = assessmentTone(days);
+  const past = days < 0;
+
+  return (
+    <span
+      className={cn(
+        'rounded-md border px-1.5 py-0.5 font-mono text-xs tabular-nums',
+        past && 'text-muted-foreground',
+        !past && tone === 'urgent' && 'border-destructive/40 text-destructive',
+        !past && tone === 'soon' && 'border-warning/40 text-warning-foreground',
+        !past && tone === 'later' && 'text-muted-foreground',
+        className,
+      )}
+    >
+      {past
+        ? `${Math.abs(days)}d ago`
+        : days === 0
+          ? 'Today'
+          : days === 1
+            ? 'Tomorrow'
+            : `${days} days`}
+    </span>
+  );
 }

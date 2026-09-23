@@ -72,6 +72,32 @@
      "ink on practicing" without hardcoding a value this file owns. */
   --evidence-ink: oklch(0.16 0 0);
 
+  /* ── Course accents ─────────────────────────────────────────────────────
+     One hue per course, used to tell courses apart in the aggregated views —
+     the planner grid, the home page, the history list — where several courses'
+     records sit in one column and the heading that would have named them is
+     several rows away.
+
+     Two stops each. The MARK stop is a dot or a left border and clears 3:1
+     against --background, which is the non-text contrast floor. The SOFT stop
+     is a tinted surface that page ink sits on, so it stays close to the
+     background rather than becoming a second card colour.
+
+     **Colour is never the only signal.** Every accented row also carries the
+     course name in text, because a colour-blind student and a monochrome print
+     both have to be able to tell which course a row belongs to. */
+  --accent-indigo: oklch(0.55 0.15 265);
+  --accent-amber: oklch(0.58 0.13 75);
+  --accent-teal: oklch(0.54 0.1 195);
+  --accent-rose: oklch(0.56 0.16 15);
+  --accent-violet: oklch(0.55 0.16 305);
+
+  --accent-indigo-soft: oklch(0.96 0.025 265);
+  --accent-amber-soft: oklch(0.96 0.03 75);
+  --accent-teal-soft: oklch(0.96 0.025 195);
+  --accent-rose-soft: oklch(0.96 0.025 15);
+  --accent-violet-soft: oklch(0.96 0.025 305);
+
   /* ── Spacing ────────────────────────────────────────────────────────────
      A 4px base, named by role rather than by size, because "gutter" survives a
      redesign and "space-6" does not.
@@ -163,6 +189,22 @@
   --evidence-retained-mark: oklch(0.8 0.1 255);
 
   --evidence-ink: oklch(0.16 0 0);
+
+  /* Course accents lift on the dark ground so the dots and borders keep their
+     3:1 against a 0.125 page, and the soft stops become dark tints rather than
+     light ones — a light surface here would read as a raised card and compete
+     with the real surface steps. */
+  --accent-indigo: oklch(0.72 0.14 265);
+  --accent-amber: oklch(0.76 0.12 75);
+  --accent-teal: oklch(0.72 0.1 195);
+  --accent-rose: oklch(0.72 0.14 15);
+  --accent-violet: oklch(0.72 0.14 305);
+
+  --accent-indigo-soft: oklch(0.26 0.04 265);
+  --accent-amber-soft: oklch(0.26 0.04 75);
+  --accent-teal-soft: oklch(0.26 0.035 195);
+  --accent-rose-soft: oklch(0.26 0.04 15);
+  --accent-violet-soft: oklch(0.26 0.04 305);
 
   /* Shadows barely read on a dark ground; depth comes from the surface steps
      above. Kept non-zero so a modal still separates from what is behind it. */
@@ -257,19 +299,35 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* One scrollbar, and it belongs to whoever is scrolling. Ordinary pages
-     scroll in `body`; a full-height shell sets `h-dvh` and scrolls inside
-     itself. Giving the root a definite height rather than an implicit one is
-     what stops the second kind from putting a useless second bar down the
-     right edge. */
+  /*
+   * One scroll owner, and it is the shell.
+   *
+   * ── The bug this replaced ─────────────────────────────────────────────
+   *
+   * `html, body, #root { height: 100% }` plus `body { overflow: auto }` gave
+   * the document a scrollbar, while the shell's own `h-dvh` with a scrolling
+   * `<main>` inside gave a second one. On desktop both were visible at once
+   * and the outer one did nothing: dragging it moved nothing, because the
+   * content that overflowed was inside the inner scroller.
+   *
+   * The fix is to make the document exactly the viewport and refuse it any
+   * overflow at all. Everything in this app renders inside `AppShell`, which
+   * owns the single vertical scroll on its `<main>`. Panels that genuinely
+   * scroll separately — a reading pane, the tutor conversation, an exam's
+   * question map — opt in explicitly inside that, which is the one case where
+   * a second scrollbar is meaningful rather than accidental.
+   */
   html,
   body,
   #root {
     height: 100%;
+    overflow: hidden;
   }
 
-  body {
-    overflow: auto;
+  /* `#root` is the flex parent every shell stretches into. */
+  #root {
+    display: flex;
+    flex-direction: column;
   }
 
   ::selection {
