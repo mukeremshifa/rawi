@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeftIcon,
@@ -7,6 +7,7 @@ import {
   RotateCcwIcon,
   SaveIcon,
 } from 'lucide-react';
+import { attemptTotals, isWritten } from '@shared/marking.ts';
 import { toast } from 'sonner';
 
 import type {
@@ -31,8 +32,11 @@ import {
   usePracticeSet,
   useQuestionMap,
   useTopicMap,
+  useCanTutor,
+  useMaterials,
 } from '@/store/selectors';
-import { hasScript } from '@/features/tutor/engine';
+import { failedGrading, gradeAnswer } from './grading';
+
 import { newId } from '@/lib/id';
 import { QuestionView } from './QuestionView';
 import { QuestionFeedback } from './QuestionFeedback';
@@ -74,9 +78,18 @@ export function PracticeRunPage() {
   const path = useCoursePath();
   const questionMap = useQuestionMap();
   const topicMap = useTopicMap();
+  const canTutor = useCanTutor();
 
   const run = usePracticeRun(runId);
   const set = usePracticeSet(run?.setId);
+  const materials = useMaterials();
+  const [gradingId, setGradingId] = useState<string | null>(null);
+  const gradeController = useRef<AbortController | null>(null);
+  /* Where finishing sent the student. Removing the run re-renders this page
+     without it, and that render must follow to the results rather than
+     bouncing back to Practice. */
+  const finishedTo = useRef<string | null>(null);
+  useEffect(() => () => gradeController.current?.abort(), []);
 
   const update = useCallback(
     (patch: Partial<PracticeAttemptState>) => {
@@ -112,9 +125,18 @@ export function PracticeRunPage() {
         const q = questionMap.get(id);
         if (!q) return null;
         const given = run.answers[id] ?? { kind: 'none' as const };
-        return toQuestionAttempt(q, given, run.hintedIds.includes(id));
+        /* Feedback fetched during the run is kept. Anything not yet graded
+           is recorded as waiting and graded on the results page. */
+        const grading = run.gradings?.[id];
+        return toQuestionAttempt(
+          q,
+          given,
+          run.hintedIds.includes(id),
+          grading?.status === 'graded' ? grading : undefined,
+        );
       })
       .filter((qa): qa is QuestionAttempt => qa !== null);
+    const totals = attemptTotals(questionAttempts);
 
     const completed: Attempt = {
       id: newId('att'),
@@ -128,21 +150,37 @@ export function PracticeRunPage() {
       startedAt: run.startedAt,
       completedAt: new Date().toISOString(),
       questions: questionAttempts,
-      marksAwarded: questionAttempts.reduce((sum, qa) => sum + qa.marksAwarded, 0),
-      marksAvailable: questionAttempts.reduce((sum, qa) => sum + qa.marksAvailable, 0),
+      marksAwarded: totals.marksAwarded,
+      marksAvailable: totals.marksAvailable,
       ...(run.plannedSessionId ? { plannedSessionId: run.plannedSessionId } : {}),
     };
 
     dispatch({ type: 'record-attempt', attempt: completed });
     dispatch({ type: 'remove-practice-run', runId: run.id });
 
+    gradeController.current?.abort();
+    finishedTo.current = path(`/practice/results/${completed.id}`);
     toast.success('Practice recorded', {
-      description: `${completed.marksAwarded} of ${completed.marksAvailable} marks. Progress updated.`,
+      description:
+        totals.pending > 0
+          ? `${totals.pending} written ${totals.pending === 1 ? 'answer is' : 'answers are'} waiting for feedback.`
+          : `${completed.marksAwarded} of ${completed.marksAvailable} marks. Progress updated.`,
     });
-    navigate(path(`/practice/results/${completed.id}`), { replace: true });
+    navigate(path(`/practice/results/${completed.id}`), {
+      replace: true,
+      state: { justSubmitted: true },
+    });
   }, [run, set, questionMap, dispatch, navigate, path]);
 
-  if (!run || !set) return <Navigate to={path('/practice')} replace />;
+  if (!run || !set) {
+    return (
+      <Navigate
+        to={finishedTo.current ?? path('/practice')}
+        replace
+        {...(finishedTo.current ? { state: { justSubmitted: true } } : {})}
+      />
+    );
+  }
   if (run.courseId !== course.id) {
     return <Navigate to={`/course/${run.courseId}/practice/run/${run.id}`} replace />;
   }
@@ -162,10 +200,34 @@ export function PracticeRunPage() {
   const immediate = run.feedback === 'immediate';
   const last = index === activeIds.length - 1;
 
+  const grading = run.gradings?.[questionId];
   const marked: QuestionAttempt | null =
     isChecked && answer
-      ? toQuestionAttempt(question, answer, run.hintedIds.includes(questionId))
+      ? toQuestionAttempt(question, answer, run.hintedIds.includes(questionId), grading)
       : null;
+
+  /** Asks for feedback on a written answer, keeping the answer whatever happens. */
+  const requestFeedback = async () => {
+    const text = answer?.kind === 'text' ? answer.text.trim() : '';
+    if (!text || gradingId) return;
+    const controller = new AbortController();
+    gradeController.current = controller;
+    setGradingId(questionId);
+    try {
+      const result = await gradeAnswer(question, text, materials, controller.signal);
+      dispatch({ type: 'set-practice-grading', runId: run.id, questionId, grading: result });
+    } catch (error) {
+      dispatch({
+        type: 'set-practice-grading',
+        runId: run.id,
+        questionId,
+        grading: failedGrading(error),
+      });
+    } finally {
+      gradeController.current = null;
+      setGradingId(null);
+    }
+  };
 
   const setAnswer = (value: AnswerValue) => {
     const answers = { ...run.answers, [questionId]: value };
@@ -190,6 +252,7 @@ export function PracticeRunPage() {
   const check = () => {
     if (run.checkedIds.includes(questionId)) return;
     update({ checkedIds: [...run.checkedIds, questionId] });
+    if (isWritten(question.format) && hasContent(answer)) void requestFeedback();
   };
 
   const next = () => {
@@ -286,10 +349,31 @@ export function PracticeRunPage() {
           }
         >
           <CardContent>
+            {marked.outcome === 'pending' && (
+              <div className="mb-base flex flex-wrap items-center gap-tight">
+                {gradingId === questionId ? (
+                  <>
+                    <span className="text-muted-foreground text-sm">Getting feedback…</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => gradeController.current?.abort()}
+                    >
+                      Stop
+                    </Button>
+                  </>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => void requestFeedback()}>
+                    <RotateCcwIcon />
+                    {grading?.status === 'failed' ? 'Try again' : 'Get feedback'}
+                  </Button>
+                )}
+              </div>
+            )}
             <QuestionFeedback
               question={question}
               attempt={marked}
-              {...(hasScript(question.topicId)
+              {...(canTutor(question.topicId)
                 ? {
                     discussTo: path(
                       `/tutor/new?topic=${question.topicId}&question=${question.id}`,

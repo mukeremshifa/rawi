@@ -200,6 +200,19 @@ export interface Question {
   /** Shown after marking, for every format. */
   explanation: string;
   source?: SourceRef;
+  /** Set on questions a model wrote. Authored questions have none. */
+  provenance?: QuestionProvenance;
+}
+
+/**
+ * Where a generated question came from. Kept with the question so a saved
+ * set can always say which model wrote it and from which material.
+ */
+export interface QuestionProvenance {
+  kind: 'generated';
+  model: string;
+  generatedAt: string;
+  materialIds: string[];
 }
 
 export interface RubricPoint {
@@ -208,9 +221,9 @@ export interface RubricPoint {
   label: string;
   marks: number;
   /**
-   * Lowercased keywords. If an answer contains any, the simulated marker
-   * credits the point. This is string matching, labelled as such in the UI —
-   * it is not comprehension and the prototype never says it is.
+   * Lowercased keywords used by the old simulated marker. Kept on authored
+   * questions so historical grades still explain themselves. Generated
+   * questions have none, and new answers are never marked by keyword.
    */
   keywords: string[];
   /** Said when the point was missed. */
@@ -231,7 +244,12 @@ export interface RubricPoint {
  */
 export type AttemptMode = 'tutored' | 'practice' | 'self-rated' | 'exam';
 
-export type Outcome = 'correct' | 'partial' | 'incorrect' | 'skipped';
+/**
+ * `pending` is a written answer that has been submitted and is waiting for
+ * feedback, or whose feedback request failed. It is neither a success nor a
+ * failure, and progress ignores it until it is graded.
+ */
+export type Outcome = 'correct' | 'partial' | 'incorrect' | 'skipped' | 'pending';
 
 export interface QuestionAttempt {
   questionId: string;
@@ -245,6 +263,23 @@ export interface QuestionAttempt {
   usedHint: boolean;
   /** Rubric point ids credited, for written formats. */
   creditedRubricIds?: string[];
+  /**
+   * How a written answer was marked. Absent on written answers from earlier
+   * builds, which were marked by the simulated keyword checker and keep that
+   * grade and that label.
+   */
+  grading?: WrittenGrading;
+}
+
+export interface WrittenGrading {
+  method: 'ai';
+  status: 'pending' | 'graded' | 'failed';
+  model?: string;
+  gradedAt?: string;
+  summary?: string;
+  points?: { rubricId: string; awarded: number; max: number; feedback: string }[];
+  /** The last failure, shown with a retry. The answer itself is never lost. */
+  error?: string;
 }
 
 /** Every shape an answer can take, across every format. */
@@ -324,6 +359,19 @@ export interface TutorMessage {
   suggestions?: TutorSuggestion[];
   /** Marks a scripted-scope disclosure rather than teaching content. */
   meta?: boolean;
+  /**
+   * The model that wrote this turn. Tutor turns without one were authored
+   * responses from an earlier build.
+   */
+  model?: string;
+  /** `interrupted` turns were cut off and are not complete teaching. */
+  status?: 'complete' | 'interrupted';
+  /** How far the reply rests on the course material. */
+  grounding?: 'materials' | 'mixed' | 'general' | 'insufficient';
+  /** Validated passages cited in the text, in citation order. */
+  citations?: SourceRef[];
+  /** Citations the model made to passages it was not given, removed. */
+  droppedCitations?: number;
 }
 
 export interface TutorSuggestion {
@@ -443,6 +491,8 @@ export interface PracticeAttemptState {
   updatedAt: string;
   /** Set when this run was started from a planner session. */
   plannedSessionId?: string;
+  /** Feedback on written answers checked during the run, by question id. */
+  gradings?: Record<string, WrittenGrading>;
 }
 
 /* ── Exams ────────────────────────────────────────────────────────────── */

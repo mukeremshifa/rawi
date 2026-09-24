@@ -8,8 +8,12 @@ import type {
   Difficulty,
   FeedbackTiming,
   PracticeConfig,
+  Question,
+  QuestionFormat,
   SavedPracticeSet,
 } from '@shared/types.ts';
+import { AI_LIMITS, type GeneratedFormat, type GeneratedQuestion } from '@shared/ai.ts';
+import { isUsableMaterial, selectPassages, toAiTopic } from '@shared/ai-context.ts';
 
 import { Page, PageHeader, Section } from '@/components/layout';
 import { Button } from '@/components/ui/button';
@@ -31,6 +35,7 @@ import {
   useTopics,
 } from '@/store/selectors';
 import { newId } from '@/lib/id';
+import { AiRequestError, generateQuestions, useAiStatus } from '@/lib/ai';
 
 /**
  * Setting up and generating a practice set.
@@ -54,6 +59,15 @@ import { newId } from '@/lib/id';
  * same tick — a double-press, an impatient double-tap — sees the ref already
  * true and returns. State would not have updated yet at that point, which is
  * precisely the window in which duplicates are created.
+ *
+ * ── Two sources of questions ─────────────────────────────────────────────
+ *
+ * A set is drawn either from the course's question bank or written by the
+ * model from the course's readable material. Generated questions are checked
+ * twice, by the server and again here for course ownership and source ids,
+ * then saved together with the set in one store action. After that they are
+ * ordinary saved questions: opening the set or starting another attempt uses
+ * them as stored and never generates again.
  *
  * ── Every control must change something ───────────────────────────────────
  *
@@ -81,6 +95,74 @@ const ACTIVITY_BLURB: Record<ActivityType, string> = {
 };
 
 const ALL_DIFFICULTIES: Difficulty[] = ['recall', 'reasoning', 'stretch'];
+
+/** The activities the model can write, and the format each one produces. */
+const AI_FORMAT: Partial<Record<ActivityType, GeneratedFormat>> = {
+  flashcards: 'flashcard',
+  quiz: 'multiple-choice',
+  'written-recall': 'written-recall',
+};
+
+/**
+ * Turns validated output into saved questions. Anything that names a topic
+ * outside the selection or a passage that was not sent is dropped here,
+ * whatever the server said, because this is the last check before storage.
+ */
+function toQuestions(
+  generated: GeneratedQuestion[],
+  params: {
+    courseId: string;
+    format: GeneratedFormat;
+    topicIds: Set<string>;
+    passages: Map<string, { materialId: string }>;
+    model: string;
+  },
+): Question[] {
+  const now = new Date().toISOString();
+  const out: Question[] = [];
+  for (const g of generated) {
+    const passage = params.passages.get(g.sourcePassageId);
+    if (!passage || !params.topicIds.has(g.topicId)) continue;
+    const id = newId('q-gen');
+    const base = {
+      id,
+      courseId: params.courseId,
+      format: params.format as QuestionFormat,
+      topicId: g.topicId,
+      difficulty: g.difficulty,
+      prompt: g.prompt,
+      answer: g.answer,
+      explanation: g.explanation,
+      source: { materialId: passage.materialId, passageId: g.sourcePassageId },
+      provenance: {
+        kind: 'generated' as const,
+        model: params.model,
+        generatedAt: now,
+        materialIds: [passage.materialId],
+      },
+    };
+    if (params.format === 'multiple-choice') {
+      const options = g.options ?? [];
+      const index = g.correctIndex ?? -1;
+      if (options.length < 2 || index < 0 || index >= options.length) continue;
+      out.push({ ...base, marks: 1, options, correctIndices: [index] });
+    } else if (params.format === 'written-recall') {
+      const rubric = (g.rubric ?? []).map((r, i) => ({
+        id: `${id}-r${i + 1}`,
+        label: r.label,
+        marks: r.marks,
+        keywords: [],
+        missedAdvice: r.missedAdvice,
+      }));
+      const marks = rubric.reduce((sum, r) => sum + r.marks, 0);
+      if (rubric.length === 0 || marks <= 0) continue;
+      out.push({ ...base, marks, rubric });
+    } else {
+      out.push({ ...base, marks: 1 });
+    }
+  }
+  return out;
+}
 
 export function PracticeSetupPage() {
   const [params] = useSearchParams();
@@ -124,6 +206,46 @@ export function PracticeSetupPage() {
   const [titleTouched, setTitleTouched] = useState(false);
   const [generating, setGenerating] = useState(false);
   const generatingRef = useRef(false);
+  const aiController = useRef<AbortController | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const { unavailable } = useAiStatus();
+
+  /* Until the student picks a source, the bank is used when it has questions
+     for the chosen activity and topics, and otherwise, where there is
+     readable material, the model writes them. */
+  const usableMaterials = useMemo(() => materials.filter(isUsableMaterial), [materials]);
+  const [sourceChoice, setSource] = useState<'bank' | 'ai' | null>(null);
+  const bankHasMatches = useMemo(
+    () =>
+      selectQuestions(pool, {
+        topicIds: topicIds.length > 0 ? topicIds : topics.map((t) => t.id),
+        formats: ACTIVITY_FORMATS[activity],
+      }).length > 0,
+    [pool, topicIds, topics, activity],
+  );
+  const source: 'bank' | 'ai' =
+    sourceChoice ??
+    (!bankHasMatches && usableMaterials.length > 0 && AI_FORMAT[activity] ? 'ai' : 'bank');
+  const ai = source === 'ai' && retryQuestionIds.length === 0;
+  const aiLength = Math.min(Math.max(1, length), AI_LIMITS.maxQuestionsPerRequest);
+
+  /** The passages a generation would send, chosen by topic and selection. */
+  const aiPassages = useMemo(() => {
+    if (!ai || topicIds.length === 0) return [];
+    const selectedTopics = topics.filter((t) => topicIds.includes(t.id));
+    const scope =
+      materialIds.length > 0
+        ? usableMaterials.filter((m) => materialIds.includes(m.id))
+        : usableMaterials;
+    return selectPassages({
+      courseId: course.id,
+      materials: scope,
+      topicIds,
+      query: selectedTopics.map((t) => `${t.title} ${t.summary}`).join(' '),
+      maxPassages: 16,
+      maxChars: 24000,
+    });
+  }, [ai, topicIds, topics, materialIds, usableMaterials, course.id]);
 
   const filter = useMemo(
     () => ({
@@ -174,7 +296,106 @@ export function PracticeSetupPage() {
   const titleError = !trimmedTitle
     ? 'Give this set a name, so you can find it again.'
     : null;
-  const canGenerate = chosen.length > 0 && !titleError && !generating;
+  const canGenerate = ai
+    ? aiPassages.length > 0 &&
+      topicIds.length > 0 &&
+      difficulties.length > 0 &&
+      !!AI_FORMAT[activity] &&
+      !titleError &&
+      !generating &&
+      !unavailable
+    : chosen.length > 0 && !titleError && !generating;
+
+  /**
+   * Asks the model for questions, validates them again, and saves the set
+   * with its questions in one action. A failure or a cancel saves nothing and
+   * leaves every setting as it was, so trying again is one click.
+   */
+  const generateWithAi = async () => {
+    const format = AI_FORMAT[activity];
+    if (!format || generatingRef.current) return;
+    if (!trimmedTitle) {
+      setTitleTouched(true);
+      return;
+    }
+    generatingRef.current = true;
+    setGenerating(true);
+    setAiError(null);
+    const controller = new AbortController();
+    aiController.current = controller;
+    const selectedTopics = topics.filter(
+      (t) => topicIds.includes(t.id) && t.courseId === course.id,
+    );
+    try {
+      const response = await generateQuestions(
+        {
+          courseId: course.id,
+          courseName: course.name,
+          format,
+          count: aiLength,
+          difficulties,
+          topics: selectedTopics.map(toAiTopic),
+          passages: aiPassages,
+        },
+        controller.signal,
+      );
+      const questions = toQuestions(response.questions, {
+        courseId: course.id,
+        format,
+        topicIds: new Set(selectedTopics.map((t) => t.id)),
+        passages: new Map(aiPassages.map((p) => [p.id, { materialId: p.materialId }])),
+        model: response.usage.model,
+      });
+      if (questions.length === 0) {
+        throw new AiRequestError(
+          'invalid-output',
+          'None of the generated questions passed the checks, so nothing was saved. Try again.',
+        );
+      }
+      const set: SavedPracticeSet = {
+        id: newId('set'),
+        courseId: course.id,
+        name: trimmedTitle,
+        config: {
+          activity,
+          topicIds,
+          materialIds,
+          length: questions.length,
+          difficulties,
+          hintsAllowed,
+          feedback,
+        },
+        questionIds: questions.map((q) => q.id),
+        savedAt: new Date().toISOString(),
+      };
+      dispatch({ type: 'save-generated-set', questions, set });
+      toast.success('Set generated', {
+        description: `${questions.length} ${
+          questions.length === 1 ? 'question' : 'questions'
+        } written by ${response.usage.model}, saved as “${set.name}”.${
+          questions.length < aiLength
+            ? ` ${aiLength - questions.length} did not pass the checks and were left out.`
+            : ''
+        }`,
+      });
+      navigate(
+        `${path(`/practice/set/${set.id}`)}${sessionId ? `?session=${sessionId}` : ''}`,
+        { replace: true },
+      );
+    } catch (error) {
+      setAiError(
+        error instanceof AiRequestError
+          ? error.code === 'cancelled'
+            ? 'Generation was cancelled. Nothing was saved.'
+            : `${error.message}`
+          : 'Generation failed. Nothing was saved.',
+      );
+      generatingRef.current = false;
+      setGenerating(false);
+    } finally {
+      aiController.current = null;
+    }
+  };
 
   /**
    * Generates the set, saves it once, and opens it.
@@ -185,6 +406,10 @@ export function PracticeSetupPage() {
    * empty case is checked before anything is written.
    */
   const generate = () => {
+    if (ai) {
+      void generateWithAi();
+      return;
+    }
     if (generatingRef.current) return;
     if (!trimmedTitle) {
       setTitleTouched(true);
@@ -284,9 +509,52 @@ export function PracticeSetupPage() {
         </Alert>
       ) : (
         <>
+          <Section
+            title="Questions from"
+            description={
+              ai
+                ? 'The model writes new questions from this course’s readable material. They are checked and saved with the set, so later attempts reuse them.'
+                : 'Questions already in this course’s bank.'
+            }
+          >
+            <div className="grid gap-tight sm:grid-cols-2">
+              {(
+                [
+                  ['bank', 'Question bank', `${pool.length} questions in this course.`],
+                  [
+                    'ai',
+                    'Generate from my materials',
+                    usableMaterials.length > 0
+                      ? `AI written, from ${usableMaterials.length} readable ${usableMaterials.length === 1 ? 'material' : 'materials'}.`
+                      : 'Needs a readable material in this course first.',
+                  ],
+                ] as const
+              ).map(([value, label, blurb]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    setSource(value);
+                    if (value === 'ai' && !AI_FORMAT[activity]) setActivity('quiz');
+                  }}
+                  disabled={value === 'ai' && usableMaterials.length === 0}
+                  aria-pressed={source === value}
+                  className={`focus-visible:ring-ring flex flex-col gap-hairline rounded-lg border p-snug text-left outline-none transition-colors focus-visible:ring-2 disabled:opacity-50 ${
+                    source === value ? 'border-primary bg-primary/5' : 'hover:bg-accent/50'
+                  }`}
+                >
+                  <span className="text-sm font-medium">{label}</span>
+                  <span className="text-muted-foreground text-xs leading-relaxed">{blurb}</span>
+                </button>
+              ))}
+            </div>
+          </Section>
+
           <Section title="Activity">
             <div className="grid gap-tight sm:grid-cols-2">
-              {(Object.keys(ACTIVITY_FORMATS) as ActivityType[]).map((type) => (
+              {(Object.keys(ACTIVITY_FORMATS) as ActivityType[])
+                .filter((type) => !ai || AI_FORMAT[type])
+                .map((type) => (
                 <button
                   key={type}
                   type="button"
@@ -298,9 +566,13 @@ export function PracticeSetupPage() {
                       : 'hover:bg-accent/50'
                   }`}
                 >
-                  <span className="text-sm font-medium">{ACTIVITY_LABEL[type]}</span>
+                  <span className="text-sm font-medium">
+                    {ai && type === 'quiz' ? 'Multiple choice' : ACTIVITY_LABEL[type]}
+                  </span>
                   <span className="text-muted-foreground text-xs leading-relaxed">
-                    {ACTIVITY_BLURB[type]}
+                    {ai && type === 'quiz'
+                      ? 'One correct option each, checked exactly.'
+                      : ACTIVITY_BLURB[type]}
                   </span>
                 </button>
               ))}
@@ -349,32 +621,35 @@ export function PracticeSetupPage() {
                       }
                     />
                     {topic.title}
-                    <Badge variant="secondary" className="font-mono tabular-nums">
-                      {count}
-                    </Badge>
+                    {!ai && (
+                      <Badge variant="secondary" className="font-mono tabular-nums">
+                        {count}
+                      </Badge>
+                    )}
                   </label>
                 );
               })}
             </div>
-            {topics.some(
-              (t) =>
-                selectQuestions(pool, { topicIds: [t.id] }).length === 0,
-            ) && (
-              <p className="text-muted-foreground text-xs leading-relaxed">
-                Topics showing zero have no authored questions in this prototype.
-                Practice cannot be generated for them. The tutor and your own
-                materials are the way in.
-              </p>
-            )}
+            {!ai &&
+              topics.some((t) => selectQuestions(pool, { topicIds: [t.id] }).length === 0) && (
+                <p className="text-muted-foreground text-xs leading-relaxed">
+                  Topics showing zero have no questions in the bank. Choose Generate from
+                  my materials to have questions written for them.
+                </p>
+              )}
           </Section>
 
           {materials.length > 0 && (
             <Section
-              title="Limit to materials"
-              description="Optional. Only questions citing one of these will be used."
+              title={ai ? 'Generate from' : 'Limit to materials'}
+              description={
+                ai
+                  ? 'Optional. Leave all unticked to use every readable material that relates to the topics.'
+                  : 'Optional. Only questions citing one of these will be used.'
+              }
             >
               <div className="flex flex-wrap gap-tight">
-                {materials.map((material) => (
+                {(ai ? usableMaterials : materials).map((material) => (
                   <label
                     key={material.id}
                     className="flex items-center gap-tight rounded-md border px-snug py-1.5 text-sm"
@@ -426,9 +701,11 @@ export function PracticeSetupPage() {
                         {DIFFICULTY_BLURB[level]}
                       </span>
                     </div>
-                    <Badge variant="secondary" className="font-mono tabular-nums">
-                      {count}
-                    </Badge>
+                    {!ai && (
+                      <Badge variant="secondary" className="font-mono tabular-nums">
+                        {count}
+                      </Badge>
+                    )}
                   </label>
                 );
               })}
@@ -447,16 +724,18 @@ export function PracticeSetupPage() {
                   id="practice-length"
                   type="number"
                   min={1}
-                  max={Math.max(1, available.length)}
+                  max={ai ? AI_LIMITS.maxQuestionsPerRequest : Math.max(1, available.length)}
                   value={length}
                   onChange={(e) => setLength(Math.max(1, Number(e.target.value) || 1))}
                   className="w-24 font-mono tabular-nums"
                 />
                 <span className="text-muted-foreground text-sm">
-                  of {available.length} available
+                  {ai
+                    ? `up to ${AI_LIMITS.maxQuestionsPerRequest} per set`
+                    : `of ${available.length} available`}
                 </span>
               </div>
-              {capped && (
+              {!ai && capped && (
                 <p className="text-warning-foreground flex items-start gap-tight text-xs">
                   <AlertTriangleIcon className="mt-0.5 size-3 shrink-0" aria-hidden />
                   Only {available.length} questions match these settings, so the set
@@ -495,10 +774,10 @@ export function PracticeSetupPage() {
                   </option>
                   <option value="end">At the end, closer to exam conditions</option>
                 </Select>
-                {written && feedback === 'immediate' && (
+                {written && (
                   <p className="text-muted-foreground text-xs">
-                    Written answers are checked against an authored rubric by keyword.
-                    Useful as a checklist, not as a grade.
+                    Written answers get AI feedback against their rubric. It reads for
+                    meaning, and it is guidance rather than an official grade.
                   </p>
                 )}
               </div>
@@ -507,7 +786,35 @@ export function PracticeSetupPage() {
         </div>
       </Section>
 
-      {available.length === 0 && (
+      {ai && unavailable && (
+        <Alert variant="destructive">
+          <AlertTriangleIcon />
+          <AlertTitle>AI generation is not available</AlertTitle>
+          <AlertDescription>{unavailable}</AlertDescription>
+        </Alert>
+      )}
+
+      {ai && topicIds.length > 0 && aiPassages.length === 0 && (
+        <Alert variant="destructive">
+          <AlertTriangleIcon />
+          <AlertTitle>No readable material for these topics</AlertTitle>
+          <AlertDescription>
+            Nothing in this course’s readable material relates to the selected topics.
+            Link a reading to a topic, or add one, and try again. Files Rawi could not
+            read are not used.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {aiError && (
+        <Alert variant="destructive">
+          <AlertTriangleIcon />
+          <AlertTitle>No set was created</AlertTitle>
+          <AlertDescription>{aiError}</AlertDescription>
+        </Alert>
+      )}
+
+      {!ai && available.length === 0 && (
         <Alert variant="destructive">
           <AlertTriangleIcon />
           <AlertTitle>Nothing to generate from</AlertTitle>
@@ -516,7 +823,11 @@ export function PracticeSetupPage() {
               ? 'Select at least one topic.'
               : difficulties.length === 0
                 ? 'Select at least one difficulty.'
-                : `There are no ${ACTIVITY_LABEL[activity].toLowerCase()} questions for these topics at these difficulties. Try a different activity, or widen the difficulty range. No set will be created until there is something to put in it.`}
+                : `There are no ${ACTIVITY_LABEL[activity].toLowerCase()} questions in the bank for these topics at these difficulties. ${
+                    usableMaterials.length > 0 && AI_FORMAT[activity]
+                      ? 'Choose Generate from my materials above to have them written, or try a different activity.'
+                      : 'Try a different activity, or widen the difficulty range.'
+                  } No set will be created until there is something to put in it.`}
           </AlertDescription>
         </Alert>
       )}
@@ -526,13 +837,20 @@ export function PracticeSetupPage() {
           <SparklesIcon />
           {generating
             ? 'Generating…'
-            : `Generate ${effectiveLength || ''} ${
-                effectiveLength === 1 ? 'question' : 'questions'
+            : `Generate ${(ai ? aiLength : effectiveLength) || ''} ${
+                (ai ? aiLength : effectiveLength) === 1 ? 'question' : 'questions'
               }`}
         </Button>
+        {generating && ai && (
+          <Button variant="outline" onClick={() => aiController.current?.abort()}>
+            Cancel
+          </Button>
+        )}
         {generating && (
           <span className="text-muted-foreground text-xs">
-            Selecting from the authored bank. There is no model involved.
+            {ai
+              ? `Writing questions from ${aiPassages.length} ${aiPassages.length === 1 ? 'passage' : 'passages'}. This usually takes a few seconds.`
+              : 'Selecting from the question bank.'}
           </span>
         )}
       </div>
@@ -540,6 +858,14 @@ export function PracticeSetupPage() {
       <Card className="bg-muted/30">
         <CardContent className="text-muted-foreground flex flex-col gap-hairline text-xs">
           <span className="text-foreground font-medium">What this will give you</span>
+          {ai ? (
+            <span>
+              Up to {aiLength} new {ACTIVITY_LABEL[activity].toLowerCase()} questions written
+              from {aiPassages.length} {aiPassages.length === 1 ? 'passage' : 'passages'} of your
+              material, each checked and linked to its source, saved as a set you can attempt
+              more than once. Questions that fail the checks are left out rather than saved.
+            </span>
+          ) : (
           <span>
             {effectiveLength} {ACTIVITY_LABEL[activity].toLowerCase()}{' '}
             {effectiveLength === 1 ? 'question' : 'questions'} worth{' '}
@@ -548,6 +874,7 @@ export function PracticeSetupPage() {
             attempt more than once. Results are recorded and will change your progress
             and today’s plan.
           </span>
+          )}
         </CardContent>
       </Card>
     </Page>

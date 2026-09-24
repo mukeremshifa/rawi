@@ -5,7 +5,7 @@ import type {
   Question,
   QuestionAttempt,
 } from '@shared/types.ts';
-import { toQuestionAttempt } from '@shared/marking.ts';
+import { attemptTotals, toQuestionAttempt } from '@shared/marking.ts';
 
 import { selectQuestions } from '@/store/selectors';
 import { newId } from '@/lib/id';
@@ -409,6 +409,10 @@ export function finishRun(
     }
   }
 
+  /* Written answers come back pending. They are graded only after this, on
+     the results page, so nothing is marked while the paper is open. */
+  const totals = attemptTotals(questions);
+
   return {
     id: newId('att'),
     courseId: run.courseId,
@@ -421,8 +425,8 @@ export function finishRun(
     startedAt: run.startedAt,
     completedAt: new Date().toISOString(),
     questions,
-    marksAwarded: questions.reduce((sum, q) => sum + q.marksAwarded, 0),
-    marksAvailable: questions.reduce((sum, q) => sum + q.marksAvailable, 0),
+    marksAwarded: totals.marksAwarded,
+    marksAvailable: totals.marksAvailable,
     finish,
     /* The run's own link wins over the configuration's default: a rehearsal
        launched from the planner for one assessment must not be filed under

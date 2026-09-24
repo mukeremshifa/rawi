@@ -290,7 +290,7 @@ export function SyllabusPage() {
           ) : (
             <Section
               title={`Current outline (${existing.length} topics)`}
-              description="Grouped as you organised it. Topics with no authored questions are marked. The tutor and your own materials are the way into those."
+              description="Grouped as you organised it. Topics with no practice questions yet are marked. Questions can be generated for them from your materials."
             >
               <div className="flex flex-col gap-base">
                 {groupByModule(existing).map(({ module, topics }) => (
@@ -336,11 +336,10 @@ export function SyllabusPage() {
                 <Alert>
                   <AlertTitle>Some topics have no practice questions</AlertTitle>
                   <AlertDescription>
-                    This prototype has an authored question bank and cannot write
-                    questions for a topic you added. Those topics still work with the
-                    tutor where a script exists, can hold your own readings and notes,
-                    and can be covered by an assessment. They simply cannot generate a
-                    quiz. Nothing unrelated will be attached to them to hide that.
+                    Add readings for these topics in Materials, then generate practice
+                    from them in Practice, or work through them with the tutor. Until then
+                    they can hold notes and be covered by an assessment. Nothing unrelated
+                    is attached to them to hide the gap.
                   </AlertDescription>
                 </Alert>
               )}

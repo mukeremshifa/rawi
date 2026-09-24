@@ -171,7 +171,7 @@ export function MaterialPage() {
     if (!topicId) {
       toast.error('No topic linked', {
         description:
-          'Link this material to a topic first. The tutor’s authored branches are organised by topic.',
+          'Link this material to a topic first. Tutor sessions are organised by topic.',
       });
       return;
     }

@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useStore } from '@/store/store';
 import { useCourse, useCoursePath } from '@/store/course-context';
+import { useTopic } from '@/store/selectors';
 import { openSession } from './engine';
 
 /**
@@ -32,6 +33,7 @@ export function NewTutorSession() {
   const created = useRef<string | null>(null);
 
   const topicId = params.get('topic');
+  const topic = useTopic(topicId ?? undefined);
   const materialId = params.get('material');
   const passageId = params.get('passage');
   const quote = params.get('quote');
@@ -42,11 +44,13 @@ export function NewTutorSession() {
   const plannedSessionId = params.get('session');
 
   useEffect(() => {
-    if (!topicId || created.current) return;
+    /* A topic from another course is not opened here: tutoring stays inside
+       the course whose material it draws on. */
+    if (!topic || topic.courseId !== course.id || created.current) return;
 
     const session = openSession({
       courseId: course.id,
-      topicId,
+      topic,
       ...(materialId && passageId
         ? { source: { materialId, passageId } }
         : {}),
@@ -62,7 +66,7 @@ export function NewTutorSession() {
   }, [
     course.id,
     path,
-    topicId,
+    topic,
     materialId,
     passageId,
     quote,
@@ -73,6 +77,8 @@ export function NewTutorSession() {
     navigate,
   ]);
 
-  if (!topicId) return <Navigate to={path('/tutor')} replace />;
+  if (!topicId || (topic && topic.courseId !== course.id)) {
+    return <Navigate to={path('/tutor')} replace />;
+  }
   return null;
 }

@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import {
   ArrowLeftIcon,
   DumbbellIcon,
@@ -19,10 +19,11 @@ import {
   Stat,
   formatRelative,
 } from '@/components/domain';
-import { useAttempt, useQuestionMap, useTopicMap } from '@/store/selectors';
+import { useAttempt, useCanTutor, useQuestionMap, useTopicMap } from '@/store/selectors';
 import { useCoursePath } from '@/store/course-context';
-import { hasScript } from '@/features/tutor/engine';
-import { QuestionFeedback } from './QuestionFeedback';
+
+import { PendingFeedbackPanel, QuestionFeedback } from './QuestionFeedback';
+import { useAttemptGrading } from './grading';
 import { NotFoundPage } from '@/routes';
 
 /**
@@ -48,6 +49,7 @@ import { NotFoundPage } from '@/routes';
 function weakestTopics(attempt: Attempt): { topicId: string; lost: number }[] {
   const byTopic = new Map<string, { lost: number; available: number }>();
   for (const qa of attempt.questions) {
+    if (qa.outcome === 'pending') continue;
     const current = byTopic.get(qa.topicId) ?? { lost: 0, available: 0 };
     current.lost += qa.marksAvailable - qa.marksAwarded;
     current.available += qa.marksAvailable;
@@ -65,10 +67,18 @@ export function AttemptResultsPage() {
   const attempt = useAttempt(attemptId);
   const questionMap = useQuestionMap();
   const topicMap = useTopicMap();
+  const canTutor = useCanTutor();
+  const location = useLocation();
+  const grading = useAttemptGrading(
+    attempt,
+    Boolean((location.state as { justSubmitted?: boolean } | null)?.justSubmitted),
+  );
 
   if (!attempt) return <NotFoundPage />;
 
-  const wrong = attempt.questions.filter((qa) => qa.outcome !== 'correct');
+  const wrong = attempt.questions.filter(
+    (qa) => qa.outcome !== 'correct' && qa.outcome !== 'pending',
+  );
   const weak = weakestTopics(attempt);
   const fraction =
     attempt.marksAvailable > 0 ? attempt.marksAwarded / attempt.marksAvailable : 0;
@@ -119,6 +129,14 @@ export function AttemptResultsPage() {
         </CardContent>
       </Card>
 
+      <PendingFeedbackPanel
+        waiting={grading.waiting}
+        running={grading.running}
+        error={grading.error}
+        onGrade={() => void grading.gradeAll()}
+        onCancel={grading.cancel}
+      />
+
       {/* Next actions, derived from what actually happened. */}
       <Section title="What next">
         <div className="flex flex-wrap gap-tight">
@@ -134,7 +152,7 @@ export function AttemptResultsPage() {
               </Link>
             </Button>
           )}
-          {weak[0] && hasScript(weak[0].topicId) && (
+          {weak[0] && canTutor(weak[0].topicId) && (
             <Button variant="outline" asChild>
               <Link to={path(`/tutor/new?topic=${weak[0].topicId}&attempt=${attempt.id}`)}>
                 <MessageSquareIcon />
@@ -199,7 +217,7 @@ export function AttemptResultsPage() {
                     <QuestionFeedback
                       question={question}
                       attempt={qa}
-                      {...(hasScript(qa.topicId)
+                      {...(canTutor(qa.topicId)
                         ? {
                             discussTo: path(
                               `/tutor/new?topic=${qa.topicId}&question=${qa.questionId}&attempt=${attempt.id}`,

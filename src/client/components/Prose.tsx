@@ -26,9 +26,9 @@ import { cn } from '@/lib/utils';
  *   `1. `           ordered list item
  *   `> `            blockquote
  *
- * Anything else is a paragraph. That is the whole grammar, and it covers every
- * authored string in `src/shared/course/` — which is the only content this ever
- * renders, since the prototype has no model output to worry about.
+ * Anything else is a paragraph. That is the whole grammar. It also renders
+ * model output from the tutor and from feedback, which is why the no-HTML
+ * property matters: whatever a model writes is only ever text in elements.
  */
 
 type Block =

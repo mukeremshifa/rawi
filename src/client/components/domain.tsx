@@ -156,6 +156,7 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   partial: 'Partly right',
   incorrect: 'Incorrect',
   skipped: 'Not answered',
+  pending: 'Awaiting feedback',
 };
 
 export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
@@ -164,6 +165,7 @@ export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
     partial: 'bg-warning/20 text-warning-foreground border-warning/40',
     incorrect: 'bg-destructive/12 text-destructive border-destructive/30',
     skipped: 'bg-muted text-muted-foreground border-transparent',
+    pending: 'bg-muted text-muted-foreground border-dashed border-border',
   };
   return (
     <span

@@ -31,6 +31,7 @@ import {
   upcomingAssessments,
 } from '@shared/progress.ts';
 import { localISO } from '@shared/planner.ts';
+import { materialsForTopic } from '@shared/ai-context.ts';
 
 import { useAppState } from './store.tsx';
 import { useCourseOrNull } from './course-context.tsx';
@@ -695,4 +696,24 @@ export function usePlan(): Suggestion[] {
       ...(resumable ? { resumable } : {}),
     });
   }, [state]);
+}
+
+/**
+ * Whether the tutor can teach a topic from this course's readable material.
+ * Replaces the old "has an authored script" check everywhere a tutor link is
+ * offered, so a link is only shown where a session has something to use.
+ */
+export function useCanTutor(): (topicId: string) => boolean {
+  const topicMap = useTopicMap();
+  const materials = useAllMaterials();
+  return useMemo(() => {
+    const cache = new Map<string, boolean>();
+    return (topicId: string) => {
+      if (!cache.has(topicId)) {
+        const topic = topicMap.get(topicId);
+        cache.set(topicId, topic ? materialsForTopic(topic, materials).length > 0 : false);
+      }
+      return cache.get(topicId)!;
+    };
+  }, [topicMap, materials]);
 }

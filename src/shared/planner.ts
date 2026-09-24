@@ -389,13 +389,13 @@ function candidates(input: PlanInputs): Candidate[] {
        * What this topic can actually support.
        *
        * Not-yet-studied topics are best taught and studied ones best tested,
-       * but "best" has to give way to "possible": the tutor only covers the
-       * topics it has a script for, and practice needs questions of the right
+       * but "best" has to give way to "possible": the tutor needs readable
+       * material to teach from, and practice needs questions of the right
        * format. `bestActivity` returns the nearest possible thing, and `null`
        * when there is nothing, which becomes an honest setup prompt below
        * rather than a session that opens onto an apology.
        */
-      const capabilities = topicCapabilities(topic.id, courseQuestions, courseMaterials);
+      const capabilities = topicCapabilities(topic, courseQuestions, courseMaterials);
       const preferred: SessionActivity =
         evidence.level === 'not-checked' ? 'tutor' : 'practice';
       const activity = bestActivity(preferred, capabilities);
@@ -483,7 +483,7 @@ function candidates(input: PlanInputs): Candidate[] {
          practice the topic does support when they do not. "Any question for
          this topic" was the old test and it proposed flashcard sessions for
          topics whose only questions were essays. */
-      const capabilities = topicCapabilities(topic.id, courseQuestions, courseMaterials);
+      const capabilities = topicCapabilities(topic, courseQuestions, courseMaterials);
       const activity = bestActivity('flashcards', capabilities);
       if (!activity || activity === 'read' || activity === 'tutor') continue;
       out.push({

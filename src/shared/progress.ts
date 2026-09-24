@@ -97,7 +97,13 @@ function daysBetween(a: string, b: string): number {
  */
 export function deriveEvidence(topicId: string, attempts: Attempt[]): TopicEvidence {
   const relevant = attempts
-    .filter((a) => a.completedAt && a.questions.some((q) => q.topicId === topicId))
+    /* An answer awaiting feedback is neither evidence for nor against a topic
+       until it is marked, so it is left out entirely. */
+    .filter(
+      (a) =>
+        a.completedAt &&
+        a.questions.some((q) => q.topicId === topicId && q.outcome !== 'pending'),
+    )
     .sort((a, b) => (a.completedAt! < b.completedAt! ? 1 : -1));
 
   let tutored = 0;
@@ -112,6 +118,7 @@ export function deriveEvidence(topicId: string, attempts: Attempt[]): TopicEvide
   for (const attempt of relevant) {
     for (const qa of attempt.questions) {
       if (qa.topicId !== topicId) continue;
+      if (qa.outcome === 'pending') continue;
       switch (attempt.mode) {
         case 'tutored':
           tutored += 1;
@@ -245,6 +252,7 @@ export function recurringMistakes(
     for (const qa of attempt.questions) {
       if (qa.outcome === 'correct') continue;
       if (qa.outcome === 'skipped') continue;
+      if (qa.outcome === 'pending') continue;
       const existing = byQuestion.get(qa.questionId);
       byQuestion.set(qa.questionId, {
         courseId: attempt.courseId,
@@ -333,8 +341,7 @@ export function pastAssessments(
  * drift apart.
  *
  * A tutor session needs at least two student turns to count. One is the
- * greeting; a session that was opened and abandoned is not study, and the
- * scripted tutor opens with a message either way.
+ * greeting; a session that was opened and abandoned is not study.
  */
 export function activityEvents(
   attempts: Attempt[],
@@ -539,7 +546,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   /** What a topic supports, scoped to its own course. */
   const capabilitiesOf = (topic: Topic) =>
     topicCapabilities(
-      topic.id,
+      topic,
       allQuestions.filter((q) => q.courseId === topic.courseId),
       allMaterials.filter((m) => m.courseId === topic.courseId),
     );
@@ -595,7 +602,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   if (attempts.length === 0 && active.length > 0) {
     const course = active[0]!;
     /* The first thing a student is sent to has to work. A topic with questions
-       but no tutor script would open a session that says it cannot help, which
+       but no material would open a tutor session with nothing to teach from, which
        is a poor first impression and an avoidable one. */
     const first = topics
       .filter((t) => t.courseId === course.id)
@@ -629,7 +636,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
     if (topic) {
       const capabilities = capabilitiesOf(topic);
       /* An explanation is what a struggling student needs, so the tutor is the
-         preference. Where there is no script the next best thing is the
+         preference. Where there is no material to teach from the next best thing is the
          reading, which at least explains. More testing is the last resort and
          the reason says so. */
       const chosen = bestActivity('tutor', capabilities);
@@ -652,7 +659,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
           courseId: topic.courseId,
           title: `Re-read the material on ${topic.title}`,
           reason:
-            'You said this one is not landing. The tutor has no authored script for this topic, so the reading is the explanation available here.',
+            'You said this one is not landing. The reading is the explanation available here.',
           minutes: 20,
           to: `/course/${topic.courseId}/materials`,
           topicId: topic.id,
@@ -665,7 +672,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
           courseId: topic.courseId,
           title: `Work slowly through ${topic.title}`,
           reason:
-            'You said this one is not landing. There is no tutor script and no reading for this topic, so this is practice with feedback rather than an explanation.',
+            'You said this one is not landing. There is no readable material for this topic, so this is practice with feedback rather than an explanation.',
           minutes: 20,
           to: `/course/${topic.courseId}/practice/new?topic=${topic.id}`,
           topicId: topic.id,
@@ -690,7 +697,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
       reason: `You have got this wrong ${mistake.times} times. That is the clearest signal in your history, so it goes first.${
         canTutor
           ? ''
-          : ' The tutor has no authored script for this topic, so this retries the question itself.'
+          : ' There is no readable material for the tutor to use on this topic, so this retries the question itself.'
       }`,
       minutes: 15,
       to: canTutor

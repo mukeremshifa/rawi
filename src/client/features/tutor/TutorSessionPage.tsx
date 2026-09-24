@@ -1,22 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
+  AlertTriangleIcon,
   ArrowLeftIcon,
   BookOpenIcon,
   CheckCircle2Icon,
   DumbbellIcon,
+  RotateCcwIcon,
   SendIcon,
+  SquareIcon,
   SquarePenIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import type { TutorIntent, TutorSession } from '@shared/types.ts';
-import {
-  SCRIPTED_NOTICE,
-  STAGE_BLURB,
-  STAGE_LABEL,
-  STAGE_ORDER,
-} from '@shared/course/tutor-script.ts';
+import type { TutorAction } from '@shared/ai.ts';
+import type { TutorMessage, TutorSession } from '@shared/types.ts';
+import { AI_TUTOR_NOTICE, STAGE_BLURB, STAGE_LABEL, STAGE_ORDER } from '@shared/tutor.ts';
 
 import { Prose } from '@/components/Prose';
 import { Button } from '@/components/ui/button';
@@ -24,13 +23,30 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Card, CardContent } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { MEDIA_WIDE, useMediaQuery } from '@/components/layout';
 import { SimulatedNotice, SourceLink } from '@/components/domain';
 import { useStore } from '@/store/store';
-import { useCoursePath } from '@/store/course-context';
-import { useSource, useTopic, useTutorSession } from '@/store/selectors';
-import { respond, studentMessage, summarise } from './engine';
+import { useCourse, useCoursePath } from '@/store/course-context';
+import {
+  useAttempts,
+  useMaterials,
+  useQuestionMap,
+  useSource,
+  useTopic,
+  useTutorSession,
+} from '@/store/selectors';
+import { AiRequestError, streamTutor, useAiStatus, visibleTutorText } from '@/lib/ai';
+import { newId } from '@/lib/id';
+import {
+  buildTutorRequest,
+  citationOrder,
+  renderCitations,
+  resolveCitations,
+  studentMessage,
+  summarise,
+} from './engine';
 import { NotFoundPage } from '@/routes';
 import { cn } from '@/lib/utils';
 
@@ -41,17 +57,25 @@ import { cn } from '@/lib/utils';
  *
  * Two columns on desktop: the conversation, and a context rail holding the
  * passage being discussed and the stage arc. On mobile the rail becomes a
- * sheet, because the brief is explicit that a phone should switch between
- * reading and tutoring rather than squeeze both into one viewport — and a
- * 320px-wide reading column beside a 320px-wide chat serves neither.
+ * sheet, because a phone should switch between reading and tutoring rather
+ * than squeeze both into one viewport.
+ *
+ * ── Replies ──────────────────────────────────────────────────────────────
+ *
+ * Each student turn is saved the moment it is sent, then the reply streams
+ * in. A finished reply is saved as a complete turn with its model, its
+ * validated citations and how far it rests on the material. A reply that is
+ * cancelled or fails part-way is saved as `interrupted` and labelled, so it is
+ * never mistaken for a complete teaching turn. A failure with no text saves
+ * nothing but the student's message, and Retry sends that message again
+ * rather than a second copy of it. No scripted text ever stands in for a
+ * failed reply.
  *
  * ── Why the stage arc is visible ──────────────────────────────────────────
  *
- * The brief asks the tutor to demonstrate orient → understand → recall →
- * reason → apply → reflect. A student cannot see a pedagogical arc from inside
- * the conversation; showing where they are makes the structure legible and,
- * more usefully, makes "we have not tested this yet" visible before the exam
- * does it for them.
+ * A student cannot see a pedagogical arc from inside the conversation.
+ * Showing where they are makes the structure legible and makes "we have not
+ * tested this yet" visible before the exam does it for them.
  */
 
 function StageArc({ current }: { current: TutorSession['stage'] }) {
@@ -147,61 +171,263 @@ function ContextPanel({ session }: { session: TutorSession }) {
         </div>
       )}
 
-      <SimulatedNotice tone="block">{SCRIPTED_NOTICE}</SimulatedNotice>
+      <SimulatedNotice tone="block">{AI_TUTOR_NOTICE}</SimulatedNotice>
     </div>
   );
 }
 
+const GROUNDING_LABEL: Record<NonNullable<TutorMessage['grounding']>, string> = {
+  materials: 'From your materials',
+  mixed: 'Partly beyond your materials',
+  general: 'General explanation, not from your materials',
+  insufficient: 'Your materials do not cover this',
+};
+
+const QUICK_ACTIONS: { label: string; action: TutorAction }[] = [
+  { label: 'Explain it', action: 'explain' },
+  { label: 'Give me an example', action: 'example' },
+  { label: 'Give me a hint', action: 'hint' },
+  { label: 'Test me', action: 'check' },
+  { label: 'Say that more simply', action: 'simpler' },
+];
+
+/** One turn in the transcript, with its provenance where it has one. */
+function MessageBubble({ message }: { message: TutorMessage }) {
+  const ids = (message.citations ?? []).map((c) => c.passageId);
+  /* Earlier builds' authored replies carry neither a model nor a status. */
+  const legacy =
+    message.role === 'tutor' && !message.meta && !message.model && !message.status;
+  return (
+    <div className={cn('flex flex-col gap-tight', message.role === 'student' && 'items-end')}>
+      <div
+        className={cn(
+          'max-w-[90%] rounded-xl px-gutter py-snug',
+          message.role === 'student'
+            ? 'bg-primary text-primary-foreground'
+            : message.meta
+              ? 'bg-muted/60 text-muted-foreground border border-dashed'
+              : message.status === 'interrupted'
+                ? 'bg-card border border-dashed'
+                : 'bg-card border',
+        )}
+      >
+        <Prose
+          text={message.role === 'tutor' ? renderCitations(message.text, ids) : message.text}
+          size={message.role === 'student' ? 'compact' : 'reading'}
+        />
+      </div>
+      {message.role === 'tutor' && !message.meta && (
+        <div className="flex flex-col gap-hairline px-tight">
+          {message.status === 'interrupted' && (
+            <span className="text-foreground text-xs font-medium">
+              This reply was cut off before it finished, so it is incomplete.
+            </span>
+          )}
+          {legacy && (
+            <span className="text-muted-foreground text-xs">
+              Scripted reply from an earlier version of Rawi.
+            </span>
+          )}
+          {message.grounding && (
+            <span className="text-muted-foreground text-xs">
+              {GROUNDING_LABEL[message.grounding]}
+            </span>
+          )}
+          {(message.citations ?? []).map((source, i) => (
+            <span key={source.passageId} className="flex items-center gap-tight text-xs">
+              <span className="text-muted-foreground font-mono tabular-nums">[{i + 1}]</span>
+              <SourceLink source={source} />
+            </span>
+          ))}
+          {message.droppedCitations ? (
+            <span className="text-muted-foreground text-xs">
+              {message.droppedCitations === 1
+                ? 'One citation was removed because it did not match your materials.'
+                : `${message.droppedCitations} citations were removed because they did not match your materials.`}
+            </span>
+          ) : null}
+        </div>
+      )}
+      {message.source && <SourceLink source={message.source} className="px-tight" />}
+    </div>
+  );
+}
+
+interface Failure {
+  message: string;
+  code: string;
+  retry: { text: string; action: TutorAction };
+}
+
+const CITATION_MARKER = /\[\[([^\]\s]{1,200})\]\]/g;
+
 export function TutorSessionPage() {
   const path = useCoursePath();
+  const course = useCourse();
   const { sessionId } = useParams();
   const session = useTutorSession(sessionId);
   const { dispatch } = useStore();
-  const navigate = useNavigate();
   const wide = useMediaQuery(MEDIA_WIDE);
   const topic = useTopic(session?.topicId);
+  const materials = useMaterials();
+  const attempts = useAttempts();
+  const questionMap = useQuestionMap();
+  const { unavailable, refresh } = useAiStatus();
   const [draft, setDraft] = useState('');
   const [contextOpen, setContextOpen] = useState(false);
+  const [streaming, setStreaming] = useState<string | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
+  const partialRef = useRef('');
   const endRef = useRef<HTMLDivElement>(null);
 
   const summary = useMemo(() => (session ? summarise(session) : null), [session]);
+  const busy = streaming !== null;
+
+  /* A session opened from a missed answer starts with a useful draft. */
+  const fromQuestion = session?.fromQuestionId
+    ? questionMap.get(session.fromQuestionId)
+    : undefined;
+  const sessionKey = session?.id;
+  useEffect(() => {
+    if (fromQuestion && session && !session.messages.some((m) => m.role === 'student')) {
+      setDraft(`Help me see where I went wrong on this question: ${fromQuestion.prompt}`);
+    }
+    // Only when the session first opens.
+  }, [sessionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
-  }, [session?.messages.length]);
+  }, [session?.messages.length, streaming]);
 
-  if (!session) return <NotFoundPage />;
+  /* Leaving the page cancels a reply in flight rather than paying for it. */
+  useEffect(() => () => controllerRef.current?.abort(), []);
 
-  const send = (text: string, intent?: TutorIntent) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
+  if (!session || session.courseId !== course.id) return <NotFoundPage />;
 
-    const result = respond(session, { text: trimmed, ...(intent ? { intent } : {}) });
-    const updated: TutorSession = {
-      ...session,
-      messages: [
-        ...session.messages,
-        studentMessage(trimmed, session.stage),
-        ...result.messages,
-      ],
-      stage: result.stage,
-      updatedAt: new Date().toISOString(),
-      ...(result.ended ? { endedAt: new Date().toISOString() } : {}),
-    };
+  /**
+   * Requests one reply to `text`. The student's turn is already saved, and
+   * `history` is everything before it.
+   */
+  const run = async (text: string, action: TutorAction, history: TutorMessage[]) => {
+    if (!topic) return;
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    partialRef.current = '';
+    setFailure(null);
+    setStreaming('');
 
-    dispatch({ type: 'upsert-tutor-session', session: updated });
-    setDraft('');
+    const request = buildTutorRequest({
+      course,
+      topic,
+      session,
+      history,
+      message: text,
+      action,
+      materials,
+      attempts,
+      questions: questionMap,
+    });
 
-    if (result.launchPractice) {
-      const topics = result.launchPractice.topicIds.join(',');
-      toast.success('Practice set ready', {
-        description: 'Opening the setup so you can adjust it first.',
+    try {
+      const done = await streamTutor(
+        request,
+        (delta) => {
+          partialRef.current += delta;
+          setStreaming(partialRef.current);
+        },
+        controller.signal,
+      );
+      const citations = resolveCitations(done.citations, request.passages);
+      const dropped = done.droppedCitations + (done.citations.length - citations.length);
+      dispatch({
+        type: 'append-tutor-messages',
+        sessionId: session.id,
+        stage: done.meta.stage,
+        messages: [
+          {
+            id: newId('msg'),
+            role: 'tutor',
+            text: done.text,
+            stage: session.stage,
+            model: done.usage.model,
+            status: 'complete',
+            grounding: done.meta.grounding,
+            citations,
+            ...(dropped > 0 ? { droppedCitations: dropped } : {}),
+          },
+        ],
       });
-      navigate(path(`/practice/new?topic=${topics}&from=${session.id}`));
+    } catch (error) {
+      const e =
+        error instanceof AiRequestError
+          ? error
+          : new AiRequestError('upstream', 'Something went wrong while the reply was arriving.');
+      const partial = visibleTutorText(partialRef.current).trim();
+      if (partial) {
+        const known = new Set(request.passages.map((p) => p.id));
+        const cleaned = partial.replace(CITATION_MARKER, (m, id: string) =>
+          known.has(id) ? m : '',
+        );
+        dispatch({
+          type: 'append-tutor-messages',
+          sessionId: session.id,
+          messages: [
+            {
+              id: newId('msg'),
+              role: 'tutor',
+              text: cleaned,
+              stage: session.stage,
+              status: 'interrupted',
+              citations: resolveCitations(citationOrder(cleaned), request.passages),
+            },
+          ],
+        });
+      }
+      setFailure({
+        code: e.code,
+        message: e.code === 'cancelled' ? 'You stopped the reply.' : e.message,
+        retry: { text, action },
+      });
+      if (e.code === 'not-configured' || e.code === 'unreachable' || e.code === 'auth') {
+        refresh();
+      }
+    } finally {
+      controllerRef.current = null;
+      partialRef.current = '';
+      setStreaming(null);
     }
   };
 
+  const send = (text: string, action: TutorAction = 'message') => {
+    const trimmed = text.trim();
+    if (!trimmed || busy) return;
+    const history = session.messages;
+    dispatch({
+      type: 'append-tutor-messages',
+      sessionId: session.id,
+      messages: [studentMessage(trimmed, session.stage)],
+    });
+    setDraft('');
+    void run(trimmed, action, history);
+  };
+
+  /* The student's turn is already saved, so Retry resends it without adding a
+     second copy. History is everything before that turn. */
+  const retry = () => {
+    if (!failure || busy) return;
+    let cut = session.messages.length;
+    for (let i = session.messages.length - 1; i >= 0; i -= 1) {
+      if (session.messages[i]!.role === 'student') {
+        cut = i;
+        break;
+      }
+    }
+    void run(failure.retry.text, failure.retry.action, session.messages.slice(0, cut));
+  };
+
   const endSession = () => {
+    controllerRef.current?.abort();
     dispatch({
       type: 'upsert-tutor-session',
       session: {
@@ -215,8 +441,7 @@ export function TutorSessionPage() {
     });
   };
 
-  const last = session.messages[session.messages.length - 1];
-  const suggestions = last?.role === 'tutor' ? (last.suggestions ?? []) : [];
+  const streamingText = streaming ? visibleTutorText(streaming) : '';
 
   return (
     <div className="flex h-full min-h-0">
@@ -268,33 +493,48 @@ export function TutorSessionPage() {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex w-full max-w-2xl flex-col gap-base px-gutter py-gutter">
             {session.messages.map((message) => (
-              <div
-                key={message.id}
-                className={cn(
-                  'flex flex-col gap-tight',
-                  message.role === 'student' && 'items-end',
-                )}
-              >
-                <div
-                  className={cn(
-                    'max-w-[90%] rounded-xl px-gutter py-snug',
-                    message.role === 'student'
-                      ? 'bg-primary text-primary-foreground'
-                      : message.meta
-                        ? 'bg-muted/60 text-muted-foreground border border-dashed'
-                        : 'bg-card border',
-                  )}
-                >
-                  <Prose
-                    text={message.text}
-                    size={message.role === 'student' ? 'compact' : 'reading'}
-                  />
-                </div>
-                {message.source && (
-                  <SourceLink source={message.source} className="px-tight" />
-                )}
-              </div>
+              <MessageBubble key={message.id} message={message} />
             ))}
+
+            {streaming !== null && (
+              <div className="flex flex-col gap-tight" aria-live="polite">
+                <div className="bg-card max-w-[90%] rounded-xl border px-gutter py-snug">
+                  {streamingText.trim() ? (
+                    <Prose
+                      text={renderCitations(streamingText, citationOrder(streamingText))}
+                      size="reading"
+                    />
+                  ) : (
+                    <p className="text-muted-foreground text-sm">Thinking…</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {failure && (
+              <Alert variant={failure.code === 'cancelled' ? 'default' : 'destructive'}>
+                <AlertTriangleIcon />
+                <AlertTitle>
+                  {failure.code === 'cancelled' ? 'Reply stopped' : 'The tutor could not reply'}
+                </AlertTitle>
+                <AlertDescription className="flex flex-col gap-tight">
+                  <span>{failure.message}</span>
+                  <span>Your message is saved. Nothing has been lost.</span>
+                  {!session.endedAt && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="self-start"
+                      onClick={retry}
+                      disabled={!!unavailable}
+                    >
+                      <RotateCcwIcon />
+                      Try again
+                    </Button>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
 
             {session.endedAt && summary && (
               <Card className="border-primary/40">
@@ -311,7 +551,10 @@ export function TutorSessionPage() {
                     <ul className="flex flex-col gap-hairline text-sm">
                       {summary.covered.map((item) => (
                         <li key={item} className="flex items-start gap-tight">
-                          <span className="bg-evidence-independent-mark mt-1.5 size-1.5 shrink-0 rounded-full" aria-hidden />
+                          <span
+                            className="bg-evidence-independent-mark mt-1.5 size-1.5 shrink-0 rounded-full"
+                            aria-hidden
+                          />
                           {item}
                         </li>
                       ))}
@@ -320,12 +563,7 @@ export function TutorSessionPage() {
                   <div className="flex flex-wrap gap-tight pt-tight">
                     {summary.nextStep && (
                       <Button size="sm" asChild>
-                        {/* The summary names a route within this course, so it
-                            is scoped here rather than in the engine, which has
-                            no course context of its own. */}
-                        <Link to={path(summary.nextStep.to)}>
-                          {summary.nextStep.label}
-                        </Link>
+                        <Link to={path(summary.nextStep.to)}>{summary.nextStep.label}</Link>
                       </Button>
                     )}
                     <Button variant="outline" size="sm" asChild>
@@ -344,20 +582,41 @@ export function TutorSessionPage() {
         {!session.endedAt && (
           <div className="shrink-0 border-t">
             <div className="mx-auto flex w-full max-w-2xl flex-col gap-snug px-gutter py-snug">
-              {suggestions.length > 0 && (
-                <div className="flex flex-wrap gap-tight">
-                  {suggestions.map((suggestion) => (
-                    <Button
-                      key={suggestion.label}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => send(suggestion.label, suggestion.intent)}
-                    >
-                      {suggestion.label}
+              {unavailable && (
+                <Alert variant="destructive">
+                  <AlertTriangleIcon />
+                  <AlertTitle>The AI tutor is not available</AlertTitle>
+                  <AlertDescription className="flex flex-col gap-tight">
+                    <span>{unavailable}</span>
+                    <span>This session and everything in it are saved.</span>
+                    <Button variant="outline" size="sm" className="self-start" onClick={refresh}>
+                      Check again
                     </Button>
-                  ))}
-                </div>
+                  </AlertDescription>
+                </Alert>
               )}
+
+              <div className="flex flex-wrap gap-tight">
+                {QUICK_ACTIONS.map((quick) => (
+                  <Button
+                    key={quick.action}
+                    variant="outline"
+                    size="sm"
+                    disabled={busy || !!unavailable}
+                    onClick={() => send(quick.label, quick.action)}
+                  >
+                    {quick.label}
+                  </Button>
+                ))}
+                {topic && (
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link to={path(`/practice/new?topic=${topic.id}&from=${session.id}`)}>
+                      <DumbbellIcon />
+                      Practise this
+                    </Link>
+                  </Button>
+                )}
+              </div>
 
               <div className="flex items-end gap-tight">
                 <Textarea
@@ -366,7 +625,7 @@ export function TutorSessionPage() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
-                      send(draft);
+                      if (!unavailable) send(draft);
                     }
                   }}
                   rows={2}
@@ -374,14 +633,25 @@ export function TutorSessionPage() {
                   aria-label="Your message to the tutor"
                   className="min-h-0 resize-none"
                 />
-                <Button
-                  size="icon"
-                  onClick={() => send(draft)}
-                  disabled={!draft.trim()}
-                  aria-label="Send"
-                >
-                  <SendIcon />
-                </Button>
+                {busy ? (
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => controllerRef.current?.abort()}
+                    aria-label="Stop the reply"
+                  >
+                    <SquareIcon />
+                  </Button>
+                ) : (
+                  <Button
+                    size="icon"
+                    onClick={() => send(draft)}
+                    disabled={!draft.trim() || !!unavailable}
+                    aria-label="Send"
+                  >
+                    <SendIcon />
+                  </Button>
+                )}
               </div>
 
               <div className="text-muted-foreground flex flex-wrap items-center gap-tight text-xs">

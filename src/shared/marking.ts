@@ -4,31 +4,67 @@ import type {
   Question,
   QuestionAttempt,
   RubricPoint,
+  WrittenGrading,
 } from './types.ts';
 
 /**
  * Marking, for every format.
  *
- * ── What this is honest about ─────────────────────────────────────────────
+ * Objective formats are marked here, exactly and deterministically: a
+ * multiple-choice answer either matches the key or it does not.
  *
- * Objective formats are marked exactly: a multiple-choice answer either matches
- * the key or it does not, and there is nothing simulated about that.
- *
- * Written formats are marked by **keyword matching against an authored
- * rubric**, and that is a very different thing. It cannot tell a well-argued
- * paragraph from a keyword-stuffed one, and it will credit a point that happens
- * to contain the right noun. The UI says so every time it shows written
- * feedback — see `SIMULATED_MARKING_NOTICE`. Calling this "AI marking" would be
- * the exact dishonesty the brief rules out, so the prototype calls it what it
- * is: a rubric checker looking for the words a good answer usually contains.
- *
- * The one thing it does do well is diagnostic: a rubric point the answer missed
- * comes with authored advice about what was absent, which is genuinely useful
- * feedback even from a crude marker.
+ * Written formats are not marked here any more. A new written answer is
+ * recorded as `pending` and sent for AI feedback against its rubric, and
+ * `applyGrading` folds the validated result back in. Earlier builds marked
+ * written answers by looking for rubric keywords. Those grades are kept as
+ * they were, never silently regraded, and carry `LEGACY_MARKING_NOTICE`
+ * wherever they are shown.
  */
 
-export const SIMULATED_MARKING_NOTICE =
-  'Simulated marking. Written answers are checked against an authored rubric by looking for the words a strong answer usually contains, not by reading your argument. Treat the rubric points as a checklist, not a grade.';
+export const LEGACY_MARKING_NOTICE =
+  'Simulated marking from an earlier version of Rawi. This written answer was checked for the words a strong answer usually contains, not read for its meaning. The grade is kept as it was recorded.';
+
+export const AI_MARKING_NOTICE =
+  'AI feedback. A language model compared your answer with the rubric and the course material. It judges meaning rather than keywords, but it can be wrong, so treat the marks as guidance rather than an official grade.';
+
+export const WRITTEN_FORMATS = ['written-recall', 'source-analysis', 'essay'] as const;
+
+export function isWritten(format: Question['format']): boolean {
+  return (WRITTEN_FORMATS as readonly string[]).includes(format);
+}
+
+/** Submitted but not yet marked: counts as neither right nor wrong. */
+export function isAwaitingGrade(qa: QuestionAttempt): boolean {
+  return qa.outcome === 'pending';
+}
+
+/**
+ * An attempt's totals over the answers that have actually been marked.
+ * A pending answer is left out of both sides, so it cannot drag a score down
+ * while it waits.
+ */
+export function attemptTotals(questions: QuestionAttempt[]) {
+  const marked = questions.filter((qa) => !isAwaitingGrade(qa));
+  return {
+    marksAwarded: marked.reduce((sum, qa) => sum + qa.marksAwarded, 0),
+    marksAvailable: marked.reduce((sum, qa) => sum + qa.marksAvailable, 0),
+    pending: questions.length - marked.length,
+  };
+}
+
+/** The rubric a written question is marked against, synthesised if absent. */
+export function rubricFor(question: Question): RubricPoint[] {
+  if (question.rubric && question.rubric.length > 0) return question.rubric;
+  return [
+    {
+      id: 'overall',
+      label: 'Answers the question accurately and completely',
+      marks: question.marks,
+      keywords: [],
+      missedAdvice: 'Compare your answer with the explanation.',
+    },
+  ];
+}
 
 /* ── Per-format marking ───────────────────────────────────────────────── */
 
@@ -110,72 +146,11 @@ function markMatching(question: Question, answer: AnswerValue) {
   return { outcome, fraction };
 }
 
-/**
- * Whether the rubric point's keywords appear in the answer.
- *
- * Word-boundary matching on each keyword, so "not" does not match "cannot" and
- * "land" does not match "Iceland". Multi-word keywords are matched as
- * substrings, because phrase boundaries inside a sentence are not worth the
- * regex complexity for the accuracy gained.
- */
-function creditsPoint(point: RubricPoint, text: string): boolean {
-  const lower = text.toLowerCase();
-  return point.keywords.some((keyword) => {
-    const k = keyword.toLowerCase().trim();
-    if (!k) return false;
-    if (k.includes(' ')) return lower.includes(k);
-    return new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(lower);
-  });
-}
-
-export interface WrittenMarking {
-  outcome: Outcome;
-  fraction: number;
-  creditedRubricIds: string[];
-  /** Rubric points not credited, for the feedback panel. */
-  missedRubricIds: string[];
-  /** Words in the answer, so the UI can warn about a very short submission. */
-  wordCount: number;
-}
-
-export function markWritten(question: Question, text: string): WrittenMarking {
-  const rubric = question.rubric ?? [];
-  const words = text.trim().split(/\s+/).filter(Boolean);
-
-  if (words.length === 0 || rubric.length === 0) {
-    return {
-      outcome: 'skipped',
-      fraction: 0,
-      creditedRubricIds: [],
-      missedRubricIds: rubric.map((r) => r.id),
-      wordCount: words.length,
-    };
-  }
-
-  const credited = rubric.filter((point) => creditsPoint(point, text));
-  const earned = credited.reduce((sum, p) => sum + p.marks, 0);
-  const total = rubric.reduce((sum, p) => sum + p.marks, 0);
-  const fraction = total === 0 ? 0 : earned / total;
-
-  const outcome: Outcome =
-    fraction >= 0.85 ? 'correct' : fraction === 0 ? 'incorrect' : 'partial';
-
-  return {
-    outcome,
-    fraction,
-    creditedRubricIds: credited.map((p) => p.id),
-    missedRubricIds: rubric.filter((p) => !credited.includes(p)).map((p) => p.id),
-    wordCount: words.length,
-  };
-}
-
 /* ── The entry point ──────────────────────────────────────────────────── */
 
 export interface MarkResult {
   outcome: Outcome;
   marksAwarded: number;
-  creditedRubricIds?: string[];
-  missedRubricIds?: string[];
 }
 
 /**
@@ -209,24 +184,10 @@ export function mark(question: Question, answer: AnswerValue): MarkResult {
     case 'written-recall':
     case 'source-analysis':
     case 'essay': {
-      const text = answer.kind === 'text' ? answer.text : '';
-      const result = markWritten(question, text);
-      const rubric = question.rubric ?? [];
-      const earned = rubric
-        .filter((p) => result.creditedRubricIds.includes(p.id))
-        .reduce((sum, p) => sum + p.marks, 0);
-      return {
-        outcome: result.outcome,
-        // Rubric marks are the authority when they sum to the question's total,
-        // which they do for every authored question. The scaling fallback
-        // covers a hand-edited question whose rubric does not add up.
-        marksAwarded:
-          rubric.reduce((s, p) => s + p.marks, 0) === question.marks
-            ? earned
-            : Math.round(question.marks * result.fraction),
-        creditedRubricIds: result.creditedRubricIds,
-        missedRubricIds: result.missedRubricIds,
-      };
+      const text = answer.kind === 'text' ? answer.text.trim() : '';
+      /* Nothing written is nothing to send: it scores zero without a request. */
+      if (!text) return { outcome: 'skipped', marksAwarded: 0 };
+      return { outcome: 'pending', marksAwarded: 0 };
     }
     case 'flashcard': {
       // A flashcard is self-rated; there is no key to mark against. "good" and
@@ -242,14 +203,21 @@ export function mark(question: Question, answer: AnswerValue): MarkResult {
   }
 }
 
-/** Builds the stored record for one marked answer. */
+/**
+ * Builds the stored record for one answer.
+ *
+ * A written answer with text comes back `pending` unless `grading` already
+ * holds a finished result for it, as it does when feedback was requested
+ * during a practice run.
+ */
 export function toQuestionAttempt(
   question: Question,
   answer: AnswerValue,
   usedHint: boolean,
+  grading?: WrittenGrading,
 ): QuestionAttempt {
   const result = mark(question, answer);
-  return {
+  const qa: QuestionAttempt = {
     questionId: question.id,
     topicId: question.topicId,
     format: question.format,
@@ -258,7 +226,38 @@ export function toQuestionAttempt(
     marksAwarded: result.marksAwarded,
     marksAvailable: question.marks,
     usedHint,
-    ...(result.creditedRubricIds ? { creditedRubricIds: result.creditedRubricIds } : {}),
+  };
+  if (result.outcome !== 'pending') return qa;
+  if (grading?.status === 'graded') return applyGrading(question, qa, grading);
+  return { ...qa, grading: grading ?? { method: 'ai', status: 'pending' } };
+}
+
+/**
+ * Folds a finished grading into an answer record.
+ *
+ * Rubric marks are the authority when they sum to the question's total, and
+ * are scaled to it when a hand-edited rubric does not add up. The outcome
+ * bands are the ones the rest of the app already uses.
+ */
+export function applyGrading(
+  question: Question,
+  qa: QuestionAttempt,
+  grading: WrittenGrading,
+): QuestionAttempt {
+  if (grading.status !== 'graded' || !grading.points) {
+    return { ...qa, outcome: 'pending', marksAwarded: 0, grading };
+  }
+  const earned = grading.points.reduce((sum, p) => sum + p.awarded, 0);
+  const total = grading.points.reduce((sum, p) => sum + p.max, 0);
+  const fraction = total === 0 ? 0 : earned / total;
+  const outcome: Outcome =
+    fraction >= 0.85 ? 'correct' : fraction === 0 ? 'incorrect' : 'partial';
+  return {
+    ...qa,
+    outcome,
+    marksAwarded: total === question.marks ? earned : Math.round(question.marks * fraction),
+    creditedRubricIds: grading.points.filter((p) => p.awarded > 0).map((p) => p.rubricId),
+    grading,
   };
 }
 

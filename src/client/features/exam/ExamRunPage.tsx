@@ -146,7 +146,10 @@ export function ExamRunPage() {
         finish === 'expired' ? 'Time expired, paper submitted' : 'Paper submitted',
         { description: 'Your marks and feedback are on the results page.' },
       );
-      navigate(`/course/${course.id}/exams/results/${attempt.id}`, { replace: true });
+      navigate(`/course/${course.id}/exams/results/${attempt.id}`, {
+        replace: true,
+        state: { justSubmitted: true },
+      });
     },
     [activeExam, questionMap, dispatch, navigate, course.id],
   );

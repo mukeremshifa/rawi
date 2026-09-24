@@ -30,8 +30,9 @@ import {
   useQuestionMap,
   useTopic,
   useTopicMap,
+  useCanTutor,
 } from '@/store/selectors';
-import { hasScript } from '@/features/tutor/engine';
+
 import { NotFoundPage } from '@/routes';
 
 /**
@@ -53,6 +54,7 @@ export function TopicProgressPage() {
   const { topicId } = useParams();
   const topic = useTopic(topicId);
   const topicMap = useTopicMap();
+  const canTutor = useCanTutor();
   const evidence = useEvidence();
   const attempts = useAttempts();
   const questionMap = useQuestionMap();
@@ -98,7 +100,7 @@ export function TopicProgressPage() {
         description={topic.summary}
         actions={
           <>
-            {hasScript(topicId) && (
+            {canTutor(topicId) && (
               <Button variant="outline" size="sm" asChild>
                 <Link to={path(`/tutor/new?topic=${topicId}`)}>
                   <MessageSquareIcon />

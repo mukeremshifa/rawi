@@ -4,8 +4,9 @@ import type {
   Question,
   QuestionFormat,
   SessionActivity,
+  Topic,
 } from './types.ts';
-import { hasTutorScript } from './course/tutor-script.ts';
+import { isUsableMaterial, materialsForTopic } from './ai-context.ts';
 
 /**
  * What can actually be done with a topic, given the content that exists.
@@ -15,11 +16,13 @@ import { hasTutorScript } from './course/tutor-script.ts';
  * Both planners used to decide what to recommend from one fact: whether the
  * topic had *any* question behind it. That is not the same question as "can
  * the student do the thing I am about to suggest", and the gap showed. The
- * planner proposed "Learn from association to cause" with the tutor for a
- * statistics topic, but the authored tutor script covers the six history
- * topics only, so the session opened and immediately said it had nothing to
- * teach. A flashcard round was proposed for topics whose only questions were
- * essays. Both are actionable-looking entries with no action behind them.
+ * planner proposed a flashcard round for topics whose only questions were
+ * essays, which is an actionable-looking entry with no action behind it.
+ *
+ * The tutor is a model now, so it can talk about anything, but it can only
+ * *teach from the course* when there is readable material that relates to the
+ * topic. That is the test, and a placeholder for a file Rawi could not read
+ * does not count.
  *
  * So capability is computed per topic, per activity, from the content that is
  * actually there, and the planners choose from what comes back rather than
@@ -43,9 +46,9 @@ export const ACTIVITY_QUESTION_FORMATS: Record<ActivityType, QuestionFormat[]> =
 };
 
 export interface TopicCapabilities {
-  /** An authored tutor script covers this topic. */
+  /** Readable course material relates to this topic, so the tutor can teach it. */
   tutor: boolean;
-  /** A material in this course is linked to the topic. */
+  /** A readable material in this course is linked to the topic. */
   read: boolean;
   /** Practice activities that have at least one matching question. */
   activities: ActivityType[];
@@ -62,10 +65,11 @@ export interface TopicCapabilities {
  * exists to prevent.
  */
 export function topicCapabilities(
-  topicId: string,
+  topic: Topic,
   questions: Question[],
   materials: Material[],
 ): TopicCapabilities {
+  const topicId = topic.id;
   const forTopic = questions.filter((q) => q.topicId === topicId);
   const formats = new Set(forTopic.map((q) => q.format));
 
@@ -76,11 +80,12 @@ export function topicCapabilities(
   );
 
   return {
-    tutor: hasTutorScript(topicId),
+    tutor: materialsForTopic(topic, materials).length > 0,
     read: materials.some(
       (m) =>
-        m.topicIds.includes(topicId) ||
-        m.passages.some((p) => p.topicIds.includes(topicId)),
+        isUsableMaterial(m) &&
+        (m.topicIds.includes(topicId) ||
+          m.passages.some((p) => p.topicIds.includes(topicId))),
     ),
     activities,
     anyQuestion: forTopic.length > 0,
@@ -144,7 +149,7 @@ export function substitutionNote(
 ): string {
   if (preferred === chosen) return '';
   if (preferred === 'tutor') {
-    return ' The tutor has no authored script for this topic, so this is the next best thing available.';
+    return ' There is no readable material for the tutor to teach this topic from, so this is the next best thing available.';
   }
   if (preferred === 'flashcards') {
     return ' There are no flashcards for this topic, so this uses the question formats that do exist.';
@@ -154,4 +159,4 @@ export function substitutionNote(
 
 /** Why nothing could be suggested for a topic, as a sentence. */
 export const NO_CONTENT_REASON =
-  'There is no tutor script, reading or question behind this topic yet, so there is nothing to practise. Add a reading or link this topic to material first.';
+  'There is no readable material or question behind this topic yet, so there is nothing to study it with. Add a reading or link this topic to material first.';

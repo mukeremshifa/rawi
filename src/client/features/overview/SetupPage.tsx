@@ -44,9 +44,7 @@ export function WelcomePage() {
               problem-based statistics course, with readings, authored question
               banks, four planned assessments between them and a fortnight of seeded
               study history. Enough for the planner, progress and recurring mistakes
-              to have something real to show. Alongside them, CENG 401 carries real
-              lecture material converted outside the app, with its own question bank
-              and no study history yet.
+              to have something real to show.
             </p>
             <Button
               className="self-start"
@@ -65,11 +63,9 @@ export function WelcomePage() {
             <span className="font-medium">Start with your own</span>
             <p className="text-muted-foreground text-sm leading-relaxed">
               Add a course, paste its syllabus or build a week-by-week outline, and
-              record the dates it actually has. Note that the authored question bank
-              covers the sample courses’ topics, so your own topics will have no
-              practice questions behind them. The tutor, your own readings and the
-              planner still work, and Rawi will say so rather than attaching unrelated
-              questions.
+              record the dates it actually has. Paste your readings into Materials and
+              the AI tutor can teach from them, and practice questions can be generated
+              from them. Nothing unrelated is attached to your topics.
             </p>
             <Button
               variant="outline"

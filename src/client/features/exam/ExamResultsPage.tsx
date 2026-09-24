@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import {
   ArrowLeftIcon,
   DumbbellIcon,
@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 
 import type { Attempt } from '@shared/types.ts';
-import { SIMULATED_MARKING_NOTICE } from '@shared/marking.ts';
 
 import { Page, PageHeader, Section } from '@/components/layout';
 import { Button } from '@/components/ui/button';
@@ -19,15 +18,18 @@ import { Meter } from '@/components/Meter';
 import {
   FORMAT_LABEL,
   OutcomeBadge,
-  SimulatedNotice,
   Stat,
   formatRelative,
 } from '@/components/domain';
 import { useAppState } from '@/store/store';
 import { useCoursePath } from '@/store/course-context';
-import { useAttempt, useQuestionMap, useTopicMap } from '@/store/selectors';
-import { QuestionFeedback } from '@/features/practice/QuestionFeedback';
-import { hasScript } from '@/features/tutor/engine';
+import { useAttempt, useCanTutor, useQuestionMap, useTopicMap } from '@/store/selectors';
+import {
+  PendingFeedbackPanel,
+  QuestionFeedback,
+} from '@/features/practice/QuestionFeedback';
+import { useAttemptGrading } from '@/features/practice/grading';
+
 import { NotFoundPage } from '@/routes';
 
 /**
@@ -73,6 +75,8 @@ interface TopicGap {
 function topicGaps(attempt: Attempt): TopicGap[] {
   const byTopic = new Map<string, TopicGap>();
   for (const qa of attempt.questions) {
+    /* An answer waiting for feedback has no mark yet, so it is not a gap. */
+    if (qa.outcome === 'pending') continue;
     const current =
       byTopic.get(qa.topicId) ??
       { topicId: qa.topicId, awarded: 0, available: 0, wrong: 0 };
@@ -102,12 +106,20 @@ export function ExamResultsPage() {
   const { examConfigs } = useAppState();
   const questionMap = useQuestionMap();
   const topicMap = useTopicMap();
+  const canTutor = useCanTutor();
+  const location = useLocation();
+  const grading = useAttemptGrading(
+    attempt,
+    Boolean((location.state as { justSubmitted?: boolean } | null)?.justSubmitted),
+  );
 
   if (!attempt) return <NotFoundPage />;
 
   const config = examConfigs.find((c) => c.id === attempt.examConfigId);
   const gaps = topicGaps(attempt);
-  const wrong = attempt.questions.filter((qa) => qa.outcome !== 'correct');
+  const wrong = attempt.questions.filter(
+    (qa) => qa.outcome !== 'correct' && qa.outcome !== 'pending',
+  );
   const fraction =
     attempt.marksAvailable > 0 ? attempt.marksAwarded / attempt.marksAvailable : 0;
   /* Lowest share: the topic the evidence is weakest on, which is what the
@@ -115,12 +127,6 @@ export function ExamResultsPage() {
   const worst = gaps[0];
   /* Most marks lost: what the closing sentence is actually about. */
   const costliest = costliestTopic(gaps);
-  const hasWritten = attempt.questions.some(
-    (qa) =>
-      qa.format === 'essay' ||
-      qa.format === 'written-recall' ||
-      qa.format === 'source-analysis',
-  );
 
   return (
     <Page className="max-w-3xl pb-page">
@@ -176,6 +182,14 @@ export function ExamResultsPage() {
         </CardContent>
       </Card>
 
+      <PendingFeedbackPanel
+        waiting={grading.waiting}
+        running={grading.running}
+        error={grading.error}
+        onGrade={() => void grading.gradeAll()}
+        onCancel={grading.cancel}
+      />
+
       <Section
         title="Where the marks went"
         description="By topic, weakest first."
@@ -211,7 +225,7 @@ export function ExamResultsPage() {
 
       <Section title="What to do about it">
         <div className="flex flex-wrap gap-tight">
-          {worst && hasScript(worst.topicId) && (
+          {worst && canTutor(worst.topicId) && (
             <Button asChild>
               <Link to={path(`/tutor/new?topic=${worst.topicId}&attempt=${attempt.id}`)}>
                 <MessageSquareIcon />
@@ -264,9 +278,6 @@ export function ExamResultsPage() {
         )}
       </Section>
 
-      {hasWritten && (
-        <SimulatedNotice tone="block">{SIMULATED_MARKING_NOTICE}</SimulatedNotice>
-      )}
 
       <Section title="Every question">
         <ol className="flex flex-col gap-base">
@@ -302,7 +313,7 @@ export function ExamResultsPage() {
                     <QuestionFeedback
                       question={question}
                       attempt={qa}
-                      {...(hasScript(qa.topicId)
+                      {...(canTutor(qa.topicId)
                         ? {
                             discussTo: path(
                               `/tutor/new?topic=${qa.topicId}&question=${qa.questionId}&attempt=${attempt.id}`,

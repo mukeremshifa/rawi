@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { MessageSquareIcon, PlayIcon } from 'lucide-react';
 
-import { SCRIPTED_NOTICE, STAGE_LABEL } from '@shared/course/tutor-script.ts';
+import { AI_TUTOR_NOTICE, STAGE_LABEL } from '@shared/tutor.ts';
 
 import { Page, PageHeader, Section } from '@/components/layout';
 import { EmptyState } from '@/components/states';
@@ -15,16 +15,14 @@ import {
 } from '@/components/domain';
 import { useAppState } from '@/store/store';
 import { useCoursePath } from '@/store/course-context';
-import { useEvidence, useTopicMap, useTopics } from '@/store/selectors';
-import { hasScript } from './engine';
+import { useCanTutor, useEvidence, useTopicMap, useTopics } from '@/store/selectors';
 
 /**
  * The tutor's front door: pick a topic, or pick up where you left off.
  *
- * Topics with no authored script are shown and disabled rather than hidden.
- * A student who added their own topic should be able to see that the tutor
- * cannot help with it yet — quietly omitting it would leave them wondering
- * where their topic went.
+ * Topics with no readable material behind them are shown and disabled rather
+ * than hidden, so a student can see why the tutor cannot teach them yet.
+ * A placeholder for a file Rawi could not read does not count as material.
  */
 export function TutorHomePage() {
   const path = useCoursePath();
@@ -32,6 +30,7 @@ export function TutorHomePage() {
   const topics = useTopics();
   const topicMap = useTopicMap();
   const evidence = useEvidence();
+  const canTutor = useCanTutor();
 
   const open = tutorSessions
     .filter((s) => !s.endedAt)
@@ -47,7 +46,7 @@ export function TutorHomePage() {
         description="Work through a topic with explanations, questions and hints. Start from a topic here, or from a passage in any reading."
       />
 
-      <SimulatedNotice tone="block">{SCRIPTED_NOTICE}</SimulatedNotice>
+      <SimulatedNotice tone="block">{AI_TUTOR_NOTICE}</SimulatedNotice>
 
       {open.length > 0 && (
         <Section title="Pick up where you left off">
@@ -93,7 +92,7 @@ export function TutorHomePage() {
       >
         <div className="grid gap-snug sm:grid-cols-2">
           {topics.map((topic) => {
-            const available = hasScript(topic.id);
+            const available = canTutor(topic.id);
             const ev = evidence.get(topic.id);
             const card = (
               <Card className={available ? undefined : 'opacity-60'}>
@@ -117,7 +116,7 @@ export function TutorHomePage() {
                       </span>
                     ) : (
                       <span className="text-muted-foreground text-xs">
-                        No authored script
+                        No readable material yet
                       </span>
                     )}
                   </div>
@@ -136,8 +135,8 @@ export function TutorHomePage() {
                   </Link>
                 ) : (
                   <div
-                    title="The tutor's responses are authored per topic, and there are none for this one."
-                    aria-label={`${topic.title}: no authored tutor script`}
+                    title="The tutor teaches from your course material, and none relates to this topic yet."
+                    aria-label={`${topic.title}: no readable material for the tutor`}
                   >
                     {card}
                   </div>
@@ -179,14 +178,14 @@ export function TutorHomePage() {
         </Section>
       )}
 
-      {tutorSessions.length === 0 && topics.every((t) => !hasScript(t.id)) && (
+      {tutorSessions.length === 0 && topics.every((t) => !canTutor(t.id)) && (
         <EmptyState
           icon={<MessageSquareIcon />}
-          title="No authored tutor content for your topics"
-          description="The tutor's responses are written per topic, and the script covers the sample course only. Practice and exams still work on any topic with questions behind it."
+          title="Add material for the tutor to teach from"
+          description="The tutor works from this course's readings and notes. Paste a reading or add a text file, then link it to a topic."
           action={
             <Button variant="outline" asChild>
-              <Link to={path('/practice')}>Go to practice</Link>
+              <Link to={path('/materials')}>Go to materials</Link>
             </Button>
           }
         />
