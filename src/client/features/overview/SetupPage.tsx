@@ -25,9 +25,10 @@ import { useStore } from '@/store/store';
  * workspace to navigate.
  */
 export function WelcomePage() {
-  const { dispatch, resetDemo } = useStore();
+  const { state, dispatch, resetDemo } = useStore();
   const navigate = useNavigate();
 
+  if (state.onboarded) return <Page width="prose" className="py-page"><PageHeader title="Your workspace is ready to open" description="Your courses and saved work are kept on this device. Manage replacement from Courses or Workspace data." /><Button onClick={() => navigate('/')}>Continue to workspace</Button></Page>;
   return (
     <Page width="prose" className="py-page">
       <PageHeader

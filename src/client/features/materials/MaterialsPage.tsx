@@ -1,3 +1,5 @@
+import { useDraftState } from '@/store/drafts';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -42,16 +44,24 @@ const KIND_ICON: Record<MaterialKind, typeof BookOpenIcon> = {
 };
 
 export function MaterialsPage() {
+  const draftLocation = useLocation();
+  const draftPrefix = `form:${draftLocation.pathname}${draftLocation.search}:`;
   const path = useCoursePath();
   const materials = useMaterials();
   const topicMap = useTopicMap();
-  const [query, setQuery] = useState('');
-  const [kind, setKind] = useState<MaterialKind | 'all'>('all');
-  const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useDraftState(draftPrefix + "query", '');
+  const [kind, setKind] = useDraftState<MaterialKind | 'all'>(draftPrefix + "kind", 'all');
+  const [params] = useSearchParams();
+  const [adding, setAdding] = useState(params.get('add') === '1');
+  const [archiveView, setArchiveView] = useDraftState(draftPrefix + 'archive', 'active');
+  const [topicFilter, setTopicFilter] = useDraftState(draftPrefix + 'topic', 'all');
+  const [sort, setSort] = useDraftState(draftPrefix + 'sort', 'recent');
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return materials.filter((m) => {
+      if ((archiveView === 'archived') !== !!m.archived) return false;
+      if (topicFilter !== 'all' && !m.topicIds.includes(topicFilter)) return false;
       if (kind !== 'all' && m.kind !== kind) return false;
       if (!q) return true;
       return (
@@ -61,8 +71,8 @@ export function MaterialsPage() {
             p.heading.toLowerCase().includes(q) || p.text.toLowerCase().includes(q),
         )
       );
-    });
-  }, [materials, kind, query]);
+    }).sort((a, b) => sort === 'name' ? a.title.localeCompare(b.title) : (b.updatedAt ?? b.addedAt).localeCompare(a.updatedAt ?? a.addedAt));
+  }, [materials, kind, query, archiveView, topicFilter, sort]);
 
   /* The two notices are about *this course's* library, not about the
      prototype in general. A course whose readings were converted from the
@@ -91,18 +101,19 @@ export function MaterialsPage() {
         <EmptyState
           icon={<BookOpenIcon />}
           title="Nothing in your library yet"
-          description="Paste a reading in, or add a plain text file. You can also skip this entirely, because tutoring and practice work from topics alone."
+          description="Paste a reading in, or add a plain text file. Link readable material to topics for tutoring and question generation. Bank practice needs matching questions."
           action={
             <div className="flex flex-wrap justify-center gap-tight">
               <Button onClick={() => setAdding(true)}>Add material</Button>
               <Button variant="outline" asChild>
-                <Link to={path('/tutor')}>Start from a topic instead</Link>
+                <Link to={path('/practice')}>View available practice</Link>
               </Button>
             </div>
           }
         />
       ) : (
         <Section>
+          <div className="flex flex-wrap gap-2"><select aria-label="Material status" value={archiveView} onChange={e => setArchiveView(e.target.value)}><option value="active">Active materials</option><option value="archived">Archived materials</option></select><select aria-label="Filter material topics" value={topicFilter} onChange={e => setTopicFilter(e.target.value)}><option value="all">All topics</option>{[...topicMap.values()].filter(t => t.courseId === draftLocation.pathname.split('/')[2]).map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select><select aria-label="Sort materials" value={sort} onChange={e => setSort(e.target.value)}><option value="recent">Recently changed</option><option value="name">Name</option></select><span className="text-muted-foreground text-sm">{filtered.length} materials</span></div>
           <div className="flex flex-wrap items-center gap-snug">
             <div className="relative min-w-52 flex-1">
               <SearchIcon
@@ -139,7 +150,7 @@ export function MaterialsPage() {
                   variant="outline"
                   onClick={() => {
                     setQuery('');
-                    setKind('all');
+                    setKind('all'); setArchiveView('active'); setTopicFilter('all');
                   }}
                 >
                   Clear filters

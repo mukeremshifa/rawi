@@ -1,5 +1,7 @@
+import { Select } from '@/components/ui/select';
+import { useDraftState } from '@/store/drafts';
 import { useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   CalendarDaysIcon,
   CheckIcon,
@@ -15,7 +17,7 @@ import {
   SparklesIcon,
   Trash2Icon,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type { PlanProposal, PlannedSession } from '@shared/types.ts';
 import {
@@ -82,6 +84,7 @@ import { cn } from '@/lib/utils';
  */
 export function PlannerPage() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const { dispatch } = useStore();
   const state = useAppState();
   const courses = useActiveCourses();
@@ -92,8 +95,8 @@ export function PlannerPage() {
   const overdue = useOverdueSessions();
 
   const today = localISO(new Date());
-  const [monday, setMonday] = useState(() => weekStart(today));
-  const [courseFilter, setCourseFilter] = useState<string | 'all'>('all');
+  const [monday, setMonday] = useDraftState('planner:week', () => params.get('week') ?? weekStart(today));
+  const [courseFilter, setCourseFilter] = useDraftState<string | 'all'>('planner:course', params.get('course') ?? 'all');
   const [editing, setEditing] = useState<PlannedSession | undefined>(undefined);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogDate, setDialogDate] = useState<string | undefined>(undefined);
@@ -102,6 +105,8 @@ export function PlannerPage() {
   const [removing, setRemoving] = useState<PlannedSession | undefined>(undefined);
   const [showAllUnscheduled, setShowAllUnscheduled] = useState(false);
 
+  const [activityFilter, setActivityFilter] = useDraftState('planner:activity', 'all');
+  const [statusFilter, setStatusFilter] = useDraftState('planner:status', 'all');
   const dates = weekDates(monday);
 
   /** A session id in the URL opens its day and highlights it. */
@@ -113,9 +118,9 @@ export function PlannerPage() {
       sessions.filter(
         (s) =>
           dates.includes(s.date) &&
-          (courseFilter === 'all' || s.courseId === courseFilter),
+          (courseFilter === 'all' || s.courseId === courseFilter) && (activityFilter === 'all' || s.activity === activityFilter) && (statusFilter === 'all' || s.status === statusFilter),
       ),
-    [sessions, dates, courseFilter],
+    [sessions, dates, courseFilter, activityFilter, statusFilter],
   );
 
   const weekAssessments = useMemo(
@@ -131,9 +136,12 @@ export function PlannerPage() {
   );
 
   const generate = () => {
+    if (!availability.windows.some(w => w.endMinutes - w.startMinutes >= availability.sessionMinutes) && !availability.exceptions.some(e => dates.includes(e.date) && e.windows.some(w => w.endMinutes - w.startMinutes >= availability.sessionMinutes))) {
+      navigate(`/planner/availability?return=${encodeURIComponent(`/planner?week=${monday}&course=${courseFilter}`)}`); return;
+    }
     const result = planWeek(
       {
-        courses,
+        courses: courseFilter === 'all' ? courses : courses.filter(c => c.id === courseFilter),
         topics: state.topics,
         attempts: state.attempts,
         assessments: state.assessments,
@@ -234,6 +242,16 @@ export function PlannerPage() {
   /** What a session's link opens, as a route. */
   const linkFor = (session: PlannedSession): string | null => {
     const base = `/course/${session.courseId}`;
+    const course = state.courses.find(c => c.id === session.courseId);
+    if (!course || course.archived) return null;
+    const exam = state.activeExam; if (exam?.plannedSessionId === session.id) return `${base}/exams/run`;
+    const run = state.practiceRuns.find(r => r.plannedSessionId === session.id); if (run) return `${base}/practice/run/${run.id}`;
+    const tutor = state.tutorSessions.find(s => s.plannedSessionId === session.id && !s.endedAt && !s.archived); if (tutor) return `${base}/tutor/${tutor.id}`;
+    if (session.link?.kind === 'material' && !state.materials.some(m => m.id === (session.link as { materialId: string }).materialId && m.courseId === session.courseId && !m.archived)) return null;
+    if (session.link?.kind === 'practice-set' && !state.savedPractice.some(s => s.id === (session.link as { setId: string }).setId && s.courseId === session.courseId && !s.archived)) return null;
+    if (session.link?.kind === 'exam-config' && !state.examConfigs.some(c => c.id === (session.link as { configId: string }).configId && c.courseId === session.courseId && !c.archived)) return null;
+    if (session.link?.kind === 'tutor' && !state.topics.some(t => t.id === (session.link as { topicId: string }).topicId && t.courseId === session.courseId)) return null;
+    if (session.link?.kind === 'mistake-review' && !state.attempts.some(a => a.id === (session.link as { attemptId: string }).attemptId && a.courseId === session.courseId)) return null;
 
     /*
      * A rehearsal with no saved configuration still needs somewhere to go.
@@ -252,6 +270,8 @@ export function PlannerPage() {
 
     if (!session.link) return null;
     switch (session.link.kind) {
+      case 'mistake-review':
+        return `${base}/practice/new?retry=${session.link.attemptId}&questions=${session.link.questionIds.join(',')}&session=${session.id}`;
       case 'material':
         return `${base}/materials/${session.link.materialId}?session=${session.id}`;
       case 'practice-set':
@@ -394,6 +414,7 @@ export function PlannerPage() {
           />
         )}
 
+        {!to && session.link && <p className="text-sm text-muted-foreground">This target is missing or archived. Restore it from its library or edit this session to choose another target.<Button size="xs" variant="outline" onClick={() => openEdit(session)}>Repair target</Button>{course?.archived && <Button size="xs" variant="outline" asChild><Link to={`/course/${course.id}/settings`}>Restore course</Link></Button>}</p>}
         {session.reason && (
           <p className="text-muted-foreground text-xs leading-relaxed">
             {session.reason}
@@ -497,6 +518,7 @@ export function PlannerPage() {
         }
       />
 
+      <div className="flex flex-wrap gap-2"><Select aria-label="Planner activity" value={activityFilter} onChange={e => setActivityFilter(e.target.value)}><option value="all">All activities</option>{['read', 'tutor', 'practice', 'flashcards', 'exam', 'review', 'other'].map(a => <option key={a}>{a}</option>)}</Select><Select aria-label="Planner status" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="all">All statuses</option><option value="planned">Planned</option><option value="completed">Completed</option><option value="skipped">Skipped</option></Select><Button variant="ghost" onClick={() => { setActivityFilter('all'); setStatusFilter('all'); setCourseFilter('all'); }}>Clear filters</Button><Button variant="outline" onClick={() => { setMonday(weekStart(today)); setParams({}); }}>Today</Button></div>
       {/* ── Week navigation and filter ─────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-tight">
         <Button
@@ -636,7 +658,7 @@ export function PlannerPage() {
                         {course && (
                           <CourseTag name={course.name} accent={course.accent} />
                         )}
-                        {session.reason && (
+        {session.reason && (
                           <p className="text-muted-foreground text-xs leading-relaxed">
                             {session.reason}
                           </p>
@@ -882,7 +904,7 @@ export function PlannerPage() {
         />
       )}
 
-      <SessionDialog
+      <SessionDialog key={editing?.id ?? `new:${dialogDate ?? today}:${courseFilter}`}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         {...(editing ? { session: editing } : {})}

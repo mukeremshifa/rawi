@@ -1,7 +1,9 @@
+import { useDraftState } from '@/store/drafts';
+import { useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeftIcon, Trash2Icon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type { AssessmentType, PlannedAssessment } from '@shared/types.ts';
 
@@ -49,6 +51,8 @@ const TYPES: { value: AssessmentType; label: string }[] = [
 ];
 
 export function AssessmentEditorPage() {
+  const draftLocation = useLocation();
+  const draftPrefix = `form:${draftLocation.pathname}${draftLocation.search}:`;
   const { assessmentId } = useParams<{ assessmentId: string }>();
   const navigate = useNavigate();
   const { dispatch } = useStore();
@@ -58,25 +62,26 @@ export function AssessmentEditorPage() {
   const configs = useExamConfigs();
   const sessions = useAllSessions();
 
-  const existing = useAssessment(assessmentId);
+  const found = useAssessment(assessmentId);
+  const existing = found?.courseId === course.id ? found : undefined;
 
-  const [title, setTitle] = useState(existing?.title ?? '');
-  const [type, setType] = useState<AssessmentType>(existing?.type ?? 'quiz');
-  const [date, setDate] = useState(existing?.date ?? '');
-  const [time, setTime] = useState(existing?.time ?? '');
-  const [duration, setDuration] = useState(
+  const [title, setTitle] = useDraftState(draftPrefix + "title", existing?.title ?? '');
+  const [type, setType] = useDraftState<AssessmentType>(draftPrefix + "type", existing?.type ?? 'quiz');
+  const [date, setDate] = useDraftState(draftPrefix + "date", existing?.date ?? '');
+  const [time, setTime] = useDraftState(draftPrefix + "time", existing?.time ?? '');
+  const [duration, setDuration] = useDraftState(draftPrefix + "duration",
     existing?.durationMinutes ? String(existing.durationMinutes) : '',
   );
-  const [topicIds, setTopicIds] = useState<string[]>(existing?.topicIds ?? []);
-  const [weight, setWeight] = useState(
+  const [topicIds, setTopicIds] = useDraftState<string[]>(draftPrefix + "topicIds", existing?.topicIds ?? []);
+  const [weight, setWeight] = useDraftState(draftPrefix + "weight",
     existing?.weightPercent !== undefined ? String(existing.weightPercent) : '',
   );
-  const [notes, setNotes] = useState(existing?.notes ?? '');
+  const [notes, setNotes] = useDraftState(draftPrefix + "notes", existing?.notes ?? '');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const titleError = !title.trim() ? 'Give the assessment a name.' : null;
   const dateError = !date ? 'An assessment needs a date.' : null;
-  const valid = !titleError && !dateError;
+  const valid = !titleError && !dateError && (!duration || (Number(duration) > 0 && Number(duration) <= 1440)) && (!weight || (Number(weight) >= 0 && Number(weight) <= 100));
 
   const save = () => {
     if (!valid) return;
@@ -98,6 +103,7 @@ export function AssessmentEditorPage() {
       ...(notes.trim() ? { notes: notes.trim() } : {}),
     };
 
+    dispatch({ type: 'clear-draft', prefix: draftPrefix });
     dispatch({ type: 'save-assessment', assessment });
     toast.success(existing ? 'Assessment updated' : 'Assessment added', {
       description:
@@ -116,6 +122,7 @@ export function AssessmentEditorPage() {
 
   const isPast = date !== '' && date < localISO(new Date());
 
+  if (assessmentId && !existing) return <Page><PageHeader title="Assessment unavailable" description="This assessment does not belong to this course, or it has been removed." /><Button asChild><Link to={path('/exams')}>Open course assessments</Link></Button></Page>;
   return (
     <Page width="prose" className="pb-page">
       <div>

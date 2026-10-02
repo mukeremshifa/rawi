@@ -8,7 +8,7 @@ import {
   SaveIcon,
 } from 'lucide-react';
 import { attemptTotals, isWritten } from '@shared/marking.ts';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type {
   AnswerValue,
@@ -37,7 +37,6 @@ import {
 } from '@/store/selectors';
 import { failedGrading, gradeAnswer } from './grading';
 
-import { newId } from '@/lib/id';
 import { QuestionView } from './QuestionView';
 import { QuestionFeedback } from './QuestionFeedback';
 
@@ -139,12 +138,13 @@ export function PracticeRunPage() {
     const totals = attemptTotals(questionAttempts);
 
     const completed: Attempt = {
-      id: newId('att'),
+      id: `att-${run.id}`,
       courseId: run.courseId,
       kind: 'practice',
       mode: set.config.activity === 'flashcards' ? 'self-rated' : 'practice',
       title: set.name,
       practiceSetId: set.id,
+      remediatesAttemptId: run.remediatesAttemptId,
       assistanceRecord: 'tracked',
       topicIds: [...new Set(questionAttempts.map((q) => q.topicId))],
       startedAt: run.startedAt,

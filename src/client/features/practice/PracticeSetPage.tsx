@@ -8,7 +8,7 @@ import {
   RotateCcwIcon,
   Trash2Icon,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type { PracticeAttemptState, SavedPracticeSet } from '@shared/types.ts';
 
@@ -113,11 +113,14 @@ export function PracticeSetPage() {
 
   /** Creates a fresh run and opens it. */
   const start = () => {
+    if (set?.archived || course.archived) return;
     if (questions.length === 0) return;
     const run: PracticeAttemptState = {
       id: newId('run'),
       courseId: course.id,
       setId: set.id,
+      remediatesAttemptId: set.fromAttemptId,
+      fromTutorId: set.fromTutorId,
       questionIds: questions.map((q) => q.id),
       answers: {},
       checkedIds: [],
@@ -161,6 +164,8 @@ export function PracticeSetPage() {
         </Button>
       </div>
 
+      {set.fromTutorId && <Button variant="outline" asChild><Link to={path(`/tutor/${set.fromTutorId}`)}>Return to originating tutor session</Link></Button>}
+      {set.archived && <Alert><AlertTitle>Archived practice set</AlertTitle><AlertDescription>Restore before starting a new attempt.<Button size="sm" variant="outline" onClick={() => dispatch({ type: 'save-practice', set: { ...set, archived: false } })}>Restore set</Button></AlertDescription></Alert>}
       <PageHeader
         title={
           renaming ? (
@@ -204,7 +209,7 @@ export function PracticeSetPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setConfirmDelete(true)}
+                disabled={!!openRun} onClick={() => setConfirmDelete(true)}
                 className="text-destructive"
               >
                 <Trash2Icon />
@@ -250,7 +255,7 @@ export function PracticeSetPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => setConfirmRestart(true)}
+                  disabled={!!set.archived} onClick={() => setConfirmRestart(true)}
                 >
                   <RotateCcwIcon />
                   Start again
@@ -263,7 +268,7 @@ export function PracticeSetPage() {
 
       {!openRun && !needsRecovery && (
         <div className="flex flex-wrap items-center gap-tight">
-          <Button onClick={start} disabled={questions.length === 0}>
+          <Button onClick={start} disabled={questions.length === 0 || !!set.archived || course.archived}>
             <PlayIcon />
             {previous.length > 0 ? 'Start another attempt' : 'Start'}
           </Button>

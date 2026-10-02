@@ -1,3 +1,6 @@
+import { useDraftState } from '@/store/drafts';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { Link } from 'react-router-dom';
 import {
   ArrowRightIcon,
@@ -52,8 +55,12 @@ export function CoursesPage() {
   const { resetDemo } = useStore();
   const [confirmReset, setConfirmReset] = useState(false);
 
-  const active = courses.filter((c) => !c.archived);
-  const archived = courses.filter((c) => c.archived);
+  const [query, setQuery] = useDraftState('courses:query', '');
+  const [sort, setSort] = useDraftState('courses:sort', 'recent');
+  const [status, setStatus] = useDraftState('courses:status', 'all');
+  const matches = courses.filter(c => `${c.name} ${c.description} ${c.goal}`.toLowerCase().includes(query.trim().toLowerCase())).sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name) : b.createdAt.localeCompare(a.createdAt));
+  const active = status === 'archived' ? [] : matches.filter(c => !c.archived);
+  const archived = status === 'active' ? [] : matches.filter(c => c.archived);
 
   return (
     <Page className="py-page">
@@ -73,10 +80,11 @@ export function CoursesPage() {
         }
       />
 
+      <div className="flex flex-wrap gap-2"><Input aria-label="Search courses" placeholder="Search courses" value={query} onChange={e => setQuery(e.target.value)} /><Select aria-label="Course status" value={status} onChange={e => setStatus(e.target.value)}><option value="all">Active and archived</option><option value="active">Active</option><option value="archived">Archived</option></Select><Select aria-label="Sort courses" value={sort} onChange={e => setSort(e.target.value)}><option value="recent">Recently added</option><option value="name">Name</option></Select><Button variant="ghost" onClick={() => { setQuery(''); setStatus('all'); }}>Clear filters</Button><span className="text-muted-foreground text-sm">{active.length + archived.length} matching courses</span></div>
       {active.length === 0 ? (
         <EmptyState
           icon={<LayersIcon />}
-          title="No courses yet"
+          title={courses.length ? 'No active courses match these filters' : 'No courses yet'}
           description="Add one and Rawi can plan around its topics and deadlines."
           action={
             <Button asChild>

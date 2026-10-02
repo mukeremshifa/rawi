@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
-import { Navigate, Outlet, useParams } from 'react-router-dom';
+import { Link, Outlet, useLocation, useParams } from 'react-router-dom';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 
 import type { Course } from '@shared/types.ts';
 
@@ -46,6 +48,7 @@ export function CourseScope() {
   const { courseId } = useParams<{ courseId: string }>();
   const { courses } = useAppState();
   const { dispatch } = useStore();
+  const location = useLocation();
 
   const course = useMemo(
     () => courses.find((c) => c.id === courseId),
@@ -63,11 +66,12 @@ export function CourseScope() {
 
   const value = useMemo(() => (course ? { course } : null), [course]);
 
-  if (!course || !value) return <Navigate to="/courses" replace />;
+  if (!course || !value) return <div className="p-6"><h1 className="text-xl font-semibold">Course unavailable</h1><p>This course may have been deleted or the address may be incorrect.</p><Button asChild><Link to="/courses">Open your courses</Link></Button></div>;
 
   return (
     <CourseContext.Provider value={value}>
-      <Outlet />
+      {course.archived && <Alert><AlertTitle>{course.name} is archived</AlertTitle><AlertDescription>Your history is retained. Restore the course to continue studying.<Button variant="outline" size="sm" onClick={() => dispatch({ type: 'update-course', courseId: course.id, patch: { archived: false } })}>Restore course</Button></AlertDescription></Alert>}
+      {course.archived && /\/(new|run|build)(\/|$)/.test(location.pathname) ? <div className="p-6"><h1>Restore this course to continue</h1><p>Your unfinished work is retained.</p><Button variant="outline" asChild><Link to={`/course/${course.id}`}>Course overview</Link></Button></div> : <Outlet />}
     </CourseContext.Provider>
   );
 }

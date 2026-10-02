@@ -89,11 +89,11 @@ sent as course content.
 
 ## The seeded courses
 
-Opening the app for the first time seeds two fictional courses: "The Atlantic
-World, 1500–1800" and "Statistical Inference for Social Research". Between
-them they carry thirteen readings, a question bank across nine formats, four
-planned assessments and a fortnight of history. `/welcome` offers a
-from-scratch setup instead.
+Opening the app for the first time offers a choice: explore two fictional
+courses or start with an empty workspace. The demo contains "The Atlantic
+World, 1500–1800" and "Statistical Inference for Social Research", with thirteen
+readings, a question bank across nine formats, four planned assessments and a
+fortnight of history. Returning to `/welcome` preserves established work.
 
 An earlier build also added a CENG 401 course to every workspace. That no
 longer happens. A workspace that already holds it keeps all of it, including
@@ -144,6 +144,19 @@ actually be opened. An unfinished exam from that version cannot resume under the
 current exam rules, so it is kept and offered as a download with the reason
 stated rather than dropped. Data that genuinely cannot be read is reported with
 the option to download it, never silently replaced.
+
+Setup and activity drafts also survive navigation and reload. A save failure
+stays visible with retry and export options. Settings offers versioned workspace
+export and validated import, plus local profile, study, appearance and reminder
+preferences. Reminders appear inside the app while it is open. They do not send
+email or operating system notifications.
+
+Materials can be edited and archived. Earlier cited passages remain available
+when an edit changes their text. Saved sets, tutor sessions and rehearsals have
+course-specific libraries with search, archive, rename and restore controls.
+Answer review sends the tutor the saved response, key, feedback, marks and
+assistance used. Review practice and planned remediation keep links to that
+attempt. Pending written feedback is never presented as a grade.
 
 **Reset demo**, in Courses, clears everything, including courses you added, and restores the two sample courses.
 

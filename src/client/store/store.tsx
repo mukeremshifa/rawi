@@ -4,7 +4,8 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useReducer,
+  useRef,
+  useState,
   type ReactNode,
 } from 'react';
 
@@ -86,6 +87,8 @@ import {
 
 const STORAGE_KEY = 'rawi.state.v1';
 const STORAGE_VERSION = 2;
+let saveFailed = false;
+export const localSaveFailed = () => saveFailed;
 
 /** A tree that could not be restored, kept so the student can decide. */
 export interface RestoreProblem {
@@ -94,12 +97,35 @@ export interface RestoreProblem {
   raw: string;
 }
 
+export interface WorkspacePreferences {
+  displayName: string;
+  workspaceName: string;
+  accent: string;
+  questionCount: number;
+  hints: boolean;
+  feedback: 'immediate' | 'end';
+  readingSize: 'normal' | 'large' | 'larger';
+  motion: 'system' | 'reduced' | 'full';
+  theme: 'system' | 'light' | 'dark';
+  reminders: { assessments: boolean; study: boolean; review: boolean; days: number };
+}
+export const DEFAULT_PREFERENCES: WorkspacePreferences = {
+  displayName: '', workspaceName: 'My workspace', accent: 'indigo',
+  questionCount: 6, hints: true, feedback: 'immediate', readingSize: 'normal', motion: 'system', theme: 'system',
+  reminders: { assessments: true, study: true, review: false, days: 1 },
+};
+
 export interface AppState {
   version: number;
+  onboarded: boolean;
+  preferences: WorkspacePreferences;
+  drafts: Record<string, unknown>;
+  reminderState: Record<string, 'read' | 'dismissed'>;
   courses: Course[];
   /** The course the UI is inside. Null on the student-wide screens. */
   activeCourseId: string | null;
   topics: Topic[];
+  retiredTopics?: Topic[];
   materials: Material[];
   /** Authored pool plus nothing else; the prototype does not generate questions. */
   questions: Question[];
@@ -145,6 +171,10 @@ const AUTHORED_QUESTIONS: Question[] = [...SEED_QUESTIONS, ...STATS_QUESTIONS];
 function seedState(): AppState {
   return {
     version: STORAGE_VERSION,
+    onboarded: true,
+    preferences: DEFAULT_PREFERENCES,
+    drafts: {},
+    reminderState: {},
     courses: [SEED_COURSE, STATS_COURSE],
     activeCourseId: null,
     topics: [...SEED_TOPICS, ...STATS_TOPICS],
@@ -235,6 +265,11 @@ function emptyState(): AppState {
 /* ── Actions ──────────────────────────────────────────────────────────── */
 
 export type Action =
+  | { type: 'replace-workspace'; state: AppState }
+  | { type: 'preferences'; patch: Partial<WorkspacePreferences> }
+  | { type: 'draft'; key: string; value: unknown }
+  | { type: 'clear-draft'; prefix: string }
+  | { type: 'reminder'; key: string; value: 'read' | 'dismissed' }
   | { type: 'reset-demo' }
   | { type: 'start-fresh' }
   | { type: 'dismiss-restore-problem' }
@@ -337,6 +372,11 @@ function completeLinkedSession(
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case 'replace-workspace': return action.state;
+    case 'preferences': return { ...state, preferences: { ...state.preferences, ...action.patch } };
+    case 'draft': return { ...state, drafts: { ...state.drafts, [action.key]: action.value } };
+    case 'clear-draft': return { ...state, drafts: Object.fromEntries(Object.entries(state.drafts).filter(([key]) => !key.startsWith(action.prefix))) };
+    case 'reminder': return { ...state, reminderState: { ...state.reminderState, [action.key]: action.value } };
     case 'reset-demo':
       return seedState();
 
@@ -384,11 +424,10 @@ function reducer(state: AppState, action: Action): AppState {
      */
     case 'remove-course': {
       const id = action.courseId;
-      const topicIds = new Set(
-        state.topics.filter((t) => t.courseId === id).map((t) => t.id),
-      );
       return {
         ...state,
+        drafts: Object.fromEntries(Object.entries(state.drafts).filter(([key]) => !key.includes(id))),
+        retiredTopics: state.retiredTopics?.filter(t => t.courseId !== id),
         courses: state.courses.filter((c) => c.id !== id),
         topics: state.topics.filter((t) => t.courseId !== id),
         materials: state.materials.filter((m) => m.courseId !== id),
@@ -404,13 +443,18 @@ function reducer(state: AppState, action: Action): AppState {
         ),
         activeExam: state.activeExam?.courseId === id ? null : state.activeExam,
         activeCourseId: state.activeCourseId === id ? null : state.activeCourseId,
-        questions: state.questions.filter((q) => !topicIds.has(q.topicId)),
+        questions: state.questions.filter((q) => q.courseId !== id),
       };
     }
 
     case 'set-topics': {
       const kept = state.topics.filter((t) => t.courseId !== action.courseId);
-      return { ...state, topics: [...kept, ...action.topics] };
+      const removed = state.topics.filter(t => t.courseId === action.courseId && !action.topics.some(next => next.id === t.id));
+      const removedIds = new Set(removed.map(t => t.id));
+      return { ...state, topics: [...kept, ...action.topics], retiredTopics: [...(state.retiredTopics ?? []), ...removed],
+        materials: state.materials.map(m => m.courseId === action.courseId ? { ...m, topicIds: m.topicIds.filter(id => !removedIds.has(id)), passages: m.passages.map(p => ({ ...p, topicIds: p.topicIds.filter(id => !removedIds.has(id)) })) } : m),
+        assessments: state.assessments.map(a => a.courseId === action.courseId ? { ...a, topicIds: a.topicIds.filter(id => !removedIds.has(id)) } : a),
+      };
     }
 
     case 'update-topic':
@@ -455,6 +499,7 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         attempts: [...state.attempts, action.attempt],
+        tutorSessions: state.tutorSessions.map(s => state.savedPractice.find(set => set.id === action.attempt.practiceSetId)?.fromTutorId === s.id && !s.launchedAttemptIds.includes(action.attempt.id) ? { ...s, launchedAttemptIds: [...s.launchedAttemptIds, action.attempt.id] } : s),
         sessions: completeLinkedSession(
           state.sessions,
           action.attempt.plannedSessionId,
@@ -491,7 +536,8 @@ function reducer(state: AppState, action: Action): AppState {
       const studentTurns = session.messages.filter(
         (m) => m.role === 'student',
       ).length;
-      const reachedCompletion = Boolean(session.endedAt) && studentTurns >= 2;
+      const previous = state.tutorSessions.find(s => s.id === session.id);
+      const reachedCompletion = !previous?.endedAt && Boolean(session.endedAt) && studentTurns >= 2;
 
       return {
         ...state,
@@ -572,6 +618,7 @@ function reducer(state: AppState, action: Action): AppState {
     }
 
     case 'remove-practice':
+      if (state.practiceRuns.some(r => r.setId === action.setId)) return state;
       return {
         ...state,
         savedPractice: state.savedPractice.filter((s) => s.id !== action.setId),
@@ -620,6 +667,7 @@ function reducer(state: AppState, action: Action): AppState {
     }
 
     case 'remove-exam-config':
+      if (state.activeExam?.configId === action.configId) return state;
       return {
         ...state,
         examConfigs: state.examConfigs.filter(
@@ -963,7 +1011,7 @@ function restore(): { state: AppState } | { problem: RestoreProblem } | null {
   try {
     raw = localStorage.getItem(STORAGE_KEY);
   } catch {
-    return null;
+    return { problem: { reason: 'Browser storage could not be read. Keep this page open and use Workspace data to restore a recovery copy.', raw: '' } };
   }
   if (!raw) return null;
 
@@ -1006,10 +1054,9 @@ function restore(): { state: AppState } | { problem: RestoreProblem } | null {
      * edited — but a *created* course's questions would be lost by taking the
      * seed alone, so anything that is not a seeded question is kept.
      */
-    const seededIds = new Set(AUTHORED_QUESTIONS.map((q) => q.id));
-    const storedExtra = (candidate.questions ?? []).filter(
-      (q) => q && !seededIds.has(q.id),
-    );
+    const storedQuestions = candidate.questions ?? [];
+    const storedIds = new Set(storedQuestions.map(q => q.id));
+    const missingAuthored = AUTHORED_QUESTIONS.filter(q => !storedIds.has(q.id));
 
     /*
      * No course is added here. An earlier build installed CENG 401 into every
@@ -1020,28 +1067,82 @@ function restore(): { state: AppState } | { problem: RestoreProblem } | null {
      * written to storage by the build that installed it.
      */
     const restored = {
-      ...seedState(),
+      ...emptyState(),
       ...candidate,
-      questions: [...AUTHORED_QUESTIONS, ...storedExtra],
+      onboarded: candidate.onboarded ?? true,
+      preferences: { ...DEFAULT_PREFERENCES, ...candidate.preferences, reminders: { ...DEFAULT_PREFERENCES.reminders, ...candidate.preferences?.reminders }, theme: candidate.preferences?.theme ?? (() => { try { const old = localStorage.getItem('rawi.theme'); return old === 'light' || old === 'dark' ? old : 'system'; } catch { return 'system'; } })() },
+      drafts: candidate.drafts ?? {},
+      reminderState: candidate.reminderState ?? {},
+      questions: [...storedQuestions, ...missingAuthored],
       version: STORAGE_VERSION,
     } as AppState;
 
-    return { state: restored };
+    try {
+      return { state: { ...importWorkspace(JSON.stringify(restored)), onboarded: restored.onboarded } };
+    } catch (error) {
+      return { problem: { reason: error instanceof Error ? error.message : 'The saved workspace has invalid records.', raw } };
+    }
   } catch {
     return { problem: { reason: 'The saved data could not be parsed as JSON.', raw } };
   }
+}
+
+/** Recovery is checked before replacing anything in memory or storage. */
+export function importWorkspace(raw: string): AppState {
+  let data: unknown;
+  try { data = JSON.parse(raw); } catch { throw new Error('The recovery file is not valid JSON. Nothing changed.'); }
+  if (!data || typeof data !== 'object') throw new Error('This is not a Rawi workspace. Nothing changed.');
+  const envelope = data as Record<string, unknown>;
+  if (envelope.format === 'rawi-workspace') {
+    if (envelope.version !== 1) throw new Error('This recovery export version is not supported. Nothing changed.');
+    data = envelope.state;
+  }
+  if (!data || typeof data !== 'object') throw new Error('The file has no workspace. Nothing changed.');
+  const candidate = data as AppState;
+  if (candidate.version === 1) return importWorkspace(JSON.stringify(migrateV1(candidate as unknown as LegacyState)));
+  if (candidate.version !== STORAGE_VERSION) throw new Error('This workspace version cannot be read by this build. Nothing changed.');
+  const arrays = ['courses', 'topics', 'materials', 'questions', 'attempts', 'tutorSessions', 'savedPractice', 'examConfigs', 'assessments', 'sessions', 'checkIns'] as const;
+  for (const key of arrays) {
+    if (!Array.isArray(candidate[key]) || candidate[key].some((r: unknown) => !r || typeof r !== 'object' || typeof (r as { id?: unknown }).id !== 'string')) throw new Error(`Invalid ${key} records. Nothing changed.`);
+    const ids = candidate[key].map(r => r.id);
+    if (new Set(ids).size !== ids.length) throw new Error(`Duplicate ${key} records. Nothing changed.`);
+  }
+  const courses = new Set(candidate.courses.map(c => c.id));
+  for (const key of ['topics', 'materials', 'questions', 'attempts', 'tutorSessions', 'savedPractice', 'examConfigs', 'assessments', 'sessions'] as const) {
+    if (candidate[key].some(r => typeof r.courseId !== 'string')) throw new Error(`Invalid course ownership in ${key}. Nothing changed.`);
+    // Authored questions may remain in an empty workspace, but all user records need a course.
+    if (key !== 'questions' && candidate[key].some(r => !courses.has(r.courseId))) throw new Error(`Missing course in ${key}. Nothing changed.`);
+  }
+  if (candidate.courses.some(c => typeof c.name !== 'string') || candidate.topics.some(t => typeof t.title !== 'string' || typeof t.summary !== 'string' || !Array.isArray(t.relatedTopicIds)) || candidate.materials.some(m => typeof m.title !== 'string' || !Array.isArray(m.topicIds) || !Array.isArray(m.passages) || m.passages.some(p => typeof p.id !== 'string' || typeof p.text !== 'string' || typeof p.heading !== 'string' || !Array.isArray(p.topicIds)))) throw new Error('Invalid course content. Nothing changed.');
+  if (candidate.tutorSessions.some(s => !Array.isArray(s.messages) || s.messages.some(m => typeof m.text !== 'string')) || candidate.savedPractice.some(s => !s.config || !Array.isArray(s.questionIds) || !Array.isArray(s.config.topicIds)) || candidate.attempts.some(a => !Array.isArray(a.questions)) || candidate.examConfigs.some(c => !Array.isArray(c.sections))) throw new Error('Invalid saved study work. Nothing changed.');
+  if (!candidate.availability || !Array.isArray(candidate.availability.windows) || !Array.isArray(candidate.availability.exceptions) || !Number.isFinite(candidate.availability.sessionMinutes)) throw new Error('Invalid study availability. Nothing changed.');
+  const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+  const strings = (v: unknown) => Array.isArray(v) && v.every(x => typeof x === 'string');
+  if (candidate.courses.some(c => typeof c.description !== 'string' || typeof c.goal !== 'string' || typeof c.createdAt !== 'string') || candidate.questions.some(q => typeof q.prompt !== 'string' || typeof q.explanation !== 'string' || typeof q.topicId !== 'string' || !Number.isFinite(q.marks))) throw new Error('Invalid course or question fields. Nothing changed.');
+  if (candidate.attempts.some(a => typeof a.title !== 'string' || !strings(a.topicIds) || typeof a.startedAt !== 'string' || a.questions.some(q => !q || typeof q.questionId !== 'string' || typeof q.topicId !== 'string' || !object(q.response))) || candidate.tutorSessions.some(s => typeof s.topicId !== 'string' || typeof s.updatedAt !== 'string' || !strings(s.launchedAttemptIds)) || candidate.savedPractice.some(s => typeof s.name !== 'string' || typeof s.savedAt !== 'string' || !strings(s.config.materialIds) || !strings(s.config.difficulties)) || candidate.examConfigs.some(c => typeof c.name !== 'string' || typeof c.savedAt !== 'string' || !strings(c.allowedMaterialIds) || c.sections.some(s => !s || !strings(s.topicIds) || !strings(s.formats)))) throw new Error('Invalid study record fields. Nothing changed.');
+  if (candidate.assessments.some(a => typeof a.title !== 'string' || typeof a.date !== 'string' || !strings(a.topicIds)) || candidate.sessions.some(s => typeof s.title !== 'string' || typeof s.date !== 'string' || !strings(s.topicIds) || !object(s.link)) || candidate.checkIns.some(c => typeof c.courseId !== 'string')) throw new Error('Invalid planning records. Nothing changed.');
+  if (candidate.practiceRuns && (!Array.isArray(candidate.practiceRuns) || candidate.practiceRuns.some(r => !r || typeof r.id !== 'string' || !courses.has(r.courseId) || !strings(r.questionIds) || !strings(r.checkedIds) || !strings(r.hintedIds) || !strings(r.revisitIds) || !object(r.answers) || !Number.isInteger(r.index)))) throw new Error('Invalid unfinished practice. Nothing changed.');
+  if (candidate.activeExam && (!courses.has(candidate.activeExam.courseId) || !object(candidate.activeExam.configSnapshot) || !Array.isArray(candidate.activeExam.configSnapshot.sections) || !object(candidate.activeExam.answers) || !object(candidate.activeExam.sectionQuestions) || !strings(candidate.activeExam.flagged) || !strings(candidate.activeExam.lockedSectionIds) || !Array.isArray(candidate.activeExam.sectionOutcomes))) throw new Error('Invalid unfinished exam. Nothing changed.');
+  if ((candidate.drafts && !object(candidate.drafts)) || (candidate.reminderState && (!object(candidate.reminderState) || Object.values(candidate.reminderState).some(v => v !== 'read' && v !== 'dismissed'))) || (candidate.retiredTopics && (!Array.isArray(candidate.retiredTopics) || candidate.retiredTopics.some(t => !t || !courses.has(t.courseId) || typeof t.id !== 'string' || typeof t.title !== 'string')))) throw new Error('Invalid saved workspace context. Nothing changed.');
+  const preferences = { ...DEFAULT_PREFERENCES, ...candidate.preferences, reminders: { ...DEFAULT_PREFERENCES.reminders, ...candidate.preferences?.reminders } };
+  if (typeof preferences.displayName !== 'string' || typeof preferences.workspaceName !== 'string' || !Number.isInteger(preferences.questionCount) || preferences.questionCount < 1 || preferences.questionCount > 30) throw new Error('Invalid workspace preferences. Nothing changed.');
+  if (!['indigo', 'amber', 'teal', 'rose', 'violet'].includes(preferences.accent) || !['immediate', 'end'].includes(preferences.feedback) || !['normal', 'large', 'larger'].includes(preferences.readingSize) || !['system', 'reduced', 'full'].includes(preferences.motion) || !['system', 'light', 'dark'].includes(preferences.theme) || typeof preferences.hints !== 'boolean' || ![0, 1, 3, 7].includes(preferences.reminders.days) || [preferences.reminders.assessments, preferences.reminders.study, preferences.reminders.review].some(v => typeof v !== 'boolean')) throw new Error('Invalid study or appearance preferences. Nothing changed.');
+  return { ...emptyState(), ...candidate, onboarded: true, preferences, drafts: candidate.drafts ?? {}, reminderState: candidate.reminderState ?? {}, restoreProblem: undefined };
 }
 
 function persist(state: AppState) {
   try {
     // The restore problem is a report about a *previous* load, not part of the
     // tree. Writing it back would make one bad load permanent.
-    const { restoreProblem: _omit, carriedForward: _alsoOmit, ...persistable } = state;
+    const { restoreProblem: _omit, ...persistable } = state;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable));
+    saveFailed = false;
+    return true;
   } catch {
     // A full or disabled storage should not take the app down. The session
-    // still works; it just will not survive a reload, which is the documented
-    // prototype behaviour anyway.
+    // still works in memory and the shell exposes recovery.
+    saveFailed = true;
+    return false;
   }
 }
 
@@ -1059,13 +1160,15 @@ interface StoreValue {
   state: AppState;
   dispatch: (action: Action) => void;
   resetDemo: () => void;
+  saveError: boolean;
+  retrySave: () => void;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
 
 function init(): AppState {
   const restored = restore();
-  if (!restored) return seedState();
+  if (!restored) return { ...emptyState(), onboarded: false };
   if ('problem' in restored) {
     return { ...seedState(), restoreProblem: restored.problem };
   }
@@ -1073,13 +1176,22 @@ function init(): AppState {
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, init);
+  const [state, setState] = useState(init);
+  const current = useRef(state);
+  const [saveError, setSaveError] = useState(false);
+  const dispatch = useCallback((action: Action) => {
+    const next = reducer(current.current, action);
+    current.current = next;
+    setState(next);
+    if (!next.restoreProblem) setSaveError(!persist(next));
+  }, []);
+  const retrySave = useCallback(() => { if (!current.current.restoreProblem) setSaveError(!persist(current.current)); }, []);
 
   useEffect(() => {
     // A tree that failed to restore is not written back until the student has
     // decided what to do, so their original blob survives a reload.
     if (state.restoreProblem) return;
-    persist(state);
+    setSaveError(!persist(state));
   }, [state]);
 
   const resetDemo = useCallback(() => {
@@ -1088,8 +1200,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ state, dispatch, resetDemo }),
-    [state, resetDemo],
+    () => ({ state, dispatch, resetDemo, saveError, retrySave }),
+    [state, dispatch, resetDemo, saveError, retrySave],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

@@ -1,3 +1,6 @@
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useDraftState } from '@/store/drafts';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -12,7 +15,7 @@ import {
   Trash2Icon,
   UploadIcon,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type { Topic, TopicPriority } from '@shared/types.ts';
 import {
@@ -74,19 +77,24 @@ import { newId } from '@/lib/id';
  * confirm dialog counts exactly what points at it before it goes.
  */
 export function SyllabusPage() {
+  const draftLocation = useLocation();
+  const draftPrefix = `form:${draftLocation.pathname}${draftLocation.search}:`;
   const course = useCourse();
   const path = useCoursePath();
   const { dispatch } = useStore();
   const existing = useTopics();
+  const [params] = useSearchParams();
+  const [outlineQuery, setOutlineQuery] = useDraftState(draftPrefix + 'query', '');
+  const [confirmRemoval, setConfirmRemoval] = useState(false);
   const materials = useMaterials();
   const questions = useQuestions();
   const attempts = useAllAttempts();
   const assessments = useAssessments();
 
-  const [reading, setReading] = useState<SyllabusReading | null>(null);
-  const [draft, setDraft] = useState<ProposedTopic[] | null>(null);
-  const [pasted, setPasted] = useState('');
-  const [fileNote, setFileNote] = useState<string | null>(null);
+  const [reading, setReading] = useDraftState<SyllabusReading | null>(draftPrefix + "reading", null);
+  const [draft, setDraft] = useDraftState<ProposedTopic[] | null>(draftPrefix + "draft", null);
+  const [pasted, setPasted] = useDraftState(draftPrefix + "pasted", '');
+  const [fileNote, setFileNote] = useDraftState<string | null>(draftPrefix + "fileNote", null);
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -216,6 +224,7 @@ export function SyllabusPage() {
     setReading(null);
     setDraft(null);
     setFileNote(null);
+    dispatch({ type: 'clear-draft', prefix: draftPrefix });
     toast.success(replacing ? 'Outline updated' : 'Topics confirmed', {
       description: `${topics.length} ${topics.length === 1 ? 'topic' : 'topics'} in ${course.name}.`,
     });
@@ -278,6 +287,8 @@ export function SyllabusPage() {
         }
       />
 
+      {!!existing.length && !draft && <div className="flex flex-wrap gap-2"><Button asChild><Link to={path('/materials?add=1')}>Add your first material</Link></Button>{params.get('returnMaterial') && <Button variant="outline" asChild><Link to={path(`/materials/${params.get('returnMaterial')}?link=1`)}>Return and link this material</Link></Button>}<Button variant="outline" asChild><Link to={path('')}>Continue setup</Link></Button><Input aria-label="Find a topic" placeholder="Find a topic in your outline" value={outlineQuery} onChange={e => setOutlineQuery(e.target.value)} /></div>}
+      <ConfirmDialog open={confirmRemoval} onOpenChange={setConfirmRemoval} title={`Remove ${droppedExisting.length} topics from this outline?`} description={droppedExisting.map(t => { const impact = removalImpact(t.id); return `${t.title}: ${impact.materialCount} materials, ${impact.assessmentCount} assessments and ${impact.attemptCount} attempts refer to it. Historical labels and answers stay recorded. Future links are detached.`; }).join(' ')} confirmLabel="Confirm outline and remove topics" onConfirm={() => { if (draft) confirm(draft, true); setConfirmRemoval(false); }} />
       {/* ── The current outline ───────────────────────────────────────── */}
       {!draft && (
         <>
@@ -293,7 +304,7 @@ export function SyllabusPage() {
               description="Grouped as you organised it. Topics with no practice questions yet are marked. Questions can be generated for them from your materials."
             >
               <div className="flex flex-col gap-base">
-                {groupByModule(existing).map(({ module, topics }) => (
+                {groupByModule(existing.filter(t => `${t.title} ${t.summary} ${t.module ?? ''}`.toLowerCase().includes(outlineQuery.toLowerCase()))).map(({ module, topics }) => (
                   <div key={module ?? 'ungrouped'} className="flex flex-col gap-tight">
                     {module && (
                       <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
@@ -502,7 +513,7 @@ export function SyllabusPage() {
 
           <div className="flex flex-wrap items-center gap-tight">
             <Button
-              onClick={() => confirm(draft, existing.length > 0)}
+              onClick={() => droppedExisting.length ? setConfirmRemoval(true) : confirm(draft, existing.length > 0)}
               disabled={draft.filter((r) => r.title.trim()).length === 0}
             >
               <CheckIcon />

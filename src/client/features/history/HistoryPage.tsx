@@ -1,4 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useDraftState } from '@/store/drafts';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { FlameIcon, HistoryIcon } from 'lucide-react';
 
@@ -21,7 +24,7 @@ import {
   formatRelative,
 } from '@/components/domain';
 import {
-  useActiveCourses,
+  useCourses,
   useActivity,
   useAllAttempts,
   useAllTopics,
@@ -52,24 +55,28 @@ type KindFilter = 'all' | ActivityEvent['kind'];
  * columns for the same reason.
  */
 export function HistoryPage() {
-  const courses = useActiveCourses();
+  const courses = useCourses();
   const courseMap = useCourseMap();
   const activity = useActivity();
   const attempts = useAllAttempts();
   const topics = useAllTopics();
   const streak = useStreak();
 
-  const [courseFilter, setCourseFilter] = useState<string | 'all'>('all');
-  const [kindFilter, setKindFilter] = useState<KindFilter>('all');
+  const [courseFilter, setCourseFilter] = useDraftState<string | 'all'>('history:course', 'all');
+  const [kindFilter, setKindFilter] = useDraftState<KindFilter>('history:kind', 'all');
 
+  const [query, setQuery] = useDraftState('history:query', '');
+  const [topicFilter, setTopicFilter] = useDraftState('history:topic', 'all');
+  const [after, setAfter] = useDraftState('history:after', '');
+  const [before, setBefore] = useDraftState('history:before', '');
   const filtered = useMemo(
     () =>
       activity.filter(
         (e) =>
           (courseFilter === 'all' || e.courseId === courseFilter) &&
-          (kindFilter === 'all' || e.kind === kindFilter),
+          (kindFilter === 'all' || e.kind === kindFilter) && e.title.toLowerCase().includes(query.trim().toLowerCase()) && (!after || localISO(e.at) >= after) && (!before || localISO(e.at) <= before) && (topicFilter === 'all' || e.topicIds.includes(topicFilter)),
       ),
-    [activity, courseFilter, kindFilter],
+    [activity, courseFilter, kindFilter, query, after, before, topicFilter],
   );
 
   /** Grouped by local calendar day, which is the unit a streak counts in. */
@@ -247,6 +254,7 @@ export function HistoryPage() {
 
       {/* ── Filters ────────────────────────────────────────────────────── */}
       <Section title="History">
+        <div className="flex flex-wrap gap-2"><Input aria-label="Search activity titles" placeholder="Search activity titles" value={query} onChange={e => setQuery(e.target.value)} /><Select aria-label="History topic" value={topicFilter} onChange={e => setTopicFilter(e.target.value)}><option value="all">All topics</option>{topics.filter(t => courseFilter === 'all' || t.courseId === courseFilter).map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</Select><Input aria-label="History from date" type="date" value={after} onChange={e => setAfter(e.target.value)} /><Input aria-label="History through date" type="date" value={before} onChange={e => setBefore(e.target.value)} /><Button variant="ghost" onClick={() => { setQuery(''); setTopicFilter('all'); setAfter(''); setBefore(''); setCourseFilter('all'); setKindFilter('all'); }}>Clear filters</Button></div>
         <div className="flex flex-wrap items-center gap-tight">
           <Button
             variant={courseFilter === 'all' ? 'secondary' : 'ghost'}

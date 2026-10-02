@@ -572,6 +572,26 @@
     transform: translateY(0);
   }
 }
+
+/* Preferences affect reading surfaces without scaling the application controls. */
+html[data-reading-size="large"] .rawi-prose { font-size: 1.125rem; line-height: 1.8; }
+html[data-reading-size="larger"] .rawi-prose { font-size: 1.25rem; line-height: 1.85; }
+.rawi-prose { overflow-wrap: anywhere; }
+html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-motion="system"] *, html[data-motion="system"] *::before, html[data-motion="system"] *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+main h1 { overflow-wrap: anywhere; }
+main h1:focus { outline: none; }
+select { max-width: 100%; }
 @keyframes sheet-out-top {
   from {
     transform: translateY(0);

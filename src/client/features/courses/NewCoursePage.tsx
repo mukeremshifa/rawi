@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useDraftState } from '@/store/drafts';
+import { useLocation } from 'react-router-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeftIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type { Course, CourseAccent } from '@shared/types.ts';
 
@@ -35,6 +36,8 @@ const ACCENTS: CourseAccent[] = ['indigo', 'amber', 'teal', 'rose', 'violet'];
  * but nothing is created there without review.
  */
 export function NewCoursePage() {
+  const draftLocation = useLocation();
+  const draftPrefix = `form:${draftLocation.pathname}${draftLocation.search}:`;
   const navigate = useNavigate();
   const { dispatch } = useStore();
   const courses = useCourses();
@@ -42,10 +45,10 @@ export function NewCoursePage() {
   const used = new Set(courses.map((c) => c.accent));
   const suggested = ACCENTS.find((a) => !used.has(a)) ?? 'indigo';
 
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [goal, setGoal] = useState('');
-  const [accent, setAccent] = useState<CourseAccent>(suggested);
+  const [name, setName] = useDraftState(draftPrefix + "name", '');
+  const [description, setDescription] = useDraftState(draftPrefix + "description", '');
+  const [goal, setGoal] = useDraftState(draftPrefix + "goal", '');
+  const [accent, setAccent] = useDraftState<CourseAccent>(draftPrefix + "accent", suggested);
 
   const nameError = !name.trim() ? 'Give the course a name.' : null;
 
@@ -59,6 +62,7 @@ export function NewCoursePage() {
       accent,
       createdAt: new Date().toISOString(),
     };
+    dispatch({ type: 'clear-draft', prefix: draftPrefix });
     dispatch({ type: 'create-course', course, topics: [] });
     toast.success('Course added', { description: 'Set up its topics next.' });
     navigate(`/course/${course.id}/syllabus`, { replace: true });

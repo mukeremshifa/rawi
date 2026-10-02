@@ -1,3 +1,4 @@
+import { ScheduleReview } from '@/features/planner/ScheduleReview';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import {
   ArrowLeftIcon,
@@ -64,7 +65,8 @@ function weakestTopics(attempt: Attempt): { topicId: string; lost: number }[] {
 export function AttemptResultsPage() {
   const path = useCoursePath();
   const { attemptId } = useParams();
-  const attempt = useAttempt(attemptId);
+  const found = useAttempt(attemptId);
+  const attempt = found && found.courseId === path('').split('/')[2] && found.kind === 'practice' ? found : undefined;
   const questionMap = useQuestionMap();
   const topicMap = useTopicMap();
   const canTutor = useCanTutor();
@@ -139,6 +141,7 @@ export function AttemptResultsPage() {
 
       {/* Next actions, derived from what actually happened. */}
       <Section title="What next">
+        <ScheduleReview attempt={attempt} />
         <div className="flex flex-wrap gap-tight">
           {wrong.length > 0 && (
             <Button asChild>

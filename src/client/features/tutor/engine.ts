@@ -137,6 +137,7 @@ export function buildTutorRequest(params: {
   return {
     courseId: course.id,
     courseName: course.name,
+    ...(session.review?.courseId === course.id && session.review.topicId === topic.id ? { review: session.review } : {}),
     topic: toAiTopic(topic),
     stage: session.stage,
     action: params.action,

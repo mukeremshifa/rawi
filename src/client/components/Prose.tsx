@@ -102,7 +102,7 @@ export function Prose({
       : 'text-sm leading-relaxed';
 
   return (
-    <div className={cn('flex flex-col gap-base', body, className)}>
+    <div className={cn('rawi-prose flex flex-col gap-base', body, className)}>
       {blocks.map((block, i) => {
         switch (block.kind) {
           case 'p':

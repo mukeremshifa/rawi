@@ -1,3 +1,6 @@
+import { useDraftState } from '@/store/drafts';
+import { Input } from '@/components/ui/input';
+import { RecordLibrary } from '@/components/RecordLibrary';
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -9,7 +12,7 @@ import {
   PlusIcon,
   Trash2Icon,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type { ExamConfig } from '@shared/types.ts';
 import { pastAssessments, upcomingAssessments } from '@shared/progress.ts';
@@ -29,7 +32,7 @@ import {
   useAssessments,
   useExamConfigs,
   useQuestions,
-  useRecentAttempts,
+  useAttempts,
 } from '@/store/selectors';
 import { buildRun, validateConfig } from './engine';
 import { cn } from '@/lib/utils';
@@ -132,7 +135,7 @@ function ConfigCard({
         )}
 
         <div className="flex flex-wrap items-center gap-tight pt-tight">
-          <Button size="sm" onClick={onStart} disabled={blocked}>
+          <Button size="sm" onClick={onStart} disabled={blocked || !!config.archived}>
             <PlayIcon />
             {highlighted ? 'Start this rehearsal' : 'Start'}
           </Button>
@@ -166,8 +169,10 @@ export function ExamsHomePage() {
   const path = useCoursePath();
   const pool = useQuestions();
   const configs = useExamConfigs();
-  const assessments = useAssessments();
-  const history = useRecentAttempts().filter((a) => a.kind === 'exam');
+  const allAssessments = useAssessments();
+  const [assessmentQuery, setAssessmentQuery] = useDraftState(`assessments:${course.id}:query`, '');
+  const assessments = allAssessments.filter(a => `${a.title} ${a.notes ?? ''}`.toLowerCase().includes(assessmentQuery.toLowerCase()));
+  const history = useAttempts().filter((a) => a.kind === 'exam');
   const [abandoning, setAbandoning] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [params] = useSearchParams();
@@ -182,9 +187,10 @@ export function ExamsHomePage() {
   const launchConfigId = params.get('config') ?? undefined;
   const launchSessionId = params.get('session') ?? undefined;
   const launchAssessmentId = params.get('assessment') ?? undefined;
-  const launchConfig = configs.find((c) => c.id === launchConfigId);
+  const launchConfig = configs.find((c) => c.id === launchConfigId && !c.archived);
 
   const start = (config: ExamConfig) => {
+    if (config.archived || course.archived) return;
     if (state.activeExam) {
       toast.error('An exam is already open', {
         description: 'Resume or abandon it before starting another.',
@@ -211,8 +217,8 @@ export function ExamsHomePage() {
     navigate(path('/exams/run'));
   };
 
-  const presets = configs.filter((c) => c.preset);
-  const custom = configs.filter((c) => !c.preset);
+  const presets = configs.filter((c) => c.preset && !c.archived);
+  const custom = configs.filter((c) => !c.preset && !c.archived);
   const upcoming = upcomingAssessments(assessments);
   const past = pastAssessments(assessments);
 
@@ -241,6 +247,9 @@ export function ExamsHomePage() {
 
       {/* Says which rehearsal was meant, rather than leaving the student to
           guess which of several the planner sent them to. */}
+      {launchConfigId && !launchConfig && <Alert><AlertTitle>Rehearsal configuration unavailable</AlertTitle><AlertDescription>It may have been deleted or belong to another course. Choose a saved configuration below or edit the planner target.</AlertDescription></Alert>}
+      {!pool.length && <Alert><AlertTitle>Prepare questions before rehearsing</AlertTitle><AlertDescription>This course has no question bank. Add readable material and generate supported practice questions.<Button variant="outline" size="sm" asChild><Link to={path('/practice/new')}>Prepare practice questions</Link></Button></AlertDescription></Alert>}
+      <Input aria-label="Search assessment titles" placeholder="Search assessments" value={assessmentQuery} onChange={e => setAssessmentQuery(e.target.value)} />{assessmentQuery && <Button variant="ghost" onClick={() => setAssessmentQuery('')}>Clear assessment search</Button>}
       {launchConfig && !state.activeExam && (
         <Alert>
           <AlertTitle>Ready to sit {launchConfig.name}</AlertTitle>
@@ -273,7 +282,7 @@ export function ExamsHomePage() {
             </span>
             <span className="flex flex-wrap gap-tight">
               <Button size="sm" asChild>
-                <Link to={path('/exams/run')}>Resume</Link>
+                <Link to={`/course/${state.activeExam.courseId}/exams/run`}>Resume</Link>
               </Button>
               <Button
                 variant="outline"
@@ -383,12 +392,14 @@ export function ExamsHomePage() {
                 config={config}
                 highlighted={config.id === launchConfigId}
                 onStart={() => start(config)}
-                onDelete={() => setDeleting(config.id)}
+                onDelete={state.activeExam?.configId === config.id ? undefined : () => setDeleting(config.id)}
               />
             ))}
           </div>
         </Section>
       )}
+
+      <RecordLibrary kind="exam" />
 
       <Section
         title="Rehearsal attempts"
@@ -398,7 +409,7 @@ export function ExamsHomePage() {
           <EmptyState
             icon={<GraduationCapIcon />}
             title="No exams taken yet"
-            description="Start with the fifteen-minute quick check. Set its duration to one or two minutes if you want to see how the timer behaves."
+            description="Prepare a question bank, then build a rehearsal paper. Saved results will appear here." action={<Button variant="outline" asChild><Link to={path('/practice/new')}>Prepare practice questions</Link></Button>}
           />
         ) : (
           <ul className="flex flex-col gap-tight">

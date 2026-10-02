@@ -1,7 +1,9 @@
+import { useDraftState } from '@/store/drafts';
+import { useLocation } from 'react-router-dom';
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangleIcon, UploadIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type { Material, MaterialKind, MaterialOrigin, Passage } from '@shared/types.ts';
 
@@ -107,6 +109,8 @@ export function AddMaterialDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const draftLocation = useLocation();
+  const draftPrefix = `form:${draftLocation.pathname.split('/materials')[0]}/materials:add:`;
   const { dispatch } = useStore();
   const course = useCourse();
   const path = useCoursePath();
@@ -114,12 +118,14 @@ export function AddMaterialDialog({
   const navigate = useNavigate();
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const [title, setTitle] = useState('');
-  const [kind, setKind] = useState<MaterialKind>('reading');
-  const [text, setText] = useState('');
-  const [topicIds, setTopicIds] = useState<string[]>([]);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [origin, setOrigin] = useState<MaterialOrigin>('pasted');
+  const [title, setTitle] = useDraftState(draftPrefix + "title", '');
+  const [kind, setKind] = useDraftState<MaterialKind>(draftPrefix + "kind", 'reading');
+  const [text, setText] = useDraftState(draftPrefix + "text", '');
+  const [topicIds, setTopicIds] = useDraftState<string[]>(draftPrefix + "topicIds", []);
+  const [fileName, setFileName] = useDraftState<string | null>(draftPrefix + "fileName", null);
+  const [mode, setMode] = useDraftState<'paste' | 'file'>(draftPrefix + 'mode', 'paste');
+  const [replaceFile, setReplaceFile] = useState<File | null>(null);
+  const [origin, setOrigin] = useDraftState<MaterialOrigin>(draftPrefix + "origin", 'pasted');
   const [reading, setReading] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
 
@@ -130,17 +136,20 @@ export function AddMaterialDialog({
     setTopicIds([]);
     setFileName(null);
     setOrigin('pasted');
+    setMode('paste');
     setFileError(null);
     setReading(false);
   };
 
   const close = (next: boolean) => {
-    if (!next) reset();
+    // Closing retains the draft. Discard is an explicit action.
     onOpenChange(next);
   };
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
+    if (text.trim() && replaceFile !== file) { setReplaceFile(file); return; }
+    setReplaceFile(null);
     setFileError(null);
     setFileName(file.name);
     if (!title.trim()) setTitle(file.name.replace(/\.[^.]+$/, ''));
@@ -207,6 +216,7 @@ export function AddMaterialDialog({
           : `${material.passages.length} passages.`,
     });
     reset();
+    dispatch({ type: 'clear-draft', prefix: draftPrefix });
     onOpenChange(false);
     navigate(path(`/materials/${id}`));
   };
@@ -248,14 +258,10 @@ export function AddMaterialDialog({
           </div>
 
           <Tabs
-            value={origin === 'pasted' ? 'paste' : 'file'}
+            value={mode}
             onValueChange={(v) => {
-              if (v === 'paste') {
-                setOrigin('pasted');
-                setFileName(null);
-                setFileError(null);
-                if (text === PREVIEW_TEXT) setText('');
-              }
+              setMode(v as 'paste' | 'file');
+
             }}
           >
             <TabsList>
@@ -378,11 +384,13 @@ export function AddMaterialDialog({
           </fieldset>
         </div>
 
+        {replaceFile && <Alert><AlertTitle>Replace the current content?</AlertTitle><AlertDescription>Reading {replaceFile.name} will replace the content in this draft.<div className="flex gap-2"><Button onClick={() => void onFile(replaceFile)}>Replace content</Button><Button variant="outline" onClick={() => setReplaceFile(null)}>Keep current content</Button></div></AlertDescription></Alert>}
         <DialogFooter>
+          <Button variant="ghost" onClick={() => { reset(); dispatch({ type: 'clear-draft', prefix: draftPrefix }); }}>Discard draft</Button>
           <Button variant="outline" onClick={() => close(false)}>
             Cancel
           </Button>
-          <Button onClick={save} disabled={!canSave}>
+          <Button onClick={save} disabled={!canSave || reading || !!fileError}>
             Add material
           </Button>
         </DialogFooter>

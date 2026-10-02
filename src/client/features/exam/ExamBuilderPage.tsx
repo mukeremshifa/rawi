@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useDraftState } from '@/store/drafts';
+import { useLocation } from 'react-router-dom';
+import { useMemo } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangleIcon,
@@ -8,7 +10,7 @@ import {
   SaveIcon,
   Trash2Icon,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type {
   BookMode,
@@ -85,6 +87,8 @@ function blankSection(index: number): ExamSection {
 }
 
 export function ExamBuilderPage() {
+  const draftLocation = useLocation();
+  const draftPrefix = `form:${draftLocation.pathname}${draftLocation.search}:`;
   const { configId } = useParams();
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -102,27 +106,27 @@ export function ExamBuilderPage() {
   const assessmentParam = params.get('assessment') ?? undefined;
 
   const existing = configId
-    ? state.examConfigs.find((c) => c.id === configId)
+    ? state.examConfigs.find((c) => c.id === configId && c.courseId === course.id)
     : undefined;
 
-  const [name, setName] = useState(
+  const [name, setName] = useDraftState(draftPrefix + "name",
     existing ? (existing.preset ? `${existing.name} (copy)` : existing.name) : 'My exam',
   );
-  const [sections, setSections] = useState<ExamSection[]>(
+  const [sections, setSections] = useDraftState<ExamSection[]>(draftPrefix + "sections",
     existing ? existing.sections.map((s) => ({ ...s, id: newId('sec') })) : [blankSection(0)],
   );
-  const [timing, setTiming] = useState<TimingMode>(existing?.timing ?? 'overall');
-  const [totalMinutes, setTotalMinutes] = useState(existing?.totalMinutes ?? 30);
-  const [extraTimePercent, setExtraTime] = useState(existing?.extraTimePercent ?? 0);
-  const [book, setBook] = useState<BookMode>(existing?.book ?? 'closed');
-  const [allowedMaterialIds, setAllowed] = useState<string[]>(
+  const [timing, setTiming] = useDraftState<TimingMode>(draftPrefix + "timing", existing?.timing ?? 'overall');
+  const [totalMinutes, setTotalMinutes] = useDraftState(draftPrefix + "totalMinutes", existing?.totalMinutes ?? state.availability.sessionMinutes);
+  const [extraTimePercent, setExtraTime] = useDraftState(draftPrefix + "extraTimePercent", existing?.extraTimePercent ?? 0);
+  const [book, setBook] = useDraftState<BookMode>(draftPrefix + "book", existing?.book ?? 'closed');
+  const [allowedMaterialIds, setAllowed] = useDraftState<string[]>(draftPrefix + "allowedMaterialIds",
     existing?.allowedMaterialIds ?? [],
   );
-  const [navigation, setNavigation] = useState<NavigationMode>(
+  const [navigation, setNavigation] = useDraftState<NavigationMode>(draftPrefix + "navigation",
     existing?.navigation ?? 'free',
   );
-  const [flaggingEnabled, setFlagging] = useState(existing?.flaggingEnabled ?? true);
-  const [lockSectionsOnFinish, setLockSections] = useState(
+  const [flaggingEnabled, setFlagging] = useDraftState(draftPrefix + "flaggingEnabled", existing?.flaggingEnabled ?? true);
+  const [lockSectionsOnFinish, setLockSections] = useDraftState(draftPrefix + "lockSectionsOnFinish",
     existing?.lockSectionsOnFinish ?? false,
   );
 
@@ -176,6 +180,7 @@ export function ExamBuilderPage() {
   }, [sections, pool]);
 
   const save = () => {
+    dispatch({ type: 'clear-draft', prefix: draftPrefix });
     dispatch({ type: 'save-exam-config', config });
     toast.success('Exam saved', { description: 'Available from the Exams page.' });
     navigate(path('/exams'));
@@ -192,6 +197,8 @@ export function ExamBuilderPage() {
       });
       return;
     }
+    dispatch({ type: 'clear-draft', prefix: draftPrefix });
+    if (state.activeExam) { toast.error('An exam is already open. Resume or abandon it first.'); return; }
     dispatch({ type: 'save-exam-config', config });
     dispatch({ type: 'set-active-exam', run });
     navigate(path('/exams/run'));
@@ -682,7 +689,7 @@ export function ExamBuilderPage() {
         <Button
           variant="outline"
           onClick={save}
-          disabled={validation.problems.length > 0}
+          disabled={!name.trim()}
         >
           <SaveIcon />
           Save without starting

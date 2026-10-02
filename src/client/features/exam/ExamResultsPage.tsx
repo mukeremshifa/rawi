@@ -1,3 +1,4 @@
+import { ScheduleReview } from '@/features/planner/ScheduleReview';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import {
   ArrowLeftIcon,
@@ -102,7 +103,8 @@ function costliestTopic(gaps: TopicGap[]): TopicGap | undefined {
 export function ExamResultsPage() {
   const path = useCoursePath();
   const { attemptId } = useParams();
-  const attempt = useAttempt(attemptId);
+  const found = useAttempt(attemptId);
+  const attempt = found && found.courseId === path('').split('/')[2] && found.kind === 'exam' ? found : undefined;
   const { examConfigs } = useAppState();
   const questionMap = useQuestionMap();
   const topicMap = useTopicMap();
@@ -115,7 +117,7 @@ export function ExamResultsPage() {
 
   if (!attempt) return <NotFoundPage />;
 
-  const config = examConfigs.find((c) => c.id === attempt.examConfigId);
+  const config = attempt.examConfigSnapshot ?? examConfigs.find((c) => c.id === attempt.examConfigId);
   const gaps = topicGaps(attempt);
   const wrong = attempt.questions.filter(
     (qa) => qa.outcome !== 'correct' && qa.outcome !== 'pending',
@@ -224,6 +226,7 @@ export function ExamResultsPage() {
       </Section>
 
       <Section title="What to do about it">
+        <ScheduleReview attempt={attempt} />
         <div className="flex flex-wrap gap-tight">
           {worst && canTutor(worst.topicId) && (
             <Button asChild>

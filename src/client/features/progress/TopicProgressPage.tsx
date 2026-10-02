@@ -61,7 +61,7 @@ export function TopicProgressPage() {
   const materials = useMaterials();
   const { tutorSessions } = useAppState();
 
-  if (!topic || !topicId) return <NotFoundPage />;
+  if (!topic || !topicId || topic.courseId !== path('').split('/')[2]) return <NotFoundPage />;
 
   const ev = evidence.get(topicId);
   const level = ev?.level ?? 'not-checked';

@@ -126,8 +126,8 @@ export function useTopicsOf(courseId: string | undefined): Topic[] {
 
 /** Every topic in every course, for the global views. */
 export function useTopicMap(): Map<string, Topic> {
-  const topics = useAllTopics();
-  return useMemo(() => new Map(topics.map((t) => [t.id, t])), [topics]);
+  const { topics, retiredTopics = [] } = useAppState();
+  return useMemo(() => new Map([...retiredTopics, ...topics].map((t) => [t.id, t])), [topics, retiredTopics]);
 }
 
 export function useTopic(topicId: string | undefined): Topic | undefined {
@@ -187,7 +187,7 @@ export function useSource(ref: SourceRef | undefined): {
     if (!ref) return null;
     const material = materials.find((m) => m.id === ref.materialId);
     if (!material) return null;
-    const passage = material.passages.find((p) => p.id === ref.passageId);
+    const passage = [...material.passages, ...(material.priorPassages ?? [])].find((p) => p.id === ref.passageId);
     if (!passage) return null;
     return { material, passage };
   }, [materials, ref]);
@@ -440,12 +440,13 @@ export function useTutorSessions(): TutorSession[] {
 /** The tutor session a resume action should open, in this course. */
 export function useOpenTutorSession() {
   const sessions = useTutorSessions();
+  const state = useAppState();
   return useMemo(
     () =>
       [...sessions]
-        .filter((s) => !s.endedAt)
+        .filter((s) => !s.endedAt && !s.archived && state.courses.some(c => c.id === s.courseId && !c.archived))
         .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))[0],
-    [sessions],
+    [sessions, state.courses],
   );
 }
 
@@ -654,10 +655,10 @@ export function usePlan(): Suggestion[] {
     const today = localISO(new Date());
 
     const openSession = [...state.tutorSessions]
-      .filter((s) => !s.endedAt)
+      .filter((s) => !s.endedAt && !s.archived && state.courses.some(c => c.id === s.courseId && !c.archived))
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))[0];
 
-    const openRun = [...state.practiceRuns].sort((a, b) =>
+    const openRun = [...state.practiceRuns].filter(r => state.courses.some(c => c.id === r.courseId && !c.archived) && !state.savedPractice.find(s => s.id === r.setId)?.archived).sort((a, b) =>
       a.updatedAt < b.updatedAt ? 1 : -1,
     )[0];
 

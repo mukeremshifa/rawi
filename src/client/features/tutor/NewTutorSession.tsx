@@ -1,3 +1,4 @@
+import { answerReview } from '@shared/answer-review.ts';
 import { useEffect, useRef } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -26,7 +27,7 @@ import { openSession } from './engine';
  */
 export function NewTutorSession() {
   const [params] = useSearchParams();
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
   const course = useCourse();
   const path = useCoursePath();
   const navigate = useNavigate();
@@ -46,7 +47,7 @@ export function NewTutorSession() {
   useEffect(() => {
     /* A topic from another course is not opened here: tutoring stays inside
        the course whose material it draws on. */
-    if (!topic || topic.courseId !== course.id || created.current) return;
+    if (!topic || topic.courseId !== course.id || !state.topics.some(t => t.id === topic.id) || created.current) return;
 
     const session = openSession({
       courseId: course.id,
@@ -60,6 +61,11 @@ export function NewTutorSession() {
       ...(plannedSessionId ? { plannedSessionId } : {}),
     });
 
+    const attempt = state.attempts.find(a => a.id === fromAttemptId && a.courseId === course.id);
+    const question = state.questions.find(q => q.id === fromQuestionId && q.courseId === course.id && q.topicId === topic.id);
+    if (attempt && question) session.review = answerReview(attempt, question);
+    session.title = topic.title;
+    if (session.source && !state.materials.some(m => m.id === session.source!.materialId && m.courseId === course.id && m.passages.some(p => p.id === session.source!.passageId))) session.source = undefined;
     created.current = session.id;
     dispatch({ type: 'upsert-tutor-session', session });
     navigate(path(`/tutor/${session.id}`), { replace: true });
@@ -77,7 +83,7 @@ export function NewTutorSession() {
     navigate,
   ]);
 
-  if (!topicId || (topic && topic.courseId !== course.id)) {
+  if (!topic || topic.courseId !== course.id || !state.topics.some(t => t.id === topic.id)) {
     return <Navigate to={path('/tutor')} replace />;
   }
   return null;

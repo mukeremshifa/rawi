@@ -18,7 +18,7 @@ import type { Attempt, Material, Passage, Question, Topic } from './types.ts';
  * so it must never be sent as if it were course content.
  */
 export function isUsableMaterial(material: Material): boolean {
-  return material.origin !== 'preview' && material.passages.some((p) => p.text.trim());
+  return !material.archived && material.origin !== 'preview' && material.passages.some((p) => p.text.trim());
 }
 
 const STOP = new Set(

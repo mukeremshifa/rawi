@@ -1,3 +1,7 @@
+import { useDraftState } from '@/store/drafts';
+import { EditMaterialDialog } from './EditMaterialDialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { SourceLink } from '@/components/domain';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -9,7 +13,7 @@ import {
   NotebookPenIcon,
   Trash2Icon,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import { Page, PageHeader } from '@/components/layout';
 import { Prose } from '@/components/Prose';
@@ -68,6 +72,9 @@ export function MaterialPage() {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [editing, setEditing] = useState(searchParams.get('link') === '1');
+  const [pending, setPending] = useDraftState<{ activity: 'tutor' | 'practice'; passageId: string; quote?: string } | null>(`material-intent:${course.id}:${materialId}`, null);
+  const [choosing, setChoosing] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   /*
@@ -122,7 +129,7 @@ export function MaterialPage() {
     return;
   }, [materialId]);
 
-  if (!material) return <NotFoundPage />;
+  if (!material || material.courseId !== course.id) return <NotFoundPage />;
 
   const captureSelection = () => {
     const sel = window.getSelection();
@@ -167,7 +174,9 @@ export function MaterialPage() {
 
   const askTutor = (passageId: string, quote?: string) => {
     const passage = material.passages.find((p) => p.id === passageId);
-    const topicId = passage?.topicIds[0] ?? material.topicIds[0];
+    const ids = (passage?.topicIds.length ? passage.topicIds : material.topicIds).filter(id => topicMap.get(id)?.courseId === course.id);
+    if (ids.length !== 1) { setPending({ activity: 'tutor', passageId, quote }); if (ids.length) setChoosing(true); else setEditing(true); return; }
+    const topicId = ids[0];
     if (!topicId) {
       toast.error('No topic linked', {
         description:
@@ -186,7 +195,9 @@ export function MaterialPage() {
 
   const practise = (passageId: string) => {
     const passage = material.passages.find((p) => p.id === passageId);
-    const topicId = passage?.topicIds[0] ?? material.topicIds[0];
+    const ids = (passage?.topicIds.length ? passage.topicIds : material.topicIds).filter(id => topicMap.get(id)?.courseId === course.id);
+    if (ids.length !== 1) { setPending({ activity: 'practice', passageId }); if (ids.length) setChoosing(true); else setEditing(true); return; }
+    const topicId = ids[0];
     if (!topicId) {
       toast.error('No topic linked', {
         description: 'Link this material to a topic to practise from it.',
@@ -206,6 +217,7 @@ export function MaterialPage() {
         courseId: course.id,
         title: `Note on ${material.title}`,
         kind: 'student-note',
+        noteSource: { materialId: material.id, passageId },
         origin: 'pasted',
         topicIds: passage?.topicIds ?? material.topicIds,
         addedAt: new Date().toISOString(),
@@ -251,7 +263,9 @@ export function MaterialPage() {
         }
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => practise(material.passages[0]?.id ?? '')}>
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>Edit / Link topics</Button>
+            <Button variant="outline" size="sm" onClick={() => dispatch({ type: 'update-material', materialId: material.id, patch: { archived: !material.archived } })}>{material.archived ? 'Restore' : 'Archive'}</Button>
+            <Button variant="outline" size="sm" disabled={!!material.archived || material.origin === 'preview'} onClick={() => practise(material.passages[0]?.id ?? '')}>
               <DumbbellIcon />
               Practise
             </Button>
@@ -267,6 +281,10 @@ export function MaterialPage() {
         }
       />
 
+      {material.archived && <Alert><AlertTitle>Archived reading</AlertTitle><AlertDescription>Historical citations remain available. Restore this reading before using it for new study.</AlertDescription></Alert>}
+      {material.noteSource && <SourceLink source={material.noteSource} />}
+      {!material.topicIds.length && <Alert><AlertTitle>This material has no linked topics</AlertTitle><AlertDescription><Button variant="outline" onClick={() => setEditing(true)}>Link topics for tutoring and practice</Button></AlertDescription></Alert>}
+      {(material.priorPassages ?? []).filter(p => window.location.hash === `#${p.id}`).map(p => <section key={p.id} id={p.id} className="rounded border p-4"><h2 className="font-semibold">Earlier cited passage: {p.heading}</h2><p className="text-muted-foreground text-sm">This is the evidence used before the reading was edited. New study uses the current reading below.</p><Prose text={p.text} /></section>)}
       {material.attribution && (
         <p className="text-muted-foreground -mt-base text-sm italic">
           {material.attribution}
@@ -352,7 +370,7 @@ export function MaterialPage() {
                     <Button
                       variant="ghost"
                       size="xs"
-                      onClick={() => askTutor(passage.id)}
+                      disabled={!!material.archived} onClick={() => askTutor(passage.id)}
                     >
                       <MessageSquareIcon />
                       Ask the tutor
@@ -360,7 +378,7 @@ export function MaterialPage() {
                     <Button
                       variant="ghost"
                       size="xs"
-                      onClick={() => practise(passage.id)}
+                      disabled={!!material.archived} onClick={() => practise(passage.id)}
                     >
                       <DumbbellIcon />
                       Practise
@@ -422,6 +440,13 @@ export function MaterialPage() {
         </>
       )}
 
+      <EditMaterialDialog key={material.id + String(editing)} material={material} open={editing} onOpenChange={setEditing} onSaved={next => { if (pending && next.topicIds.length) setChoosing(true); }} />
+      <Dialog open={choosing} onOpenChange={setChoosing}><DialogContent><DialogHeader><DialogTitle>Choose a topic for this activity</DialogTitle><DialogDescription>Your material covers several topics. Choose the one to study now.</DialogDescription></DialogHeader>{material.topicIds.filter(id => topicMap.get(id)?.courseId === course.id).map(id => <Button key={id} variant="outline" onClick={() => {
+        if (!pending) return;
+        const params = new URLSearchParams({ topic: id, material: material.id, passage: pending.passageId }); if (pending.quote) params.set('quote', pending.quote);
+        setPending(null);
+        navigate(path(`/${pending.activity === 'tutor' ? 'tutor' : 'practice'}/new?${params}`));
+      }}>{topicMap.get(id)?.title}</Button>)}</DialogContent></Dialog>
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}

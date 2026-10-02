@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeftIcon, PlusIcon, Trash2Icon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type { AvailabilityWindow, Weekday } from '@shared/types.ts';
 import { formatMinutes as formatDuration } from '@shared/planner.ts';
@@ -57,6 +57,8 @@ function fromTime(value: string): number {
 }
 
 export function AvailabilityPage() {
+  const [params] = useSearchParams();
+  const returnTo = params.get('return')?.startsWith('/planner?') ? params.get('return')! : '/planner';
   const availability = useAvailability();
   const { dispatch } = useStore();
 
@@ -107,7 +109,7 @@ export function AvailabilityPage() {
     <Page width="prose" className="pb-page">
       <div>
         <Button variant="ghost" size="sm" asChild className="-ml-2">
-          <Link to="/planner">
+          <Link to={returnTo}>
             <ArrowLeftIcon />
             Planner
           </Link>

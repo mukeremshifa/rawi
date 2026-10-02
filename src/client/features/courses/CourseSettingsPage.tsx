@@ -1,7 +1,8 @@
+import { useDraftState } from '@/store/drafts';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeftIcon, ArchiveIcon, ListTreeIcon, Trash2Icon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type { CourseAccent } from '@shared/types.ts';
 
@@ -57,7 +58,8 @@ export function CourseSettingsPage() {
   const course = useCourse();
   const path = useCoursePath();
   const navigate = useNavigate();
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
+  const draftPrefix = `course-settings:${course.id}:`;
 
   const topics = useTopics();
   const materials = useMaterials();
@@ -67,10 +69,10 @@ export function CourseSettingsPage() {
   const sessions = useSessions();
   const availability = useAvailability();
 
-  const [name, setName] = useState(course.name);
-  const [description, setDescription] = useState(course.description);
-  const [goal, setGoal] = useState(course.goal);
-  const [accent, setAccent] = useState<CourseAccent>(course.accent);
+  const [name, setName] = useDraftState(draftPrefix + "name", course.name);
+  const [description, setDescription] = useDraftState(draftPrefix + "description", course.description);
+  const [goal, setGoal] = useDraftState(draftPrefix + "goal", course.goal);
+  const [accent, setAccent] = useDraftState<CourseAccent>(draftPrefix + "accent", course.accent);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const nameError = !name.trim() ? 'A course needs a name.' : null;
@@ -92,6 +94,7 @@ export function CourseSettingsPage() {
         accent,
       },
     });
+    dispatch({ type: 'clear-draft', prefix: draftPrefix });
     toast.success('Course updated');
   };
 
@@ -185,6 +188,7 @@ export function CourseSettingsPage() {
             <Button onClick={save} disabled={!!nameError || !dirty}>
               Save changes
             </Button>
+            <Button variant="ghost" disabled={!dirty} onClick={() => dispatch({ type: 'clear-draft', prefix: draftPrefix })}>Discard draft</Button>
             {dirty && (
               <span className="text-muted-foreground text-xs">Unsaved changes</span>
             )}
@@ -286,6 +290,7 @@ export function CourseSettingsPage() {
             </CardContent>
           </Card>
 
+          {(state.activeExam?.courseId === course.id || state.practiceRuns.some(r => r.courseId === course.id)) && <p className="text-muted-foreground text-sm">Finish or abandon this course’s active runs before deleting it.</p>}
           <Alert variant="destructive">
             <Trash2Icon />
             <AlertTitle>Delete this course</AlertTitle>
@@ -299,7 +304,7 @@ export function CourseSettingsPage() {
                   variant="destructive"
                   size="sm"
                   className="self-start"
-                  onClick={() => setConfirmDelete(true)}
+                  disabled={state.activeExam?.courseId === course.id || state.practiceRuns.some(r => r.courseId === course.id)} onClick={() => setConfirmDelete(true)}
                 >
                   Delete course
                 </Button>
@@ -315,7 +320,7 @@ export function CourseSettingsPage() {
         title={`Delete “${course.name}”?`}
         description={`This removes ${topics.length} topics, ${materials.length} materials, ${sets.length} practice sets, ${assessments.length} assessments, ${sessions.length} planner sessions and ${
           attempts.filter((a) => a.completedAt).length
-        } recorded attempts. Your history for this course goes with it and cannot be recovered. Archiving keeps all of it instead.`}
+        } recorded attempts. Your history for this course, its tutor sessions, configurations and ${Object.keys(state.drafts).filter(k => k.includes(course.id)).length} draft fields go with it and cannot be recovered. Archiving keeps all of it instead.`}
         confirmLabel="Delete the course and everything in it"
         onConfirm={() => {
           dispatch({ type: 'remove-course', courseId: course.id });

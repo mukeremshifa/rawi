@@ -1,5 +1,10 @@
-import { useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
+import { DraftNotice } from '@/components/DraftNotice';
+import { WorkspaceSearch } from './WorkspaceSearch';
+import { NotificationEntry } from './NotificationsPage';
+import { exportWorkspace } from './SettingsPage';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { useEffect, useRef, useState } from 'react';
+import { Link, NavLink, Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
 import {
   BookOpenIcon,
   CalendarDaysIcon,
@@ -37,7 +42,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { MEDIA_WIDE, useMediaQuery } from '@/components/layout';
 import { CourseDot, DueChip } from '@/components/domain';
-import { useAppState } from '@/store/store';
+import { useStore } from '@/store/store';
 import {
   useActiveCourses,
   useAllReviews,
@@ -300,7 +305,25 @@ export function AppShell() {
   const [open, setOpen] = useState(false);
   const { courseId } = useParams<{ courseId: string }>();
   const course = useCourseById(courseId);
-  const { activeCourseId } = useAppState();
+  const { state, saveError, retrySave } = useStore();
+  const { activeCourseId, preferences } = state;
+  const location = useLocation();
+  const main = useRef<HTMLElement>(null);
+  const positions = useRef(new Map<string, number>());
+  useEffect(() => {
+    const node = main.current; if (!node) return;
+    const saved = positions.current.get(location.pathname);
+    node.scrollTop = saved ?? 0;
+    const heading = node.querySelector('h1') as HTMLElement | null;
+    document.title = `${heading?.textContent ?? 'Workspace'} | Rawi`;
+    if (saved === undefined && heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
+    return () => { positions.current.set(location.pathname, node.scrollTop); };
+  }, [location.pathname]);
+  useEffect(() => {
+    document.documentElement.dataset.readingSize = preferences.readingSize;
+    document.documentElement.dataset.motion = preferences.motion;
+  }, [preferences.readingSize, preferences.motion]);
+  if (!state.onboarded && !state.restoreProblem) return <Navigate to="/welcome" replace />;
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
@@ -356,17 +379,22 @@ export function AppShell() {
           </Button>
         )}
 
+        <span className="hidden xl:block max-w-40 truncate text-sm text-muted-foreground">{preferences.workspaceName}</span>
+        <WorkspaceSearch />
+        <NotificationEntry />
+        <Button variant="ghost" size="sm" asChild><Link to="/settings/profile" aria-label={`Profile and workspace settings${preferences.displayName ? ', ' + preferences.displayName : ''}`}><span className="flex size-7 items-center justify-center rounded-full bg-secondary text-xs font-semibold" style={{ border: `2px solid var(--accent-${preferences.accent})` }}>{preferences.displayName ? preferences.displayName.split(/\s+/).map(n => n[0]).slice(0, 2).join('').toUpperCase() : 'ME'}</span><span className="hidden lg:inline">Settings</span></Link></Button>
         <ThemeToggle />
       </header>
 
+      {saveError && <Alert variant="destructive" className="rounded-none shrink-0"><AlertTitle>Changes are only in memory</AlertTitle><AlertDescription>Local saving failed. Keep this page open and export your work before reloading.<span className="inline-flex gap-2 ml-2"><Button size="sm" variant="outline" onClick={retrySave}>Retry save</Button><Button size="sm" variant="outline" onClick={() => exportWorkspace(state)}>Export recovery copy</Button><Button size="sm" variant="outline" asChild><Link to="/settings/data">Restore data</Link></Button></span></AlertDescription></Alert>}
       <div className="flex min-h-0 flex-1">
         {wide && (
           <aside className="flex w-60 shrink-0 flex-col overflow-y-auto border-r">
             <RailContent />
           </aside>
         )}
-        <main className="min-w-0 flex-1 overflow-y-auto">
-          <Outlet />
+        <main ref={main} className="min-w-0 flex-1 overflow-y-auto">
+          <div key={location.pathname + location.search} className="h-full"><DraftNotice /><Outlet /></div>
         </main>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { useStore } from '@/store/store';
 import {
   createContext,
   useCallback,
@@ -22,7 +23,6 @@ import {
 
 export type ThemeChoice = 'light' | 'dark' | 'system';
 
-const STORAGE_KEY = 'rawi.theme';
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
 interface ThemeContextValue {
@@ -35,18 +35,14 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function readStoredChoice(): ThemeChoice {
-  if (typeof localStorage === 'undefined') return 'system';
-  const stored = localStorage.getItem(STORAGE_KEY);
-  return stored === 'light' || stored === 'dark' ? stored : 'system';
-}
 
 function systemPrefersDark(): boolean {
   return typeof matchMedia !== 'undefined' && matchMedia(DARK_QUERY).matches;
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [choice, setChoiceState] = useState<ThemeChoice>(readStoredChoice);
+  const { state, dispatch } = useStore();
+  const choice = state.preferences.theme;
   const [systemDark, setSystemDark] = useState(systemPrefersDark);
 
   useEffect(() => {
@@ -65,10 +61,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [theme]);
 
   const setChoice = useCallback((next: ThemeChoice) => {
-    setChoiceState(next);
-    if (next === 'system') localStorage.removeItem(STORAGE_KEY);
-    else localStorage.setItem(STORAGE_KEY, next);
-  }, []);
+    dispatch({ type: 'preferences', patch: { theme: next } });
+  }, [dispatch]);
 
   const value = useMemo(
     () => ({ choice, theme, setChoice }),

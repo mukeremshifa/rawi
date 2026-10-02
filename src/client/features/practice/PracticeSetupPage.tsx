@@ -1,7 +1,9 @@
-import { useMemo, useRef, useState } from 'react';
+import { useDraftState } from '@/store/drafts';
+import { useLocation } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangleIcon, ArrowLeftIcon, SparklesIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type {
   ActivityType,
@@ -165,9 +167,11 @@ function toQuestions(
 }
 
 export function PracticeSetupPage() {
+  const draftLocation = useLocation();
+  const draftPrefix = `form:${draftLocation.pathname}${draftLocation.search}:`;
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
   const course = useCourse();
   const path = useCoursePath();
   const topics = useTopics();
@@ -179,33 +183,35 @@ export function PracticeSetupPage() {
   const presetTopics = (params.get('topic') ?? '')
     .split(',')
     .map((t) => t.trim())
-    .filter(Boolean);
+    .filter(id => topics.some(t => t.id === id));
   const presetMaterial = params.get('material');
   const presetActivity = params.get('activity') as ActivityType | null;
   const retryAttemptId = params.get('retry');
   const sessionId = params.get('session') ?? undefined;
-  const retryQuestionIds = (params.get('questions') ?? '')
+  const retryQuestionIds = (state.attempts.some(a => a.id === retryAttemptId && a.courseId === course.id) ? params.get('questions') ?? '' : '')
     .split(',')
     .map((q) => q.trim())
     .filter(Boolean);
 
-  const [activity, setActivity] = useState<ActivityType>(
+  const [activity, setActivity] = useDraftState<ActivityType>(draftPrefix + "activity",
     presetActivity && presetActivity in ACTIVITY_FORMATS ? presetActivity : 'quiz',
   );
-  const [topicIds, setTopicIds] = useState<string[]>(
+  const [topicIds, setTopicIds] = useDraftState<string[]>(draftPrefix + "topicIds",
     presetTopics.length > 0 ? presetTopics : topics.map((t) => t.id),
   );
-  const [materialIds, setMaterialIds] = useState<string[]>(
+  const [materialIds, setMaterialIds] = useDraftState<string[]>(draftPrefix + "materialIds",
     presetMaterial ? [presetMaterial] : [],
   );
-  const [difficulties, setDifficulties] = useState<Difficulty[]>(ALL_DIFFICULTIES);
-  const [length, setLength] = useState(6);
-  const [hintsAllowed, setHintsAllowed] = useState(true);
-  const [feedback, setFeedback] = useState<FeedbackTiming>('immediate');
-  const [title, setTitle] = useState('');
+  const [difficulties, setDifficulties] = useDraftState<Difficulty[]>(draftPrefix + "difficulties", ALL_DIFFICULTIES);
+  const [length, setLength] = useDraftState(draftPrefix + "length", state.preferences.questionCount);
+  const [hintsAllowed, setHintsAllowed] = useDraftState(draftPrefix + "hintsAllowed", state.preferences.hints);
+  const [feedback, setFeedback] = useDraftState<FeedbackTiming>(draftPrefix + "feedback", state.preferences.feedback);
+  const [title, setTitle] = useDraftState(draftPrefix + "title", '');
   const [titleTouched, setTitleTouched] = useState(false);
   const [generating, setGenerating] = useState(false);
   const generatingRef = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; aiController.current?.abort(); }; }, []);
   const aiController = useRef<AbortController | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const { unavailable } = useAiStatus();
@@ -214,7 +220,7 @@ export function PracticeSetupPage() {
      for the chosen activity and topics, and otherwise, where there is
      readable material, the model writes them. */
   const usableMaterials = useMemo(() => materials.filter(isUsableMaterial), [materials]);
-  const [sourceChoice, setSource] = useState<'bank' | 'ai' | null>(null);
+  const [sourceChoice, setSource] = useDraftState<'bank' | 'ai' | null>(draftPrefix + "sourceChoice", params.get('source') === 'bank' ? 'bank' : null);
   const bankHasMatches = useMemo(
     () =>
       selectQuestions(pool, {
@@ -356,6 +362,9 @@ export function PracticeSetupPage() {
         id: newId('set'),
         courseId: course.id,
         name: trimmedTitle,
+      fromTutorId: state.tutorSessions.find(s => s.id === params.get('from') && s.courseId === course.id)?.id,
+      fromAttemptId: retryAttemptId ?? undefined,
+
         config: {
           activity,
           topicIds,
@@ -368,6 +377,8 @@ export function PracticeSetupPage() {
         questionIds: questions.map((q) => q.id),
         savedAt: new Date().toISOString(),
       };
+      if (!mounted.current || controller.signal.aborted) return;
+      dispatch({ type: 'clear-draft', prefix: draftPrefix });
       dispatch({ type: 'save-generated-set', questions, set });
       toast.success('Set generated', {
         description: `${questions.length} ${
@@ -434,12 +445,15 @@ export function PracticeSetupPage() {
       id: newId('set'),
       courseId: course.id,
       name: trimmedTitle,
+      fromTutorId: state.tutorSessions.find(s => s.id === params.get('from') && s.courseId === course.id)?.id,
+      fromAttemptId: state.attempts.find(a => a.id === retryAttemptId && a.courseId === course.id)?.id,
       config,
       questionIds: chosen.map((q) => q.id),
       savedAt: new Date().toISOString(),
     };
 
-    window.setTimeout(() => {
+    (() => {
+      dispatch({ type: 'clear-draft', prefix: draftPrefix });
       dispatch({ type: 'save-practice', set });
       toast.success('Set generated', {
         description: `${set.questionIds.length} ${
@@ -452,7 +466,7 @@ export function PracticeSetupPage() {
         }`,
         { replace: true },
       );
-    }, 450);
+    })();
   };
 
   const written = activity !== 'flashcards' && activity !== 'quiz';
@@ -468,6 +482,7 @@ export function PracticeSetupPage() {
         </Button>
       </div>
 
+      {params.get('from') && state.tutorSessions.some(s => s.id === params.get('from') && s.courseId === course.id) && <Alert><AlertTitle>Practice from your tutor session</AlertTitle><AlertDescription><Link className="underline" to={path(`/tutor/${params.get('from')}`)}>Return to the originating conversation</Link>. This set retains that link.</AlertDescription></Alert>}
       <PageHeader
         title={retryQuestionIds.length > 0 ? 'Retry these questions' : 'New practice set'}
         description={
@@ -535,7 +550,6 @@ export function PracticeSetupPage() {
                   type="button"
                   onClick={() => {
                     setSource(value);
-                    if (value === 'ai' && !AI_FORMAT[activity]) setActivity('quiz');
                   }}
                   disabled={value === 'ai' && usableMaterials.length === 0}
                   aria-pressed={source === value}

@@ -1,7 +1,8 @@
+import { RecordLibrary } from '@/components/RecordLibrary';
 import { Link } from 'react-router-dom';
-import { MessageSquareIcon, PlayIcon } from 'lucide-react';
+import { MessageSquareIcon } from 'lucide-react';
 
-import { AI_TUTOR_NOTICE, STAGE_LABEL } from '@shared/tutor.ts';
+import { AI_TUTOR_NOTICE } from '@shared/tutor.ts';
 
 import { Page, PageHeader, Section } from '@/components/layout';
 import { EmptyState } from '@/components/states';
@@ -11,11 +12,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import {
   EvidenceChip,
   SimulatedNotice,
-  formatRelative,
 } from '@/components/domain';
-import { useAppState } from '@/store/store';
-import { useCoursePath } from '@/store/course-context';
-import { useCanTutor, useEvidence, useTopicMap, useTopics } from '@/store/selectors';
+import { useStore } from '@/store/store';
+import { useCourse, useCoursePath } from '@/store/course-context';
+import { useCanTutor, useEvidence, useTopics } from '@/store/selectors';
 
 /**
  * The tutor's front door: pick a topic, or pick up where you left off.
@@ -26,18 +26,12 @@ import { useCanTutor, useEvidence, useTopicMap, useTopics } from '@/store/select
  */
 export function TutorHomePage() {
   const path = useCoursePath();
-  const { tutorSessions } = useAppState();
+  const course = useCourse();
+  const { state } = useStore();
+  const tutorSessions = state.tutorSessions.filter(s => s.courseId === course.id);
   const topics = useTopics();
-  const topicMap = useTopicMap();
   const evidence = useEvidence();
   const canTutor = useCanTutor();
-
-  const open = tutorSessions
-    .filter((s) => !s.endedAt)
-    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
-  const past = tutorSessions
-    .filter((s) => s.endedAt)
-    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
 
   return (
     <Page>
@@ -48,43 +42,7 @@ export function TutorHomePage() {
 
       <SimulatedNotice tone="block">{AI_TUTOR_NOTICE}</SimulatedNotice>
 
-      {open.length > 0 && (
-        <Section title="Pick up where you left off">
-          <ul className="flex flex-col gap-tight">
-            {open.map((session) => {
-              const topic = topicMap.get(session.topicId);
-              return (
-                <li key={session.id}>
-                  <Card>
-                    <CardContent className="flex flex-wrap items-center justify-between gap-base">
-                      <div className="flex min-w-0 flex-col gap-hairline">
-                        <span className="font-medium">
-                          {topic?.title ?? 'Session'}
-                        </span>
-                        <span className="text-muted-foreground flex items-center gap-tight text-xs">
-                          <Badge variant="secondary" className="font-normal">
-                            {STAGE_LABEL[session.stage]}
-                          </Badge>
-                          <span>
-                            {session.messages.length} turns ·{' '}
-                            {formatRelative(session.updatedAt)}
-                          </span>
-                        </span>
-                      </div>
-                      <Button size="sm" asChild>
-                        <Link to={path(`/tutor/${session.id}`)}>
-                          <PlayIcon />
-                          Resume
-                        </Link>
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </li>
-              );
-            })}
-          </ul>
-        </Section>
-      )}
+      <RecordLibrary kind="tutor" />
 
       <Section
         title="Start a topic"
@@ -116,7 +74,7 @@ export function TutorHomePage() {
                       </span>
                     ) : (
                       <span className="text-muted-foreground text-xs">
-                        No readable material yet
+                        Link a readable material
                       </span>
                     )}
                   </div>
@@ -138,7 +96,7 @@ export function TutorHomePage() {
                     title="The tutor teaches from your course material, and none relates to this topic yet."
                     aria-label={`${topic.title}: no readable material for the tutor`}
                   >
-                    {card}
+                    {card}<Button variant="outline" size="sm" asChild><Link to={path('/materials?add=1')}>Add or link material</Link></Button>
                   </div>
                 )}
               </div>
@@ -146,37 +104,6 @@ export function TutorHomePage() {
           })}
         </div>
       </Section>
-
-      {past.length > 0 && (
-        <Section title="Past sessions">
-          <ul className="flex flex-col gap-tight">
-            {past.map((session) => {
-              const topic = topicMap.get(session.topicId);
-              return (
-                <li key={session.id}>
-                  <Link
-                    to={path(`/tutor/${session.id}`)}
-                    className="hover:bg-accent/50 focus-visible:ring-ring flex items-center justify-between gap-tight rounded-md border p-snug outline-none transition-colors focus-visible:ring-2"
-                  >
-                    <div className="flex min-w-0 flex-col">
-                      <span className="truncate text-sm">
-                        {topic?.title ?? 'Session'}
-                      </span>
-                      <span className="text-muted-foreground text-xs">
-                        Reached {STAGE_LABEL[session.stage].toLowerCase()} ·{' '}
-                        {formatRelative(session.updatedAt)}
-                      </span>
-                    </div>
-                    <span className="text-muted-foreground shrink-0 text-xs">
-                      Review →
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </Section>
-      )}
 
       {tutorSessions.length === 0 && topics.every((t) => !canTutor(t.id)) && (
         <EmptyState

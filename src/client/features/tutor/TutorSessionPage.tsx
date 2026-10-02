@@ -1,3 +1,5 @@
+import { useDraftState } from '@/store/drafts';
+import { useLocation } from 'react-router-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
@@ -11,7 +13,7 @@ import {
   SquareIcon,
   SquarePenIcon,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type { TutorAction } from '@shared/ai.ts';
 import type { TutorMessage, TutorSession } from '@shared/types.ts';
@@ -123,6 +125,8 @@ function ContextPanel({ session }: { session: TutorSession }) {
   const path = useCoursePath();
   const topic = useTopic(session.topicId);
   const resolved = useSource(session.source);
+  const { state } = useStore();
+  const origin = state.attempts.find(a => a.id === session.fromAttemptId && a.courseId === session.courseId);
 
   return (
     <div className="flex flex-col gap-section p-gutter">
@@ -146,6 +150,9 @@ function ContextPanel({ session }: { session: TutorSession }) {
         </div>
       )}
 
+      {session.review && <section className="flex flex-col gap-2"><h2 className="text-sm font-semibold">Exact answer being reviewed</h2><Prose text={session.review.prompt} /><h3 className="text-xs font-semibold">Your submitted answer</h3><Prose text={session.review.response || 'No answer submitted.'} /><p className="text-xs">{session.review.pending ? 'Feedback pending' : `${session.review.marksAwarded}/${session.review.marksAvailable} marks`} · {session.review.usedHint ? 'Hint used' : 'No hint recorded'}</p><h3 className="text-xs font-semibold">Answer key and recorded feedback</h3><Prose text={session.review.answerKey + '\n\n' + session.review.feedback} /></section>}
+      {origin && <Button variant="outline" asChild><Link to={path(`/${origin.kind === 'exam' ? 'exams' : 'practice'}/results/${origin.id}`)}>Return to originating result</Link></Button>}
+      {session.source && !resolved && <p className="text-muted-foreground text-xs">The original source is unavailable. The saved conversation and answer review remain.</p>}
       {resolved && (
         <div className="flex flex-col gap-tight">
           <h2 className="text-sm font-semibold">The passage</h2>
@@ -198,7 +205,7 @@ function MessageBubble({ message }: { message: TutorMessage }) {
   const legacy =
     message.role === 'tutor' && !message.meta && !message.model && !message.status;
   return (
-    <div className={cn('flex flex-col gap-tight', message.role === 'student' && 'items-end')}>
+    <div id={message.id} className={cn('flex flex-col gap-tight', message.role === 'student' && 'items-end')}>
       <div
         className={cn(
           'max-w-[90%] rounded-xl px-gutter py-snug',
@@ -262,6 +269,8 @@ interface Failure {
 const CITATION_MARKER = /\[\[([^\]\s]{1,200})\]\]/g;
 
 export function TutorSessionPage() {
+  const draftLocation = useLocation();
+  const draftPrefix = `form:${draftLocation.pathname}${draftLocation.search}:`;
   const path = useCoursePath();
   const course = useCourse();
   const { sessionId } = useParams();
@@ -273,7 +282,7 @@ export function TutorSessionPage() {
   const attempts = useAttempts();
   const questionMap = useQuestionMap();
   const { unavailable, refresh } = useAiStatus();
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useDraftState(draftPrefix + "draft", '');
   const [contextOpen, setContextOpen] = useState(false);
   const [streaming, setStreaming] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -282,7 +291,7 @@ export function TutorSessionPage() {
   const endRef = useRef<HTMLDivElement>(null);
 
   const summary = useMemo(() => (session ? summarise(session) : null), [session]);
-  const busy = streaming !== null;
+  const busy = streaming !== null || !!session?.archived || course.archived;
 
   /* A session opened from a missed answer starts with a useful draft. */
   const fromQuestion = session?.fromQuestionId
@@ -290,13 +299,14 @@ export function TutorSessionPage() {
     : undefined;
   const sessionKey = session?.id;
   useEffect(() => {
-    if (fromQuestion && session && !session.messages.some((m) => m.role === 'student')) {
+    if (!draft && fromQuestion && session && !session.messages.some((m) => m.role === 'student')) {
       setDraft(`Help me see where I went wrong on this question: ${fromQuestion.prompt}`);
     }
     // Only when the session first opens.
   }, [sessionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (window.location.hash && document.getElementById(window.location.hash.slice(1))) { document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: 'center' }); return; }
     endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   }, [session?.messages.length, streaming]);
 
@@ -310,7 +320,7 @@ export function TutorSessionPage() {
    * `history` is everything before it.
    */
   const run = async (text: string, action: TutorAction, history: TutorMessage[]) => {
-    if (!topic) return;
+    if (!topic || session.archived || course.archived) return;
     const controller = new AbortController();
     controllerRef.current = controller;
     partialRef.current = '';
@@ -427,6 +437,7 @@ export function TutorSessionPage() {
   };
 
   const endSession = () => {
+    if (session.endedAt || session.archived) return;
     controllerRef.current?.abort();
     dispatch({
       type: 'upsert-tutor-session',
@@ -457,7 +468,7 @@ export function TutorSessionPage() {
           <Separator orientation="vertical" className="h-4" />
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-sm font-medium">
-              {topic?.title ?? 'Session'}
+              {session.title ?? topic?.title ?? 'Session'}
             </span>
             <span className="text-muted-foreground text-xs">
               {STAGE_LABEL[session.stage]}
@@ -481,7 +492,8 @@ export function TutorSessionPage() {
               </SheetContent>
             </Sheet>
           )}
-          {!session.endedAt && (
+          {session.archived && <Button variant="outline" size="sm" onClick={() => dispatch({ type: 'upsert-tutor-session', session: { ...session, archived: false } })}>Restore session</Button>}
+          {!session.endedAt && !session.archived && (
             <Button variant="outline" size="sm" onClick={endSession}>
               <CheckCircle2Icon />
               End session
@@ -520,7 +532,8 @@ export function TutorSessionPage() {
                 <AlertDescription className="flex flex-col gap-tight">
                   <span>{failure.message}</span>
                   <span>Your message is saved. Nothing has been lost.</span>
-                  {!session.endedAt && (
+                  {session.archived && <Button variant="outline" size="sm" onClick={() => dispatch({ type: 'upsert-tutor-session', session: { ...session, archived: false } })}>Restore session</Button>}
+          {!session.endedAt && !session.archived && (
                     <Button
                       variant="outline"
                       size="sm"

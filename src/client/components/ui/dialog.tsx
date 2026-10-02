@@ -56,7 +56,7 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           'ui-panel bg-background fixed top-1/2 left-1/2 z-50 grid w-[calc(100vw-2rem)] max-w-lg',
-          'gap-gutter -translate-x-1/2 -translate-y-1/2 rounded-xl border p-gutter shadow-modal',
+          'gap-gutter max-h-[90dvh] overflow-y-auto -translate-x-1/2 -translate-y-1/2 rounded-xl border p-gutter shadow-modal',
           className,
         )}
         {...props}

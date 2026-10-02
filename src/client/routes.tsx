@@ -1,8 +1,11 @@
-import { Link, Navigate, Route, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { AppShell } from '@/features/shell/AppShell';
+import { SettingsPage } from '@/features/shell/SettingsPage';
+import { NotificationsPage } from '@/features/shell/NotificationsPage';
+import { useStore } from '@/store/store';
 import { CourseScope } from '@/store/course-context';
 
 import { HomePage } from '@/features/home/HomePage';
@@ -77,6 +80,9 @@ export function AppRoutes() {
         <Route path="/planner" element={<PlannerPage />} />
         <Route path="/planner/availability" element={<AvailabilityPage />} />
         <Route path="/history" element={<HistoryPage />} />
+        <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
+        <Route path="/settings/:section" element={<SettingsPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
 
         {/* ── Inside one course ─────────────────────────────────────── */}
         <Route path="/course/:courseId" element={<CourseScope />}>
@@ -123,6 +129,10 @@ export function AppRoutes() {
 }
 
 export function NotFoundPage() {
+  const { courseId } = useParams(); const location = useLocation(); const { state } = useStore();
+  const course = state.courses.find(c => c.id === courseId);
+  const area = location.pathname.includes('/materials') ? 'materials' : location.pathname.includes('/tutor') ? 'tutor' : location.pathname.includes('/exams') ? 'exams' : location.pathname.includes('/practice') ? 'practice' : '';
+  const returnTo = course ? `/course/${course.id}${area ? '/' + area : ''}` : '/courses';
   return (
     <Page width="prose" className="py-page">
       <PageHeader
@@ -130,7 +140,7 @@ export function NotFoundPage() {
         description="That address does not point at anything in Rawi. It may have been deleted, or the link may be wrong."
       />
       <Button asChild className="self-start">
-        <Link to="/">Back to your home page</Link>
+        <Link to={returnTo}>{course ? `Back to this course’s ${area || 'overview'}` : 'Open your courses'}</Link>
       </Button>
     </Page>
   );

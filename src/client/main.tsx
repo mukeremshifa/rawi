@@ -38,16 +38,16 @@ if (!root) throw new Error('#root is missing from index.html');
 createRoot(root).render(
   <StrictMode>
     <ErrorBoundary>
-      <ThemeProvider>
-        <StoreProvider>
+      <StoreProvider>
+        <ThemeProvider>
           <TooltipProvider delayDuration={300}>
             <BrowserRouter>
               <AppRoutes />
               <Toaster />
             </BrowserRouter>
           </TooltipProvider>
-        </StoreProvider>
-      </ThemeProvider>
+        </ThemeProvider>
+      </StoreProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

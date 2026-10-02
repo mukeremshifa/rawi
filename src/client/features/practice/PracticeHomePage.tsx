@@ -1,10 +1,11 @@
+import { RecordLibrary } from '@/components/RecordLibrary';
+import { useQuestions, useMaterials, ACTIVITY_FORMATS } from '@/store/selectors';
+import { isUsableMaterial } from '@shared/ai-context.ts';
 import { Link } from 'react-router-dom';
 import {
   ClipboardListIcon,
-  PlayIcon,
   PlusIcon,
   RotateCcwIcon,
-  Trash2Icon,
 } from 'lucide-react';
 
 import type { ActivityType } from '@shared/types.ts';
@@ -15,12 +16,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { DIFFICULTY_LABEL, formatRelative } from '@/components/domain';
-import { useStore } from '@/store/store';
+import { formatRelative } from '@/components/domain';
 import { useCoursePath } from '@/store/course-context';
 import {
   useAttempts,
-  usePracticeSets,
   useRecentAttempts,
   useRecurringMistakes,
   useReviews,
@@ -70,15 +69,15 @@ const ACTIVITIES: { type: ActivityType; blurb: string }[] = [
 
 export function PracticeHomePage() {
   const path = useCoursePath();
-  const { dispatch } = useStore();
   const topicMap = useTopicMap();
   const reviews = useReviews();
   const mistakes = useRecurringMistakes();
-  const recent = useRecentAttempts(6).filter((a) => a.kind === 'practice');
+  const recent = useRecentAttempts().filter((a) => a.kind === 'practice');
   const allAttempts = useAttempts();
   // Scoped, not global: this page is inside one course, and another course's
   // sets appearing here is exactly the leak the scoped selectors exist to stop.
-  const savedPractice = usePracticeSets();
+  const pool = useQuestions();
+  const materials = useMaterials();
 
   /*
    * A recurring mistake can come from either kind of attempt, and the two have
@@ -190,76 +189,14 @@ export function PracticeHomePage() {
             >
               <span className="font-medium">{ACTIVITY_LABEL[type]}</span>
               <span className="text-muted-foreground text-xs leading-relaxed">
-                {blurb}
+                {blurb}<span className="block mt-2">{pool.some(q => ACTIVITY_FORMATS[type].includes(q.format)) ? 'Bank questions available' : ['quiz', 'flashcards', 'written-recall'].includes(type) ? materials.some(isUsableMaterial) ? 'AI generation available when the service is connected' : 'Add readable material to generate questions' : 'Unavailable: no matching bank questions and this format cannot be generated yet'}</span>
               </span>
             </Link>
           ))}
         </div>
       </Section>
 
-      {savedPractice.length > 0 && (
-        <Section title="Saved sets">
-          <ul className="flex flex-col gap-tight">
-            {savedPractice.map((set) => (
-              <li key={set.id}>
-                <Card>
-                  <CardContent className="flex flex-wrap items-center justify-between gap-base">
-                    <div className="flex min-w-0 flex-col gap-hairline">
-                      <span className="font-medium">{set.name}</span>
-                      <span className="text-muted-foreground flex flex-wrap items-center gap-tight text-xs">
-                        <span>{ACTIVITY_LABEL[set.config.activity]}</span>
-                        <Separator orientation="vertical" className="h-3" />
-                        <span className="font-mono tabular-nums">
-                          {set.config.length} questions
-                        </span>
-                        <Separator orientation="vertical" className="h-3" />
-                        <span>
-                          {set.config.difficulties
-                            .map((d) => DIFFICULTY_LABEL[d])
-                            .join(', ')}
-                        </span>
-                        <Separator orientation="vertical" className="h-3" />
-                        <span>
-                          {set.config.topicIds
-                            .map((id) => topicMap.get(id)?.title)
-                            .filter(Boolean)
-                            .slice(0, 2)
-                            .join(', ')}
-                          {set.config.topicIds.length > 2 &&
-                            ` +${set.config.topicIds.length - 2}`}
-                        </span>
-                      </span>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-tight">
-                      {/* Opens *this set*, by its own id. It used to rebuild
-                          the setup form from the set's settings, which both
-                          landed on a route that no longer exists and threw
-                          away the set's identity, its content and its
-                          attempt history. */}
-                      <Button size="sm" asChild>
-                        <Link to={path(`/practice/set/${set.id}`)}>
-                          <PlayIcon />
-                          Open
-                        </Link>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Delete ${set.name}`}
-                        onClick={() =>
-                          dispatch({ type: 'remove-practice', setId: set.id })
-                        }
-                      >
-                        <Trash2Icon />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
+      <RecordLibrary kind="practice" />
 
       <Section title="Recent practice">
         {recent.length === 0 ? (

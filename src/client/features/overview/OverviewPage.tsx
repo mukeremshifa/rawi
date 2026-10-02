@@ -1,3 +1,4 @@
+import { SetupChecklist } from './SetupChecklist';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -9,7 +10,7 @@ import {
   SettingsIcon,
   SparklesIcon,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import type { CheckInMood } from '@shared/types.ts';
 import {
@@ -333,6 +334,8 @@ export function OverviewPage() {
           </div>
         }
       />
+
+      <SetupChecklist />
 
       {/* ── Deadlines for this course ─────────────────────────────────── */}
       <div className="grid gap-tight sm:grid-cols-2 lg:grid-cols-3">

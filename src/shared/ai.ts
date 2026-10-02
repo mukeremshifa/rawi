@@ -1,4 +1,4 @@
-import type { Difficulty, TutorStage } from './types.ts';
+import type { AnswerReview, Difficulty, TutorStage } from './types.ts';
 
 /**
  * The contract between the browser and the local AI server.
@@ -92,6 +92,7 @@ export interface TutorTurn {
 }
 
 export interface TutorRequest {
+  review?: AnswerReview;
   courseId: string;
   courseName: string;
   topic: AiTopic;

@@ -114,6 +114,18 @@ export function tutorRequest(body: unknown): TutorRequest {
   return {
     courseId,
     courseName: text(b.courseName, 'course name', 300),
+    ...(b.review === undefined ? {} : { review: (() => {
+      const r = obj(b.review, 'answer review');
+      const reviewCourse = id(r.courseId, 'review course');
+      const reviewTopic = id(r.topicId, 'review topic');
+      if (reviewCourse !== courseId || reviewTopic !== topic(b.topic).id) throw new InvalidBody('The answer review must belong to this course and topic.');
+      if (typeof r.marksAwarded !== 'number' || typeof r.marksAvailable !== 'number' || !Number.isFinite(r.marksAwarded) || !Number.isFinite(r.marksAvailable) || r.marksAwarded < 0 || r.marksAvailable < r.marksAwarded) throw new InvalidBody('Invalid review marks.');
+      if (typeof r.usedHint !== 'boolean' || typeof r.pending !== 'boolean') throw new InvalidBody('Invalid review assistance or feedback state.');
+      return { attemptId: id(r.attemptId, 'review attempt'), questionId: id(r.questionId, 'review question'), courseId: reviewCourse, topicId: reviewTopic,
+        prompt: text(r.prompt, 'review prompt', 6000), response: text(r.response, 'review response', 6000, { allowEmpty: true }),
+        answerKey: text(r.answerKey, 'review key', 6000, { allowEmpty: true }), feedback: text(r.feedback, 'review feedback', 6000, { allowEmpty: true }),
+        marksAwarded: r.marksAwarded, marksAvailable: r.marksAvailable, usedHint: r.usedHint, pending: r.pending };
+    })() }),
     topic: topic(b.topic),
     stage: oneOf(b.stage, STAGES, 'stage'),
     action: oneOf(b.action, ['message', 'explain', 'example', 'hint', 'check', 'simpler'] as const, 'action'),

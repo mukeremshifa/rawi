@@ -414,12 +414,13 @@ export function finishRun(
   const totals = attemptTotals(questions);
 
   return {
-    id: newId('att'),
+    id: `att-${run.id}`,
     courseId: run.courseId,
     kind: 'exam',
     mode: 'exam',
     title: config.name,
     examConfigId: config.id,
+    examConfigSnapshot: config,
     assistanceRecord: 'tracked',
     topicIds: [...new Set(questions.map((q) => q.topicId))],
     startedAt: run.startedAt,

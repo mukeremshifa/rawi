@@ -117,6 +117,7 @@ export interface Passage {
 }
 
 export interface Material {
+  archived?: boolean;
   id: string;
   courseId: string;
   title: string;
@@ -132,6 +133,9 @@ export interface Material {
   topicIds: string[];
   passages: Passage[];
   addedAt: string;
+  updatedAt?: string;
+  priorPassages?: Passage[];
+  noteSource?: SourceRef;
 }
 
 /* ── Questions ────────────────────────────────────────────────────────── */
@@ -297,6 +301,7 @@ export type SelfRating = 'again' | 'hard' | 'good' | 'easy';
 export type AttemptKind = 'practice' | 'exam' | 'tutor';
 
 export interface Attempt {
+  examConfigSnapshot?: ExamConfig;
   id: string;
   courseId: string;
   kind: AttemptKind;
@@ -393,6 +398,9 @@ export type TutorIntent =
   | 'summary';
 
 export interface TutorSession {
+  review?: AnswerReview;
+  title?: string;
+  archived?: boolean;
   id: string;
   courseId: string;
   topicId: string;
@@ -417,6 +425,21 @@ export interface TutorSession {
   plannedSessionId?: string;
   /** Practice sets launched from inside this session. */
   launchedAttemptIds: string[];
+}
+
+export interface AnswerReview {
+  attemptId: string;
+  questionId: string;
+  courseId: string;
+  topicId: string;
+  prompt: string;
+  response: string;
+  answerKey: string;
+  feedback: string;
+  marksAwarded: number;
+  marksAvailable: number;
+  usedHint: boolean;
+  pending: boolean;
 }
 
 /* ── Practice ─────────────────────────────────────────────────────────── */
@@ -453,6 +476,9 @@ export interface PracticeConfig {
  * and storing the result is what makes repeat attempts comparable.
  */
 export interface SavedPracticeSet {
+  fromTutorId?: string;
+  fromAttemptId?: string;
+  archived?: boolean;
   id: string;
   courseId: string;
   name: string;
@@ -472,6 +498,8 @@ export interface SavedPracticeSet {
  * appearing in history as a completed attempt.
  */
 export interface PracticeAttemptState {
+  remediatesAttemptId?: string;
+  fromTutorId?: string;
   id: string;
   courseId: string;
   setId: string;
@@ -513,6 +541,7 @@ export interface ExamSection {
 }
 
 export interface ExamConfig {
+  archived?: boolean;
   id: string;
   courseId: string;
   name: string;
@@ -733,6 +762,7 @@ export interface PlannedSession {
 }
 
 export type SessionLink =
+  | { kind: 'mistake-review'; attemptId: string; questionIds: string[] }
   | { kind: 'material'; materialId: string }
   | { kind: 'practice-set'; setId: string }
   | { kind: 'exam-config'; configId: string }

@@ -1,3 +1,5 @@
+import { useAppState } from '@/store/store';
+import { ResumeWork } from '@/components/ResumeWork';
 import { Link } from 'react-router-dom';
 import {
   ArrowRightIcon,
@@ -64,6 +66,7 @@ import { cn } from '@/lib/utils';
  * two agree by construction rather than by coincidence.
  */
 export function HomePage() {
+  const { preferences } = useAppState();
   const courses = useActiveCourses();
   const courseMap = useCourseMap();
   const today = localISO(new Date());
@@ -79,7 +82,6 @@ export function HomePage() {
       <Page className="py-page">
         <RestoreNotice />
         <CarriedForwardNotice />
-      <CarriedForwardNotice />
         <PageHeader
           title="Rawi"
           description="A study workspace for the courses you are taking."
@@ -111,7 +113,7 @@ export function HomePage() {
       <CarriedForwardNotice />
 
       <PageHeader
-        title="Today"
+        title={preferences.displayName ? `Today, ${preferences.displayName}` : 'Today'}
         description={
           remaining.length > 0
             ? `${remaining.length} ${
@@ -144,6 +146,7 @@ export function HomePage() {
         }
       />
 
+      <ResumeWork />
       {/* ── Today's planned work ──────────────────────────────────────── */}
       {todaysSessions.length > 0 && (
         <Section

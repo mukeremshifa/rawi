@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { useDraftState } from '@/store/drafts';
+import { useEffect } from 'react';
+import { toast } from '@/lib/toast';
 
 import type {
   PlannedSession,
@@ -69,7 +70,8 @@ export function SessionDialog({
   defaultDate?: string;
   defaultCourseId?: string;
 }) {
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
+  const draftPrefix = `planner-form:${session?.courseId ?? defaultCourseId ?? 'workspace'}:${session?.id ?? 'new'}:`;
   const courses = useActiveCourses();
   const topics = useAllTopics();
   const materials = useAllMaterials();
@@ -79,20 +81,20 @@ export function SessionDialog({
   const allSessions = useAllSessions();
   const availability = useAvailability();
 
-  const [courseId, setCourseId] = useState('');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('18:00');
-  const [duration, setDuration] = useState('45');
-  const [title, setTitle] = useState('');
-  const [activity, setActivity] = useState<SessionActivity>('practice');
-  const [topicIds, setTopicIds] = useState<string[]>([]);
-  const [assessmentId, setAssessmentId] = useState('');
-  const [linkValue, setLinkValue] = useState('');
-  const [note, setNote] = useState('');
+  const [courseId, setCourseId] = useDraftState(draftPrefix + "courseId", '');
+  const [date, setDate] = useDraftState(draftPrefix + "date", '');
+  const [time, setTime] = useDraftState(draftPrefix + "time", '18:00');
+  const [duration, setDuration] = useDraftState(draftPrefix + "duration", '45');
+  const [title, setTitle] = useDraftState(draftPrefix + "title", '');
+  const [activity, setActivity] = useDraftState<SessionActivity>(draftPrefix + "activity", 'practice');
+  const [topicIds, setTopicIds] = useDraftState<string[]>(draftPrefix + "topicIds", []);
+  const [assessmentId, setAssessmentId] = useDraftState(draftPrefix + "assessmentId", '');
+  const [linkValue, setLinkValue] = useDraftState(draftPrefix + "linkValue", '');
+  const [note, setNote] = useDraftState(draftPrefix + "note", '');
 
   /* Reset the form whenever the dialog opens onto a different subject. */
   useEffect(() => {
-    if (!open) return;
+    if (!open || Object.keys(state.drafts).some(k => k.startsWith(draftPrefix))) return;
     if (session) {
       setCourseId(session.courseId);
       setDate(session.date);
@@ -112,7 +114,7 @@ export function SessionDialog({
       setCourseId(defaultCourseId ?? courses[0]?.id ?? '');
       setDate(defaultDate ?? new Date().toISOString().slice(0, 10));
       setTime('18:00');
-      setDuration('45');
+      setDuration(String(availability.sessionMinutes));
       setTitle('');
       setActivity('practice');
       setTopicIds([]);
@@ -123,9 +125,9 @@ export function SessionDialog({
   }, [open, session, defaultDate, defaultCourseId, courses]);
 
   const courseTopics = topics.filter((t) => t.courseId === courseId);
-  const courseMaterials = materials.filter((m) => m.courseId === courseId);
-  const courseSets = sets.filter((s) => s.courseId === courseId);
-  const courseConfigs = configs.filter((c) => c.courseId === courseId);
+  const courseMaterials = materials.filter((m) => m.courseId === courseId && !m.archived);
+  const courseSets = sets.filter((s) => s.courseId === courseId && !s.archived);
+  const courseConfigs = configs.filter((c) => c.courseId === courseId && !c.archived);
   const courseAssessments = assessments.filter((a) => a.courseId === courseId);
 
   const minutes = Number(duration) || 0;
@@ -180,7 +182,7 @@ export function SessionDialog({
       status: session?.status ?? 'planned',
       createdAt: session?.createdAt ?? new Date().toISOString(),
       ...(assessmentId ? { assessmentId } : {}),
-      ...(valueToLink(linkValue) ? { link: valueToLink(linkValue) } : {}),
+      ...(session?.link?.kind === 'mistake-review' && linkValue.startsWith('mistake-review:') ? { link: session.link } : valueToLink(linkValue) ? { link: valueToLink(linkValue) } : {}),
       ...(note.trim() ? { reason: note.trim() } : {}),
       ...(session?.completedAt ? { completedAt: session.completedAt } : {}),
       ...(session?.completedBy ? { completedBy: session.completedBy } : {}),
@@ -189,6 +191,7 @@ export function SessionDialog({
       ...(session?.generated ? { locked: true } : {}),
     };
 
+    dispatch({ type: 'clear-draft', prefix: draftPrefix });
     dispatch({ type: 'save-session', session: next });
     onOpenChange(false);
     toast.success(session ? 'Session updated' : 'Session added', {
@@ -299,7 +302,7 @@ export function SessionDialog({
               value={linkValue}
               onChange={(e) => setLinkValue(e.target.value)}
             >
-              <option value="">Nothing in particular</option>
+              <option value="">Nothing in particular</option>{session?.link?.kind === 'mistake-review' && <option value={`mistake-review:${session.link.attemptId}`}>Exact missed-answer review ({session.link.questionIds.length} questions)</option>}
               {courseMaterials.length > 0 && (
                 <optgroup label="Reading">
                   {courseMaterials.map((m) => (
@@ -429,7 +432,7 @@ export function SessionDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter><Button variant="ghost" onClick={() => { dispatch({ type: 'clear-draft', prefix: draftPrefix }); onOpenChange(false); }}>Discard draft</Button>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
@@ -447,6 +450,8 @@ export function SessionDialog({
 function linkToValue(link: SessionLink | undefined): string {
   if (!link) return '';
   switch (link.kind) {
+    case 'mistake-review':
+      return `mistake-review:${link.attemptId}`;
     case 'material':
       return `material:${link.materialId}`;
     case 'practice-set':
