@@ -127,7 +127,7 @@ export function HomePage() {
               <FlameIcon
                 className={cn(
                   'size-4',
-                  streak.current > 0 ? 'text-warning-foreground' : 'text-muted-foreground',
+                  streak.current > 0 ? 'text-warning-text' : 'text-muted-foreground',
                 )}
                 aria-hidden
               />
@@ -322,7 +322,7 @@ export function HomePage() {
                   {course && <CourseDot accent={course.accent} />}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm">{assessment.title}</span>
-                    <span className="text-muted-foreground truncate text-xs">
+                    <span className="text-muted-foreground block truncate text-xs">
                       {course?.name}
                       {assessment.topicIds.length > 0 &&
                         ` · ${assessment.topicIds.length} topics`}

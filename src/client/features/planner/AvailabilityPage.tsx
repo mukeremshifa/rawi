@@ -234,7 +234,7 @@ export function AvailabilityPage() {
           <Input
             id="session-length"
             type="number"
-            min={15}
+            min={10}
             max={120}
             step={5}
             value={availability.sessionMinutes}
@@ -243,7 +243,7 @@ export function AvailabilityPage() {
                 type: 'set-availability',
                 availability: {
                   ...availability,
-                  sessionMinutes: Math.max(15, Number(e.target.value) || 45),
+                  sessionMinutes: Math.min(120, Math.max(10, Number(e.target.value) || 45)),
                 },
               })
             }

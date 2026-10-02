@@ -47,12 +47,26 @@ function DialogContent({
   className,
   children,
   showClose = true,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & { showClose?: boolean }) {
+  const returnFocus = React.useRef<HTMLElement | null>(null);
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
+        onOpenAutoFocus={event => {
+          returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          onOpenAutoFocus?.(event);
+        }}
+        onCloseAutoFocus={event => {
+          onCloseAutoFocus?.(event);
+          if (!event.defaultPrevented && returnFocus.current?.isConnected) {
+            event.preventDefault();
+            returnFocus.current.focus({ preventScroll: true });
+          }
+        }}
         data-slot="dialog-content"
         className={cn(
           'ui-panel bg-background fixed top-1/2 left-1/2 z-50 grid w-[calc(100vw-2rem)] max-w-lg',

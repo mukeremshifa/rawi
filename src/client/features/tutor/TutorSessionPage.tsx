@@ -285,7 +285,12 @@ export function TutorSessionPage() {
   const [draft, setDraft] = useDraftState(draftPrefix + "draft", '');
   const [contextOpen, setContextOpen] = useState(false);
   const [streaming, setStreaming] = useState<string | null>(null);
-  const [failure, setFailure] = useState<Failure | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(() => {
+    const last = session?.messages.at(-1);
+    if (last?.role !== 'student' && last?.status !== 'interrupted') return null;
+    const student = [...(session?.messages ?? [])].reverse().find(m => m.role === 'student');
+    return student ? { code: 'upstream', message: 'The previous reply did not finish. Your message is saved.', retry: { text: student.text, action: 'message' } } : null;
+  });
   const controllerRef = useRef<AbortController | null>(null);
   const partialRef = useRef('');
   const endRef = useRef<HTMLDivElement>(null);
@@ -467,9 +472,9 @@ export function TutorSessionPage() {
           </Button>
           <Separator orientation="vertical" className="h-4" />
           <div className="flex min-w-0 flex-col">
-            <span className="truncate text-sm font-medium">
+            <h1 className="truncate text-sm font-medium">
               {session.title ?? topic?.title ?? 'Session'}
-            </span>
+            </h1>
             <span className="text-muted-foreground text-xs">
               {STAGE_LABEL[session.stage]}
               {session.endedAt ? ' · ended' : ''}
@@ -493,7 +498,7 @@ export function TutorSessionPage() {
             </Sheet>
           )}
           {session.archived && <Button variant="outline" size="sm" onClick={() => dispatch({ type: 'upsert-tutor-session', session: { ...session, archived: false } })}>Restore session</Button>}
-          {!session.endedAt && !session.archived && (
+                  {!session.endedAt && !session.archived && !course.archived && (
             <Button variant="outline" size="sm" onClick={endSession}>
               <CheckCircle2Icon />
               End session
@@ -502,7 +507,7 @@ export function TutorSessionPage() {
         </div>
 
         {/* Transcript */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto" tabIndex={0} role="region" aria-label="Tutor conversation">
           <div className="mx-auto flex w-full max-w-2xl flex-col gap-base px-gutter py-gutter">
             {session.messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
@@ -532,7 +537,6 @@ export function TutorSessionPage() {
                 <AlertDescription className="flex flex-col gap-tight">
                   <span>{failure.message}</span>
                   <span>Your message is saved. Nothing has been lost.</span>
-                  {session.archived && <Button variant="outline" size="sm" onClick={() => dispatch({ type: 'upsert-tutor-session', session: { ...session, archived: false } })}>Restore session</Button>}
           {!session.endedAt && !session.archived && (
                     <Button
                       variant="outline"
@@ -644,6 +648,7 @@ export function TutorSessionPage() {
                   rows={2}
                   placeholder="Answer, or ask for an explanation, a hint or an example…"
                   aria-label="Your message to the tutor"
+                  disabled={!!session.archived || course.archived}
                   className="min-h-0 resize-none"
                 />
                 {busy ? (
@@ -659,7 +664,7 @@ export function TutorSessionPage() {
                   <Button
                     size="icon"
                     onClick={() => send(draft)}
-                    disabled={!draft.trim() || !!unavailable}
+                    disabled={busy || !draft.trim() || !!unavailable}
                     aria-label="Send"
                   >
                     <SendIcon />

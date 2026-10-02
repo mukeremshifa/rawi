@@ -186,7 +186,7 @@ export function MaterialsPage() {
                       </div>
 
                       {material.origin === 'preview' && (
-                        <Badge variant="outline" className="text-warning-foreground">
+                        <Badge variant="outline" className="text-warning-text">
                           {ORIGIN_LABEL.preview}
                         </Badge>
                       )}

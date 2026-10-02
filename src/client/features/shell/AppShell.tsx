@@ -383,7 +383,7 @@ export function AppShell() {
         <WorkspaceSearch />
         <NotificationEntry />
         <Button variant="ghost" size="sm" asChild><Link to="/settings/profile" aria-label={`Profile and workspace settings${preferences.displayName ? ', ' + preferences.displayName : ''}`}><span className="flex size-7 items-center justify-center rounded-full bg-secondary text-xs font-semibold" style={{ border: `2px solid var(--accent-${preferences.accent})` }}>{preferences.displayName ? preferences.displayName.split(/\s+/).map(n => n[0]).slice(0, 2).join('').toUpperCase() : 'ME'}</span><span className="hidden lg:inline">Settings</span></Link></Button>
-        <ThemeToggle />
+        <div className="hidden sm:block"><ThemeToggle /></div>
       </header>
 
       {saveError && <Alert variant="destructive" className="rounded-none shrink-0"><AlertTitle>Changes are only in memory</AlertTitle><AlertDescription>Local saving failed. Keep this page open and export your work before reloading.<span className="inline-flex gap-2 ml-2"><Button size="sm" variant="outline" onClick={retrySave}>Retry save</Button><Button size="sm" variant="outline" onClick={() => exportWorkspace(state)}>Export recovery copy</Button><Button size="sm" variant="outline" asChild><Link to="/settings/data">Restore data</Link></Button></span></AlertDescription></Alert>}
@@ -394,7 +394,7 @@ export function AppShell() {
           </aside>
         )}
         <main ref={main} className="min-w-0 flex-1 overflow-y-auto">
-          <div key={location.pathname + location.search} className="h-full"><DraftNotice /><Outlet /></div>
+          <div key={location.pathname + location.search} className="flex h-full min-h-0 flex-col"><DraftNotice /><Outlet /></div>
         </main>
       </div>
     </div>

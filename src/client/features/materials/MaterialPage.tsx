@@ -130,8 +130,10 @@ export function MaterialPage() {
   }, [materialId]);
 
   if (!material || material.courseId !== course.id) return <NotFoundPage />;
+  const studyBlocked = !!material.archived || !!course.archived || material.origin === 'preview';
 
   const captureSelection = () => {
+    if (studyBlocked) { setSelection(null); return; }
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) {
       setSelection(null);
@@ -173,6 +175,7 @@ export function MaterialPage() {
   };
 
   const askTutor = (passageId: string, quote?: string) => {
+    if (studyBlocked) return;
     const passage = material.passages.find((p) => p.id === passageId);
     const ids = (passage?.topicIds.length ? passage.topicIds : material.topicIds).filter(id => topicMap.get(id)?.courseId === course.id);
     if (ids.length !== 1) { setPending({ activity: 'tutor', passageId, quote }); if (ids.length) setChoosing(true); else setEditing(true); return; }
@@ -194,6 +197,7 @@ export function MaterialPage() {
   };
 
   const practise = (passageId: string) => {
+    if (studyBlocked) return;
     const passage = material.passages.find((p) => p.id === passageId);
     const ids = (passage?.topicIds.length ? passage.topicIds : material.topicIds).filter(id => topicMap.get(id)?.courseId === course.id);
     if (ids.length !== 1) { setPending({ activity: 'practice', passageId }); if (ids.length) setChoosing(true); else setEditing(true); return; }
@@ -208,6 +212,7 @@ export function MaterialPage() {
   };
 
   const saveNote = (passageId: string, quote: string) => {
+    if (studyBlocked) return;
     const passage = material.passages.find((p) => p.id === passageId);
     const id = newId('mat');
     dispatch({
@@ -265,7 +270,7 @@ export function MaterialPage() {
           <>
             <Button variant="outline" size="sm" onClick={() => setEditing(true)}>Edit / Link topics</Button>
             <Button variant="outline" size="sm" onClick={() => dispatch({ type: 'update-material', materialId: material.id, patch: { archived: !material.archived } })}>{material.archived ? 'Restore' : 'Archive'}</Button>
-            <Button variant="outline" size="sm" disabled={!!material.archived || material.origin === 'preview'} onClick={() => practise(material.passages[0]?.id ?? '')}>
+            <Button variant="outline" size="sm" disabled={studyBlocked} onClick={() => practise(material.passages[0]?.id ?? '')}>
               <DumbbellIcon />
               Practise
             </Button>
@@ -370,7 +375,7 @@ export function MaterialPage() {
                     <Button
                       variant="ghost"
                       size="xs"
-                      disabled={!!material.archived} onClick={() => askTutor(passage.id)}
+                      disabled={studyBlocked} onClick={() => askTutor(passage.id)}
                     >
                       <MessageSquareIcon />
                       Ask the tutor
@@ -378,7 +383,7 @@ export function MaterialPage() {
                     <Button
                       variant="ghost"
                       size="xs"
-                      disabled={!!material.archived} onClick={() => practise(passage.id)}
+                      disabled={studyBlocked} onClick={() => practise(passage.id)}
                     >
                       <DumbbellIcon />
                       Practise

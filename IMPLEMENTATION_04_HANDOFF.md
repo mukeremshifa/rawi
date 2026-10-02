@@ -32,47 +32,63 @@ save failure and workspace export provide recovery, without adding a backend.
 
 ## Actually checked
 
-- `npm run build` passed. Vite reports the existing large-bundle warning.
-- `npx tsc --noEmit` passed.
-- The isolated Vite server on port 5174 and local API status endpoint returned
-  HTTP 200. No owner browser workspace was changed.
-- Temporary in-memory verification used four courses, over forty materials
-  and sets, long titles, five weeks of history and pending written feedback.
-- Store and request checks covered empty-workspace data, duplicate attempt
-  completion, exact answer context, server rejection of wrong-course review,
-  retained planner review targets, tutor organization without planner
-  completion, valid export/import and malformed import rejection.
-- Static React renders covered welcome, Home, courses, history, planner,
-  availability, reminders, settings, course setup, materials, practice, exams,
-  tutor and results. Additional checks covered revisited welcome, course-scoped
-  tutor lists and wrong-course result recovery.
-- Temporary verification files were removed. No permanent tests, CI or
-  deployment workflow was added.
+- `npm run build` and `npx tsc --noEmit` passed. Vite reports the existing
+  large-bundle warning.
+- Playwright drove isolated Chromium contexts against the dev server on port
+  5174. The owner's browser data was untouched. Runtime errors were monitored.
+- Entry checks covered empty setup, demo choice, revisited welcome, long course
+  drafts, confirmed topics, skipped guidance and returnable availability setup.
+- Material checks covered both input modes, text and Markdown files, unsupported
+  placeholders, size and read failures, retained drafts, topic repair and choice,
+  editable quoted notes, earlier cited evidence, archive, restore and deletion.
+- The study journey covered saved answers, reload, exact missed-answer review,
+  tutor drafts, tutor-origin practice, repeat attempts, scheduling, rescheduling
+  and an exact planner launch that completes its original follow-up once.
+- Exam checks covered full-paper feedback rules, persisted answers, protected
+  active runs, replacement prevention, immutable result snapshots, expiration
+  and one completion record. Written feedback failure and retry retained answers.
+- Recovery checks covered actual export downloads, explicit import replacement,
+  malformed JSON, cross-course references, malformed retained passages, quota
+  failure, retry, unreadable stored data and older workspace migration.
+- Management checks covered course and topic deletion impacts, archived deep
+  links, preserved history, wrong-course recovery, profile and study preferences,
+  shared availability, enabled reminders, read/dismiss and rescheduled reminders.
+- A temporary large workspace contained four courses, 64 additional materials,
+  64 additional sets, five weeks of history, 50 extra tutor messages and crowded
+  planner days. All-items access, filters and exact passage/message search passed.
+- A keyboard-only journey covered empty setup, topic confirmation, material
+  editing, Escape focus return, global search, scheduling and profile settings.
+- Light and dark layouts were checked at 1024 by 768, 1280 by 800, 1440 by 900,
+  640 by 400 and 390 by 844. Primary dialog actions remained reachable, Tab
+  stayed inside dialogs and horizontal page overflow checks passed.
+- Actual Chromium profile zoom at 200% passed core page overflow and dialog
+  reachability checks in both themes, with a measured 2x scale. Its temporary
+  browser profile was kept outside the project to avoid triggering dev reloads.
+- Axe scans found no WCAG A/AA violations in the sampled Home, planner, profile,
+  tutor and Add material dialog pages. This is a sampled scan, not a complete
+  accessibility certification.
+- Clearly labelled temporary local AI response fixtures covered success,
+  streaming, interruption, cancellation, navigation, budget failure, generation
+  rejection and retry. Fixture model provenance stayed explicit. No live model
+  requests were made and no fixture was added to the product runtime.
 
-## Outstanding verification and limits
+Browser verification exposed and fixed lost planner session links, active-exam
+replacement clearing drafts, misleading unsupported generation, inaccessible
+route headings and conversation scrolling, dialog animation and focus return,
+narrow layout overflow and dark-theme warning contrast. Recovery import also
+rejects existing cross-course references and malformed retained passage content.
 
-No manual browser checks were performed. Automatic approval review denied Edge
-access, and the owner chose to leave browser checks unverified. Static rendering
-does not verify event handling, reload recovery, file pickers, keyboard focus,
-runtime console errors, dialog scrolling or layout at the requested viewport
-sizes and zoom. Those acceptance checks remain outstanding.
+## Limits
 
-No live model calls or simulated response fixtures were used. The answer-aware
-request and validation path was checked, but generated replies, streaming,
-interruption, cancellation, retry and written feedback behavior remain
-unverified in the browser. The full reading-to-tutor-to-practice-to-scheduled
-review journey therefore has not been demonstrated interactively.
-
-Storage-quota failure, malformed nested historical data, older workspace
-migration, cited-material deletion, crowded planner layout, reminder timing
-and rescheduling, and keyboard-only settings and search need browser checks.
-Import validates record structure before replacement, but it is not an
-exhaustive schema validator for every historical format or draft field.
+Live Gemini quality and service integration were not exercised in this pass.
+Import validates current record structure and ownership, but does not constitute
+an exhaustive schema for every historical format or arbitrary draft field.
 
 File reading remains limited to plain text and Markdown. Unsupported files are
-labelled placeholders and are excluded from AI source context. Reminders are
-in-app only. Authentication, billing, cloud synchronization, external reminder
-delivery and deployment remain outside this local prototype.
+labelled placeholders and excluded from AI source context. Reminders are in-app
+only. Authentication, billing, cloud synchronization, external reminder delivery
+and deployment remain outside this local prototype.
 
-All four increments have implementation changes. Full acceptance is pending
-the outstanding interactive checks above. Nothing was pushed or deployed.
+Temporary verification files remain untracked in `.verification` because
+automatic approval review blocked their deletion. No permanent tests, CI or
+deployment workflow was committed. Nothing was pushed or deployed.

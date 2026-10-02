@@ -134,6 +134,8 @@ export function ExamBuilderPage() {
     () => ({
       id: existing && !existing.preset ? existing.id : newId('exam'),
       courseId: course.id,
+      archived: existing?.archived,
+      assessmentIds: existing?.assessmentIds,
       name: name.trim() || 'Untitled exam',
       sections,
       timing,
@@ -187,6 +189,8 @@ export function ExamBuilderPage() {
   };
 
   const start = () => {
+    if (state.activeExam) { toast.error('An exam is already open. Resume or abandon it first.'); return; }
+    if (existing?.archived) { toast.error('Restore this configuration before starting it.'); return; }
     const run = buildRun(config, pool, {
       ...(sessionId ? { plannedSessionId: sessionId } : {}),
       ...(assessmentParam ? { assessmentId: assessmentParam } : {}),
@@ -198,7 +202,6 @@ export function ExamBuilderPage() {
       return;
     }
     dispatch({ type: 'clear-draft', prefix: draftPrefix });
-    if (state.activeExam) { toast.error('An exam is already open. Resume or abandon it first.'); return; }
     dispatch({ type: 'save-exam-config', config });
     dispatch({ type: 'set-active-exam', run });
     navigate(path('/exams/run'));

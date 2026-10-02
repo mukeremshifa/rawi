@@ -462,7 +462,7 @@ export function PracticeSetupPage() {
       });
       navigate(
         `${path(`/practice/set/${set.id}`)}${
-          retryAttemptId ? `?retry=${retryAttemptId}` : sessionId ? `?session=${sessionId}` : ''
+          retryAttemptId || sessionId ? `?${new URLSearchParams({ ...(retryAttemptId ? { retry: retryAttemptId } : {}), ...(sessionId ? { session: sessionId } : {}) }).toString()}` : ''
         }`,
         { replace: true },
       );
@@ -567,7 +567,6 @@ export function PracticeSetupPage() {
           <Section title="Activity">
             <div className="grid gap-tight sm:grid-cols-2">
               {(Object.keys(ACTIVITY_FORMATS) as ActivityType[])
-                .filter((type) => !ai || AI_FORMAT[type])
                 .map((type) => (
                 <button
                   key={type}
@@ -588,6 +587,7 @@ export function PracticeSetupPage() {
                       ? 'One correct option each, checked exactly.'
                       : ACTIVITY_BLURB[type]}
                   </span>
+                  {ai && !AI_FORMAT[type] && <span className="text-xs text-muted-foreground">Question bank only</span>}
                 </button>
               ))}
             </div>
@@ -728,6 +728,7 @@ export function PracticeSetupPage() {
         </>
       )}
 
+      {ai && !AI_FORMAT[activity] && <Alert><AlertTitle>AI generation does not support this activity</AlertTitle><AlertDescription>Generation supports flashcards, multiple choice and written recall. Choose Question bank to keep this activity, or select a supported format.</AlertDescription></Alert>}
       <Section title="Session">
         <div className="flex flex-col gap-base">
           {retryQuestionIds.length === 0 && (
@@ -750,7 +751,7 @@ export function PracticeSetupPage() {
                 </span>
               </div>
               {!ai && capped && (
-                <p className="text-warning-foreground flex items-start gap-tight text-xs">
+                <p className="text-warning-text flex items-start gap-tight text-xs">
                   <AlertTriangleIcon className="mt-0.5 size-3 shrink-0" aria-hidden />
                   Only {available.length} questions match these settings, so the set
                   will have {available.length}. Add topics or difficulties to get more.
@@ -872,7 +873,7 @@ export function PracticeSetupPage() {
       <Card className="bg-muted/30">
         <CardContent className="text-muted-foreground flex flex-col gap-hairline text-xs">
           <span className="text-foreground font-medium">What this will give you</span>
-          {ai ? (
+          {ai && !AI_FORMAT[activity] ? <span>This activity needs matching questions from the question bank. No AI set will be created.</span> : ai ? (
             <span>
               Up to {aiLength} new {ACTIVITY_LABEL[activity].toLowerCase()} questions written
               from {aiPassages.length} {aiPassages.length === 1 ? 'passage' : 'passages'} of your

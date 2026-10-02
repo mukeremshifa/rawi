@@ -42,6 +42,7 @@
   --success-foreground: oklch(0.985 0 0);
   --warning: oklch(0.75 0.15 70);
   --warning-foreground: oklch(0.16 0 0);
+  --warning-text: oklch(0.4 0.09 70);
 
   /* ── Boundaries — see rule 5 ────────────────────────────────────────── */
   --border: oklch(0.9 0 0);
@@ -169,6 +170,7 @@
   --success-foreground: oklch(0.16 0 0);
   --warning: oklch(0.8 0.15 70);
   --warning-foreground: oklch(0.16 0 0);
+  --warning-text: oklch(0.8 0.15 70);
 
   --border: oklch(0.3 0 0);
   --border-strong: oklch(0.535 0 0);
@@ -248,6 +250,7 @@
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-warning-text: var(--warning-text);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
@@ -394,21 +397,21 @@
 @keyframes panel-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.96);
+    transform: scale(0.96);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
   }
 }
 @keyframes panel-out {
   from {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
   }
   to {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.96);
+    transform: scale(0.96);
   }
 }
 

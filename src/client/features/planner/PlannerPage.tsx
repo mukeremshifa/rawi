@@ -586,6 +586,12 @@ export function PlannerPage() {
                     <Link to={linkFor(focused)!}>Open it</Link>
                   </Button>
                 )}
+                {!linkFor(focused) && focused.link && focused.status === 'planned' && (
+                  <>
+                    <span>This target is missing or archived.</span>
+                    <Button size="sm" variant="outline" onClick={() => openEdit(focused)}>Repair target</Button>
+                  </>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"

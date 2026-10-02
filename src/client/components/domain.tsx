@@ -162,7 +162,7 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
 export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
   const style: Record<Outcome, string> = {
     correct: 'bg-success/15 text-success border-success/30',
-    partial: 'bg-warning/20 text-warning-foreground border-warning/40',
+    partial: 'bg-warning/20 text-warning-text border-warning/40',
     incorrect: 'bg-destructive/12 text-destructive border-destructive/30',
     skipped: 'bg-muted text-muted-foreground border-transparent',
     pending: 'bg-muted text-muted-foreground border-dashed border-border',
@@ -580,7 +580,7 @@ export function DueChip({ date, className }: { date: string; className?: string 
         'rounded-md border px-1.5 py-0.5 font-mono text-xs tabular-nums',
         past && 'text-muted-foreground',
         !past && tone === 'urgent' && 'border-destructive/40 text-destructive',
-        !past && tone === 'soon' && 'border-warning/40 text-warning-foreground',
+        !past && tone === 'soon' && 'border-warning/40 text-warning-text',
         !past && tone === 'later' && 'text-muted-foreground',
         className,
       )}

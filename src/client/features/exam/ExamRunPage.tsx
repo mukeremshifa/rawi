@@ -518,7 +518,7 @@ export function ExamRunPage() {
         {/* The bar that never scrolls away. */}
         <div className="bg-background flex shrink-0 flex-wrap items-center gap-snug border-b px-gutter py-snug">
           <div className="flex min-w-0 flex-col">
-            <span className="truncate text-sm font-medium">{config.name}</span>
+            <h1 className="truncate text-sm font-medium">{config.name}</h1>
             <span className="text-muted-foreground text-xs">
               {section.title} · question {activeExam.currentQuestionIndex + 1} of{' '}
               {questionIds.length}

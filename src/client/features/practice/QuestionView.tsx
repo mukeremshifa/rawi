@@ -79,7 +79,7 @@ export function QuestionView({
         <div className="flex flex-col gap-tight">
           {hintShown ? (
             <div className="bg-warning/10 border-warning/30 flex items-start gap-tight rounded-lg border p-snug text-sm">
-              <LightbulbIcon className="text-warning-foreground mt-0.5 size-4 shrink-0" aria-hidden />
+              <LightbulbIcon className="text-warning-text mt-0.5 size-4 shrink-0" aria-hidden />
               <div>
                 <p className="mb-hairline font-medium">Hint</p>
                 <p className="text-muted-foreground leading-relaxed">
