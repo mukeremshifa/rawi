@@ -14,6 +14,42 @@ npm run dev
 on 127.0.0.1:8787. The page opens and saved work stays usable without any AI
 configuration: AI actions say what is missing instead.
 
+## Chosen backend stack
+
+Decision recorded on 4 October 2026. This is the implementation target. The
+current prototype still uses the local API and browser storage described below.
+
+| Responsibility | Choice |
+| --- | --- |
+| Frontend | Existing React and Vite, hosted with Cloudflare Workers Static Assets |
+| API and AI streaming | Hono on Cloudflare Workers |
+| Database | PostgreSQL on Neon |
+| Queries and migrations | Drizzle with the Neon serverless driver |
+| Authentication | Better Auth hosted in the API, with records in Neon, Google sign-in first |
+| Files | Private Cloudflare R2 storage with authorized, short-lived upload and download URLs |
+| Initial monitoring | Workers logs and metrics |
+
+Use the Neon driver's HTTP interface for single queries and non-interactive
+transactions, and its WebSocket client when interactive transactions are needed.
+The API enforces ownership and keeps database and AI credentials server-side.
+Persist answers before grading, preserve cited material versions, and move AI
+spending reservations into database transactions. Track uploads with explicit
+pending, ready and failed states because R2 and Postgres do not share a transaction.
+
+Add Cloudflare Workflows when a feature needs durable background processing.
+Defer Hyperdrive, separate vector storage and heavy document-processing compute
+until measured needs justify them. AI provider and model selection remain
+separate from the infrastructure decision. Vertex AI remains the prototype's
+current integration.
+
+The main tradeoff is low initial infrastructure overhead in exchange for managing
+authentication and integration across Cloudflare and Neon. Select the Neon region
+and Worker placement using measurements from UAE networks. This decision does not
+promise UAE data residency or free hosting at a particular user count.
+
+Keep `npm install` and `npm run dev` usable throughout the migration, and preserve
+existing saved work. Provisioning and migration are subsequent implementation work.
+
 ## AI setup (Vertex AI)
 
 Tutoring, question generation and written feedback call Gemini on Vertex AI
