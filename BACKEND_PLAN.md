@@ -1,274 +1,156 @@
 # Rawi backend plan
 
-Status: architecture proposal for discussion, 3 October 2026. Product decisions confirmed in the conversation are separated from proposed implementation choices.
+Updated 4 October 2026. README.md is authoritative for the chosen stack. This document replaces the earlier provisional architecture. BACKEND_IMPLEMENTATION_BRIEF.md defines the first executable checkpoint.
 
-## 1. Confirmed product direction
+## 1. Product boundaries
 
-- Rawi is an openly accessible personal learning product with direct individual subscriptions.
-- Institutions can sponsor access for their members. Sponsorship does not restrict which subjects a learner studies.
-- Learning data belongs to the learner's independent workspace. Organization administration is a separate boundary.
-- Institutional integrations are later work.
-- Online use is the primary experience. Offline support is optional future work.
-- Cloudflare is the preferred application platform.
-- The initial audience is 1,000 users in the Middle East.
-- The first SaaS release supports PDF, Word, PowerPoint, text, and Markdown.
-- Preserve the existing tutor, practice, exam rehearsal, planner, and progress behavior unless we deliberately change it.
+Rawi is a personal learning SaaS with individual subscriptions and institutional sponsorship. Learners own independent workspaces and can study any subject. Organizations administer access without automatically gaining access to private study content. Institutional integrations and offline synchronization are later work.
 
-Database host, specific launch countries, identity and payment providers, prices, allowances, and retention periods remain open. Recommendations below remain provisional where they depend on those choices. The 1,000-user figure is an audience target, not 1,000 simultaneous AI requests.
+The initial audience is 1,000 users in the Middle East. Measure latency from UAE networks. This does not imply 1,000 simultaneous generations or UAE data residency.
 
-## 2. Architecture recommendation
+The complete first SaaS release targets PDF, Word, PowerPoint, text, and Markdown. Implementation is phased. Modern Office formats are the initial proposal. Legacy .doc and .ppt, OCR, and scanned-document expectations remain open.
 
-Keep the React application and a TypeScript backend in this repository. Build a modular application with an HTTP Worker and background Workflows. Both use the same domain services and database. Start with managed PostgreSQL, private R2 storage, and Workflows for durable orchestration. Use a document-processing container for libraries requiring a full runtime.
+## 2. Locked stack
 
-The API handles authentication, ownership checks, saved work, entitlements, and interactive tutor requests. Background Workflows handle extraction, question generation, written feedback, exports, and deletion. The database is authoritative for operation status and results. Workflow parameters identify work rather than containing entire documents or conversations. Store large intermediate artifacts in R2 and pass references between steps.
+| Responsibility | Choice |
+| --- | --- |
+| Frontend | Existing React and Vite, Workers Static Assets |
+| API and streaming | Hono on Cloudflare Workers |
+| Database | PostgreSQL on Neon |
+| Queries and migrations | Drizzle with the Neon serverless driver |
+| Authentication | Better Auth in the API, records in Neon, Google sign-in first |
+| Files | Private R2 with authorized short-lived upload and download URLs |
+| Initial monitoring | Workers logs and metrics |
 
-Suggested modules: identity, workspace, materials, learning, tutor, planning, billing, organizations, usage, and operations. Give modules clear service interfaces, without making them independent network services.
+Use Neon HTTP for single queries and non-interactive transaction batches. Use its WebSocket client when later queries depend on earlier results inside a transaction. Never emulate a transaction with BEGIN and COMMIT sent through separate HTTP requests. Create and close WebSocket clients within their request or operation, without retaining live connections across Worker invocations.
 
-### Proposed Cloudflare stack
+Use a request-scoped WebSocket-backed Drizzle adapter for Better Auth initially so interactive transactions are available. Verify the installed adapter and driver together. Simple application reads use HTTP. Generate the auth schema for the installed Better Auth version and manage it alongside application schema with Drizzle migrations.
 
-| Responsibility | Proposal | Reason |
-| --- | --- | --- |
-| React delivery | Workers Static Assets | Keep Vite and a same-origin API |
-| API and tutor streaming | Cloudflare Workers, TypeScript | Authorization and streamed model responses |
-| Primary database | Managed PostgreSQL through Hyperdrive | Transactions across learning records, grants, seats, and accounting |
-| Files and extraction artifacts | Private Cloudflare R2 buckets | Keep binaries outside the database |
-| Durable background processing | Cloudflare Workflows | Retriable steps and persisted execution state |
-| Native document parsing | Cloudflare Containers | Full runtime for PDF and Office libraries |
-| Model calls | Existing Vertex AI integration with hosted authentication | Preserve prompts and model provenance |
-| Recovery dispatch | Scheduled Worker scanning a bounded database outbox | Recover missing workflow starts |
+Hyperdrive, separate vector storage, heavy extraction compute, and extra monitoring vendors are deferred. Introduce Workflows when a feature must continue after a request ends. Accounts and course persistence do not require it.
 
-I recommend PostgreSQL rather than D1 for the first implementation. D1 remains viable at this audience size, but its current 10 GB per-database limit and eventual partitioning choices introduce a different growth model. PostgreSQL gives this design a straightforward home for transactions, relationship constraints, and optional row security. This is a design preference, not a claim that D1 cannot support 1,000 users. The tradeoff is a separate database vendor and a baseline database bill. Select that host after comparing regional latency, recovery, connection limits, and price.
+AI provider and model selection remain independent. Vertex AI is the prototype integration. Reuse its prompts and validation where useful, but adapt local credentials, Node runtime assumptions, and the filesystem ledger before hosted AI.
 
-Disable Hyperdrive query caching on the initial application binding. Its cache is enabled by default and writes do not invalidate cached reads. Entitlements, permissions, balances, and just-saved answers require fresh reads. Hyperdrive pools at transaction scope, so authorization context must be transaction-local. Add selective caching only for clearly safe read models later.
+## 3. Application and ownership
 
-Workflows orchestrate extraction but do not make CPU-heavy parsers ordinary Worker code. Prototype the container path with representative files before selecting a parser. If unsuitable, replace extraction behind the same job contract. Queues, KV, Vectorize, and a separate tutor Durable Object are optional additions when a specific use case needs them. Containers themselves use Cloudflare's Durable Object machinery.
+Keep one repository and a modular backend. Hono routes validate input and establish the actor. Services enforce ownership and state transitions. Drizzle repositories persist records. Provider adapters handle AI and file storage. Runtime-independent learning rules remain in src/shared.
 
-The current Node HTTP entry point, filesystem ledger, environment loading, and Application Default Credentials need runtime adaptation. Shared prompts, validators, and learning rules can remain. Do not assume nodejs_compat makes every current dependency deployment-ready.
+Mount /api/auth/* to Better Auth before catch-all routes. Application endpoints use /api/v1. Unknown API paths return JSON rather than the SPA document. Static Assets handles application deep links. Development uses Vite with an API proxy so cookies and OAuth callbacks share the public origin.
 
-Use managed authentication. Select the provider after deciding required sign-in methods and account recovery. Keep a Rawi user ID independent of provider identity IDs. Use one global learner identity space, with organization memberships in Rawi's database.
+Use Better Auth's stable user ID as the workspace owner reference. Email is mutable. Bootstrap one personal workspace per user through a unique owner constraint and an idempotent transaction. Google sign-in accepts personal and institutional accounts without domain restrictions. Register exact callback URLs and preserve Better Auth's origin, state, cookie, and CSRF protections. Production cookies are secure and HttpOnly.
 
-Stripe Billing is a candidate for individual checkout and institutional seat subscriptions. Merchant country, payment methods, and invoicing requirements must be checked before selecting it. Rawi's entitlement service remains independent of the billing provider.
+Derive ownership from the server-validated session. Scope every record lookup, nested relationship, upload, source reference, and AI operation. Browser-supplied owner IDs never confer access. Use scoped foreign keys where applicable. Row-level security is an optional additional layer rather than a substitute for service authorization or a checkpoint 1 requirement.
 
-Avoid selecting an ORM or HTTP framework before the runtime and team preferences are settled. Their required capabilities are typed validation, transactions, migrations, streaming, and explicit SQL access when needed.
-
-## 3. Identity, ownership, and authorization
-
-Create one personal workspace per user initially. Workspace ownership does not depend on an organization membership, email domain, subscription, or active payment method.
-
-An identity is the combination of provider and provider subject. Email can change and is not the database primary key. Link additional sign-in methods only after proof of control. Accept an institutional invitation into the user's existing account rather than silently creating another learner account.
-
-For a browser application, prefer server-validated sessions in secure, HttpOnly cookies. Use CSRF protection on state-changing requests, explicit session expiry and revocation, and a same-origin API where practical. Sign-out clears private client caches. Require stronger authentication for privileged administration when the selected provider supports it.
-
-Every learner-data operation resolves the workspace from the authenticated user. Never accept an owner ID from the browser as authority. References to courses, materials, questions, and attempts must be checked within that workspace. Use scoped foreign keys or equivalent constraints so a valid ID from another workspace cannot be linked accidentally.
-
-Organization roles initially cover owner, administrator, billing administrator, and member. Role permissions apply to organization administration. Membership alone provides no permission to read a learner's courses or tutor messages. Platform support access is exceptional, explicit, and audited.
-
-PostgreSQL row-level security can add a second layer of isolation. If used, run application queries with a role that cannot bypass policies and set request context inside each transaction. Policies are not a substitute for service authorization. Worker access must be scoped too.
+Organization permissions apply to organization administration. Sponsorship does not transfer ownership. Private support access, if introduced, is explicit and audited. Account changes clear private client caches before another workspace renders.
 
 ## 4. Data model
 
-Normalize records that need independent updates, filtering, authorization, or history. Use validated JSON for varied answer formats, rubric structures, and immutable snapshots. Do not store the entire current browser state as a single database record.
+Normalize independently mutable and queryable records. Use validated JSON for variable answers and immutable snapshots. Do not save the entire AppState as one cloud JSON record.
 
-| Area | Proposed records | Important relationships |
+| Area | Records | Invariant |
 | --- | --- | --- |
-| Identity | users, auth identities, sessions as required by provider | Stable Rawi identity, multiple verified sign-in methods |
-| Workspace | workspaces, preferences, drafts | One personal workspace per user initially |
-| Organization | organizations, memberships, invitations | A user may belong to multiple organizations |
-| Commercial access | billing accounts, subscriptions, plan versions, access grants, seat assignments | Individual or organizational payer, grants issued to learners |
-| Learning structure | courses, topics, topic relationships | Scoped to a workspace |
-| Material library | materials, material versions, file objects, passages, passage-topic links | Passages belong to immutable material versions |
-| Questions | questions, question versions, rubrics, practice sets, set items | Sets reference fixed question versions |
-| Practice and rehearsal | runs, run items, answers, attempts, feedback revisions | Answers bind to the question version actually shown |
-| Tutoring | tutor sessions, messages, citation links, session summaries | Ordered messages, citations to material versions |
-| Planning | assessments, availability, exceptions, planned sessions, check-ins | Learner calendar spanning courses |
-| Operations | operations, outbox, usage reservations, usage entries, webhook inbox, audit records | Durable work, accounting, and recovery |
+| Identity | Better Auth user, session, account, verification | Library-compatible schema and stable identities |
+| Workspace | workspaces, preferences, drafts | One personal owner, revisioned changes |
+| Courses | courses, topics, topic links | Workspace and course scoped relations |
+| Materials | materials, versions, passages, uploads, file objects | Citations retain exact source versions |
+| Questions | questions, versions, rubrics, sets and items | Fixed question versions in saved sets |
+| Learning | runs, answers, attempts, feedback revisions | One finalized attempt per run |
+| Tutor | sessions, ordered messages, citations, summaries | One active generation per session initially |
+| Planner | assessments, availability, exceptions, sessions, check-ins | Completion links to actual activity |
+| Commercial | billing accounts, subscriptions, grants, usage accounts | Payer separate from learner ownership |
+| Organizations | memberships, invitations, seat assignments | Atomic seat allocation |
+| Operations | operations, reservations, usage entries, outbox, webhook inbox | Repeated delivery does not duplicate results |
 
-An attempt is the completed learning record. A run is the mutable activity in progress. Submitting a run freezes its answer snapshot and creates or finalizes one attempt in a transaction. Written feedback may arrive later and has its own revision history.
+Implement tables when their feature arrives. Checkpoint 1 needs auth, workspace, preferences, courses, and topics. Future records are architecture guidance, not a request for empty infrastructure.
 
-Common mutable records have an ID, workspace ID where relevant, timestamps, and a revision number. Archive hides records without breaking history. Permanent deletion follows a separate workflow. Index common reads by workspace, course, status, and timestamp. Apply uniqueness constraints to message sequence numbers, operation keys, webhook IDs, active seat assignments, and run-to-attempt relationships.
+Mutable records have revisions and timestamps. Reject stale revisions rather than overwrite newer changes. Use unique constraints for message sequences, create keys, and run finalization. Paginate histories. Archive preserves history. Permanent deletion has its own lifecycle. Store instants in UTC, calendar dates as dates, and learner timezones as IANA identifiers.
 
-Preserve source versions even after a material edit. A tutor citation must open the passage actually used. An explicit permanent deletion can remove source content and leave a clear unavailable-source reference. It must not quietly redirect old citations to new text.
+## 5. Access and billing
 
-## 5. Subscriptions and sponsorship
+A billing account pays, an access grant provides benefits for a period, and a usage account attributes consumption to a grant and payer. Membership and sponsorship are distinct. Organization administrators need not consume learner seats.
 
-Keep three independent concepts:
+Proposed policy: combine feature access from active grants, but attribute each paid operation to one eligible funding grant. Do not silently charge an individual when sponsored allowance runs out. Centralize grant selection and allowance rules. Prices and funding precedence remain product decisions.
 
-1. A billing account pays for a subscription or agreement.
-2. An access grant gives a learner a versioned set of benefits for a defined period.
-3. A usage account records consumption attributed to a grant and payer.
+Show overlapping personal and sponsored coverage. Offer an explicit subscription transition instead of silently cancelling or restarting billing. Sponsorship expiry preserves learning records. Proposed lapse behavior permits reading and exporting while restricting new paid AI. Retention and edit permissions remain open.
 
-Membership and sponsorship are separate. A member can remain in an organization after their sponsored seat ends. An organization administrator need not consume a learner seat.
+Invitations are short-lived, single-use, and accepted into an authenticated account. Allocate the seat and grant atomically. Keep reassignment history. Email domains alone do not establish organizational authority.
 
-Recommended initial policy: feature availability is the union of active grants, while each paid operation uses one eligible funding grant. Select a default funding grant explicitly and record it on the operation. Do not silently pool all sponsors' budgets or charge a personal payment method when sponsored capacity runs out. Multiple funding sources can be supported in the data model without exposing a complex selector at launch.
+Select the payment provider at the billing checkpoint. Verify webhook signatures, store event IDs durably, process idempotently, and reconcile current subscription state. Handle duplicate and reordered events. Checkout redirects are not proof of payment.
 
-Recommended institutional offering: a fixed allowance per sponsored learner, plus an organization spending ceiling. Pooled organization allowances can follow if customers need them. This limits one member's ability to exhaust everybody's usage.
+## 6. AI execution and spending
 
-Personal billing must remain visible when sponsorship is added. Show overlapping coverage and offer an explicit transition such as cancellation at the end of the paid period. Do not automatically resume a cancelled personal subscription when sponsorship expires.
+The browser supplies record IDs and new user input. The server loads authorized materials, conversation, questions, and rubrics. Never trust client grades, answer keys, ownership, or history as authoritative.
 
-Initial sponsorship flow: organization purchases seats, administrator invites members, a signed-in user accepts a short-lived invitation, and the server atomically allocates a seat and creates the grant. Concurrent acceptances cannot exceed purchased capacity. Reassignment ends the former grant and creates a new assignment with history. Domain verification may prove organizational control later, but an email domain alone does not grant administrative power.
+Record logical operation ID, owner, task, status, input versions, prompt version, model, funding source, and execution attempts. Use queued, running, succeeded, failed, cancelled, and interrupted states as applicable.
 
-Recommended lapse behavior: preserve access to reading and exporting existing work while restricting new paid AI operations. Storage retention, edit permissions, payment grace periods, and deletion schedules still need product decisions. An expiring sponsorship never transfers data to the institution.
+Atomically reserve allowance and estimated cost before provider calls. Use fixed-precision or integer accounting and record the billing period. Settle reported usage, release unused capacity, and retain reconcilable estimates for ambiguous outcomes. Internal cost and customer allowance are distinct.
 
-Verify billing webhook signatures, durably record incoming events, acknowledge them, and process them asynchronously. Duplicate delivery is expected. Reconcile current subscription state so old or reordered events cannot restore expired access. Periodic reconciliation recovers missed webhooks. Checkout redirects are not proof of paid access.
+Replace the JSON ledger and process-local concurrency counter before hosted paid AI. Enforce limits across Worker instances. Never hold database transactions during model calls. Bound retries. Database idempotency prevents duplicate Rawi results but cannot guarantee a provider never bills an ambiguous retry.
 
-## 6. AI operations and accounting
+When durability is needed, commit operation and outbox together, start a Workflow with a stable operation-derived ID, and recover undispatched work. Retried steps tolerate repeated side effects and check deletion or cancellation before publishing. Large intermediate artifacts belong in R2, not workflow parameters.
 
-Keep the existing provider integration initially, behind a small interface for streamed text, structured responses, cancellation, and usage metadata. Verify available models and prices when implementing. Prototype model names and price comments are configuration history, not production pricing authority.
+## 7. Learning behavior
 
-Replace local Application Default Credentials with a production credential strategy for Workers. Cloudflare AI Gateway documents Vertex AI authentication and is a candidate adapter, subject to regional endpoint and model compatibility. If used, disable content logging and caching unless deliberately enabled for an appropriate purpose. Gateway analytics do not replace the database usage ledger. Credentials remain server-side, narrowly scoped, and rotatable.
+Tutor flow: authenticate, validate ownership, save student message and operation, load versioned context, reserve usage, and stream. Preserve newline-delimited JSON initially. Validate citations against supplied passages. Periodically save partial output. Reload retrieves saved state rather than regenerating.
 
-Each AI operation records its user, workspace, funding grant, type, status, input references, prompt version, model, timestamps, retry history, and usage. Save the actual model that answered. Store enough versioned input references to explain a result without duplicating private text in operational logs.
+Stop requests server cancellation and closes the stream. Disconnection triggers best-effort cancellation and partial saving. A crash may lose uncheckpointed text, but recovery exposes an interrupted state. Retry after visible output is a user action. Allow one active generation per session initially.
 
-Use an explicit state machine: queued, running, succeeded, failed, cancelled, or interrupted. Execution attempts are separate from the user's logical operation. A retry must not create another practice set or apply feedback twice.
+Start with existing topic and keyword retrieval, adding database text search where useful. Evaluate Arabic and mixed-language recall. Add semantic retrieval only when measured failures justify it. Authorization belongs inside retrieval and uploaded instructions remain untrusted source text.
 
-Before a provider call, atomically reserve allowance and internal estimated cost. Use integer accounting units or fixed-precision decimals. Enforce per-user, funding-account, and global limits across all API and worker instances. Record the billing period on the reservation so a request crossing a renewal boundary settles in the correct period.
+Save answers before grading. Objective marking runs on the server using shared rules. Written feedback stays pending until valid feedback persists. Introduce Workflows when grading must survive navigation. Regrading creates a revision. Save generated questions and their set atomically. Reopening a set never regenerates.
 
-After the call, settle actual reported usage and release unused reservation. Release the whole reservation only when the call is known not to have been sent. Unknown outcomes retain a bounded, reconcilable estimate. Distinguish internal provider cost from the user's product allowance and any customer invoice.
+The server owns rehearsal deadlines, section locks, snapshots, and submission. Active-run payloads exclude keys and feedback. Submission atomically accepts eligible final answers and creates one attempt. Expired runs finalize from saved answers. Preserve no-feedback-before-full-submission behavior.
 
-Provider requests cannot generally be made exactly once across a network failure. Idempotency can prevent duplicate Rawi results, but cannot promise that a provider never charges for an ambiguous retry. Track every execution attempt, bound retries, and avoid automatic retry after visible tutor output has begun.
+Progress derives from attempts and feedback with assisted, self-rated, independent, and legacy evidence distinguished. Planner changes use revision checks and linked sessions complete once. Derived caches, if needed, are rebuildable and algorithm-versioned.
 
-Use a database outbox: create domain state and pending work in one transaction, then start a Workflow with a deterministic instance ID derived from the operation. A scheduled dispatcher recovers missing starts. Workflow steps claim operations using leases and conditional state transitions. Unique result constraints prevent duplicate commits. A recovery process finds expired leases and undispatched work. Step retries still require idempotent external side effects. Never hold a database transaction open during a model call.
+## 8. Files and extraction
 
-## 7. Tutor request lifecycle
+Create a pending upload record with a unique object key before issuing an authenticated short-lived R2 upload URL. Configure narrow browser CORS. Finalization verifies actual size and type before marking ready. Expired and abandoned uploads receive cleanup and release reservations.
 
-1. The browser sends a session ID, message, action, optional focus passage ID, and idempotency key.
-2. The API validates ownership, session revision, entitlement, and input size.
-3. Persist the student message and AI operation before calling the model.
-4. Load conversation and learning context from authorized server records. Pin all material versions used.
-5. Reserve usage, invoke the model, and stream text. Preserve the existing newline-delimited JSON protocol initially.
-6. Save partial output periodically, with a monotonic sequence or offset. Commit the final validated reply, citations, usage, and state transition together where possible.
-7. Refreshing the page retrieves saved operation status and output. It does not automatically start another generation.
+Neon and R2 do not share a transaction. Use pending, ready, and failed states, idempotent finalization, and reconciliation. Prevent reuse of a still-valid upload URL from replacing a finalized source by promoting the verified object to an immutable final key or an equivalent verified version strategy. Authorize downloads separately. Do not log signed URLs.
 
-Allow one active generation per tutor session initially to preserve conversation order. Parallel work in separate sessions is controlled by user and platform limits.
+Upload readiness and extraction readiness are separate. A stored PDF is not automatically usable tutor material. Begin with real text and Markdown, then evaluate PDF, DOCX, and PPTX extraction on representative files. Report partial and unreadable content honestly.
 
-On browser disconnection, attempt to cancel the upstream call and save the interrupted output. On explicit Stop, use a server cancellation request as well as closing the browser stream. Cancellation is best effort and may still incur usage. If the process crashes, recovery marks the operation interrupted and exposes a retry. A later durable live-generation service is possible if continuing through disconnection becomes important.
+Cloudflare's documented Markdown converter supports PDF and DOCX but does not list PPTX. It is a candidate for some inputs, not a complete solution. Defer heavy compute until evaluation demonstrates need. Add Workflows when the selected processing path must outlive an HTTP request.
 
-Build context on the server using selected passages, topic links, recent messages, and bounded summaries of prior work. Begin with the existing retrieval rules plus database text search. Add semantic retrieval when a representative set of learner queries shows it improves recall. Keep ownership filters inside retrieval, before selecting results. Summaries remain derived data with references and can be rebuilt or deleted.
+Preserve PDF pages, slide locations, and Word paragraph or section anchors. Separate extracted text from generated diagram descriptions. Evaluate Arabic, English, mixed direction, tables, equations, scans, and speaker notes. Set file, page, processing-time, and storage limits during the materials work. Permanent deletion cleans files, extracts, indexes, and derived context consistently.
 
-Treat uploaded material as untrusted source content. Validate returned citations against the exact passages sent. Citation validity proves the reference exists, not that the model's claim is correct. Keep the existing distinction between material-grounded and general explanations.
+## 9. Client migration
 
-## 8. Material ingestion
+Keep npm install and npm run dev usable. Preserve explicit local mode during migration. Online failures never fall back to demo storage. Signing in does not automatically merge local work into an account.
 
-The confirmed first scope is PDF, Word, PowerPoint, text, and Markdown. Proposed launch extensions are .pdf, .docx, .pptx, .txt, and .md. Legacy .doc and .ppt support is a separate conversion decision. Scanned PDFs need OCR or an explicit partially readable state. Diagrams, formulas, tables, speaker notes, and reading order require acceptance examples before choosing a parser.
+Checkpoint 1 offers a selectable online foundation for courses, topics, and preferences. Other online areas show an unavailable state until migrated. Existing prototype features remain usable in local mode. Avoid silently mixing local activity with cloud records.
 
-Cloudflare's documented Markdown conversion supports PDF and DOCX but does not list PPTX. Do not use it as the only ingestion path. Evaluate a dedicated parser container covering the required formats. Preserve source text separately from model-generated diagram descriptions. Use page locations for PDF, slide locations for PowerPoint, and section or paragraph anchors for Word where pagination is not preserved.
+Migrate each feature to a server cache plus local UI state. Show loading, saving, saved, conflict, and failed states. Preserve unsent text through brief connection failures without building general offline synchronization.
 
-Include Arabic, English, mixed-direction text, equations, multi-column PDFs, and slide tables in the evaluation corpus. Language requirements need confirmation, but these checks fit the stated audience. Retrieval tokenization and summaries must not assume English. The current four-character keyword filter is insufficient evidence of Arabic retrieval quality.
+A later explicit import validates versioned exports, remaps references, preserves source and legacy provenance, and deduplicates repeated imports. Stage large imports before publishing. Retain unsupported records as downloads and preserve browser originals until verified. Never silently import a course while dropping its history.
 
-Proposed pilot limits are 25 MB per file and 200 pages or slides per processing job. These are tunable application limits to validate with real course materials, not platform limits or promised plan allowances. Explain encrypted, corrupt, oversized, and unsupported files clearly. Processing limits do not determine subscription storage quotas.
+## 10. Delivery checkpoints
 
-Upload flow: reserve storage allowance, issue a restricted upload destination, upload into private quarantine storage, verify actual size and type, then enqueue processing. Finalization checks the stored object rather than trusting client claims. Expire unfinished uploads and release their reservations.
-
-The parsing container inspects files and extracts text in a constrained process with resource limits. The Workflow preserves page or slide locations, creates versioned passages, and publishes the material when its usable content is ready. Show queued, processing, ready, partially readable, or failed states. A failed extraction never becomes fabricated study content.
-
-Keep original files, extracted artifacts, and database metadata linked by version. Limit file bytes, pages, extraction time, and total workspace storage. Downloads require authorization and short-lived access URLs. Signed URLs are bearer access and should be narrowly scoped and short lived.
-
-Deduplicate repeated uploads within a workspace when appropriate. Do not expose whether another learner has uploaded the same file. Archive excludes a material from new retrieval while retaining references. Permanent deletion removes originals, extracted text, search entries, and derived context according to the defined retention policy.
-
-## 9. Practice, grading, rehearsal, and planning
-
-Generated practice is a background operation. Validate output, then save the question versions and set atomically. Return the saved result on duplicate requests. Reopening a set never triggers generation.
-
-Save answers before requesting feedback. Grade objective answers on the server using the existing deterministic rules. Written feedback runs in the worker and continues after navigation. Failed or pending feedback remains excluded from progress. Regrading creates a new revision with provenance.
-
-Exam rehearsals retain the existing rule that answers, marks, and feedback are not revealed until the full paper is submitted. The server owns deadlines, section locks, finalization, and the question snapshot. Question payloads for an active rehearsal exclude answer keys and explanations. These remain personal rehearsals, with no implied proctoring or formal institutional gradebook.
-
-Persist answers incrementally. Submission includes the latest unsaved answer changes and finalizes them atomically if the run is still eligible. Server time decides deadline acceptance. Duplicate submissions return the same attempt. A recovery process finalizes expired runs using saved answers. Define the late-answer behavior visibly in the product.
-
-Progress remains derived from attempts and feedback rather than an independently editable score. Materialize summaries only when needed, with an algorithm version and a rebuild path. Preserve self-rated, assisted, and independent evidence distinctions. Imported legacy results retain their provenance.
-
-Move planner application and linked-session completion into transactional server operations. Applying a proposed week checks its base revision to avoid overwriting newer manual changes. Store instants in UTC, user time zones as IANA identifiers, and date-only assessments as dates. Study days and streaks use the learner's timezone rather than the server clock.
-
-## 10. API and client changes
-
-Use a versioned JSON API with runtime input validation and a consistent error envelope containing code, message, request ID, and retry guidance. Use cursor pagination for histories and libraries. Build focused aggregate reads for Home and Progress instead of loading every workspace record at startup.
-
-| Operation | Example endpoint |
-| --- | --- |
-| Account and access | GET /api/v1/me, GET /api/v1/entitlements |
-| Course library | GET and POST /api/v1/courses |
-| Edit a course | PATCH /api/v1/courses/:id with expected revision |
-| Upload and processing | POST /api/v1/uploads, POST /api/v1/uploads/:id/finalize |
-| Tutor | POST /api/v1/tutor-sessions/:id/messages |
-| Generate practice | POST /api/v1/practice-sets/generate |
-| Run and answers | POST /api/v1/runs, PUT /api/v1/runs/:id/answers/:itemId |
-| Submit work | POST /api/v1/runs/:id/submit |
-| Operation recovery | GET /api/v1/operations/:id, POST /api/v1/operations/:id/cancel |
-| Sponsorship | POST /api/v1/organizations/:id/invitations |
-| Account portability | POST /api/v1/exports, POST /api/v1/imports |
-
-Use idempotency keys for creates, submissions, generation, and billing mutations. Scope keys by actor and operation, store a request fingerprint, and reject reuse with different content. Use revision checks on mutable records and explicit conflicts instead of last-write-wins replacement of whole sessions or workspaces.
-
-Convert the client store into a cache of server data plus local UI state. Keep navigation state and presentation preferences local where appropriate. Autosave drafts online, display saving, saved, and failed states, and preserve unsent text during a transient connection failure. This limited recovery does not require a general offline synchronization system.
-
-For the first release, refetch on navigation, window focus, and operation completion. A notification socket is unnecessary until a specific live interaction needs it.
-
-## 11. Privacy, recovery, and operations
-
-Recommended organization reporting is seats, invitation status, and aggregate adoption or allowance usage. Do not expose subjects, documents, individual answers, or conversations by default. Define report thresholds to avoid revealing activity through very small groups.
-
-Track request latency, save failures, operation queue age, stuck jobs, AI latency, provider failures, unknown usage, webhook delay, and cost per active learner. Log IDs and structured failure categories, not document contents or conversation text. Keep secrets in managed configuration and restrict worker credentials to their tasks.
-
-Use managed database backups with point-in-time recovery, recoverable object storage policies consistent with deletion commitments, and a documented restore procedure. Proposed initial recovery targets are at most 15 minutes of database data loss and restoration within four hours. These are targets to validate, not service promises. A restored database and object store must remain referentially consistent.
-
-Exports include a versioned manifest and available source files. Account deletion revokes sessions and grants, stops new work, and queues cleanup across files, database content, derived context, and indexes. Preserve only deliberately defined minimal billing or audit records. Organization deletion ends sponsorship without deleting learners' personal accounts.
-
-Before launch, settle the intended ages, countries served, retention periods, and whether any institution requires regional processing. A regional database alone does not establish regional processing for AI, authentication, logs, or backups. These product and contractual requirements determine service configuration. This plan makes no compliance certification claim.
-
-## 12. Capacity and economics
-
-The target audience is 1,000 users. A provisional validation workload is 100 simultaneous active sessions, 20 simultaneous tutor generations, and 10 concurrent background jobs, with a separate burst scenario of 50 tutor generations. These are sizing assumptions to revise with pilot telemetry, not measured capacity. Institutional onboarding also needs an upload burst scenario.
-
-Use shared database-backed admission for paid model calls, replacing the process-local counter. Bound Workflow and parser concurrency separately so ingestion and generation do not crowd out tutoring. Reserve some provider capacity for interactive requests. Hyperdrive connection limits must fit the database budget, including administration and recovery connections.
-
-For an illustrative storage envelope, 1,000 learners with 20 files averaging 5 MB means about 100 GB of originals before extracted artifacts, previews, and backups. This is a scenario, not a forecast. Estimate model usage from measured tokens per turn and questions per study session.
-
-Proposed experience targets are ordinary reads below 500 ms at the 95th percentile, acknowledged saves below one second, and visible operation status immediately after durable job creation. Measure from launch countries. Model first-token latency and extraction time are separate metrics dependent on provider and document complexity.
-
-Estimate monthly cost as fixed infrastructure plus model usage, extraction, storage, egress, authentication, and payment charges. Track both typical learners and heavy usage. Set commercial allowances only after measuring representative learning sessions. No exact price or capacity promise is justified from the prototype alone.
-
-Use Cloudflare's network for delivery and choose one primary database region based on measurements from launch countries. Evaluate Worker placement near the database for query-heavy routes. R2 location hints are best effort and differ from jurisdiction restrictions. Do not promise UAE-only or Saudi-only storage or processing from a generic Cloudflare deployment. Country residency, if required, needs an end-to-end review including identity, AI, extraction, logs, and backups. Add database regions or separate search when measurements or requirements justify them.
-
-## 13. Migration and delivery sequence
-
-Keep npm install and npm run dev working. Retain an explicitly separate local demo mode until a backend checkpoint is chosen. Production never silently falls back to demo storage after a server failure. No infrastructure or application behavior changes are made by this planning document.
-
-| Milestone | Scope | Observable completion |
+| Checkpoint | Scope | Completion evidence |
 | --- | --- | --- |
-| 1. Accounts and persistence | Identity, workspace ownership, courses, topics, preferences, API validation | A learner can save work and reopen it from another browser. Another account cannot read it |
-| 2. Materials | Private uploads, versions, extraction worker, passage locations | Supported materials become readable, failure is visible, old citations remain stable |
-| 3. Durable learning | Runs, answers, tutor persistence, feedback jobs, progress and planner | Navigation and retries preserve work. Duplicate submissions produce one attempt |
-| 4. Individual subscriptions | Checkout, grants, usage reservations, renewals, lapse behavior | Paid access follows reconciled billing state and simultaneous requests respect allowances |
-| 5. Institutional sponsorship | Organization roles, invitations, seats, grants, reporting | A user gains and loses sponsorship while keeping the same workspace. Seat allocation is atomic |
-| 6. Launch operations | Export, deletion, restore procedure, operational visibility, capacity measurements | Restore and recovery scenarios are demonstrated and launch capacity is measured |
+| 1. Online foundation | Hono, Neon, Drizzle, Google auth, workspace, courses, topics, preferences | Two accounts isolated, second browser sees saved work, local mode preserved |
+| 2. Material storage | R2 lifecycle, immutable versions, text passages | Duplicate finalization safe, unauthorized access rejected |
+| 3. Learning persistence | Runs, answers, attempts, tutor history, planner, server rules | Conflicts visible, repeated submit creates one attempt |
+| 4. Hosted AI and processing | Database budgets, hosted credentials, streaming, durable jobs, evaluated extraction | Answers survive failure, jobs recover, required formats readable |
+| 5. Individual subscriptions | Payment provider, grants, limits, reconciliation | Renewal and lapse correct, concurrency respects allowances |
+| 6. Sponsorship | Organizations, invitations, seats, reporting | Workspace preserved, seats cannot overallocate |
+| 7. Release readiness | Complete import/export, deletion, restore, capacity measurements | Existing work transfers safely and recovery demonstrated |
 
-Build the entitlement and operation abstractions during the early milestones, using explicit development grants before live billing. Ship institutional administration after the individual flow works, while keeping the sponsorship schema compatible from the beginning.
+Budget enforcement precedes hosted provider calls even though billing arrives later. Ownership stays independent of payment from checkpoint 1 without requiring billing implementation then.
 
-Import browser data through a versioned import operation. Validate all records, remap IDs within the destination workspace, preserve material references and historical provenance, and deduplicate repeat imports using an import ID and fingerprint. Stage large imports before making them visible. Report unsupported records and provide their originals for download. Keep the browser export until the user has verified the server copy. Never overwrite established server data automatically.
+## 11. Operations and remaining decisions
 
-Retain the domain rules in shared modules where useful. Replace browser trust in grading rubrics, context passages, marks, timestamps, and ownership with server-loaded records. Replace the local JSON ledger and process-local concurrency counter before running multiple instances. Update stale comments claiming no server or generation exists as the affected modules are migrated.
+Use Workers logs and metrics with request and operation IDs, latency, failures, and job age where applicable. Exclude credentials, session tokens, signed URLs, and private learning text. Measure Neon cold and warm behavior, API latency, model latency, extraction, and cost separately.
 
-Verification during implementation should exercise the dev server with two accounts, conflicting edits, lost connections, duplicate operations, material revisions, pending feedback, repeated billing events, full seats, expired sponsorship, export, and restore. This is the planned acceptance scope. No checks have been executed against an implemented backend and no test or CI scaffolding is introduced here.
+Select Neon region and Worker placement through UAE measurements. Delivery location is not residency. Configure recovery for the actual Neon plan and reconcile database and object restoration. Set retention before commercial promises.
 
-## 14. Decisions needed to finalize implementation
+For 1,000 users, provisional checks can use 100 active sessions, 20 concurrent tutor generations, and a 50-generation burst. These are proposed workloads, not measured capacity. Twenty files averaging 5 MB per learner implies about 100 GB of originals before derived artifacts. Forecast cost from actual usage.
 
-1. Database host, operating budget, and credits within the preferred Cloudflare application architecture.
-2. Specific Middle East launch countries, learner ages, and any country-specific storage or processing requirements.
-3. OCR expectations, language coverage, and whether legacy .doc and .ppt files are required.
-4. Sign-in methods, account recovery, and whether institutional SSO is needed for the first customer.
-5. Individual plans, trial or free access, AI allowances, and storage limits.
-6. Sponsorship funding precedence, personal billing transition, and seat reassignment policy.
-7. Lapse behavior, data retention, export, and permanent deletion policy.
-8. Organization reporting scope and any regional-processing commitments.
+Remaining decisions belong to their checkpoints: domain and credentials, Neon region, hosted AI authentication and models, extraction and OCR, payment provider and plans, sponsorship overlap, lapse behavior, retention, and reporting. They do not block checkpoint 1 code. Missing credentials limit integration verification rather than justify fake authentication or stack substitutions.
 
-## References checked for this proposal
+## References
 
-- [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/) documents application and static asset delivery.
-- [Hyperdrive connection pooling](https://developers.cloudflare.com/hyperdrive/concepts/connection-pooling/) explains transaction scope. [Query caching](https://developers.cloudflare.com/hyperdrive/concepts/query-caching/) documents default caching and read-after-write behavior.
-- [D1 limits](https://developers.cloudflare.com/d1/platform/limits/) documents the per-database limit used in the comparison.
-- [Workflows limits](https://developers.cloudflare.com/workflows/reference/limits/) and [retry behavior](https://developers.cloudflare.com/workflows/build/sleeping-and-retrying/) inform orchestration boundaries.
-- [Cloudflare Containers](https://developers.cloudflare.com/containers/) supports full-runtime processing. [Markdown conversion formats](https://developers.cloudflare.com/workers-ai/features/markdown-conversion/supported-formats/) does not currently list PowerPoint.
-- [AI Gateway Vertex AI integration](https://developers.cloudflare.com/ai-gateway/usage/providers/vertex/) documents authentication and endpoint considerations.
-- PostgreSQL owners and privileged roles can bypass ordinary row policies. See [Row security policies](https://www.postgresql.org/docs/18/ddl-rowsecurity.html).
-- [R2 data location](https://developers.cloudflare.com/r2/reference/data-location/) distinguishes location hints from jurisdiction restrictions.
-- Stripe describes signature verification, duplicate and unordered events, and subscription lifecycle handling in [Webhooks](https://docs.stripe.com/webhooks) and [Subscription webhooks](https://docs.stripe.com/billing/subscriptions/webhooks).
+- [Neon serverless driver](https://github.com/neondatabase/serverless) and [Drizzle Neon integration](https://orm.drizzle.team/docs/connect-neon) document transport selection.
+- [Better Auth with Hono](https://www.better-auth.com/docs/integrations/hono), [Drizzle adapter](https://www.better-auth.com/docs/adapters/drizzle), and [Google sign-in](https://www.better-auth.com/docs/authentication/google) cover the chosen integration.
+- [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/) and [R2 signed URLs](https://developers.cloudflare.com/r2/api/s3/presigned-urls/) cover delivery and private files.
+- [Conversion formats](https://developers.cloudflare.com/workers-ai/features/markdown-conversion/supported-formats/) and [Workflows retries](https://developers.cloudflare.com/workflows/build/sleeping-and-retrying/) inform later processing.
