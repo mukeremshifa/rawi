@@ -244,6 +244,8 @@ const server = createServer(async (req, res) => {
     checkOrigin(req);
     const route = `${req.method} ${(req.url ?? '').split('?')[0]}`;
     switch (route) {
+      case 'GET /api/status':
+        return sendJson(res, 200, { mode: 'local', configured: false, missing: ['Start npm run dev:backend to use online mode.'] });
       case 'GET /api/ai/status':
         return status(res);
       case 'POST /api/ai/tutor':

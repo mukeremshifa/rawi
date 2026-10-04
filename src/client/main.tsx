@@ -8,37 +8,21 @@ import { TooltipProvider } from '@/components/ui/tooltip.tsx';
 import { Toaster } from '@/components/ui/sonner.tsx';
 import { StoreProvider } from '@/store/store.tsx';
 import { AppRoutes } from '@/routes.tsx';
+import { OnlineApp } from '@/online/OnlineApp';
 
 import '@/styles/globals.css';
 
-/**
- * The composition root.
- *
- * ── What is not here any more ─────────────────────────────────────────────
- *
- * The previous version mounted React Query over a simulated async API. There is
- * no async here: every read is a synchronous function of a local state tree, so
- * a query cache would add loading states that resolve in the same tick and an
- * invalidation story for data that cannot go stale. `StoreProvider` replaced
- * it, and the dependency went with it.
- *
- * The one genuinely async operation left — reading a text file the student
- * picked — is a promise awaited inside the component that owns the input, which
- * is the right size of machinery for one file read.
- *
- * `TooltipProvider` wraps everything because tooltips appear in several
- * features and Radix wants one provider for shared open/close timing; per-
- * instance providers give each tooltip its own delay, which reads as
- * inconsistent.
- */
+// Online routes never mount the local store. Mode links load a fresh root,
+// clearing online memory while preserving rawi.state.v1 on this browser.
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root is missing from index.html');
+const online = window.location.pathname === '/online' || window.location.pathname.startsWith('/online/');
 
 createRoot(root).render(
   <StrictMode>
     <ErrorBoundary>
-      <StoreProvider>
+      {online ? <BrowserRouter><OnlineApp /></BrowserRouter> : <StoreProvider>
         <ThemeProvider>
           <TooltipProvider delayDuration={300}>
             <BrowserRouter>
@@ -47,7 +31,7 @@ createRoot(root).render(
             </BrowserRouter>
           </TooltipProvider>
         </ThemeProvider>
-      </StoreProvider>
+      </StoreProvider>}
     </ErrorBoundary>
   </StrictMode>,
 );

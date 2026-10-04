@@ -52,7 +52,8 @@ export function SettingsPage() {
       setIncoming(importWorkspace(await selected.text())); setMessage('');
     } catch (e) { setError(e instanceof Error ? e.message : 'This file could not be restored. Nothing changed.'); setMessage(''); }
   };
-  return <Page width="wide"><PageHeader title="Settings" description="Your local profile and workspace. No online account or synchronization." actions={<Button variant="outline" asChild><Link to="/">Back to workspace</Link></Button>} />
+  return <Page width="wide"><PageHeader title="Settings" description="Local mode. Your profile and workspace are saved in this browser." actions={<Button variant="outline" asChild><Link to="/">Back to workspace</Link></Button>} />
+    <p><a className="underline" href="/online">Switch to online mode</a>. Local work stays in this browser and is not uploaded when you sign in.</p>
     <nav aria-label="Settings sections" className="flex flex-wrap gap-2">{SECTIONS.map((s, i) => <NavLink key={s} to={`/settings/${s}`} className={({ isActive }) => `rounded border px-3 py-2 text-sm ${isActive ? 'bg-secondary font-semibold' : ''}`}>{LABELS[i]}</NavLink>)}</nav>
     <Section title={LABELS[SECTIONS.indexOf(section as typeof SECTIONS[number])] ?? 'Choose a settings section'}>
       {section === 'profile' && <><Label htmlFor="profile-name">Display name (optional)</Label><Input id="profile-name" maxLength={80} value={name} onChange={e => setName(e.target.value)} /><Label htmlFor="profile-accent">Initials avatar accent</Label><Select id="profile-accent" value={accent} onChange={e => setAccent(e.target.value)}>{['indigo', 'amber', 'teal', 'rose', 'violet'].map(c => <option key={c}>{c}</option>)}</Select><p className="text-muted-foreground text-sm">Your initials appear in the workspace header. This profile belongs to this browser.</p></>}

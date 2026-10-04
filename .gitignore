@@ -6,3 +6,5 @@ dist/
 .env*
 .dev.vars*
 .rawi/
+.wrangler/
+!.dev.vars.example

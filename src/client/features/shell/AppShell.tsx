@@ -370,6 +370,7 @@ export function AppShell() {
           </>
         )}
 
+        <a href="/online" className="shrink-0 rounded border px-2 py-1 text-xs" aria-label="Local mode. Switch to online mode">Local mode</a>
         <div className="flex-1" />
 
         {/* Getting back into the course you were in, from a global screen. */}

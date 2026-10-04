@@ -16,8 +16,9 @@ configuration: AI actions say what is missing instead.
 
 ## Chosen backend stack
 
-Decision recorded on 4 October 2026. This is the implementation target. The
-current prototype still uses the local API and browser storage described below.
+Decision recorded on 4 October 2026. Local mode uses the Node API and browser
+storage described below. Checkpoint 1 adds an explicitly selected online mode
+for Google accounts, courses, topics and preferences.
 
 | Responsibility | Choice |
 | --- | --- |
@@ -48,7 +49,52 @@ and Worker placement using measurements from UAE networks. This decision does no
 promise UAE data residency or free hosting at a particular user count.
 
 Keep `npm install` and `npm run dev` usable throughout the migration, and preserve
-existing saved work. Provisioning and migration are subsequent implementation work.
+existing saved work. Provisioning and production deployment remain later work.
+
+## Online development: checkpoint 1
+
+Open `/online`, or choose **Local mode** in the workspace header to switch.
+The modes have separate composition roots. Signing in never uploads or replaces
+`rawi.state.v1`. Existing restoration, migration and export remain in local mode.
+Online learning areas explain that they are unavailable until later checkpoints.
+
+For online development, copy `.dev.vars.example` to the ignored `.dev.vars`
+and fill in `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Use a designated development
+Neon database and a random auth secret of at least 32 characters. No service
+is provisioned automatically. No credentials are needed for local mode.
+
+Set `BETTER_AUTH_URL=http://localhost:5173`. Register that origin and the exact
+Google callback `http://localhost:5173/api/auth/callback/google`. Production
+uses the HTTPS application origin and its `/api/auth/callback/google` path.
+Google sign-in uses basic identity scopes, with no school-domain restriction
+or Drive permissions.
+
+```sh
+npm run db:generate
+npm run db:migrate
+npm run dev:backend
+```
+
+Generation is offline. Review `drizzle/*.sql` before applying it. `db:migrate`
+reads `DATABASE_URL` from `.dev.vars` or the shell and applies the committed
+auth and application migration history. Run it only against the designated
+development database. Request handlers never migrate, and schema push is not
+used. `dev:backend` builds the static assets, starts the Worker on 8788 and
+proxies Vite's public origin to it. Stop `npm run dev` before starting it because
+both use port 5173. Use `npm run dev` for the local AI prototype.
+
+The online UI keeps unsent edits in memory on save failure. Revision conflicts
+require reviewing the latest record before saving again. Navigating away or
+reloading discards unsent online edits. Account changes clear online memory.
+Saved online appearance preferences apply to online mode only. Study and reminder
+preferences are stored for later learning features.
+
+`npm run typecheck` covers the client, local server and Worker.
+`npm run worker:types` regenerates runtime types. The Worker compatibility date
+matches the pinned runtime's October 1 release. `npx wrangler deploy --dry-run`
+checks packaging without deploying. See [checkpoint verification](BACKEND_CHECKPOINT_1.md)
+for executed checks and the external configuration still needed.
 
 ## AI setup (Vertex AI)
 
@@ -200,6 +246,9 @@ attempt. Pending written feedback is never presented as a grade.
 
 - `server/`: the local API: Vertex AI calls, prompts, validation and the
   spending ledger.
+- `server/worker.ts` and `server/backend/`: online auth, scoped services and API.
+- `drizzle/`: the shared auth and application migration history.
+- `src/client/online/`: online account boundary and course, outline and preference screens.
 - `src/shared/`: domain types, the API contract, AI context building, marking,
   progress derivation, the planner and the syllabus reader.
 - `src/shared/course/`: the two sample courses and their question banks.
@@ -209,5 +258,5 @@ attempt. Pending written feedback is never presented as a grade.
 - `src/client/components/`: layout vocabulary, UI primitives, design tokens.
 
 `npm run build` creates a static preview of the page, and `npm run preview`
-serves it without the API. There are no test, lint, CI, deployment or database
-workflows at this stage.
+serves it without the API. Database migration commands and Worker configuration
+are included for checkpoint 1. No tests or CI have been added.
