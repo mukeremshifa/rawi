@@ -8,3 +8,4 @@ dist/
 .rawi/
 .wrangler/
 !.dev.vars.example
+.neon
