@@ -1,3 +1,4 @@
+import { MessageBubble } from './MessageBubble';
 import { useDraftState } from '@/store/drafts';
 import { useLocation } from 'react-router-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -28,7 +29,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { MEDIA_WIDE, useMediaQuery } from '@/components/layout';
-import { SimulatedNotice, SourceLink } from '@/components/domain';
+import { SimulatedNotice } from '@/components/domain';
 import { useStore } from '@/store/store';
 import { useCourse, useCoursePath } from '@/store/course-context';
 import {
@@ -183,13 +184,6 @@ function ContextPanel({ session }: { session: TutorSession }) {
   );
 }
 
-const GROUNDING_LABEL: Record<NonNullable<TutorMessage['grounding']>, string> = {
-  materials: 'From your materials',
-  mixed: 'Partly beyond your materials',
-  general: 'General explanation, not from your materials',
-  insufficient: 'Your materials do not cover this',
-};
-
 const QUICK_ACTIONS: { label: string; action: TutorAction }[] = [
   { label: 'Explain it', action: 'explain' },
   { label: 'Give me an example', action: 'example' },
@@ -197,68 +191,6 @@ const QUICK_ACTIONS: { label: string; action: TutorAction }[] = [
   { label: 'Test me', action: 'check' },
   { label: 'Say that more simply', action: 'simpler' },
 ];
-
-/** One turn in the transcript, with its provenance where it has one. */
-function MessageBubble({ message }: { message: TutorMessage }) {
-  const ids = (message.citations ?? []).map((c) => c.passageId);
-  /* Earlier builds' authored replies carry neither a model nor a status. */
-  const legacy =
-    message.role === 'tutor' && !message.meta && !message.model && !message.status;
-  return (
-    <div id={message.id} className={cn('flex flex-col gap-tight', message.role === 'student' && 'items-end')}>
-      <div
-        className={cn(
-          'max-w-[90%] rounded-xl px-gutter py-snug',
-          message.role === 'student'
-            ? 'bg-primary text-primary-foreground'
-            : message.meta
-              ? 'bg-muted/60 text-muted-foreground border border-dashed'
-              : message.status === 'interrupted'
-                ? 'bg-card border border-dashed'
-                : 'bg-card border',
-        )}
-      >
-        <Prose
-          text={message.role === 'tutor' ? renderCitations(message.text, ids) : message.text}
-          size={message.role === 'student' ? 'compact' : 'reading'}
-        />
-      </div>
-      {message.role === 'tutor' && !message.meta && (
-        <div className="flex flex-col gap-hairline px-tight">
-          {message.status === 'interrupted' && (
-            <span className="text-foreground text-xs font-medium">
-              This reply was cut off before it finished, so it is incomplete.
-            </span>
-          )}
-          {legacy && (
-            <span className="text-muted-foreground text-xs">
-              Scripted reply from an earlier version of Rawi.
-            </span>
-          )}
-          {message.grounding && (
-            <span className="text-muted-foreground text-xs">
-              {GROUNDING_LABEL[message.grounding]}
-            </span>
-          )}
-          {(message.citations ?? []).map((source, i) => (
-            <span key={source.passageId} className="flex items-center gap-tight text-xs">
-              <span className="text-muted-foreground font-mono tabular-nums">[{i + 1}]</span>
-              <SourceLink source={source} />
-            </span>
-          ))}
-          {message.droppedCitations ? (
-            <span className="text-muted-foreground text-xs">
-              {message.droppedCitations === 1
-                ? 'One citation was removed because it did not match your materials.'
-                : `${message.droppedCitations} citations were removed because they did not match your materials.`}
-            </span>
-          ) : null}
-        </div>
-      )}
-      {message.source && <SourceLink source={message.source} className="px-tight" />}
-    </div>
-  );
-}
 
 interface Failure {
   message: string;

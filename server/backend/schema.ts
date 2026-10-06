@@ -236,8 +236,9 @@ export const tutorSessions = pgTable('tutor_sessions', {
   id: uuid('id').primaryKey(), ...materialScope(), topicId: uuid('topic_id').notNull(), topicLabel: text('topic_label').notNull(), title: text('title').notNull(),
   archived: boolean('archived').notNull().default(false), revision: integer('revision').notNull().default(1), stage: text('stage').$type<OnlineTutorSession['stage']>().notNull().default('orient'),
   source: jsonb('source').$type<OnlineTutorSession['source']>(), review: jsonb('review').$type<OnlineTutorSession['review']>(), ...timestamps(),
+  plannedSessionId: uuid('planned_session_id'), completedLearning: boolean('completed_learning').notNull().default(false),
   imported: boolean('imported').notNull().default(false), endedAt: timestamp('ended_at', { withTimezone: true }),
-}, t => [unique('tutor_sessions_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('tutor_sessions_scope_idx').on(t.workspaceId, t.courseId, t.id)]);
+}, t => [unique('tutor_sessions_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ name: 'tutor_planner_scope_fk', columns: [t.workspaceId, t.courseId, t.plannedSessionId], foreignColumns: [plannedSessions.workspaceId, plannedSessions.courseId, plannedSessions.id] }), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('tutor_sessions_scope_idx').on(t.workspaceId, t.courseId, t.id)]);
 export const tutorMessages = pgTable('tutor_messages', {
   id: uuid('id').primaryKey(), ...materialScope(), sessionId: uuid('session_id').notNull(), ordinal: integer('ordinal').notNull(),
   text: text('text').notNull(), role: text('role').$type<'student' | 'tutor'>().notNull(), state: text('state').$type<OnlineTutorMessage['state']>().notNull(),

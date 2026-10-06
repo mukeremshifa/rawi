@@ -1,5 +1,16 @@
 # Full-stack migration handoff
 
+
+Current status: the full brief is not complete. Authenticated persistence and
+recovery are implemented for materials, nine-format practice, second passes,
+rehearsals, planning, progress, tutor records, search, reminders and reviewed local
+transfer. Hosted Vertex execution and streaming remain blocked by absent runtime
+authentication and unfinished execution wiring. Full shell parity and the switch
+to online as the primary experience remain unfinished. Unfinished local practice,
+active local exams and UI drafts remain in the retained recovery export. Online
+archive restoration is not implemented. The milestone notes below distinguish
+real development checks from synthetic AI publication checks.
+
 Active brief: FULLSTACK_IMPLEMENTATION_BRIEF.md. Started 7 October 2026.
 This inventory records the checkout, not assumed completion from earlier briefs.
 
@@ -185,7 +196,7 @@ The full migration is not complete. These are not all external dependencies.
 | Gap | Remaining work |
 | --- | --- |
 | Hosted AI execution | Runtime Vertex authentication is unavailable. Integrate an authenticated Worker-compatible execution adapter using the existing provider/model configuration. Connect it to reservation and publication boundaries, without a detached background promise. No credential setup or provisioning was attempted. |
-| Tutor learning behavior | Bounded context, existing prompts, validated publication, Stop and saved recovery are implemented. Connect hosted streaming and session summaries. Current tutor messages are saved with blocked replies and do not create learning evidence. These application paths remain unfinished, not merely unverified. |
+| Tutor learning behavior | Bounded context, existing prompts, validated publication, Stop and saved recovery are implemented. Connect hosted streaming to the saved execution and publication boundaries. Session summaries and completed-learning links are now implemented. Current real requests are saved with blocked replies. Provider execution and streaming remain unfinished, not merely unverified. Synthetic publication checks do not count as hosted proof. |
 | Written feedback execution | Publication and revisions exist. Connect provider output to these functions and expose revision history/regrading controls. Current UI requests are explicitly blocked. |
 | Full UI parity | Shared answer components, domain rules and navigation are reused. Some exam controls and remaining shell parity still need adaptation. Custom planner windows, detailed check-ins and flashcard second passes were added in a follow-up. Assessment editing, rehearsal renaming and set conflict review were added. Keep explicit online mode until parity is established. |
 | Transfer coverage | Add unfinished practice import with per-record validation. Tutor histories are now imported, with extra local action metadata retained in the recovery original. Online archive restoration needs its own reviewed remapping path. Original files, drafts and unsupported records are recoverable from the retained local export. |
@@ -323,3 +334,49 @@ After fixing reconciliation, a focused Chrome check passed navigation, final-sec
 locking without feedback, rejected locked writes, hidden exam-set denial and explicit
 whole-paper submission with a manual result. These are actual dev-server checks,
 not hosted provider verification.
+
+
+## Tutor summaries and learning completion
+
+Migration 0013 was generated, reviewed and applied. It adds a scoped planner link
+and a completed-learning flag to tutor sessions. Ending a session saves its ending
+time and reuses the existing deterministic summary rules. Two saved blocked
+questions do not complete a planned activity. Completion requires two acknowledged
+student exchanges and a complete tutor reply. Imported message provenance does not
+qualify as newly verified learning. Linked sessions complete once. Completed tutor
+activity contributes to activity history and streaks, with no independent mastery
+marks. Imported tutor history remains separately labelled.
+
+Tutor transcripts now reuse the established presentation component, with an online
+renderer for exact versioned source links. Local rendering uses the same component.
+Completed sessions reject new messages and show their saved summary. Topic removal
+still leaves historical labels and sources available. Imported planned tutor links
+are validated and remapped.
+
+Actual development checks passed for blocked-only ending without planner completion,
+foreign end denial, repeated ending, immutable completion links, summary persistence,
+ended-message rejection and unchanged independent evidence. Completed replies in
+these checks were explicitly synthetic and labelled as such. Chrome verified the
+shared transcript, grounding labels, both summary outcomes, disabled ended-session
+composer and assisted activity in progress. No hosted provider call was made.
+
+
+## Final checks after the follow-ups
+
+`npm run typecheck`, `npm run build` and Worker dry-run packaging passed after the
+application changes. The combined client entry is 1,407.92 kB minified, 401.34 kB
+gzipped. Vite reports its large-chunk warning. The Worker package is 3,293.55 KiB,
+597.80 KiB gzipped. Nothing was deployed.
+
+The authenticated practice page loaded readable material names and source filters.
+`npm run dev` then passed local home, courses, planner, history, practice, exams,
+tutor transcript and session-summary checks in a fresh Chrome profile. Visiting
+online mode left local storage byte-for-byte unchanged and local reopening passed.
+No page errors or provider calls occurred in that local check. The new imported
+tutor planner-link mapping is typechecked but was not separately imported again.
+
+Verification sessions were revoked again, fixture courses archived, and material
+maintenance reported zero pending uploads and zero reserved bytes. No temporary
+failure triggers remain. The local dev server was left running. Changes are saved
+in coherent milestone commits. No infrastructure was provisioned, credentials
+reconfigured, public deployment performed, or tests and CI added.

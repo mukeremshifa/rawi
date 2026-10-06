@@ -1,11 +1,11 @@
 import { transaction } from './db';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { Attempt, Material, Topic } from '../../src/shared/types';
 import { planWeek, replacedByPlan, addDays } from '../../src/shared/planner';
 import { deriveAllEvidence, dueReviews, recurringMistakes, buildPlan } from '../../src/shared/progress';
 import { zonedParts, type plannerWrite, type scheduleWrite, type assessmentWrite, type proposalInput, type checkInInput } from '../../src/shared/online-planner';
-import { plannerState, plannedSessions, assessments, checkIns, planProposals, courses, topics, learningAttempts, learningRuns, materials, passages, materialTopicLinks, questionVersions, preferences } from './schema';
+import { plannerState, plannedSessions, assessments, checkIns, planProposals, courses, topics, learningAttempts, learningRuns, materials, passages, materialTopicLinks, questionVersions, preferences, tutorSessions } from './schema';
 import { operation } from './learning';
 import { withFeedback } from './feedback';
 import { hash, validateTopics } from './materials';
@@ -37,7 +37,8 @@ export async function planningData(tx: Transaction, workspaceId: string) {
   const assessmentRows = await tx.select().from(assessments).where(eq(assessments.workspaceId, workspaceId));
   const sessionRows = await tx.select().from(plannedSessions).where(eq(plannedSessions.workspaceId, workspaceId));
   const activeLinks = await tx.select({ id: learningRuns.plannedSessionId }).from(learningRuns).where(and(eq(learningRuns.workspaceId, workspaceId), eq(learningRuns.state, 'active')));
-  for (const row of sessionRows) if (activeLinks.some(r => r.id === row.id)) row.content = { ...row.content, locked: true };
+  const tutorLinks = await tx.select({ id: tutorSessions.plannedSessionId, endedAt: tutorSessions.endedAt }).from(tutorSessions).where(eq(tutorSessions.workspaceId, workspaceId));
+  for (const row of sessionRows) if (activeLinks.some(r => r.id === row.id) || tutorLinks.some(r => !r.endedAt && r.id === row.id)) row.content = { ...row.content, locked: true };
   const checkInRows = await tx.select().from(checkIns).where(eq(checkIns.workspaceId, workspaceId));
   const questionRows = await tx.select({ content: questionVersions.content }).from(questionVersions).where(eq(questionVersions.workspaceId, workspaceId));
   const materialRows = await tx.select().from(materials).where(eq(materials.workspaceId, workspaceId));
@@ -113,7 +114,8 @@ export async function applyProposal(db: SocketDb, workspaceId: string, id: strin
 export async function progress(db: SocketDb, workspaceId: string) {
   return transaction(db, async tx => {
     const data = await planningData(tx, workspaceId); const now = zonedParts(new Date(), data.timezone);
-    const days = [...new Set(data.attempts.map(a => zonedParts(new Date(a.completedAt!), data.timezone).date))].sort().reverse();
+    const tutorActivity = await tx.select({ id: tutorSessions.id, courseId: tutorSessions.courseId, title: tutorSessions.title, topicId: tutorSessions.topicId, completedAt: tutorSessions.endedAt, imported: tutorSessions.imported }).from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), or(eq(tutorSessions.completedLearning, true), eq(tutorSessions.imported, true))));
+    const days = [...new Set([...data.attempts.map(a => zonedParts(new Date(a.completedAt!), data.timezone).date), ...tutorActivity.flatMap(s => s.completedAt && !s.imported ? [zonedParts(s.completedAt, data.timezone).date] : [])])].sort().reverse();
     let streak = 0, day = days.includes(now.date) ? now.date : addDays(now.date, -1);
     while (days.includes(day)) { streak++; day = addDays(day, -1); }
     const runs = await tx.select({ id: learningRuns.id, courseId: learningRuns.courseId, title: learningRuns.title }).from(learningRuns).where(and(eq(learningRuns.workspaceId, workspaceId), eq(learningRuns.state, 'active'))).orderBy(asc(learningRuns.id)).limit(100);
@@ -121,6 +123,6 @@ export async function progress(db: SocketDb, workspaceId: string) {
       const path = s.sessionId ? `/online/planner?session=${s.sessionId}` : `/online/course/${s.courseId}/${s.kind === 'exam' ? 'exams' : ['tutor', 'materials', 'setup'].includes(s.kind) ? 'materials' : 'practice'}${s.topicId ? `?topicId=${s.topicId}` : ''}`;
       return { ...s, to: path, ...(s.kind === 'tutor' ? { title: s.title.replace(/^Learn /, 'Read about '), reason: `${s.reason} Tutor replies are unavailable online, so open the material to continue.` } : {}) };
     });
-    return { suggestions, rulesVersion: 'evidence-v1', today: now.date, timezone: data.timezone, streak, topics: data.topics, courses: data.courses, evidence: [...deriveAllEvidence(data.topics, data.attempts, data.timezone).values()], due: dueReviews(data.topics, data.attempts, new Date(), data.timezone), mistakes: recurringMistakes(data.attempts, id => data.questions.find(q => q.id === id)?.prompt), attempts: data.attempts, pending: data.snapshots.reduce((n, a) => n + a.pending, 0), runs, sessions: data.sessions.filter(s => s.date === now.date), assessments: data.assessments.filter(a => a.date >= now.date), checkIns: data.checkIns.filter(c => zonedParts(new Date(c.at), data.timezone).date === now.date) };
+    return { suggestions, tutorActivity, rulesVersion: 'evidence-v1', today: now.date, timezone: data.timezone, streak, topics: data.topics, courses: data.courses, evidence: [...deriveAllEvidence(data.topics, data.attempts, data.timezone).values()], due: dueReviews(data.topics, data.attempts, new Date(), data.timezone), mistakes: recurringMistakes(data.attempts, id => data.questions.find(q => q.id === id)?.prompt), attempts: data.attempts, pending: data.snapshots.reduce((n, a) => n + a.pending, 0), runs, sessions: data.sessions.filter(s => s.date === now.date), assessments: data.assessments.filter(a => a.date >= now.date), checkIns: data.checkIns.filter(c => zonedParts(new Date(c.at), data.timezone).date === now.date) };
   }, { isolationLevel: 'repeatable read' });
 }

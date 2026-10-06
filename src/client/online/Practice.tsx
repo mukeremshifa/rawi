@@ -7,6 +7,7 @@ import { sectionLocked, locate } from '@shared/exam';
 import { OnlineGeneration, RequestFeedback } from './Ai';
 import { useAccount } from './OnlineApp';
 import { request } from './api';
+import type { OnlineMaterial } from '@shared/materials';
 import type { AnswerValue } from '@shared/types';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ export function OnlinePractice() {
   const [runCursor, setRunCursor] = useState(''), [historyCursor, setHistoryCursor] = useState('');
   const active = useOnlineRecord<{ runs: { id: string; title: string }[]; nextCursor: string | null }>(`/v1/courses/${id}/runs?limit=100${runCursor ? `&cursor=${runCursor}` : ''}`);
   const history = useOnlineRecord<{ attempts: LearningAttempt[]; nextCursor: string | null }>(`/v1/courses/${id}/attempts?limit=100${historyCursor ? `&cursor=${historyCursor}` : ''}`);
+  const materialNames = useOnlineCollection<OnlineMaterial>(`/v1/courses/${id}/materials?limit=50&archived=all`, 'materials');
   const defaults = useAccount().preferences.values;
   const [name, setName] = useState(''), [format, setFormat] = useState('all'), [count, setCount] = useState(defaults.questionCount), [feedback, setFeedback] = useState<'immediate' | 'end'>(defaults.feedback), [hints, setHints] = useState(defaults.hints);
   const [topic, setTopic] = useState(params.get('topicId') ?? ''), [difficulty, setDifficulty] = useState(''), [material, setMaterial] = useState(params.get('materialId') ?? '');
@@ -31,7 +33,7 @@ export function OnlinePractice() {
   const pool = bank.value?.filter(q => (format === 'all' || q.format === format) && (!topic || q.topicId === topic) && (!difficulty || q.difficulty === difficulty) && (!material || q.source?.materialId === material) && (!params.get('versionId') || q.source?.versionId === params.get('versionId'))) ?? [];
   const allowNavigation = useUnsentGuard(!!pending.current || !!name);
   return <Page className="py-8" width="prose"><PageHeader title="Practice" description="Saved sets, resumable work and repeated attempts." actions={<Link to={`/online/course/${id}`}>Course</Link>} />
-    {[sets.error, bank.error, active.error, history.error, op.error].filter(Boolean).map(e => <p role="alert" key={e}>{e}</p>)}
+    {[sets.error, bank.error, materialNames.error, active.error, history.error, op.error].filter(Boolean).map(e => <p role="alert" key={e}>{e}</p>)}
     {!sets.value && !sets.error && <p role="status">Loading practice…</p>}
     <section className="space-y-3"><h2 className="text-xl font-semibold">Continue studying</h2>{active.value?.runs.map(r => <p key={r.id}><Link className="underline" to={`/online/runs/${r.id}`}>{r.title}</Link></p>)}{active.value?.runs.length === 0 && <p>No active practice runs.</p>}{active.value?.nextCursor && <Button onClick={() => setRunCursor(active.value!.nextCursor!)}>More active runs</Button>}{runCursor && <Button onClick={() => setRunCursor('')}>First active runs</Button>}</section>
     <section className="space-y-3 border-t py-5"><h2 className="text-xl font-semibold">Saved sets</h2><Input aria-label="Search sets on this page" placeholder="Search this page" value={query} onChange={e => setQuery(e.target.value)} /><Select aria-label="Set status" value={archived} onChange={e => { setArchived(e.target.value); setCursor(''); }}><option value="false">Active</option><option value="true">Archived</option><option value="all">All</option></Select>
@@ -41,13 +43,13 @@ export function OnlinePractice() {
       <label className="block">Format<Select value={format} onChange={e => setFormat(e.target.value)}><option value="all">All formats</option>{formats.map(f => <option key={f}>{f}</option>)}</Select></label>
       <label className="block">Topic<Select value={topic} onChange={e => setTopic(e.target.value)}><option value="">All topics</option>{[...new Map(bank.value?.map(q => [q.topicId, q.topicLabel]) ?? []).entries()].map(([id, label]) => <option key={id} value={id}>{label}</option>)}</Select></label>
       <label className="block">Difficulty<Select value={difficulty} onChange={e => setDifficulty(e.target.value)}><option value="">All difficulties</option>{['recall', 'reasoning', 'stretch'].map(d => <option key={d}>{d}</option>)}</Select></label>
-      <label className="block">Source material<Select value={material} onChange={e => setMaterial(e.target.value)}><option value="">All materials</option>{[...new Set(bank.value?.flatMap(q => q.source ? [q.source.materialId] : []) ?? [])].map(id => <option key={id} value={id}>{id}</option>)}</Select></label>{params.get('versionId') && <p>Filtered to the exact material version you opened.</p>}
+      <label className="block">Source material<Select value={material} onChange={e => setMaterial(e.target.value)}><option value="">All materials</option>{[...new Set(bank.value?.flatMap(q => q.source ? [q.source.materialId] : []) ?? [])].map(id => <option key={id} value={id}>{materialNames.value?.find(m => m.id === id)?.title ?? 'Saved material'}</option>)}</Select></label>{params.get('versionId') && <p>Filtered to the exact material version you opened.</p>}
       <label className="block">Questions<Input type="number" min={1} max={50} value={count} onChange={e => setCount(Number(e.target.value))} /></label>
       <label className="block">Feedback<Select value={feedback} onChange={e => setFeedback(e.target.value as 'immediate' | 'end')}><option value="immediate">After checking each answer</option><option value="end">At the end</option></Select></label>
       <label><input type="checkbox" checked={hints} onChange={e => setHints(e.target.checked)} /> Allow hints</label></fieldset>
       <p>{bank.value ? `${pool.length} matching questions in the complete course bank.` : 'Loading the complete question bank…'}</p>
       <Button disabled={op.busy || !name.trim() || !pool.length || count < 1 || count > 50} onClick={() => { pending.current ??= createSetInput.parse({ id: crypto.randomUUID(), name, questionIds: selectQuestions(pool, {}, count).map(q => q.id), feedback, hintsAllowed: hints }); void op.run<LearningSet>(`/v1/courses/${id}/sets`, pending.current, 'POST', saved => { pending.current = null; setName(''); allowNavigation(); nav(`/online/sets/${saved.id}${planned ? `?plannedSessionId=${planned}` : ''}`); }); }}>{op.busy ? 'Saving…' : pending.current ? 'Retry saving set' : 'Save set'}</Button>
-      {!pool.length && <p>Your online bank is empty. Workspace import and material generation will provide questions when available.</p>}
+      {bank.value?.length === 0 && <p>Your online bank is empty. Workspace import and material generation will provide questions when available.</p>}{!!bank.value?.length && !pool.length && <p>No saved questions match these filters.</p>}
       <p>Online question generation is not connected yet. Your saved practice remains available.</p>
     </section>
     <OnlineGeneration courseId={id} />

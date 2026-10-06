@@ -60,7 +60,9 @@ The modes have separate composition roots. Signing in never uploads or replaces
 `rawi.state.v1`. Existing restoration, migration and export remain in local mode.
 Online mode includes versioned materials, all nine saved question formats,
 resumable practice, immutable attempts, server-timed rehearsals, planner review,
-progress, search and in-app reminders. The navigation uses the existing product
+progress, search and in-app reminders. Flashcard second passes, detailed planner
+controls and saved tutor summaries are persisted. Tutor replies still require the
+unavailable hosted provider integration. The navigation uses the existing product
 rail. Online mode remains explicit while full feature parity is unfinished.
 
 For online development, copy `.dev.vars.example` to the ignored `.dev.vars`

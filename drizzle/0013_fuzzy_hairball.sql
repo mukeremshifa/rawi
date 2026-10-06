@@ -1,0 +1,3 @@
+ALTER TABLE "tutor_sessions" ADD COLUMN "planned_session_id" uuid;--> statement-breakpoint
+ALTER TABLE "tutor_sessions" ADD COLUMN "completed_learning" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "tutor_sessions" ADD CONSTRAINT "tutor_planner_scope_fk" FOREIGN KEY ("workspace_id","course_id","planned_session_id") REFERENCES "public"."planned_sessions"("workspace_id","course_id","id") ON DELETE no action ON UPDATE no action;
