@@ -24,7 +24,7 @@ import * as ai from './ai';
 import { newTutorInput, tutorMessageInput, tutorMetadataInput } from '../../src/shared/online-tutor';
 import { plannerWrite, scheduleWrite, assessmentWrite, proposalInput, checkInInput } from '../../src/shared/online-planner';
 import { createExamInput, examTransitionInput } from '../../src/shared/online-exams';
-import { createSetInput, metadataInput, runWriteInput, transitionInput, pageQuery } from '../../src/shared/learning';
+import { createSetInput, metadataInput, runWriteInput, transitionInput, writeInput, pageQuery } from '../../src/shared/learning';
 
 export type BackendContext = {
   Bindings: BackendBindings;
@@ -60,7 +60,7 @@ api.get('/status', c => {
 const configured = new Hono<BackendContext>();
 configured.use('*', async (c, next) => {
   // Unknown paths return 404 even when configuration is absent.
-  const known = c.req.path.startsWith('/api/auth/') || /^\/api\/v1\/(ai\/status|ai\/operations\/[^/]+(?:\/cancel)?|me|preferences|search|notifications|export|imports\/review|imports\/[^/]+\/(commit|original)|planner|progress|planner\/(availability|sessions|proposals|check-ins)|planner\/proposals\/[^/]+\/apply|courses(?:\/[^/]+(?:\/(topics|materials|uploads|generate|questions|sets|runs|attempts|exams|assessments|tutor))?)?|materials\/[^/]+(?:\/versions(?:\/[^/]+(?:\/(download|passages\/[^/]+))?)?)?|uploads\/[^/]+(?:\/finalize)?|sets\/[^/]+(?:\/runs)?|runs\/[^/]+(?:\/(answers|submit|transition|exam-transition))?|attempts\/[^/]+(?:\/feedback)?|exams\/[^/]+(?:\/runs)?|tutor\/[^/]+(?:\/messages)?)$/.test(c.req.path);
+  const known = c.req.path.startsWith('/api/auth/') || /^\/api\/v1\/(ai\/status|ai\/operations\/[^/]+(?:\/cancel)?|me|preferences|search|notifications|export|imports\/review|imports\/[^/]+\/(commit|original)|planner|progress|planner\/(availability|sessions|proposals|check-ins)|planner\/proposals\/[^/]+\/apply|courses(?:\/[^/]+(?:\/(topics|materials|uploads|generate|questions|sets|runs|attempts|exams|assessments|tutor))?)?|materials\/[^/]+(?:\/versions(?:\/[^/]+(?:\/(download|passages\/[^/]+))?)?)?|uploads\/[^/]+(?:\/finalize)?|sets\/[^/]+(?:\/runs)?|runs\/[^/]+(?:\/(answers|submit|transition|exam-transition|revisit))?|attempts\/[^/]+(?:\/feedback)?|exams\/[^/]+(?:\/runs)?|tutor\/[^/]+(?:\/messages)?)$/.test(c.req.path);
   if (!known) throw notFound();
   const missing = configurationProblems(c.env);
   if (missing.length) throw new ApiError(503, 'not_configured', `Online mode is not configured: ${missing.join(', ')}.`);
@@ -145,7 +145,7 @@ app.get('/courses/:id/questions', async c => { const q = pageQuery.parse(c.req.q
 app.post('/courses/:id/questions', async c => c.json(await learning.importBank(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, learning.importBankInput))));
 app.get('/courses/:id/sets', async c => { const q = pageQuery.parse(c.req.query()); return c.json(await learning.listSets(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), q.archived, q.limit, q.cursor)); });
 app.post('/courses/:id/sets', async c => c.json(await learning.createSet(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, createSetInput))));
-app.get('/sets/:id', async c => { const id = uuid.parse(c.req.param('id')); const workspace = c.get('workspaceId'); return c.json({ set: await learning.ownSet(c.get('db'), workspace, id), items: await learning.setQuestions(c.get('db'), workspace, id) }); });
+app.get('/sets/:id', async c => { const id = uuid.parse(c.req.param('id')); const workspace = c.get('workspaceId'); return c.json({ set: await learning.ownPracticeSet(c.get('db'), workspace, id), items: await learning.setQuestions(c.get('db'), workspace, id) }); });
 app.patch('/sets/:id', async c => c.json(await learning.patchSet(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, metadataInput))));
 app.post('/sets/:id/runs', async c => { const input = await jsonInput(c, z.strictObject({ id: uuid, plannedSessionId: uuid.optional() })); return c.json(await learning.startRun(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), input.id, input.plannedSessionId)); });
 app.get('/runs/:id', async c => c.json(await learning.getRun(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
@@ -180,6 +180,7 @@ app.post('/imports/:id/commit', async c => { const input = await jsonInput(c, z.
 app.get('/search', async c => { const q = z.strictObject({ q: z.string().trim().max(100).default('') }).parse(c.req.query()); return c.json(q.q ? await support.search(c.get('db'), c.get('workspaceId'), q.q) : { results: [], limitPerCategory: 10 }); });
 app.get('/notifications', async c => c.json(await support.notifications(c.get('socket'), c.get('workspaceId'))));
 app.patch('/notifications', async c => { const input = await jsonInput(c, z.strictObject({ operationId: uuid, key: z.string().min(1).max(300), status: z.enum(['read', 'dismissed']) })); return c.json(await support.markReminder(c.get('socket'), c.get('workspaceId'), input.operationId, input.key, input.status)); });
+app.post('/runs/:id/revisit', async c => c.json(await learning.revisitFlashcards(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, writeInput))));
 app.get('/ai/status', c => c.json({ available: false, reason: ai.unavailable }));
 app.post('/ai/operations/:id/cancel', async c => { const body = await jsonInput(c, z.strictObject({ operationId: uuid })); return c.json(await ai.cancelOperation(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), body.operationId)); });
 app.get('/ai/operations/:id', async c => c.json(await ai.viewOperation(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));

@@ -1,7 +1,7 @@
 import { transaction } from './db';
 import { and, asc, eq, gt, inArray, lte } from 'drizzle-orm';
 import { z } from 'zod';
-import { createSetInput, metadataInput, questionInput, runWriteInput, transitionInput, validResponse, sameAnswer, type VersionedQuestion, type LearningRun, type LearningAttempt } from '../../src/shared/learning';
+import { createSetInput, metadataInput, questionInput, runWriteInput, transitionInput, writeInput, validResponse, sameAnswer, type VersionedQuestion, type LearningRun, type LearningAttempt } from '../../src/shared/learning';
 import { attemptTotals, toQuestionAttempt } from '../../src/shared/marking';
 import { sectionLocked, locate } from '../../src/shared/exam';
 import { uuid } from '../../src/shared/online';
@@ -63,6 +63,11 @@ export async function ownSet(db: Db, workspaceId: string, id: string) {
   const { fingerprint: _fingerprint, workspaceId: _workspace, ...visible } = row;
   return visible;
 }
+export async function ownPracticeSet(db: Db, workspaceId: string, id: string) {
+  const set = await ownSet(db, workspaceId, id);
+  if (set.purpose !== 'practice') throw notFound();
+  return set;
+}
 export async function setQuestions(db: Db, workspaceId: string, setId: string) {
   return db.select({ id: setItems.id, question: questionVersions.content }).from(setItems).innerJoin(questionVersions, and(eq(questionVersions.id, setItems.questionId), eq(questionVersions.workspaceId, setItems.workspaceId), eq(questionVersions.courseId, setItems.courseId))).where(and(eq(setItems.workspaceId, workspaceId), eq(setItems.setId, setId))).orderBy(asc(setItems.position));
 }
@@ -86,7 +91,7 @@ export async function listSets(db: Db, workspaceId: string, courseId: string, ar
 }
 export async function patchSet(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof metadataInput>) {
   return operation(db, workspaceId, input.operationId, { action: 'set-metadata', id, input }, async tx => {
-    const row = await ownSet(tx, workspaceId, id);
+    const row = await ownPracticeSet(tx, workspaceId, id);
     if (row.revision !== input.expectedRevision) throw conflict();
     await tx.update(learningSets).set({ name: input.name, archived: input.archived, revision: row.revision + 1, updatedAt: new Date() }).where(eq(learningSets.id, id));
     return ownSet(tx, workspaceId, id);
@@ -112,8 +117,8 @@ export async function runView(tx: Transaction, workspaceId: string, id: string):
   const items = await setQuestions(tx, workspaceId, set.id);
   const answers = await tx.select().from(runAnswers).where(and(eq(runAnswers.workspaceId, workspaceId), eq(runAnswers.runId, id)));
   const [attempt] = await tx.select({ id: learningAttempts.id }).from(learningAttempts).where(and(eq(learningAttempts.workspaceId, workspaceId), eq(learningAttempts.runId, id)));
-  return { id, courseId: run.courseId, setId: set.id, title: run.title, revision: run.revision, state: run.state, position: run.position, feedback: set.feedback, hintsAllowed: set.hintsAllowed, startedAt: run.startedAt.toISOString(), deadlineAt: run.deadlineAt?.toISOString(), exam: run.exam, serverNow: new Date().toISOString(), attemptId: attempt?.id ?? null,
-    items: items.map(item => {
+  return { id, flashcardReview: run.flashcardReview, courseId: run.courseId, setId: set.id, title: run.title, revision: run.revision, state: run.state, position: run.position, feedback: set.feedback, hintsAllowed: set.hintsAllowed, startedAt: run.startedAt.toISOString(), deadlineAt: run.deadlineAt?.toISOString(), exam: run.exam, serverNow: new Date().toISOString(), attemptId: attempt?.id ?? null,
+    items: items.filter(item => !run.flashcardReview || run.flashcardReview.itemIds.includes(item.id)).map(item => {
       const a = answers.find(a => a.itemId === item.id);
       const response = a?.response ?? { kind: 'none' as const };
       const show = run.state === 'submitted' || (!run.exam && (!!a?.checked || !!a?.revealed));
@@ -124,7 +129,7 @@ export async function runView(tx: Transaction, workspaceId: string, id: string):
 export async function getRun(db: SocketDb, workspaceId: string, id: string) { return transaction(db, tx => runView(tx, workspaceId, id)); }
 export async function startRun(db: SocketDb, workspaceId: string, setId: string, id: string, plannedSessionId?: string) {
   return operation(db, workspaceId, id, { action: 'start-run', setId, id, plannedSessionId }, async tx => {
-    const set = await ownSet(tx, workspaceId, setId);
+    const set = await ownPracticeSet(tx, workspaceId, setId);
     if (set.archived) throw new ApiError(409, 'archived', 'Restore this set before starting a new attempt.');
     if (plannedSessionId) await validatePlannedLink(tx, workspaceId, set.courseId, plannedSessionId, false);
     const [saved] = await tx.insert(learningRuns).values({ id, workspaceId, courseId: set.courseId, setId, title: set.name, plannedSessionId }).onConflictDoNothing().returning();
@@ -133,7 +138,8 @@ export async function startRun(db: SocketDb, workspaceId: string, setId: string,
   });
 }
 async function saveBatch(tx: Transaction, run: typeof learningRuns.$inferSelect, input: z.infer<typeof runWriteInput>) {
-  const items = await setQuestions(tx, run.workspaceId, run.setId);
+  const all = await setQuestions(tx, run.workspaceId, run.setId);
+  const items = all.filter(item => !run.flashcardReview || run.flashcardReview.itemIds.includes(item.id));
   if (run.exam && input.position !== run.position) throw new ApiError(400, 'exam_navigation', 'Use exam navigation to change position.');
   if (input.position >= items.length) throw new ApiError(400, 'invalid_input', 'Choose a question in this run.');
   const answers = await tx.select().from(runAnswers).where(eq(runAnswers.runId, run.id));
@@ -148,7 +154,7 @@ async function saveBatch(tx: Transaction, run: typeof learningRuns.$inferSelect,
     const prior = answers.find(a => a.itemId === entry.itemId);
     if (prior?.checked && !sameAnswer(prior.response, entry.response)) throw new ApiError(409, 'answer_locked', 'This answer was checked. Start a new attempt to answer it again.');
     if (entry.response.kind === 'self-rating' && !prior?.revealed) throw new ApiError(409, 'reveal_required', 'Reveal the flashcard before rating your recall.');
-    await tx.insert(runAnswers).values({ workspaceId: run.workspaceId, courseId: run.courseId, runId: run.id, setId: run.setId, itemId: item.id, response: entry.response }).onConflictDoUpdate({ target: [runAnswers.runId, runAnswers.itemId], set: { response: entry.response } });
+    await tx.insert(runAnswers).values({ workspaceId: run.workspaceId, courseId: run.courseId, runId: run.id, setId: run.setId, itemId: item.id, response: entry.response, checked: entry.response.kind === 'self-rating' }).onConflictDoUpdate({ target: [runAnswers.runId, runAnswers.itemId], set: { response: entry.response, ...(entry.response.kind === 'self-rating' ? { checked: true } : {}) } });
   }
 }
 export async function writeRun(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof runWriteInput>, submit: boolean) {
@@ -175,11 +181,33 @@ export async function transition(db: SocketDb, workspaceId: string, id: string, 
     if (run.state !== 'active' || run.revision !== input.expectedRevision) throw conflict();
     const set = await ownSet(tx, workspaceId, run.setId);
     const item = (await setQuestions(tx, workspaceId, set.id)).find(i => i.id === input.itemId);
-    if (!item) throw notFound();
+    if (!item || run.flashcardReview && !run.flashcardReview.itemIds.includes(item.id)) throw notFound();
     if (input.action === 'reveal' && item.question.format !== 'flashcard' || input.action === 'hint' && (!set.hintsAllowed || item.question.format === 'flashcard') || input.action === 'check' && set.feedback !== 'immediate') throw new ApiError(400, 'invalid_transition', 'This action is unavailable for this question.');
     const flag = input.action === 'check' ? { checked: true } : input.action === 'reveal' ? { revealed: true } : { hinted: true };
     await tx.insert(runAnswers).values({ workspaceId, courseId: run.courseId, runId: id, setId: set.id, itemId: item.id, response: { kind: 'none' }, ...flag }).onConflictDoUpdate({ target: [runAnswers.runId, runAnswers.itemId], set: flag });
     await tx.update(learningRuns).set({ revision: run.revision + 1 }).where(eq(learningRuns.id, id));
+    return runView(tx, workspaceId, id);
+  });
+}
+/** One second pass, with initial ratings retained as self-rated provenance. */
+export async function revisitFlashcards(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof writeInput>) {
+  return operation(db, workspaceId, input.operationId, { action: 'flashcard-review', id, input }, async tx => {
+    const run = await ownRun(tx, workspaceId, id);
+    if (run.state !== 'active' || run.revision !== input.expectedRevision) throw conflict();
+    if (run.exam || run.flashcardReview) throw new ApiError(409, 'review_unavailable', 'This run cannot start another flashcard pass.');
+    const items = await setQuestions(tx, workspaceId, run.setId);
+    if (run.position !== items.length - 1) throw new ApiError(409, 'review_unavailable', 'Reach the last question before starting the second pass.');
+    const answers = await tx.select().from(runAnswers).where(eq(runAnswers.runId, id));
+    const firstRatings: NonNullable<LearningRun['flashcardReview']>['firstRatings'] = {};
+    const itemIds = items.filter(item => {
+      const answer = answers.find(a => a.itemId === item.id)?.response;
+      if (item.question.format !== 'flashcard' || answer?.kind !== 'self-rating') return false;
+      firstRatings[item.question.id] = answer;
+      return answer.rating === 'again' || answer.rating === 'hard';
+    }).map(item => item.id);
+    if (!itemIds.length) throw new ApiError(409, 'review_unavailable', 'No difficult cards need a second pass.');
+    await tx.update(runAnswers).set({ checked: false, revealed: false }).where(and(eq(runAnswers.runId, id), inArray(runAnswers.itemId, itemIds)));
+    await tx.update(learningRuns).set({ flashcardReview: { itemIds, firstRatings }, position: 0, revision: run.revision + 1 }).where(eq(learningRuns.id, id));
     return runView(tx, workspaceId, id);
   });
 }
@@ -207,7 +235,7 @@ export async function finalizeRun(tx: Transaction, run: typeof learningRuns.$inf
   const answers = await tx.select().from(runAnswers).where(eq(runAnswers.runId, run.id));
   const questions = items.map(item => { const a = answers.find(a => a.itemId === item.id); return { question: item.question, result: toQuestionAttempt(item.question, a?.response ?? { kind: 'none' }, !!a?.hinted) }; });
   const set = await ownSet(tx, run.workspaceId, run.setId);
-  const snapshot: LearningAttempt = { id: crypto.randomUUID(), runId: run.id, courseId: run.courseId, title: run.title, startedAt: run.startedAt.toISOString(), completedAt: completedAt.toISOString(), markingVersion: 'objective-v1', questions, ...attemptTotals(questions.map(q => q.result)), exam: run.exam, plannedSessionId: run.plannedSessionId ?? undefined, remediatesAttemptId: set.remediatesAttemptId ?? undefined, ...(run.exam ? { finish } : {}) };
+  const snapshot: LearningAttempt = { id: crypto.randomUUID(), runId: run.id, courseId: run.courseId, title: run.title, startedAt: run.startedAt.toISOString(), completedAt: completedAt.toISOString(), markingVersion: 'objective-v1', flashcardReview: run.flashcardReview, questions, ...attemptTotals(questions.map(q => q.result)), exam: run.exam, plannedSessionId: run.plannedSessionId ?? undefined, remediatesAttemptId: set.remediatesAttemptId ?? undefined, ...(run.exam ? { finish } : {}) };
   await tx.insert(learningAttempts).values({ id: snapshot.id, workspaceId: run.workspaceId, courseId: run.courseId, runId: run.id, setId: run.setId, snapshot });
   await tx.update(learningRuns).set({ revision: run.revision + 1, state: 'submitted', completedAt }).where(eq(learningRuns.id, run.id));
   if (run.plannedSessionId) {
@@ -230,7 +258,7 @@ export async function reconcileRun(tx: Transaction, run: typeof learningRuns.$in
       exam.lockedSectionIds.push(sectionId); exam.sectionOutcomes.push({ sectionId, ended: 'expired', endedAt: deadline }); changed = true;
     }
   }
-  if (exam.configSnapshot.sections.every(s => exam.lockedSectionIds.includes(s.id))) {
+  if (changed && exam.configSnapshot.sections.every(s => exam.lockedSectionIds.includes(s.id))) {
     await finalizeRun(tx, { ...run, exam }, 'expired'); return ownRun(tx, run.workspaceId, run.id);
   }
   if (changed) {

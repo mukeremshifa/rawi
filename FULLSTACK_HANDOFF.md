@@ -187,7 +187,7 @@ The full migration is not complete. These are not all external dependencies.
 | Hosted AI execution | Runtime Vertex authentication is unavailable. Integrate an authenticated Worker-compatible execution adapter using the existing provider/model configuration. Connect it to reservation and publication boundaries, without a detached background promise. No credential setup or provisioning was attempted. |
 | Tutor learning behavior | Bounded context, existing prompts, validated publication, Stop and saved recovery are implemented. Connect hosted streaming and session summaries. Current tutor messages are saved with blocked replies and do not create learning evidence. These application paths remain unfinished, not merely unverified. |
 | Written feedback execution | Publication and revisions exist. Connect provider output to these functions and expose revision history/regrading controls. Current UI requests are explicitly blocked. |
-| Full UI parity | Shared answer components, domain rules and navigation are reused. Advanced planner controls, flashcard second-pass state and some exam controls still need adaptation. Assessment editing, rehearsal renaming and set conflict review were added. Keep explicit online mode until parity is established. |
+| Full UI parity | Shared answer components, domain rules and navigation are reused. Some exam controls and remaining shell parity still need adaptation. Custom planner windows, detailed check-ins and flashcard second passes were added in a follow-up. Assessment editing, rehearsal renaming and set conflict review were added. Keep explicit online mode until parity is established. |
 | Transfer coverage | Add unfinished practice import with per-record validation. Tutor histories are now imported, with extra local action metadata retained in the recovery original. Online archive restoration needs its own reviewed remapping path. Original files, drafts and unsupported records are recoverable from the retained local export. |
 | Extraction | TXT and Markdown are supported. PDF, DOCX and PPTX originals remain downloadable but unreadable. Integrate an available parser if one becomes configured, preserving real locations. Parser selection and processing infrastructure remain outside scope. |
 | Verification | Complete the remaining failure matrix, especially cancellation, provider outcomes, large-account pagination and device-clock manipulation. Browser save races, expiry, topic removal and local-mode checks have now passed. No real tutor stream, cancellation, provider timeout or hosted citation result has been verified. |
@@ -283,3 +283,43 @@ transactions now set local idle, statement and lock timeouts of 15, 30 and 10 se
 The values were read back successfully from the development database. Database-wide
 settings were not changed. The subsequent tutor API and publication check passed.
 Earlier timeout and connection failures are not counted as successful checks.
+
+
+## Flashcard second pass
+
+Migration 0012 was generated, reviewed and applied. It adds a nullable second-pass
+snapshot to learning runs. Difficult cards can be revisited once before submission.
+The server resets their reveal and rating locks while retaining first-pass ratings.
+Second-pass position and ratings resume across browsers. Final attempts keep both
+initial and final ratings as self-rated evidence.
+
+Chrome started the second pass and Edge resumed, revealed, rerated and submitted it.
+The immutable result retained the initial hard rating and final easy rating.
+A second account was denied access. Two preliminary browser assertions matched
+the original heading too broadly and read before the write completed. The corrected
+exact-heading check passed. No underlying second-pass failure was inferred from
+those preliminary assertions.
+
+
+## Planner and rehearsal controls follow-up
+
+The planner now edits custom dated windows and notes, including an end at midnight,
+manual session topic and assessment links, and detailed check-ins. Editing existing
+assessments and sessions retains the opening revision through unrelated refreshes.
+Draft export and stable retry callbacks preserve proposal review and other pending
+actions. Applying a proposal refreshes saved data without reloading away drafts.
+
+Rehearsals can link owned assessments and copy settings into a new configuration.
+The copy excludes record metadata rejected by request validation. Active exams have
+a numbered question navigator with flags. Hidden exam sets cannot be opened through
+the practice-set API. Manual section completion no longer submits a single-section
+paper, and all manually locked sections do not trigger expiry reconciliation.
+
+Chrome and API rereads verified custom dated availability ending at midnight,
+linked session topics and assessment, a detailed scoped check-in and rehearsal copy.
+An initial selector was too strict for a native select and was corrected. The next
+run reached the exam step and exposed automatic finalization of all locked sections.
+After fixing reconciliation, a focused Chrome check passed navigation, final-section
+locking without feedback, rejected locked writes, hidden exam-set denial and explicit
+whole-paper submission with a manual result. These are actual dev-server checks,
+not hosted provider verification.

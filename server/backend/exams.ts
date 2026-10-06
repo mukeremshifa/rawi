@@ -3,8 +3,8 @@ import type { z } from 'zod';
 import { buildRun, flatQuestionIds, locate, sectionLocked, validateConfig, withExtraTime } from '../../src/shared/exam';
 import type { createExamInput, examTransitionInput, ExamRuntime } from '../../src/shared/online-exams';
 import type { metadataInput } from '../../src/shared/learning';
-import { examConfigs, learningRuns, learningSets, materials, questionVersions, setItems } from './schema';
-import { operation, ownRun, reconcileRun, runView, finalizeRun, validatePlannedLink, getRun } from './learning';
+import { assessments, examConfigs, learningRuns, learningSets, materials, questionVersions, setItems } from './schema';
+import { operation, ownRun, reconcileRun, runView, validatePlannedLink, getRun } from './learning';
 import { lockCourse, validateTopics } from './materials';
 import { getCourse } from './service';
 import { ApiError, conflict, notFound } from './errors';
@@ -26,6 +26,10 @@ export async function createExam(db: SocketDb, workspaceId: string, courseId: st
     if (input.config.allowedMaterialIds.length) {
       const found = await tx.select({ id: materials.id }).from(materials).where(and(eq(materials.workspaceId, workspaceId), eq(materials.courseId, courseId), inArray(materials.id, input.config.allowedMaterialIds)));
       if (found.length !== input.config.allowedMaterialIds.length) throw notFound();
+    }
+    if (input.config.assessmentIds?.length) {
+      const found = await tx.select({ id: assessments.id }).from(assessments).where(and(eq(assessments.workspaceId, workspaceId), eq(assessments.courseId, courseId), inArray(assessments.id, input.config.assessmentIds)));
+      if (found.length !== input.config.assessmentIds.length) throw notFound();
     }
     const [row] = await tx.insert(examConfigs).values({ id: input.id, workspaceId, courseId, config: { ...input.config, id: input.id, courseId, savedAt: new Date().toISOString() } }).onConflictDoNothing().returning();
     if (!row) throw notFound(); return row;
@@ -75,7 +79,6 @@ export async function examTransition(db: SocketDb, workspaceId: string, id: stri
       exam.flagged = exam.flagged.includes(questionId!) ? exam.flagged.filter(q => q !== questionId) : [...exam.flagged, questionId!];
     } else if (input.action === 'finish-section') {
       const section = exam.configSnapshot.sections[exam.currentSectionIndex]!;
-      if (exam.configSnapshot.sections.length === 1) { await finalizeRun(tx, run, 'manual'); return runView(tx, workspaceId, id); }
       if (exam.configSnapshot.lockSectionsOnFinish && !exam.lockedSectionIds.includes(section.id)) { exam.lockedSectionIds.push(section.id); exam.sectionOutcomes.push({ sectionId: section.id, ended: 'submitted', endedAt: new Date().toISOString() }); }
     } else {
       if (exam.configSnapshot.navigation === 'sequential' && input.position < run.position) throw new ApiError(409, 'question_locked', 'This rehearsal does not allow returning to earlier questions.');

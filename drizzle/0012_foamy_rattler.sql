@@ -1,0 +1,1 @@
+ALTER TABLE "learning_runs" ADD COLUMN "flashcard_review" jsonb;

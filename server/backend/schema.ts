@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { pgTable, date, text, boolean, timestamp, uuid, integer, bigint, jsonb, unique, index, foreignKey, primaryKey, check, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { PreferenceFields } from '../../src/shared/online';
-import type { VersionedQuestion, LearningAttempt } from '../../src/shared/learning';
+import type { VersionedQuestion, LearningAttempt, FlashcardReview } from '../../src/shared/learning';
 import type { AnswerValue } from '../../src/shared/types';
 import type { ExamConfig } from '../../src/shared/types';
 import type { ExamRuntime } from '../../src/shared/online-exams';
@@ -189,6 +189,7 @@ export const learningRuns = pgTable('learning_runs', {
   state: text('state').$type<'active' | 'submitted'>().notNull().default('active'), revision: integer('revision').notNull().default(1), position: integer('position').notNull().default(0),
   startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(), completedAt: timestamp('completed_at', { withTimezone: true }),
   plannedSessionId: uuid('planned_session_id'),
+  flashcardReview: jsonb('flashcard_review').$type<FlashcardReview>(),
   exam: jsonb('exam').$type<ExamRuntime>(), deadlineAt: timestamp('deadline_at', { withTimezone: true }),
 }, t => [unique('runs_scope_unique').on(t.workspaceId, t.courseId, t.setId, t.id),
   foreignKey({ name: 'runs_planner_scope_fk', columns: [t.workspaceId, t.courseId, t.plannedSessionId], foreignColumns: [plannedSessions.workspaceId, plannedSessions.courseId, plannedSessions.id] }),
