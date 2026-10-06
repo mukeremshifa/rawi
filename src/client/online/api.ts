@@ -4,8 +4,9 @@ import type { ApiErrorBody } from '@shared/online';
 export const authClient = createAuthClient({ baseURL: window.location.origin });
 let activeUser: string | null = null;
 let accountGeneration = 0;
+let accountController = new AbortController();
 export function setActiveAccount(userId: string | null) {
-  if (activeUser !== userId || userId === null) accountGeneration++;
+  if (activeUser !== userId || userId === null) { accountGeneration++; accountController.abort(); accountController = new AbortController(); }
   activeUser = userId;
 }
 export class OnlineError extends Error {
@@ -17,7 +18,7 @@ export async function request<T>(path: string, userId?: string, body?: unknown, 
   let response: Response;
   try {
     response = await fetch(`/api${path}`, {
-      method, credentials: 'same-origin', cache: 'no-store', signal,
+      method, credentials: 'same-origin', cache: 'no-store', signal: userId ? AbortSignal.any([accountController.signal, ...(signal ? [signal] : [])]) : signal,
       headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(userId ? { 'X-Rawi-User': userId } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });

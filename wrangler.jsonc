@@ -4,7 +4,6 @@
   "main": "server/worker.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
-  "secrets": { "required": ["DATABASE_URL", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
@@ -12,5 +11,7 @@
     "run_worker_first": ["/api", "/api/*"]
   },
   "observability": { "enabled": true },
+  "r2_buckets": [{ "binding": "MATERIALS_BUCKET", "bucket_name": "rawi-materials-development", "remote": true }],
+  "triggers": { "crons": ["*/15 * * * *"] },
   "dev": { "ip": "127.0.0.1", "port": 8788 }
 }

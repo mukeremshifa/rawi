@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Page, PageHeader } from '@/components/layout';
 import { authClient, errorMessage, OnlineError, request, setActiveAccount } from './api';
 import { CourseLibrary, CourseEditor, NewOnlineCourse, PreferencesEditor } from './pages';
+import { OnlineMaterials, OnlineMaterialReader } from './Materials';
 
 const Account = createContext<Me | null>(null);
 export function useAccount() {
@@ -111,8 +112,12 @@ export function OnlineApp() {
         <Route path="/online/courses" element={<CourseLibrary />} />
         <Route path="/online/courses/new" element={<NewOnlineCourse />} />
         <Route path="/online/course/:id" element={<CourseEditor key={location.pathname} />} />
+        <Route path="/online/course/:id/materials" element={<OnlineMaterials key={location.pathname} />} />
+        <Route path="/online/materials/:materialId" element={<OnlineMaterialReader key={location.pathname} />} />
+        <Route path="/online/materials/:materialId/versions/:versionId" element={<OnlineMaterialReader key={location.pathname} />} />
+        <Route path="/online/materials/:materialId/versions/:versionId/passages/:passageId" element={<OnlineMaterialReader key={location.pathname} />} />
         <Route path="/online/settings" element={<PreferencesEditor onSaved={preferences => setMe(previous => previous?.workspace.id === preferences.workspaceId ? { ...previous, preferences } : previous)} />} />
-        <Route path="*" element={<Page className="py-10"><PageHeader title="This area is not available online yet" description="Materials, tutoring, practice, exams, planning and history are available in local mode. Online mode does not save learning activity on this device." /><Button asChild><Link to="/online/courses">Back to courses</Link></Button></Page>} />
+        <Route path="*" element={<Page className="py-10"><PageHeader title="This area is not available online yet" description="Tutoring, practice, exams, planning and history are available in local mode. Online mode does not save learning activity on this device." /><Button asChild><Link to="/online/courses">Back to courses</Link></Button></Page>} />
       </Routes>
     </div></Account.Provider>}
   </div>;

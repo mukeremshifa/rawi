@@ -10,6 +10,10 @@ import { readDb, socketDb, type ReadDb, type SocketDb } from './db';
 import { ApiError, notFound } from './errors';
 import * as service from './service';
 import { workspaces } from './schema';
+import { createMaterialInput, materialPatch, textVersionInput, uploadInput, materialListInput, pageInput } from '../../src/shared/materials';
+import * as materialService from './materials';
+import * as uploadService from './uploads';
+import { limits } from './storage';
 
 export type BackendContext = {
   Bindings: BackendBindings;
@@ -36,7 +40,7 @@ api.use('*', async (c, next) => {
   await next();
   console.log(JSON.stringify({ requestId: c.get('requestId'), method: c.req.method, status: c.res.status, durationMs: Date.now() - start }));
 });
-api.use('*', bodyLimit({ maxSize: 1024 * 1024, onError: () => { throw new ApiError(400, 'invalid_input', 'The request is too large.'); } }));
+api.use('*', bodyLimit({ maxSize: 7 * 1024 * 1024, onError: () => { throw new ApiError(400, 'invalid_input', 'The request is too large.'); } }));
 api.get('/status', c => {
   const missing = configurationProblems(c.env);
   return c.json({ mode: 'online', configured: missing.length === 0, missing });
@@ -45,7 +49,7 @@ api.get('/status', c => {
 const configured = new Hono<BackendContext>();
 configured.use('*', async (c, next) => {
   // Unknown paths return 404 even when configuration is absent.
-  const known = c.req.path.startsWith('/api/auth/') || /^\/api\/v1\/(me|preferences|courses(?:\/[^/]+(?:\/topics)?)?)$/.test(c.req.path);
+  const known = c.req.path.startsWith('/api/auth/') || /^\/api\/v1\/(me|preferences|courses(?:\/[^/]+(?:\/(topics|materials|uploads))?)?|materials\/[^/]+(?:\/versions(?:\/[^/]+(?:\/(download|passages\/[^/]+))?)?)?|uploads\/[^/]+(?:\/finalize)?)$/.test(c.req.path);
   if (!known) throw notFound();
   const missing = configurationProblems(c.env);
   if (missing.length) throw new ApiError(503, 'not_configured', `Online mode is not configured: ${missing.join(', ')}.`);
@@ -103,6 +107,28 @@ app.put('/courses/:id/topics', async c => {
 });
 app.get('/preferences', async c => c.json(await service.getPreferences(c.get('db'), c.get('workspaceId'))));
 app.patch('/preferences', async c => c.json(await service.updatePreferences(c.get('db'), c.get('workspaceId'), await jsonInput(c, preferencesPatch))));
+app.get('/courses/:id/materials', async c => c.json(await materialService.listMaterials(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), materialListInput.parse(c.req.query()))));
+app.post('/courses/:id/materials', async c => c.json(await materialService.createMaterial(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, createMaterialInput), limits(c.env).text)));
+app.get('/materials/:id', async c => c.json(await materialService.materialDetail(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
+app.patch('/materials/:id', async c => c.json(await materialService.patchMaterial(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, materialPatch))));
+app.get('/materials/:id/versions', async c => {
+  const query = pageInput.parse(c.req.query());
+  return c.json(await materialService.listVersions(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), query.limit, query.cursor));
+});
+app.post('/materials/:id/versions', async c => c.json(await materialService.addTextVersion(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, textVersionInput), limits(c.env).text)));
+app.get('/materials/:id/versions/:versionId', async c => {
+  const query = z.strictObject({ cursor: z.coerce.number().int().min(-1).max(1048576).default(-1) }).parse(c.req.query());
+  return c.json(await materialService.versionDetail(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')), query.cursor));
+});
+app.get('/materials/:id/versions/:versionId/passages/:passageId', async c => c.json(await materialService.exactPassage(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')), uuid.parse(c.req.param('passageId')))));
+app.get('/courses/:id/uploads', async c => {
+  const query = pageInput.parse(c.req.query());
+  return c.json(await uploadService.listUploads(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), query.cursor));
+});
+app.post('/courses/:id/uploads', async c => c.json(await uploadService.initiate(c.get('socket'), c.env, c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, uploadInput))));
+app.get('/uploads/:id', async c => c.json(await uploadService.getUpload(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
+app.post('/uploads/:id/finalize', async c => c.json(await uploadService.finalize(c.get('socket'), c.env, c.get('workspaceId'), uuid.parse(c.req.param('id')))));
+app.post('/materials/:id/versions/:versionId/download', async c => c.json(await uploadService.download(c.get('db'), c.env, c.get('workspaceId'), uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')))));
 configured.route('/v1', app);
 api.route('/', configured);
 api.notFound(() => { throw notFound(); });

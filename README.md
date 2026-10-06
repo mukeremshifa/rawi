@@ -56,7 +56,8 @@ existing saved work. Provisioning and production deployment remain later work.
 Open `/online`, or choose **Local mode** in the workspace header to switch.
 The modes have separate composition roots. Signing in never uploads or replaces
 `rawi.state.v1`. Existing restoration, migration and export remain in local mode.
-Online learning areas explain that they are unavailable until later checkpoints.
+Online materials are available in checkpoint 2. Other learning areas explain
+that they are unavailable until later checkpoints.
 
 For online development, copy `.dev.vars.example` to the ignored `.dev.vars`
 and fill in `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
@@ -95,6 +96,49 @@ preferences are stored for later learning features.
 matches the pinned runtime's October 1 release. `npx wrangler deploy --dry-run`
 checks packaging without deploying. See [checkpoint verification](BACKEND_CHECKPOINT_1.md)
 for executed checks and the external configuration still needed.
+
+## Online materials: checkpoint 2
+
+Each online course has a Materials library for pasted text and private source
+files. Text and Markdown are readable. PDF, DOCX and PPTX are stored for download
+with an explicit notice that text has not been extracted. Edits create immutable
+versions and passage links. Archive preserves history and originals.
+
+The development bucket is `rawi-materials-development`, bound as
+`MATERIALS_BUCKET` with `remote: true` in `wrangler.jsonc`. It must stay private.
+The remote development binding requires a Wrangler login. For text-only
+development without Cloudflare access, set that binding's `remote` to `false`.
+The target check prevents mixing local storage with real signed upload URLs.
+File actions also need server-only `R2_ACCOUNT_ID`, `R2_BUCKET_NAME`,
+`R2_ENVIRONMENT`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` in `.dev.vars`.
+Use an Object Read & Write token scoped to this bucket. Pasted text, courses
+and sign-in remain available without those file credentials.
+
+The `_rawi/environment` object must contain
+`ACCOUNT_ID/BUCKET_NAME/ENVIRONMENT`. Before signing file access, the API reads
+that marker through both the binding and signed endpoint to verify the target.
+The development marker and exact-origin CORS are configured. To reapply CORS:
+
+```sh
+npx wrangler r2 bucket cors set rawi-materials-development --file server/backend/r2-cors.json
+```
+
+Add the exact application origin to that file when a hosted development origin
+is chosen. Do not use wildcard origins or enable public bucket access. Upload
+and download URLs expire within five minutes and are never saved in browser
+storage. Originals download as attachments. Basic file validation is not malware
+scanning. Text is limited to 1 MiB, originals to 25 MiB each, stored originals to
+1 GiB per workspace, and pending uploads to five. `.dev.vars.example` lists
+optional limits. Archived and historical originals count toward storage.
+
+The scheduled handler reconciles up to 25 records per maintenance phase every
+15 minutes when deployed. While `npm run dev:backend` is running, invoke
+`http://127.0.0.1:8788/cdn-cgi/local/scheduled` to run it again.
+It releases expired reservations and fences cleanup of tracked abandoned
+objects after a one-hour grace period. No bucket-wide deletion scan is used.
+Local development requires manual scheduled invocations for ongoing cleanup.
+See [checkpoint 2 verification](BACKEND_CHECKPOINT_2.md) for actual results and
+remaining configuration. No production deployment is part of this checkpoint.
 
 ## AI setup (Vertex AI)
 
