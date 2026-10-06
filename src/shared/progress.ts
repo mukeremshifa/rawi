@@ -119,6 +119,7 @@ export function deriveEvidence(topicId: string, attempts: Attempt[], timezone?: 
     for (const qa of attempt.questions) {
       if (qa.topicId !== topicId) continue;
       if (qa.outcome === 'pending') continue;
+      if (qa.format === 'flashcard') { selfRated += 1; continue; }
       switch (attempt.mode) {
         case 'tutored':
           tutored += 1;

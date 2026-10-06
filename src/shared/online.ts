@@ -28,7 +28,7 @@ export const timezone = z.string().max(100).refine(value => {
   try { new Intl.DateTimeFormat('en', { timeZone: value }); return !/^[+-]/.test(value); }
   catch { return false; }
 }, 'Use an IANA timezone such as Asia/Dubai.');
-export const preferencesPatch = preferenceFields.partial().extend({ timezone: timezone.optional(), expectedRevision: revision }).strict();
+export const preferencesPatch = preferenceFields.partial().extend({ operationId: uuid.optional(), timezone: timezone.optional(), expectedRevision: revision }).strict();
 export const courseFields = z.strictObject({
   name: z.string().trim().min(1).max(200), description: z.string().trim().max(4000),
   goal: z.string().trim().max(4000), accent: z.enum(accents),
@@ -49,8 +49,8 @@ export const outline = z.array(topicInput).max(200).superRefine((topics, ctx) =>
   }
 });
 export const createCourseInput = courseFields.extend({ id: uuid, topics: outline.default([]) }).strict();
-export const coursePatch = courseFields.partial().extend({ archived: z.boolean().optional(), expectedRevision: revision }).strict();
-export const replaceOutlineInput = z.strictObject({ expectedRevision: revision, topics: outline });
+export const coursePatch = courseFields.partial().extend({ operationId: uuid.optional(), archived: z.boolean().optional(), expectedRevision: revision }).strict();
+export const replaceOutlineInput = z.strictObject({ operationId: uuid.optional(), expectedRevision: revision, topics: outline });
 export type TopicInput = z.infer<typeof topicInput>;
 export type CreateCourseInput = z.infer<typeof createCourseInput>;
 export interface OnlineCourse extends z.infer<typeof courseFields> {

@@ -78,6 +78,13 @@
       "when": 1791324733592,
       "tag": "0010_keen_taskmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791326471075,
+      "tag": "0011_square_ezekiel_stane",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,8 @@
+import { useUnsentGuard } from './learning-hooks';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { z } from 'zod';
-import { accents, courseFields, createCourseInput, replaceOutlineInput, preferencesPatch, type CourseDetail, type CoursePage, type CreateCourseInput, type OnlineCourse, type OnlinePreferences, type TopicInput } from '@shared/online';
+import { accents, courseFields, coursePatch, createCourseInput, replaceOutlineInput, preferencesPatch, type CourseDetail, type CoursePage, type CreateCourseInput, type OnlineCourse, type OnlinePreferences, type TopicInput } from '@shared/online';
 import { readSyllabus } from '@shared/syllabus';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
@@ -87,13 +88,14 @@ export function NewOnlineCourse() {
   const [id] = useState(() => crypto.randomUUID());
   const [fields, setFields] = useState<Fields>({ name: '', description: '', goal: '', accent: 'indigo' });
   const [submitted, setSubmitted] = useState<CreateCourseInput | null>(null);
+  const allowNavigation = useUnsentGuard(!!fields.name || !!fields.description || !!fields.goal || !!submitted);
   const save = useSaveState();
   const create = () => save.run(async () => {
     const parsed = createCourseInput.safeParse(submitted ?? { ...fields, id, topics: [] });
     if (!parsed.success) throw new Error('Enter a course name and check the field lengths.');
     setSubmitted(parsed.data);
     const result = await request<CourseDetail>('/v1/courses', user.id, parsed.data, 'POST');
-    navigate(`/online/course/${result.course.id}`, { replace: true });
+    allowNavigation(); navigate(`/online/course/${result.course.id}`, { replace: true });
   });
   return <Page className="py-8" width="prose"><PageHeader title="Add an online course" description="After saving, build its topic outline." />
     <form className="space-y-5" onSubmit={e => { e.preventDefault(); void create(); }}><fieldset disabled={save.saving || !!submitted}><CourseFields value={fields} onChange={v => { setFields(v); save.clear(); }} /></fieldset>
@@ -119,8 +121,10 @@ export function CourseEditor() {
 function LoadedCourse({ initial }: { initial: CourseDetail }) {
   const { user } = useAccount();
   const [base, setBase] = useState(initial);
+  const metadata = useRef<z.infer<typeof coursePatch> | null>(null), outlineRequest = useRef<z.infer<typeof replaceOutlineInput> | null>(null);
   const [fields, setFields] = useState(courseValues(initial.course));
   const [topics, setTopics] = useState<TopicInput[]>(initial.topics.map(topicValues));
+  useUnsentGuard(JSON.stringify(fields) !== JSON.stringify(courseValues(base.course)) || JSON.stringify(topics) !== JSON.stringify(base.topics.map(topicValues)));
   const [review, setReview] = useState<CourseDetail | null>(null);
   const [reviewError, setReviewError] = useState('');
   const save = useSaveState();
@@ -128,13 +132,15 @@ function LoadedCourse({ initial }: { initial: CourseDetail }) {
   const update = (archived?: boolean) => save.run(async () => {
     const parsed = courseFields.safeParse(fields);
     if (!parsed.success) throw new Error('Enter a course name and check the field lengths.');
-    const course = await request<OnlineCourse>(`/v1/courses/${base.course.id}`, user.id, { ...parsed.data, ...(archived === undefined ? {} : { archived }), expectedRevision: base.course.revision }, 'PATCH');
+    metadata.current ??= { ...parsed.data, operationId: crypto.randomUUID(), ...(archived === undefined ? {} : { archived }), expectedRevision: base.course.revision };
+    const course = await request<OnlineCourse>(`/v1/courses/${base.course.id}`, user.id, metadata.current, 'PATCH'); metadata.current = null;
     setBase(previous => ({ ...previous, course })); setFields(courseValues(course));
   });
   const saveOutline = () => save.run(async () => {
-    const parsed = replaceOutlineInput.safeParse({ topics, expectedRevision: base.course.revision });
+    const parsed = replaceOutlineInput.safeParse(outlineRequest.current ?? { operationId: crypto.randomUUID(), topics, expectedRevision: base.course.revision });
     if (!parsed.success) throw new Error('Every topic needs a title and valid links to other topics in this course.');
-    const result = await request<CourseDetail>(`/v1/courses/${base.course.id}/topics`, user.id, parsed.data, 'PUT');
+    outlineRequest.current = parsed.data;
+    const result = await request<CourseDetail>(`/v1/courses/${base.course.id}/topics`, user.id, parsed.data, 'PUT'); outlineRequest.current = null;
     setBase(result); setTopics(result.topics.map(topicValues));
   });
   const loadReview = async () => {
@@ -144,17 +150,17 @@ function LoadedCourse({ initial }: { initial: CourseDetail }) {
   };
   const dirty = () => { if (!conflicted) save.clear(); };
   return <Page className="py-8" width="prose"><PageHeader title={base.course.name} description={base.course.archived ? 'Archived course. Restore it to your active library.' : 'Course settings and topic outline'} actions={<Button variant="outline" asChild><Link to="/online/courses">All courses</Link></Button>} />
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); void update(); }}><fieldset disabled={save.saving}><CourseFields value={fields} onChange={v => { setFields(v); dirty(); }} /></fieldset>
+    <form className="space-y-4" onSubmit={e => { e.preventDefault(); void update(); }}><fieldset disabled={save.saving || !!metadata.current}><CourseFields value={fields} onChange={v => { setFields(v); dirty(); }} /></fieldset>
       <div className="flex flex-wrap gap-3"><Button disabled={save.saving || conflicted}>Save course details</Button><Button type="button" variant="outline" disabled={save.saving || conflicted} onClick={() => void update(!base.course.archived)}>{base.course.archived ? 'Restore course' : 'Archive course'}</Button></div>
     </form>
     <section className="space-y-4 border-t pt-6"><h2 className="text-xl font-semibold">Topic outline</h2><p className="text-muted-foreground text-sm">Edit and reorder topics, then save the outline. Removing a topic removes its links. Course deletion is not available.</p>
-      <fieldset disabled={save.saving}><OutlineEditor topics={topics} onChange={value => { setTopics(value); dirty(); }} /></fieldset>
+      <fieldset disabled={save.saving || !!outlineRequest.current}><OutlineEditor topics={topics} onChange={value => { setTopics(value); dirty(); }} /></fieldset>
       <Button disabled={save.saving || conflicted} onClick={() => void saveOutline()}>Save outline</Button>
     </section>
     <SaveStatus state={save} onReview={() => void loadReview()} />
     {reviewError && <p role="alert">{reviewError}</p>}
     {review && <section className="rounded border p-4 space-y-4"><h2 className="font-semibold">Review the latest saved version</h2><p>Your unsent edits remain in the fields above. Compare them with this saved version before choosing.</p><CourseReview detail={review} />
-      <div className="flex flex-wrap gap-3"><Button variant="outline" onClick={() => { setBase(review); setFields(courseValues(review.course)); setTopics(review.topics.map(topicValues)); setReview(null); save.clear(); }}>Use latest version</Button><Button onClick={() => { setBase(review); setReview(null); save.clear(); }}>Keep my edits for another save</Button></div>
+      <div className="flex flex-wrap gap-3"><Button variant="outline" onClick={() => { metadata.current = null; outlineRequest.current = null; setBase(review); setFields(courseValues(review.course)); setTopics(review.topics.map(topicValues)); setReview(null); save.clear(); }}>Use latest version</Button><Button onClick={() => { metadata.current = null; outlineRequest.current = null; setBase(review); setReview(null); save.clear(); }}>Keep my edits for another save</Button></div>
     </section>}
     <nav className="flex flex-wrap gap-4 border-t pt-6">{['materials', 'tutor', 'practice', 'exams', 'progress'].map(area => <Link className="underline" key={area} to={`/online/course/${base.course.id}/${area}`}>{area[0]!.toUpperCase() + area.slice(1)}</Link>)}</nav>
   </Page>;
@@ -167,13 +173,14 @@ function CourseReview({ detail }: { detail: CourseDetail }) {
 }
 function OutlineEditor({ topics, onChange }: { topics: TopicInput[]; onChange: (topics: TopicInput[]) => void }) {
   const [pasted, setPasted] = useState(''); const [notice, setNotice] = useState('');
+  useUnsentGuard(!!pasted);
   const ordered = (next: TopicInput[]) => onChange(next.map((topic, order) => ({ ...topic, order })));
   const edit = (id: string, patch: Partial<TopicInput>) => onChange(topics.map(t => t.id === id ? { ...t, ...patch } : t));
   const append = () => {
     const reading = readSyllabus(pasted);
     if (reading.topics.length + topics.length > 200) { setNotice('An outline can contain up to 200 topics.'); return; }
     ordered([...topics, ...reading.topics.map(t => ({ id: crypto.randomUUID(), title: t.title, summary: t.summary, module: t.module ?? '', priority: 'normal' as const, order: 0, relatedTopicIds: [] }))]);
-    setNotice(`${reading.summary} Review the added topics before saving.`);
+    setPasted(''); setNotice(`${reading.summary} Review the added topics before saving.`);
   };
   const move = (index: number, step: number) => { const next = [...topics]; [next[index], next[index + step]] = [next[index + step]!, next[index]!]; ordered(next); };
   return <div className="space-y-4">
@@ -196,17 +203,20 @@ function OutlineEditor({ topics, onChange }: { topics: TopicInput[]; onChange: (
 }
 export function PreferencesEditor({ onSaved }: { onSaved: (value: OnlinePreferences) => void }) {
   const account = useAccount();
+  const pending = useRef<z.infer<typeof preferencesPatch> | null>(null);
   const [base, setBase] = useState(account.preferences);
   const [values, setValues] = useState(base.values); const [zone, setZone] = useState(base.timezone);
+  useUnsentGuard(zone !== base.timezone || JSON.stringify(values) !== JSON.stringify(base.values));
   const [review, setReview] = useState<OnlinePreferences | null>(null); const [reviewError, setReviewError] = useState('');
   const save = useSaveState();
   const conflicted = save.error instanceof OnlineError && save.error.code === 'revision_conflict';
   const patch = (next: Partial<typeof values>) => { setValues(v => ({ ...v, ...next })); if (!conflicted) save.clear(); };
   const submit = () => save.run(async () => {
-    const parsed = preferencesPatch.safeParse({ ...values, timezone: zone, expectedRevision: base.revision });
+    const parsed = preferencesPatch.safeParse(pending.current ?? { ...values, timezone: zone, expectedRevision: base.revision, operationId: crypto.randomUUID() });
     if (!parsed.success) throw new Error('Check the workspace name, question count and IANA timezone.');
+    pending.current = parsed.data;
     const saved = await request<OnlinePreferences>('/v1/preferences', account.user.id, parsed.data, 'PATCH');
-    setBase(saved); setValues(saved.values); setZone(saved.timezone); onSaved(saved);
+    pending.current = null; setBase(saved); setValues(saved.values); setZone(saved.timezone); onSaved(saved);
   });
   const loadReview = async () => {
     setReviewError('');
@@ -214,7 +224,7 @@ export function PreferencesEditor({ onSaved }: { onSaved: (value: OnlinePreferen
     catch (e) { setReviewError(errorMessage(e)); }
   };
   return <Page className="py-8" width="prose"><PageHeader title="Online preferences" description="These preferences belong to this account. Local workspace preferences stay separate." />
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); void submit(); }}><fieldset disabled={save.saving} className="space-y-4">
+    <form className="space-y-4" onSubmit={e => { e.preventDefault(); void submit(); }}><fieldset disabled={save.saving || !!pending.current} className="space-y-4">
       <Field title="Display name"><Input maxLength={80} value={values.displayName} onChange={e => patch({ displayName: e.target.value })} /></Field>
       <Field title="Workspace name"><Input maxLength={80} required value={values.workspaceName} onChange={e => patch({ workspaceName: e.target.value })} /></Field>
       <Field title="Timezone"><Input value={zone} placeholder="Asia/Dubai" onChange={e => { setZone(e.target.value); if (!conflicted) save.clear(); }} /></Field>
@@ -231,7 +241,7 @@ export function PreferencesEditor({ onSaved }: { onSaved: (value: OnlinePreferen
     </fieldset><Button disabled={save.saving || conflicted}>Save preferences</Button></form>
     <SaveStatus state={save} onReview={() => void loadReview()} />{reviewError && <p role="alert">{reviewError}</p>}
     {review && <section className="rounded border p-4 space-y-4"><h2 className="font-semibold">Latest saved preferences</h2><p>Your unsent preferences remain above.</p><dl className="space-y-1">{Object.entries({ 'Display name': review.values.displayName, Workspace: review.values.workspaceName, Timezone: review.timezone, Accent: review.values.accent, Questions: review.values.questionCount, Hints: review.values.hints ? 'On' : 'Off', Feedback: review.values.feedback, Theme: review.values.theme, 'Reading size': review.values.readingSize, Motion: review.values.motion, 'Assessment reminders': review.values.reminders.assessments ? 'On' : 'Off', 'Study reminders': review.values.reminders.study ? 'On' : 'Off', 'Review reminders': review.values.reminders.review ? 'On' : 'Off', 'Days ahead': review.values.reminders.days }).map(([k, v]) => <div key={k}><dt className="inline font-medium">{k}: </dt><dd className="inline">{v || 'None'}</dd></div>)}</dl>
-      <div className="flex gap-3"><Button variant="outline" onClick={() => { setBase(review); setValues(review.values); setZone(review.timezone); onSaved(review); setReview(null); save.clear(); }}>Use latest version</Button><Button onClick={() => { setBase(review); setReview(null); save.clear(); }}>Keep my edits for another save</Button></div>
+      <div className="flex gap-3"><Button variant="outline" onClick={() => { pending.current = null; setBase(review); setValues(review.values); setZone(review.timezone); onSaved(review); setReview(null); save.clear(); }}>Use latest version</Button><Button onClick={() => { pending.current = null; setBase(review); setReview(null); save.clear(); }}>Keep my edits for another save</Button></div>
     </section>}
   </Page>;
 }

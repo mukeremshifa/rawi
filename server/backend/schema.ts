@@ -6,7 +6,7 @@ import type { AnswerValue } from '../../src/shared/types';
 import type { ExamConfig } from '../../src/shared/types';
 import type { ExamRuntime } from '../../src/shared/online-exams';
 import type { Availability, PlannedAssessment, PlannedSession, PlanProposal, CheckIn } from '../../src/shared/types';
-import type { OnlineTutorSession, OnlineTutorMessage } from '../../src/shared/online-tutor';
+import type { OnlineTutorSession, OnlineTutorMessage, TutorMessageProvenance } from '../../src/shared/online-tutor';
 import type { ImportReview } from '../../src/shared/transfer';
 import type { WrittenGrading } from '../../src/shared/types';
 
@@ -235,11 +235,13 @@ export const tutorSessions = pgTable('tutor_sessions', {
   id: uuid('id').primaryKey(), ...materialScope(), topicId: uuid('topic_id').notNull(), topicLabel: text('topic_label').notNull(), title: text('title').notNull(),
   archived: boolean('archived').notNull().default(false), revision: integer('revision').notNull().default(1), stage: text('stage').$type<OnlineTutorSession['stage']>().notNull().default('orient'),
   source: jsonb('source').$type<OnlineTutorSession['source']>(), review: jsonb('review').$type<OnlineTutorSession['review']>(), ...timestamps(),
+  imported: boolean('imported').notNull().default(false), endedAt: timestamp('ended_at', { withTimezone: true }),
 }, t => [unique('tutor_sessions_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('tutor_sessions_scope_idx').on(t.workspaceId, t.courseId, t.id)]);
 export const tutorMessages = pgTable('tutor_messages', {
   id: uuid('id').primaryKey(), ...materialScope(), sessionId: uuid('session_id').notNull(), ordinal: integer('ordinal').notNull(),
   text: text('text').notNull(), role: text('role').$type<'student' | 'tutor'>().notNull(), state: text('state').$type<OnlineTutorMessage['state']>().notNull(),
   operationId: uuid('operation_id').notNull().unique(), failure: text('failure'), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  provenance: jsonb('provenance').$type<TutorMessageProvenance>(),
 }, t => [unique('tutor_message_order_unique').on(t.sessionId, t.ordinal), foreignKey({ columns: [t.workspaceId, t.courseId, t.sessionId], foreignColumns: [tutorSessions.workspaceId, tutorSessions.courseId, tutorSessions.id] })]);
 export const workspaceImports = pgTable('workspace_imports', {
   id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id), fingerprint: text('fingerprint').notNull(),

@@ -4,6 +4,7 @@ import { defaultPreferences, preferenceFields, type CreateCourseInput, type Topi
 import { courses, preferences, topics, topicLinks, workspaces } from './schema';
 import type { ReadDb, SocketDb, Transaction } from './db';
 import { ApiError, conflict, notFound } from './errors';
+import { operation } from './learning';
 
 const scope = (workspaceId: string, id: string) => and(eq(courses.workspaceId, workspaceId), eq(courses.id, id));
 export function publicCourse(row: typeof courses.$inferSelect) {
@@ -100,16 +101,18 @@ export async function createCourse(db: SocketDb, workspaceId: string, input: Cre
     return { course: publicCourse(course), topics: await getTopics(tx, workspaceId, course.id) };
   });
 }
-export async function updateCourse(db: ReadDb, workspaceId: string, id: string, input: z.infer<typeof coursePatch>) {
-  const { expectedRevision, ...patch } = input;
-  const [course] = await db.update(courses).set({ ...patch, revision: sql`${courses.revision} + 1`, updatedAt: new Date() })
+export async function updateCourse(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof coursePatch>) {
+  const { expectedRevision, operationId, ...patch } = input;
+  return operation(db, workspaceId, operationId ?? crypto.randomUUID(), { action: 'course-metadata', id, input }, async tx => {
+  const [course] = await tx.update(courses).set({ ...patch, revision: sql`${courses.revision} + 1`, updatedAt: new Date() })
     .where(and(scope(workspaceId, id), eq(courses.revision, expectedRevision))).returning();
   if (course) return publicCourse(course);
-  await getCourse(db, workspaceId, id);
+  await getCourse(tx, workspaceId, id);
   throw conflict();
+  });
 }
-export async function replaceTopics(db: SocketDb, workspaceId: string, id: string, expectedRevision: number, input: TopicInput[]) {
-  return db.transaction(async tx => {
+export async function replaceTopics(db: SocketDb, workspaceId: string, id: string, expectedRevision: number, input: TopicInput[], operationId?: string) {
+  return operation(db, workspaceId, operationId ?? crypto.randomUUID(), { action: 'outline', id, expectedRevision, input }, async tx => {
     const [course] = await tx.update(courses).set({ revision: sql`${courses.revision} + 1`, updatedAt: new Date() })
       .where(and(scope(workspaceId, id), eq(courses.revision, expectedRevision))).returning();
     if (!course) { await getCourse(tx, workspaceId, id); throw conflict(); }
@@ -117,17 +120,19 @@ export async function replaceTopics(db: SocketDb, workspaceId: string, id: strin
     return { course: publicCourse(course), topics: await getTopics(tx, workspaceId, id) };
   });
 }
-export async function getPreferences(db: ReadDb, workspaceId: string) {
+export async function getPreferences(db: ReadDb | Transaction, workspaceId: string) {
   const [row] = await db.select().from(preferences).where(eq(preferences.workspaceId, workspaceId));
   if (!row) throw notFound();
   return { ...row, values: preferenceFields.parse(row.values) };
 }
-export async function updatePreferences(db: ReadDb, workspaceId: string, input: z.infer<typeof preferencesPatch>) {
-  const { expectedRevision, timezone, ...patch } = input;
-  const [saved] = await db.update(preferences).set({
+export async function updatePreferences(db: SocketDb, workspaceId: string, input: z.infer<typeof preferencesPatch>) {
+  const { expectedRevision, timezone, operationId, ...patch } = input;
+  return operation(db, workspaceId, operationId ?? crypto.randomUUID(), { action: 'preferences', input }, async tx => {
+  const [saved] = await tx.update(preferences).set({
     values: sql`${preferences.values} || ${JSON.stringify(patch)}::jsonb`,
     ...(timezone ? { timezone } : {}), revision: sql`${preferences.revision} + 1`, updatedAt: new Date(),
   }).where(and(eq(preferences.workspaceId, workspaceId), eq(preferences.revision, expectedRevision))).returning();
-  if (!saved) { await getPreferences(db, workspaceId); throw conflict(); }
+  if (!saved) { await getPreferences(tx, workspaceId); throw conflict(); }
   return { ...saved, values: preferenceFields.parse(saved.values) };
+  });
 }

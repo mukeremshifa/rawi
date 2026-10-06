@@ -24,7 +24,7 @@ export async function learningData(db: ReadDb | Transaction, workspaceId: string
   const original = await db.select({ snapshot: learningAttempts.snapshot, setId: learningAttempts.setId }).from(learningAttempts).where(eq(learningAttempts.workspaceId, workspaceId));
   const current = await withFeedback(db, workspaceId, original.map(r => r.snapshot));
   const rows = original.map((r, i) => ({ ...r, snapshot: current[i]! }));
-  const attempts: Attempt[] = rows.map(({ snapshot: a, setId }) => a.imported ? { ...a.imported, marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable } : ({ id: a.id, courseId: a.courseId, kind: a.exam ? 'exam' : 'practice', mode: a.exam ? 'exam' : a.questions.every(q => q.question.format === 'flashcard') ? 'self-rated' : 'practice', title: a.title, topicIds: [...new Set(a.questions.map(q => q.question.topicId))], startedAt: a.startedAt, completedAt: a.completedAt, questions: a.questions.map(q => q.result), marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable, assistanceRecord: 'tracked', practiceSetId: a.exam ? undefined : setId, examConfigSnapshot: a.exam?.configSnapshot, finish: a.finish, plannedSessionId: a.plannedSessionId, remediatesAttemptId: a.remediatesAttemptId }));
+  const attempts: Attempt[] = rows.map(({ snapshot: a, setId }) => a.imported ? { ...a.imported, assistanceRecord: 'unknown', marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable } : ({ id: a.id, courseId: a.courseId, kind: a.exam ? 'exam' : 'practice', mode: a.exam ? 'exam' : a.questions.every(q => q.question.format === 'flashcard') ? 'self-rated' : 'practice', title: a.title, topicIds: [...new Set(a.questions.map(q => q.question.topicId))], startedAt: a.startedAt, completedAt: a.completedAt, questions: a.questions.map(q => q.result), marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable, assistanceRecord: 'tracked', practiceSetId: a.exam ? undefined : setId, examConfigSnapshot: a.exam?.configSnapshot, finish: a.finish, plannedSessionId: a.plannedSessionId, remediatesAttemptId: a.remediatesAttemptId }));
   return { attempts, snapshots: rows.map(r => r.snapshot) };
 }
 export async function planningData(tx: Transaction, workspaceId: string) {
@@ -35,6 +35,8 @@ export async function planningData(tx: Transaction, workspaceId: string) {
   const topicData: Topic[] = topicRows.map(t => ({ ...t, relatedTopicIds: [] }));
   const assessmentRows = await tx.select().from(assessments).where(eq(assessments.workspaceId, workspaceId));
   const sessionRows = await tx.select().from(plannedSessions).where(eq(plannedSessions.workspaceId, workspaceId));
+  const activeLinks = await tx.select({ id: learningRuns.plannedSessionId }).from(learningRuns).where(and(eq(learningRuns.workspaceId, workspaceId), eq(learningRuns.state, 'active')));
+  for (const row of sessionRows) if (activeLinks.some(r => r.id === row.id)) row.content = { ...row.content, locked: true };
   const checkInRows = await tx.select().from(checkIns).where(eq(checkIns.workspaceId, workspaceId));
   const questionRows = await tx.select({ content: questionVersions.content }).from(questionVersions).where(eq(questionVersions.workspaceId, workspaceId));
   const materialRows = await tx.select().from(materials).where(eq(materials.workspaceId, workspaceId));
@@ -64,7 +66,7 @@ export async function saveSession(db: SocketDb, workspaceId: string, input: z.in
     const [prior] = await tx.select().from(plannedSessions).where(eq(plannedSessions.id, input.id));
     if (prior && (prior.workspaceId !== workspaceId || prior.courseId !== input.session.courseId)) throw notFound();
     if (prior?.content.status === 'completed') throw new ApiError(409, 'completed', 'Completed study remains in your history.');
-    const content = { ...input.session, id: input.id, createdAt: prior?.content.createdAt ?? new Date().toISOString() };
+    const content = { ...prior?.content, ...input.session, id: input.id, createdAt: prior?.content.createdAt ?? new Date().toISOString() };
     await tx.insert(plannedSessions).values({ id: input.id, workspaceId, courseId: input.session.courseId, date: content.date, content }).onConflictDoUpdate({ target: plannedSessions.id, set: { content, date: content.date, revision: (prior?.revision ?? 0) + 1 } });
     await bumpPlanner(tx, workspaceId); return { revision: planner.revision + 1, session: content };
   });

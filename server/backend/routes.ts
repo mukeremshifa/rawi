@@ -110,14 +110,14 @@ app.get('/courses', async c => {
 });
 app.post('/courses', async c => c.json(await service.createCourse(c.get('socket'), c.get('workspaceId'), await jsonInput(c, createCourseInput))));
 app.get('/courses/:id', async c => c.json(await service.getCourse(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
-app.patch('/courses/:id', async c => c.json(await service.updateCourse(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, coursePatch))));
+app.patch('/courses/:id', async c => c.json(await service.updateCourse(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, coursePatch))));
 app.get('/courses/:id/topics', async c => c.json(await service.getOutline(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
 app.put('/courses/:id/topics', async c => {
   const input = await jsonInput(c, replaceOutlineInput);
-  return c.json(await service.replaceTopics(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), input.expectedRevision, input.topics));
+  return c.json(await service.replaceTopics(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), input.expectedRevision, input.topics, input.operationId));
 });
 app.get('/preferences', async c => c.json(await service.getPreferences(c.get('db'), c.get('workspaceId'))));
-app.patch('/preferences', async c => c.json(await service.updatePreferences(c.get('db'), c.get('workspaceId'), await jsonInput(c, preferencesPatch))));
+app.patch('/preferences', async c => c.json(await service.updatePreferences(c.get('socket'), c.get('workspaceId'), await jsonInput(c, preferencesPatch))));
 app.get('/courses/:id/materials', async c => c.json(await materialService.listMaterials(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), materialListInput.parse(c.req.query()))));
 app.post('/courses/:id/materials', async c => c.json(await materialService.createMaterial(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, createMaterialInput), limits(c.env).text)));
 app.get('/materials/:id', async c => c.json(await materialService.materialDetail(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));

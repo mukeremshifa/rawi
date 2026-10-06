@@ -57,7 +57,7 @@ export const pageQuery = z.strictObject({ cursor: uuid.optional(), limit: z.coer
 export type VersionedQuestion = Question & { source?: z.infer<typeof sourceInput>; topicLabel: string; origin: 'imported' | 'generated'; originalId?: string };
 export type LearningSet = { id: string; courseId: string; name: string; archived: boolean; revision: number; feedback: 'immediate' | 'end'; hintsAllowed: boolean };
 export type RunItem = { id: string; question: Question; response: AnswerValue; checked: boolean; revealed: boolean; hinted: boolean; feedback?: QuestionAttempt };
-export type LearningRun = { id: string; courseId: string; setId: string; title: string; revision: number; state: 'active' | 'submitted'; position: number; feedback: 'immediate' | 'end'; hintsAllowed: boolean; items: RunItem[]; attemptId: string | null; startedAt: string; exam?: ExamRuntime | null; serverNow?: string };
+export type LearningRun = { id: string; courseId: string; setId: string; title: string; revision: number; state: 'active' | 'submitted'; position: number; feedback: 'immediate' | 'end'; hintsAllowed: boolean; items: RunItem[]; attemptId: string | null; startedAt: string; exam?: ExamRuntime | null; deadlineAt?: string; serverNow?: string };
 export type LearningAttempt = { id: string; runId: string; courseId: string; title: string; startedAt: string; completedAt: string; markingVersion: string; questions: { question: VersionedQuestion; result: QuestionAttempt }[]; marksAwarded: number; marksAvailable: number; pending: number; exam?: ExamRuntime | null; finish?: 'manual' | 'expired'; plannedSessionId?: string; remediatesAttemptId?: string; imported?: Attempt };
 
 export function sameAnswer(a: unknown, b: unknown): boolean {

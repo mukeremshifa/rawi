@@ -123,8 +123,8 @@ Implemented since the earlier inventory:
 - Reviewed local imports now include assessments, rehearsal settings, planner
   sessions and check-ins, plus earlier course/material/question/attempt support.
   Local unfinished exams remain recovery-only because their clocks cannot be
-  promoted into server authority. Tutor sessions and active practice remain
-  recovery-only, disclosed before import.
+  promoted into server authority. Active practice remains recovery-only, disclosed before import. Tutor history
+  import was added in the final milestone below.
 - Saved AI request pages and authenticated generation/feedback preparation use
   account records. No client material text, conversation history or grade is
   accepted as authority. Hosted requests remain blocked without sending.
@@ -187,10 +187,10 @@ The full migration is not complete. These are not all external dependencies.
 | Hosted AI execution | Runtime Vertex authentication is unavailable. Integrate an authenticated Worker-compatible execution adapter using the existing provider/model configuration. Connect it to reservation and publication boundaries, without a detached background promise. No credential setup or provisioning was attempted. |
 | Tutor learning behavior | Load bounded exact context and server history into the existing prompts, validate citations, integrate streaming, Stop, recovery, stages and summaries. Current tutor messages are saved with blocked replies and do not create learning evidence. These application paths remain unfinished, not merely unverified. |
 | Written feedback execution | Publication and revisions exist. Connect provider output to these functions and expose revision history/regrading controls. Current UI requests are explicitly blocked. |
-| Full UI parity | Shared answer components, domain rules and navigation are reused. Assessment editing, advanced planner controls, flashcard second-pass state, full exam controls and some library conflict flows still need adaptation. Keep explicit online mode until parity is established. |
-| Transfer coverage | Add tutor session and unfinished practice import with per-record validation. Online archive restoration needs its own reviewed remapping path. Original files, drafts and unsupported records are recoverable from the retained local export. |
+| Full UI parity | Shared answer components, domain rules and navigation are reused. Advanced planner controls, flashcard second-pass state and some exam controls still need adaptation. Assessment editing, rehearsal renaming and set conflict review were added. Keep explicit online mode until parity is established. |
+| Transfer coverage | Add unfinished practice import with per-record validation. Tutor histories are now imported, with extra local action metadata retained in the recovery original. Online archive restoration needs its own reviewed remapping path. Original files, drafts and unsupported records are recoverable from the retained local export. |
 | Extraction | TXT and Markdown are supported. PDF, DOCX and PPTX originals remain downloadable but unreadable. Integrate an available parser if one becomes configured, preserving real locations. Parser selection and processing infrastructure remain outside scope. |
-| Verification | Complete the remaining browser race, expiry, topic removal, import failure and local-mode matrix. No real tutor stream, cancellation, provider timeout or hosted citation result has been verified. |
+| Verification | Complete the remaining failure matrix, especially cancellation, provider outcomes, large-account pagination and device-clock manipulation. Browser save races, expiry, topic removal and local-mode checks have now passed. No real tutor stream, cancellation, provider timeout or hosted citation result has been verified. |
 
 The principal tradeoff is normalized immutable learning history plus coarse,
 short workspace write serialization. This simplifies retries and finalization for
@@ -207,3 +207,52 @@ calendar-day reviews and host-independent date arithmetic. `npm run typecheck`,
 `npm run build` and Worker dry-run packaging passed. Vite reported the existing
 large-chunk warning, now about 1.39 MB minified for the combined local/online entry.
 No public deployment occurred.
+
+
+## Final implemented milestone and verification status
+
+Migration 0011 was generated, reviewed and applied. It adds imported tutor
+provenance, an imported-history label and historical session ending time.
+Tutor import validates course/topic/source relationships, stores ordered messages
+and remaps citations to immutable online passage versions. Extra local actions
+remain in the preserved original. Existing imported attempt assistance is not
+promoted into verified independent evidence by server progress. The original
+recorded provenance remains available in the immutable snapshot and export.
+
+Course, outline and preference metadata now accept operation receipts. Their
+current UI retains payloads on ambiguous failure and clears them only on success
+or explicit conflict review. Older checkpoint callers without an operation ID
+remain revision-protected. Practice now uses the shared format/topic selection
+rule. Mixed-format flashcards count as self-rated evidence. Active run links keep
+planned sessions out of proposal replacement. Exam countdowns include the server's
+outer deadline as well as the section deadline.
+
+Newly verified:
+
+- Course, outline and preference retries returned the original revision without
+  applying another mutation.
+- Chrome edited an assessment's time and notes, and renamed a rehearsal. API
+  rereads confirmed persistence.
+- Account change during a held, committed answer-save response cleared private
+  drafts and ignored the late response. This used two isolated test identities.
+- Imported tutor text, explicit synthetic model provenance, remapped exact
+  citations and foreign-session denial passed. No live AI response was produced.
+- Removing a topic preserved the saved attempt, historical label and exact source.
+  A new tutor review could refer to that historical topic. The fixture's optional
+  outline restoration collided with a Worker hot reload after the check, so it
+  was not counted as successful restoration. Only the isolated fixture was
+  affected, and it was subsequently archived.
+- `npm run dev` launched the local API and Vite. Chrome opened the local sample
+  home, courses, planner, history, practice and exams without page errors.
+  Visiting `/online` left `rawi.state.v1` byte-for-byte unchanged. Local reopening
+  succeeded. No real user's browser profile or stored local work was accessed.
+- The development verification sessions were revoked. Fixture courses were
+  archived. Maintenance reported zero pending uploads and zero reserved bytes.
+  No temporary failure triggers remain. Immutable verification history and
+  retained private originals were not deleted.
+
+The full brief remains incomplete. The primary unresolved work is hosted tutor
+execution and streaming, an authenticated Vertex adapter, unfinished-practice
+import and online archive restoration, and remaining UI parity. Online mode was
+not made the default because that condition has not been met. No new infrastructure
+was selected or provisioned, no credentials changed, and no tests or CI were added.

@@ -36,7 +36,7 @@ export function WelcomePage() {
         description="A study workspace for the courses you are taking: reading, tutoring, practice and exam rehearsal, planned across all of them."
       />
 
-      <p className="text-sm">Local mode stores work in this browser. <a href="/online" className="underline">Use an online account</a> for courses, topics and preferences.</p>
+      <p className="text-sm">Local mode stores work in this browser. <a href="/online" className="underline">Use an online account</a> for saved courses, materials, practice, exams and planning.</p>
       <div className="flex flex-col gap-snug">
         <Card>
           <CardContent className="flex flex-col gap-snug">

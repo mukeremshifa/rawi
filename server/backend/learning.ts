@@ -111,7 +111,7 @@ export async function runView(tx: Transaction, workspaceId: string, id: string):
   const items = await setQuestions(tx, workspaceId, set.id);
   const answers = await tx.select().from(runAnswers).where(and(eq(runAnswers.workspaceId, workspaceId), eq(runAnswers.runId, id)));
   const [attempt] = await tx.select({ id: learningAttempts.id }).from(learningAttempts).where(and(eq(learningAttempts.workspaceId, workspaceId), eq(learningAttempts.runId, id)));
-  return { id, courseId: run.courseId, setId: set.id, title: run.title, revision: run.revision, state: run.state, position: run.position, feedback: set.feedback, hintsAllowed: set.hintsAllowed, startedAt: run.startedAt.toISOString(), exam: run.exam, serverNow: new Date().toISOString(), attemptId: attempt?.id ?? null,
+  return { id, courseId: run.courseId, setId: set.id, title: run.title, revision: run.revision, state: run.state, position: run.position, feedback: set.feedback, hintsAllowed: set.hintsAllowed, startedAt: run.startedAt.toISOString(), deadlineAt: run.deadlineAt?.toISOString(), exam: run.exam, serverNow: new Date().toISOString(), attemptId: attempt?.id ?? null,
     items: items.map(item => {
       const a = answers.find(a => a.itemId === item.id);
       const response = a?.response ?? { kind: 'none' as const };

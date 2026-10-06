@@ -13,7 +13,7 @@ const fail = (message: string): never => { throw new ApiError(400, 'invalid_impo
 function validate(input: unknown) {
   if (new TextEncoder().encode(JSON.stringify(input)).byteLength > 6 * 1048576) fail('Choose a Rawi export up to 6 MiB. Keep the original export for recovery.');
   const data = localTransferInput.parse(input); const state = data.state;
-  const entities = [state.courses, state.topics, state.retiredTopics, state.materials, state.questions, state.savedPractice, state.attempts, state.examConfigs, state.assessments, state.sessions];
+  const entities = [state.courses, state.topics, state.retiredTopics, state.materials, state.questions, state.savedPractice, state.attempts, state.examConfigs, state.assessments, state.sessions, state.tutorSessions];
   for (const rows of entities) if (new Set(rows.map(r => r.id)).size !== rows.length) fail('The export has duplicate record IDs.');
   const courseIds = new Set(state.courses.map(c => c.id));
   const topics = new Map([...state.topics, ...state.retiredTopics].map(t => [t.id, t]));
@@ -47,6 +47,7 @@ function validate(input: unknown) {
     for (const result of a.questions) { const q = questions.get(result.questionId); if (!q || q.courseId !== a.courseId || q.topicId !== result.topicId || q.format !== result.format || result.marksAwarded > result.marksAvailable) fail('An attempt has an invalid question reference or recorded marks.'); }
   }
   function owned(rows: { id: string; courseId: string }[], id: string, courseId: string) { if (!rows.some(r => r.id === id && r.courseId === courseId)) fail('A linked activity is missing or belongs to another course.'); }
+  for (const t of state.tutorSessions) { topic(t.topicId, t.courseId); source(t.source, t.courseId); if (new Set(t.messages.map(m => m.id)).size !== t.messages.length) fail('A tutor session has duplicate message IDs.'); for (const m of t.messages) { source(m.source, t.courseId); for (const c of m.citations ?? []) source(c, t.courseId); } if (t.fromAttemptId) owned(state.attempts, t.fromAttemptId, t.courseId); if (t.fromQuestionId) owned(state.questions, t.fromQuestionId, t.courseId); }
   for (const a of state.assessments) for (const id of a.topicIds) topic(id, a.courseId);
   for (const e of state.examConfigs) { for (const id of e.sections.flatMap(s => s.topicIds)) topic(id, e.courseId); for (const id of e.allowedMaterialIds) owned(state.materials, id, e.courseId); for (const id of e.assessmentIds ?? []) owned(state.assessments, id, e.courseId); }
   for (const s of state.sessions) { for (const id of s.topicIds) topic(id, s.courseId); if (s.assessmentId) owned(state.assessments, s.assessmentId, s.courseId);
@@ -59,8 +60,8 @@ function validate(input: unknown) {
 function reviewFor(id: string, data: LocalTransfer): ImportReview {
   const st = data.state;
   const unsupported: string[] = [];
-  for (const [label, records] of [['Tutor sessions', st.tutorSessions], ['Unfinished practice', st.practiceRuns]] as const) if (records.length) unsupported.push(`${label}: ${records.length} records stay in the recovery original and will not appear as online activity.`);
-  unsupported.push(`${st.examConfigs.length} rehearsal configurations, ${st.assessments.length} assessments, ${st.sessions.length} planner sessions and ${st.checkIns.length} check-ins will also be imported. Historical planner completion is preserved as legacy activity.`);
+  for (const [label, records] of [['Unfinished practice', st.practiceRuns]] as const) if (records.length) unsupported.push(`${label}: ${records.length} records stay in the recovery original and will not appear as online activity.`);
+  unsupported.push(`${st.tutorSessions.length} tutor histories, ${st.examConfigs.length} rehearsal configurations, ${st.assessments.length} assessments, ${st.sessions.length} planner sessions and ${st.checkIns.length} check-ins will also be imported. Tutor provenance and historical planner completion are labelled as imported activity. Extra local tutor actions remain in the recovery original.`);
   if (st.activeExam) unsupported.push('An unfinished local exam cannot establish a server timer. It stays in the recovery original.');
   if (Object.keys(st.drafts ?? {}).length) unsupported.push('Local UI drafts stay in the recovery original.');
   if (st.carriedForward) unsupported.push('Previously carried-forward recovery data stays in the recovery original.');
@@ -121,11 +122,18 @@ export async function commitImport(db: SocketDb, workspaceId: string, id: string
       if (link?.kind === 'tutor') link = { ...link, topicId: remap('topic', link.topicId) };
       if (link?.kind === 'practice-new') link = { ...link, topicIds: link.topicIds.map(id => remap('topic', id)) };
       if (link?.kind === 'mistake-review') link = { ...link, attemptId: remap('attempt', link.attemptId), questionIds: link.questionIds.map(id => remap('question', id)) };
-      const completedBy = planned.completedBy ? state.attempts.some(a => a.id === planned.completedBy) ? remap('attempt', planned.completedBy) : undefined : undefined;
+      const completedBy = planned.completedBy ? state.attempts.some(a => a.id === planned.completedBy) ? remap('attempt', planned.completedBy) : state.tutorSessions.some(t => t.id === planned.completedBy) ? remap('tutor', planned.completedBy) : undefined : undefined;
       const content = { ...planned, id: remap('planned', planned.id), courseId: remap('course', planned.courseId), topicIds: planned.topicIds.map(id => remap('topic', id)), assessmentId: planned.assessmentId ? remap('assessment', planned.assessmentId) : undefined, completedBy, link };
       await tx.insert(s.plannedSessions).values({ id: content.id, workspaceId, courseId: content.courseId, date: content.date, content });
     }
     for (const c of state.checkIns) await tx.insert(s.checkIns).values({ id: remap('check', c.id), workspaceId, content: { ...c, id: remap('check', c.id), courseId: c.courseId ? remap('course', c.courseId) : undefined, topicId: c.topicId ? remap('topic', c.topicId) : undefined } });
+    for (const tutor of state.tutorSessions) {
+      const id = remap('tutor', tutor.id), courseId = remap('course', tutor.courseId);
+      const source = tutor.source ? sources.get(`${tutor.source.materialId}:${tutor.source.passageId}`) : undefined;
+      const label = allTopics.find(t => t.id === tutor.topicId)!.title;
+      await tx.insert(s.tutorSessions).values({ id, workspaceId, courseId, topicId: remap('topic', tutor.topicId), topicLabel: label, title: tutor.title ?? label, stage: tutor.stage, archived: tutor.archived, source, imported: true, createdAt: new Date(tutor.startedAt), updatedAt: new Date(tutor.updatedAt), endedAt: tutor.endedAt ? new Date(tutor.endedAt) : null });
+      if (tutor.messages.length) await tx.insert(s.tutorMessages).values(tutor.messages.map((m, ordinal) => ({ id: remap('message', `${tutor.id}:${m.id}`), workspaceId, courseId, sessionId: id, ordinal, text: m.text, role: m.role, state: m.status === 'interrupted' ? 'interrupted' as const : 'complete' as const, operationId: crypto.randomUUID(), createdAt: new Date(tutor.startedAt), provenance: { imported: true as const, stage: m.stage, model: m.model, grounding: m.grounding, droppedCitations: m.droppedCitations, citations: [...(m.citations ?? []), ...(m.source ? [m.source] : [])].map(ref => sources.get(`${ref.materialId}:${ref.passageId}`)!) } })));
+    }
     const questionMap = new Map<string, VersionedQuestion>();
     for (const q of state.questions) {
       const source = q.source ? sources.get(`${q.source.materialId}:${q.source.passageId}`) : undefined;

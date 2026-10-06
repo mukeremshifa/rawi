@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { z } from 'zod';
 import { createSetInput, formats, sameAnswer, type LearningSet, type LearningRun, type LearningAttempt, type VersionedQuestion, type runWriteInput } from '@shared/learning';
+import { selectQuestions } from '@shared/question-selection';
 import { sectionLocked, locate } from '@shared/exam';
 import { OnlineGeneration, RequestFeedback } from './Ai';
 import { useAccount } from './OnlineApp';
@@ -45,7 +46,7 @@ export function OnlinePractice() {
       <label className="block">Feedback<Select value={feedback} onChange={e => setFeedback(e.target.value as 'immediate' | 'end')}><option value="immediate">After checking each answer</option><option value="end">At the end</option></Select></label>
       <label><input type="checkbox" checked={hints} onChange={e => setHints(e.target.checked)} /> Allow hints</label></fieldset>
       <p>{bank.value ? `${pool.length} matching questions in the complete course bank.` : 'Loading the complete question bank…'}</p>
-      <Button disabled={op.busy || !name.trim() || !pool.length || count < 1 || count > 50} onClick={() => { pending.current ??= createSetInput.parse({ id: crypto.randomUUID(), name, questionIds: pool.slice(0, count).map(q => q.id), feedback, hintsAllowed: hints }); void op.run<LearningSet>(`/v1/courses/${id}/sets`, pending.current, 'POST', saved => { pending.current = null; setName(''); allowNavigation(); nav(`/online/sets/${saved.id}${planned ? `?plannedSessionId=${planned}` : ''}`); }); }}>{op.busy ? 'Saving…' : pending.current ? 'Retry saving set' : 'Save set'}</Button>
+      <Button disabled={op.busy || !name.trim() || !pool.length || count < 1 || count > 50} onClick={() => { pending.current ??= createSetInput.parse({ id: crypto.randomUUID(), name, questionIds: selectQuestions(pool, {}, count).map(q => q.id), feedback, hintsAllowed: hints }); void op.run<LearningSet>(`/v1/courses/${id}/sets`, pending.current, 'POST', saved => { pending.current = null; setName(''); allowNavigation(); nav(`/online/sets/${saved.id}${planned ? `?plannedSessionId=${planned}` : ''}`); }); }}>{op.busy ? 'Saving…' : pending.current ? 'Retry saving set' : 'Save set'}</Button>
       {!pool.length && <p>Your online bank is empty. Workspace import and material generation will provide questions when available.</p>}
       <p>Online question generation is not connected yet. Your saved practice remains available.</p>
     </section>
@@ -58,12 +59,15 @@ export function OnlineSet() {
   const record = useOnlineRecord<{ set: LearningSet; items: { id: string; question: VersionedQuestion }[] }>(`/v1/sets/${id}`);
   const [name, setName] = useState<string | null>(null); const startId = useRef(crypto.randomUUID()); const edit = useRef<unknown>(null);
   const row = record.value?.set;
+  useUnsentGuard(!!edit.current || name !== null && name !== row?.name);
+  const [reviewSet, setReviewSet] = useState<typeof record.value>(null);
   return <Page className="py-8" width="prose"><PageHeader title={row?.name ?? 'Saved practice set'} description="Every attempt uses these same saved questions." />{record.error && <p role="alert">{record.error}</p>}{op.error && <p role="alert">{op.error}</p>}
+    {op.code === 'revision_conflict' && <Button variant="outline" onClick={() => void op.run(`/v1/sets/${id}`, undefined, 'GET', v => setReviewSet(v as typeof record.value))}>Review latest set</Button>}{reviewSet && <div className="border p-4"><p>Saved name: {reviewSet.set.name}. {reviewSet.set.archived ? 'Archived' : 'Active'}. Your draft is retained.</p><Button onClick={() => { record.setValue(reviewSet); edit.current = null; setReviewSet(null); }}>Use reviewed revision</Button></div>}
     {row && <><Link className="underline" to={`/online/course/${row.courseId}/practice`}>Practice library</Link><p>{record.value!.items.length} questions · {row.archived ? 'Archived' : 'Active'}</p>
       <Button disabled={op.busy || row.archived} onClick={() => void op.run<LearningRun>(`/v1/sets/${id}/runs`, { id: startId.current, ...(planned ? { plannedSessionId: planned } : {}) }, 'POST', run => nav(`/online/runs/${run.id}`))}>Start another attempt</Button>
       <label className="block mt-6">Name<Input value={name ?? row.name} disabled={op.busy || !!edit.current} onChange={e => setName(e.target.value)} /></label>
-      <Button disabled={op.busy} onClick={() => { edit.current ??= { operationId: crypto.randomUUID(), expectedRevision: row.revision, name: name ?? row.name, archived: row.archived }; void op.run<LearningSet>(`/v1/sets/${id}`, edit.current, 'PATCH', set => { edit.current = null; record.setValue({ ...record.value!, set }); }); }}>Save name</Button>
-      <Button variant="outline" disabled={op.busy || !!edit.current} onClick={() => { edit.current = { operationId: crypto.randomUUID(), expectedRevision: row.revision, name: row.name, archived: !row.archived }; void op.run<LearningSet>(`/v1/sets/${id}`, edit.current, 'PATCH', set => { edit.current = null; record.setValue({ ...record.value!, set }); }); }}>{row.archived ? 'Restore' : 'Archive'}</Button>
+      <Button disabled={op.busy} onClick={() => { edit.current ??= { operationId: crypto.randomUUID(), expectedRevision: row.revision, name: name ?? row.name, archived: row.archived }; void op.run<LearningSet>(`/v1/sets/${id}`, edit.current, 'PATCH', set => { edit.current = null; setName(null); record.setValue({ ...record.value!, set }); }); }}>Save name</Button>
+      <Button variant="outline" disabled={op.busy || !!edit.current} onClick={() => { edit.current = { operationId: crypto.randomUUID(), expectedRevision: row.revision, name: row.name, archived: !row.archived }; void op.run<LearningSet>(`/v1/sets/${id}`, edit.current, 'PATCH', set => { edit.current = null; setName(null); record.setValue({ ...record.value!, set }); }); }}>{row.archived ? 'Restore' : 'Archive'}</Button>
       {record.value!.items.map(i => <p className="border-t py-4" key={i.id}>{i.question.prompt} · {i.question.topicLabel} · {i.question.origin}</p>)}
     </>}
   </Page>;
@@ -101,7 +105,8 @@ export function OnlineRun() {
   }
   function examAction(action: 'navigate' | 'finish-section' | 'flag', position = run?.position ?? 0) { if (!run) return; pending.current ??= { path: `/v1/runs/${id}/exam-transition`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: run.revision, action, position } }; void op.run<LearningRun>(pending.current.path, pending.current.body, pending.current.method, accept); }
   const exam = run?.exam; const runtime = exam ? { ...exam, answers: {} } : null; const loc = runtime && item ? locate(runtime, item.question.id) : null; const locked = !!(runtime && loc && sectionLocked(runtime, loc.sectionIndex, clock || Date.parse(run!.serverNow!)));
-  const deadline = exam ? (exam.configSnapshot.timing === 'overall' ? exam.deadlineAt : exam.sectionDeadlines[exam.configSnapshot.sections[exam.currentSectionIndex]!.id]) : null;
+  const deadlines = exam ? [run?.deadlineAt, exam.configSnapshot.timing === 'overall' ? exam.deadlineAt : exam.sectionDeadlines[exam.configSnapshot.sections[exam.currentSectionIndex]!.id]].filter((d): d is string => !!d) : [];
+  const deadline = deadlines.length ? new Date(Math.min(...deadlines.map(d => Date.parse(d)))).toISOString() : null;
   return <Page className="py-8" width="prose"><PageHeader title={run?.title ?? 'Practice run'} description="Answers autosave after a short pause. Unsent work remains on this page if saving fails." />
     {record.error && <p role="alert">{record.error}</p>}{op.error && <p role="alert">{op.error}</p>}<p role="status">{op.busy ? 'Saving…' : dirty ? 'Unsaved changes' : message}</p>
     {(dirty || pending.current) && <Button variant="outline" onClick={() => downloadRecovery('rawi-unsent-answers.json', { runId: id, drafts, pending: pending.current })}>Export unsent answers</Button>}
