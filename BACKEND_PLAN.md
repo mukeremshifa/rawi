@@ -2,6 +2,8 @@
 
 Updated 4 October 2026. README.md is authoritative for the chosen stack. This document replaces the earlier provisional architecture. BACKEND_IMPLEMENTATION_BRIEF.md defines the first executable checkpoint.
 
+Execution update, 7 October 2026: [FULLSTACK_IMPLEMENTATION_BRIEF.md](FULLSTACK_IMPLEMENTATION_BRIEF.md) is the active brief for the coordinated application migration. It supersedes the limited checkpoint 3 practice slice and combines the remaining learning-persistence and AI application work into internal milestones. Infrastructure decisions and provisioning remain outside that assignment.
+
 ## 1. Product boundaries
 
 Rawi is a personal learning SaaS with individual subscriptions and institutional sponsorship. Learners own independent workspaces and can study any subject. Organizations administer access without automatically gaining access to private study content. Institutional integrations and offline synchronization are later work.
@@ -138,7 +140,7 @@ A later explicit import validates versioned exports, remaps references, preserve
 
 Budget enforcement precedes hosted provider calls even though billing arrives later. Ownership stays independent of payment from checkpoint 1 without requiring billing implementation then.
 
-Checkpoint 3 will proceed in smaller executable slices. Start with saved practice sets, runs, answers, and attempts using BACKEND_IMPLEMENTATION_BRIEF_03.md. Include the checkpoint 2 material-editor draft-preservation fix in that slice. Subsequent slices cover remaining question formats, exam rehearsals, planner and progress, and tutor history. Completing the first slice does not complete all of checkpoint 3. Hosted generation and feedback remain checkpoint 4.
+Use FULLSTACK_IMPLEMENTATION_BRIEF.md to execute the remaining application migration, including the checkpoint 2 material-editor fix, learning persistence, and AI application integration. The checkpoint table remains the roadmap for capability and release evidence. The full-stack brief coordinates work across those boundaries without claiming infrastructure-dependent features or release readiness are complete. BACKEND_IMPLEMENTATION_BRIEF_03.md is superseded.
 
 ## 11. Operations and remaining decisions
 

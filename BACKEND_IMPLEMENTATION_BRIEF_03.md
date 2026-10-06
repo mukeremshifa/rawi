@@ -1,5 +1,7 @@
 # Backend implementation brief: checkpoint 3, first slice
 
+Superseded on 7 October 2026 by [FULLSTACK_IMPLEMENTATION_BRIEF.md](FULLSTACK_IMPLEMENTATION_BRIEF.md). Use that brief for execution. This document remains a historical record of the earlier limited slice, including the material-draft finding.
+
 Prepared 6 October 2026. Checkpoint 2 has been reviewed. Carry its material-editor draft issue into this work rather than creating a separate cleanup checkpoint.
 
 ## Outcome
