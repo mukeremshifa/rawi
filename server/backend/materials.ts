@@ -1,3 +1,4 @@
+import { transaction } from './db';
 import { and, asc, desc, eq, exists, gt, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { createMaterialInput, materialPatch, textVersionInput, materialListInput } from '../../src/shared/materials';
@@ -82,7 +83,7 @@ export async function publishVersion(tx: Transaction, row: typeof materials.$inf
 export async function createMaterial(db: SocketDb, workspaceId: string, courseId: string, input: z.infer<typeof createMaterialInput>, limit: number) {
   readableText(input.text, limit);
   const fingerprint = await hash(JSON.stringify({ ...input, topicIds: [...input.topicIds].sort() }));
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     await lockCourse(tx, workspaceId, courseId);
     if (input.noteSource) { const ref = input.noteSource; const [source] = await tx.select({ id: passages.id }).from(passages).where(and(eq(passages.workspaceId, workspaceId), eq(passages.courseId, courseId), eq(passages.materialId, ref.materialId), eq(passages.versionId, ref.versionId), eq(passages.id, ref.passageId))); if (!source) throw notFound(); }
     const { text, format, topicIds, ...fields } = input;
@@ -98,7 +99,7 @@ export async function createMaterial(db: SocketDb, workspaceId: string, courseId
   });
 }
 export async function patchMaterial(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof materialPatch>) {
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     const row = await ownMaterial(tx, workspaceId, id);
     await lockCourse(tx, workspaceId, row.courseId);
     const { expectedRevision, topicIds, ...fields } = input;
@@ -111,7 +112,7 @@ export async function patchMaterial(db: SocketDb, workspaceId: string, id: strin
 export async function addTextVersion(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof textVersionInput>, limit: number) {
   readableText(input.text, limit);
   const fingerprint = await hash(JSON.stringify(input));
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     const initial = await ownMaterial(tx, workspaceId, id);
     await lockCourse(tx, workspaceId, initial.courseId);
     const row = await ownMaterial(tx, workspaceId, id);

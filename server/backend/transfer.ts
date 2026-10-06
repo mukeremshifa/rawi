@@ -1,3 +1,4 @@
+import { transaction } from './db';
 import { and, asc, eq } from 'drizzle-orm';
 import { localTransferInput, type LocalTransfer, type ImportReview } from '../../src/shared/transfer';
 import { questionInput, type LearningAttempt, type VersionedQuestion } from '../../src/shared/learning';
@@ -75,7 +76,7 @@ function reviewFor(id: string, data: LocalTransfer): ImportReview {
 }
 export async function prepareImport(db: SocketDb, workspaceId: string, input: unknown) {
   const data = validate(input); const fingerprint = await hash(JSON.stringify(input));
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     const id = crypto.randomUUID();
     await tx.insert(s.workspaceImports).values({ id, workspaceId, fingerprint, original: input, review: reviewFor(id, data) }).onConflictDoNothing();
     const [row] = await tx.select().from(s.workspaceImports).where(and(eq(s.workspaceImports.workspaceId, workspaceId), eq(s.workspaceImports.fingerprint, fingerprint))); return row!.review;
@@ -179,7 +180,7 @@ async function exportRows(tx: Transaction, workspaceId: string) {
   };
 }
 export async function exportWorkspace(db: SocketDb, workspaceId: string) {
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     const data = await exportRows(tx, workspaceId); const result = { format: 'rawi-online-workspace', version: 1, exportedAt: new Date().toISOString(), data };
     if (new TextEncoder().encode(JSON.stringify(result)).byteLength > 20 * 1048576) throw new ApiError(409, 'export_limit', 'This workspace exceeds the 20 MiB export limit. No partial export was produced.'); return result;
   }, { isolationLevel: 'repeatable read' });

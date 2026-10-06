@@ -1,3 +1,4 @@
+import { transaction } from './db';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { Attempt, Material, Topic } from '../../src/shared/types';
@@ -47,7 +48,7 @@ export async function planningData(tx: Transaction, workspaceId: string) {
   return { revision: planner.revision, availability: planner.availability, timezone: prefs?.timezone ?? 'UTC', courses: courseRows.map(c => ({ ...c, createdAt: c.createdAt.toISOString() })), topics: topicData, assessments: assessmentRows.map(r => ({ ...r.content, revision: r.revision })), sessions: sessionRows.map(r => ({ ...r.content, revision: r.revision })), checkIns: checkInRows.map(r => r.content), questions: questionRows.map(r => r.content), materials: materialData, attempts, snapshots };
 }
 export async function plannerView(db: SocketDb, workspaceId: string) {
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     const data = await planningData(tx, workspaceId);
     return { revision: data.revision, availability: data.availability, timezone: data.timezone, courses: data.courses, topics: data.topics, assessments: data.assessments, sessions: data.sessions, checkIns: data.checkIns, today: zonedParts(new Date(), data.timezone).date };
   }, { isolationLevel: 'repeatable read' });
@@ -110,7 +111,7 @@ export async function applyProposal(db: SocketDb, workspaceId: string, id: strin
   });
 }
 export async function progress(db: SocketDb, workspaceId: string) {
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     const data = await planningData(tx, workspaceId); const now = zonedParts(new Date(), data.timezone);
     const days = [...new Set(data.attempts.map(a => zonedParts(new Date(a.completedAt!), data.timezone).date))].sort().reverse();
     let streak = 0, day = days.includes(now.date) ? now.date : addDays(now.date, -1);

@@ -1,3 +1,4 @@
+import { transaction } from './db';
 import { and, asc, eq, gt, inArray, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import { createSetInput, metadataInput, questionInput, runWriteInput, transitionInput, validResponse, sameAnswer, type VersionedQuestion, type LearningRun, type LearningAttempt } from '../../src/shared/learning';
@@ -18,7 +19,7 @@ export const importBankInput = z.strictObject({ operationId: uuid, questions: z.
 // Provider calls and file transfers never run in this transaction.
 export async function operation<T>(db: SocketDb, workspaceId: string, id: string, input: unknown, execute: (tx: Transaction) => Promise<T>): Promise<T> {
   const fingerprint = await hash(JSON.stringify(input));
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, workspaceId)).for('update');
     const [prior] = await tx.select().from(learningOperations).where(and(eq(learningOperations.workspaceId, workspaceId), eq(learningOperations.id, id)));
     if (prior) {
@@ -120,7 +121,7 @@ export async function runView(tx: Transaction, workspaceId: string, id: string):
         ...((!run.exam && a?.checked) || run.state === 'submitted' ? { feedback: toQuestionAttempt(item.question, response, !!a?.hinted) } : {}) };
     }) };
 }
-export async function getRun(db: SocketDb, workspaceId: string, id: string) { return db.transaction(tx => runView(tx, workspaceId, id)); }
+export async function getRun(db: SocketDb, workspaceId: string, id: string) { return transaction(db, tx => runView(tx, workspaceId, id)); }
 export async function startRun(db: SocketDb, workspaceId: string, setId: string, id: string, plannedSessionId?: string) {
   return operation(db, workspaceId, id, { action: 'start-run', setId, id, plannedSessionId }, async tx => {
     const set = await ownSet(tx, workspaceId, setId);
@@ -239,7 +240,7 @@ export async function reconcileRun(tx: Transaction, run: typeof learningRuns.$in
 }
 export async function reconcileExams(db: SocketDb) {
   const due = await db.select({ id: learningRuns.id, workspaceId: learningRuns.workspaceId }).from(learningRuns).where(and(eq(learningRuns.state, 'active'), lte(learningRuns.deadlineAt, new Date()))).orderBy(asc(learningRuns.deadlineAt), asc(learningRuns.id)).limit(25);
-  for (const row of due) await db.transaction(async tx => { await reconcileRun(tx, await ownRun(tx, row.workspaceId, row.id)); });
+  for (const row of due) await transaction(db, async tx => { await reconcileRun(tx, await ownRun(tx, row.workspaceId, row.id)); });
   return { reconciled: due.length };
 }
 

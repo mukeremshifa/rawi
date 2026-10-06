@@ -1,10 +1,13 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { transaction } from './db';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
+import { finishTutorText } from '../../src/shared/tutor-output';
+import type { TutorMessageProvenance } from '../../src/shared/online-tutor';
 import { uuid } from '../../src/shared/online';
 import { selectPassages } from '../../src/shared/ai-context';
 import { generatePrompts, gradePrompts } from '../prompts';
-import { generateRequest, gradeRequest, generatedQuestion, gradeOutput } from '../validate';
-import { aiOperations, aiExecutions, passages, materials, feedbackRevisions, questionVersions, questionSources, learningSets, setItems } from './schema';
+import { generateRequest, gradeRequest, generatedQuestion, gradeOutput, tutorRequest } from '../validate';
+import { aiOperations, aiExecutions, passages, materials, feedbackRevisions, questionVersions, questionSources, learningSets, setItems, tutorSessions, tutorMessages } from './schema';
 import { planningData, bumpPlanner } from './planning';
 import { questionInput, type VersionedQuestion } from '../../src/shared/learning';
 import { operation, attempt } from './learning';
@@ -61,21 +64,26 @@ async function budgetLock(tx: Transaction) { await tx.execute(sql`select pg_advi
 /** Reserve before a provider call. Callers must not send until this commits. */
 export async function reserveExecution(db: SocketDb, workspaceId: string, operationId: string, executionId: string, reservedMicros: number) {
   if (!Number.isSafeInteger(reservedMicros) || reservedMicros < 0 || reservedMicros > engineeringLimits.userDailyMicros) throw new ApiError(400, 'invalid_reservation', 'The request exceeds the allowed cost estimate.');
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     await budgetLock(tx);
     const [op] = await tx.select().from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.id, operationId))).for('update'); if (!op) throw notFound();
     const [prior] = await tx.select().from(aiExecutions).where(eq(aiExecutions.id, executionId));
     if (prior) { if (prior.workspaceId !== workspaceId || prior.operationId !== operationId) throw notFound(); if (prior.reservedMicros !== reservedMicros) throw new ApiError(409, 'operation_conflict', 'This execution has a different reservation.'); return { execution: prior, send: false }; }
-    if (op.state === 'complete' || op.state === 'cancelled' || op.activeExecutionId) throw new ApiError(409, 'ai_operation_locked', 'This operation already has an execution. Recover its saved state.');
-    const ownExecutions = await tx.select({ id: aiExecutions.id, state: aiExecutions.state }).from(aiExecutions).where(eq(aiExecutions.operationId, operationId));
-    if (ownExecutions.length >= engineeringLimits.maxAttempts || ownExecutions.some(e => e.state === 'ambiguous' || e.state === 'reserved')) throw new ApiError(409, 'ai_retry_locked', 'This operation cannot be retried while its provider outcome is uncertain.');
+    if (op.state === 'complete' || op.state === 'cancelled' || op.state === 'interrupted' || op.activeExecutionId) throw new ApiError(409, 'ai_operation_locked', 'This operation already has an execution. Recover its saved state.');
+    if (op.task === 'tutor') {
+      const [session] = await tx.select().from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, op.targetId))).for('update');
+      const [latest] = await tx.select({ operationId: tutorMessages.operationId }).from(tutorMessages).where(and(eq(tutorMessages.sessionId, op.targetId), eq(tutorMessages.role, 'student'))).orderBy(desc(tutorMessages.ordinal)).limit(1);
+      if (!session || session.archived || session.endedAt || latest?.operationId !== op.id || session.revision !== (op.input as { sessionRevision: number }).sessionRevision + 1) throw new ApiError(409, 'stale_execution', 'The tutor session has changed. Save a new question using its current context.');
+    }
+    const ownExecutions = await tx.select({ id: aiExecutions.id, state: aiExecutions.state, partial: aiExecutions.partial }).from(aiExecutions).where(eq(aiExecutions.operationId, operationId));
+    if (ownExecutions.length >= engineeringLimits.maxAttempts || ownExecutions.some(e => e.state === 'ambiguous' || e.state === 'reserved' || !!e.partial)) throw new ApiError(409, 'ai_retry_locked', 'This operation cannot be retried while its provider outcome is uncertain.');
     const totals = await tx.execute(sql`select
       coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released'),0)::float8 as total,
       coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and created_at >= date_trunc('day', now() at time zone 'UTC') at time zone 'UTC'),0)::float8 as daily,
-      count(*) filter (where state = 'reserved')::int as concurrent,
+      count(*) filter (where state in ('reserved', 'ambiguous'))::int as concurrent,
       coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and workspace_id = ${workspaceId}),0)::float8 as own_total,
       coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and workspace_id = ${workspaceId} and created_at >= date_trunc('day', now() at time zone 'UTC') at time zone 'UTC'),0)::float8 as own_daily,
-      count(*) filter (where state = 'reserved' and workspace_id = ${workspaceId})::int as own_concurrent from ai_executions`);
+      count(*) filter (where state in ('reserved', 'ambiguous') and workspace_id = ${workspaceId})::int as own_concurrent from ai_executions`);
     const n = totals.rows[0] as Record<string, number>;
     if (n.concurrent! >= engineeringLimits.globalConcurrent || n.own_concurrent! >= engineeringLimits.userConcurrent) throw new ApiError(429, 'ai_busy', 'The AI concurrency limit is reached. Recover existing operations before starting more.');
     if (n.total! + reservedMicros > engineeringLimits.globalTotalMicros || n.own_total! + reservedMicros > engineeringLimits.userTotalMicros || n.daily! + reservedMicros > engineeringLimits.globalDailyMicros || n.own_daily! + reservedMicros > engineeringLimits.userDailyMicros) throw new ApiError(429, 'ai_budget', 'The AI engineering budget is reached.');
@@ -87,7 +95,7 @@ export async function reserveExecution(db: SocketDb, workspaceId: string, operat
 /** Unknown usage stays charged at its reservation. No automatic retry follows. */
 export async function settleExecution(db: SocketDb, workspaceId: string, executionId: string, outcome: { state: 'settled'; chargedMicros: number; usage: unknown } | { state: 'ambiguous' } | { state: 'released' }) {
   if (outcome.state === 'settled' && (!Number.isSafeInteger(outcome.chargedMicros) || outcome.chargedMicros < 0)) throw new Error('Invalid usage charge');
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     await budgetLock(tx);
     const [e] = await tx.select().from(aiExecutions).where(and(eq(aiExecutions.workspaceId, workspaceId), eq(aiExecutions.id, executionId))).for('update'); if (!e) throw notFound();
     if (e.state === 'settled' || e.state === 'released') {
@@ -102,7 +110,7 @@ export async function settleExecution(db: SocketDb, workspaceId: string, executi
 /** A stale execution cannot checkpoint or publish over a newer operation. */
 export async function checkpoint(db: SocketDb, workspaceId: string, executionId: string, text: string) {
   if (text.length > 12000) throw new ApiError(413, 'output_limit', 'The reply reached its output limit.');
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     const [e] = await tx.select().from(aiExecutions).where(and(eq(aiExecutions.workspaceId, workspaceId), eq(aiExecutions.id, executionId))); if (!e) throw notFound();
     const [op] = await tx.select().from(aiOperations).where(and(eq(aiOperations.id, e.operationId), eq(aiOperations.workspaceId, workspaceId))).for('update');
     if (op?.activeExecutionId !== executionId || e.state !== 'reserved') throw new ApiError(409, 'stale_execution', 'This execution no longer owns the reply.');
@@ -112,7 +120,7 @@ export async function checkpoint(db: SocketDb, workspaceId: string, executionId:
 
 /** Internal publication boundary. Never accepts model output from the browser. */
 export async function publishStructured(db: SocketDb, workspaceId: string, executionId: string, raw: unknown) {
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     const [execution] = await tx.select().from(aiExecutions).where(and(eq(aiExecutions.workspaceId, workspaceId), eq(aiExecutions.id, executionId))); if (!execution) throw notFound();
     const [op] = await tx.select().from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.id, execution.operationId))).for('update'); if (!op) throw notFound();
     if (op.state === 'complete') return op.result;
@@ -152,5 +160,44 @@ export async function publishStructured(db: SocketDb, workspaceId: string, execu
     } else throw new ApiError(400, 'invalid_task', 'This operation requires the tutor publication path.');
     await tx.update(aiOperations).set({ state: 'complete', activeExecutionId: null, result, reason: null, updatedAt: new Date() }).where(eq(aiOperations.id, op.id));
     await bumpPlanner(tx, workspaceId); return result;
+  });
+}
+
+/** Internal reply publication. Only supplied immutable references become citations. */
+export async function publishTutor(db: SocketDb, workspaceId: string, executionId: string, raw: string, outcome: 'complete' | 'interrupted' = 'complete') {
+  if (!raw.trim() || raw.length > 12000) throw new ApiError(502, 'invalid_output', 'The tutor reply is empty or exceeds its output limit.');
+  return transaction(db, async tx => {
+    const [e] = await tx.select().from(aiExecutions).where(and(eq(aiExecutions.workspaceId, workspaceId), eq(aiExecutions.id, executionId))); if (!e) throw notFound();
+    const [op] = await tx.select().from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.id, e.operationId))).for('update'); if (!op || op.task !== 'tutor') throw notFound();
+    if (op.state === 'complete' && op.result) return op.result;
+    if (op.activeExecutionId !== executionId || e.state !== 'reserved') throw new ApiError(409, 'stale_execution', 'This execution no longer owns the tutor reply.');
+    const [session] = await tx.select().from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, op.targetId))).for('update'); if (!session) throw notFound();
+    const input = op.input as { request: unknown; sessionRevision: number; sources: TutorMessageProvenance['citations'] };
+    if (session.revision !== input.sessionRevision + 1 || session.archived || session.endedAt) throw new ApiError(409, 'stale_execution', 'The session changed before this reply could be published. Its partial text remains recoverable.');
+    const req = tutorRequest(input.request);
+    const checked = finishTutorText(raw, new Set(req.passages.map(p => p.id)), req.stage);
+    if (!checked.text) throw new ApiError(502, 'invalid_output', 'No readable tutor reply was returned.');
+    const provenance: TutorMessageProvenance = { model: op.model, stage: outcome === 'complete' ? checked.meta.stage : req.stage, grounding: checked.meta.grounding, droppedCitations: checked.dropped, imported: false, citations: checked.citations.map(id => { const source = input.sources.find(p => p.passageId === id); if (!source) throw new ApiError(502, 'invalid_citation', 'A cited passage is missing its saved version.'); return source; }) };
+    const [last] = await tx.select({ ordinal: tutorMessages.ordinal }).from(tutorMessages).where(eq(tutorMessages.sessionId, session.id)).orderBy(desc(tutorMessages.ordinal)).limit(1);
+    const id = crypto.randomUUID();
+    await tx.insert(tutorMessages).values({ id, workspaceId, courseId: session.courseId, sessionId: session.id, ordinal: (last?.ordinal ?? -1) + 1, role: 'tutor', state: outcome, text: checked.text, operationId: executionId, provenance });
+    await tx.update(tutorMessages).set({ state: 'complete', failure: null }).where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.operationId, op.id), eq(tutorMessages.role, 'student')));
+    await tx.update(tutorSessions).set({ revision: session.revision + 1, stage: provenance.stage, updatedAt: new Date() }).where(eq(tutorSessions.id, session.id));
+    const result = { sessionId: session.id, messageId: id };
+    await tx.update(aiOperations).set({ state: outcome, activeExecutionId: null, result, reason: outcome === 'complete' ? null : 'The reply was interrupted. Its saved text will not regenerate automatically.', updatedAt: new Date() }).where(eq(aiOperations.id, op.id));
+    return result;
+  });
+}
+
+/** Cancellation revokes publication and retains any uncertain charge and partial. */
+export async function cancelOperation(db: SocketDb, workspaceId: string, id: string, operationId: string) {
+  return operation(db, workspaceId, operationId, { action: 'cancel-ai', id }, async tx => {
+    await budgetLock(tx);
+    const [op] = await tx.select().from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.id, id))).for('update'); if (!op) throw notFound();
+    if (op.state === 'complete' || op.state === 'cancelled') return viewOperation(tx, workspaceId, id);
+    if (op.activeExecutionId) await tx.update(aiExecutions).set({ state: 'ambiguous', settledAt: null }).where(and(eq(aiExecutions.workspaceId, workspaceId), eq(aiExecutions.id, op.activeExecutionId), eq(aiExecutions.state, 'reserved')));
+    await tx.update(aiOperations).set({ state: 'cancelled', activeExecutionId: null, reason: 'Stopped. Saved partial text remains recoverable. Any uncertain provider charge remains reserved.', updatedAt: new Date() }).where(eq(aiOperations.id, id));
+    if (op.task === 'tutor') await tx.update(tutorMessages).set({ state: 'cancelled', failure: null }).where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.operationId, id), eq(tutorMessages.role, 'student')));
+    return viewOperation(tx, workspaceId, id);
   });
 }

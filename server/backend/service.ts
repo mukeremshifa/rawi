@@ -1,3 +1,4 @@
+import { transaction } from './db';
 import { and, asc, eq, gt, inArray, notInArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { defaultPreferences, preferenceFields, type CreateCourseInput, type TopicInput, type coursePatch, type preferencesPatch } from '../../src/shared/online';
@@ -12,7 +13,7 @@ export function publicCourse(row: typeof courses.$inferSelect) {
   return course;
 }
 export async function bootstrap(db: SocketDb, userId: string) {
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     await tx.insert(workspaces).values({ ownerUserId: userId }).onConflictDoNothing({ target: workspaces.ownerUserId });
     const [workspace] = await tx.select().from(workspaces).where(eq(workspaces.ownerUserId, userId));
     if (!workspace) throw new Error('Workspace bootstrap failed');
@@ -91,7 +92,7 @@ async function fingerprint(input: CreateCourseInput) {
 }
 export async function createCourse(db: SocketDb, workspaceId: string, input: CreateCourseInput) {
   const createFingerprint = await fingerprint(input);
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     const { topics: initial, ...fields } = input;
     const [inserted] = await tx.insert(courses).values({ ...fields, workspaceId, createFingerprint }).onConflictDoNothing({ target: courses.id }).returning();
     const [course] = inserted ? [inserted] : await tx.select().from(courses).where(scope(workspaceId, input.id)).for('update');

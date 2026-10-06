@@ -1,3 +1,4 @@
+import { transaction } from './db';
 import { and, asc, eq, ilike, sql } from 'drizzle-orm';
 import { courses, materials, learningSets, tutorSessions, learningAttempts, topics, preferences, reminderStates } from './schema';
 import { planningData } from './planning';
@@ -36,7 +37,7 @@ async function reminders(tx: Transaction, workspaceId: string) {
   const states = await tx.select().from(reminderStates).where(eq(reminderStates.workspaceId, workspaceId));
   return rows.map(r => ({ ...r, status: states.find(s => s.key === r.key)?.status })).sort((a, b) => a.date.localeCompare(b.date) || a.key.localeCompare(b.key));
 }
-export async function notifications(db: SocketDb, workspaceId: string) { return db.transaction(async tx => ({ reminders: (await reminders(tx, workspaceId)).filter(r => r.status !== 'dismissed') }), { isolationLevel: 'repeatable read' }); }
+export async function notifications(db: SocketDb, workspaceId: string) { return transaction(db, async tx => ({ reminders: (await reminders(tx, workspaceId)).filter(r => r.status !== 'dismissed') }), { isolationLevel: 'repeatable read' }); }
 export async function markReminder(db: SocketDb, workspaceId: string, operationId: string, key: string, status: 'read' | 'dismissed') {
   return operation(db, workspaceId, operationId, { action: 'reminder', key, status }, async tx => {
     if (!(await reminders(tx, workspaceId)).some(r => r.key === key)) throw notFound();

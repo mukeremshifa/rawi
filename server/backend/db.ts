@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { neon, Pool } from '@neondatabase/serverless';
 import { drizzle as httpDrizzle } from 'drizzle-orm/neon-http';
 import { drizzle as socketDrizzle } from 'drizzle-orm/neon-serverless';
@@ -12,3 +13,13 @@ export function socketDb(url: string) {
 export type SocketDb = ReturnType<typeof socketDb>['db'];
 export type ReadDb = ReturnType<typeof readDb>;
 export type Transaction = Parameters<Parameters<SocketDb['transaction']>[0]>[0];
+
+/** Bound locks after a disconnected request without changing database settings. */
+export async function transaction<T>(db: SocketDb, run: (tx: Transaction) => Promise<T>, config?: Parameters<SocketDb['transaction']>[1]): Promise<T> {
+  return db.transaction(async tx => {
+    await tx.execute(sql`SET LOCAL idle_in_transaction_session_timeout = '15s'`);
+    await tx.execute(sql`SET LOCAL statement_timeout = '30s'`);
+    await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
+    return run(tx);
+  }, config);
+}

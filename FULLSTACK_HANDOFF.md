@@ -185,7 +185,7 @@ The full migration is not complete. These are not all external dependencies.
 | Gap | Remaining work |
 | --- | --- |
 | Hosted AI execution | Runtime Vertex authentication is unavailable. Integrate an authenticated Worker-compatible execution adapter using the existing provider/model configuration. Connect it to reservation and publication boundaries, without a detached background promise. No credential setup or provisioning was attempted. |
-| Tutor learning behavior | Load bounded exact context and server history into the existing prompts, validate citations, integrate streaming, Stop, recovery, stages and summaries. Current tutor messages are saved with blocked replies and do not create learning evidence. These application paths remain unfinished, not merely unverified. |
+| Tutor learning behavior | Bounded context, existing prompts, validated publication, Stop and saved recovery are implemented. Connect hosted streaming and session summaries. Current tutor messages are saved with blocked replies and do not create learning evidence. These application paths remain unfinished, not merely unverified. |
 | Written feedback execution | Publication and revisions exist. Connect provider output to these functions and expose revision history/regrading controls. Current UI requests are explicitly blocked. |
 | Full UI parity | Shared answer components, domain rules and navigation are reused. Advanced planner controls, flashcard second-pass state and some exam controls still need adaptation. Assessment editing, rehearsal renaming and set conflict review were added. Keep explicit online mode until parity is established. |
 | Transfer coverage | Add unfinished practice import with per-record validation. Tutor histories are now imported, with extra local action metadata retained in the recovery original. Online archive restoration needs its own reviewed remapping path. Original files, drafts and unsupported records are recoverable from the retained local export. |
@@ -256,3 +256,30 @@ execution and streaming, an authenticated Vertex adapter, unfinished-practice
 import and online archive restoration, and remaining UI parity. Online mode was
 not made the default because that condition has not been met. No new infrastructure
 was selected or provisioned, no credentials changed, and no tests or CI were added.
+
+
+## Tutor context and transaction recovery follow-up
+
+The server now snapshots bounded owned tutor history, selected passages, exact
+historical focus versions, reviewed answers and prior work into the existing
+prompt builder. Tutor actions use the existing six action types. Reply publication
+reuses the local citation and stage validator, saves ordered messages and exact
+citations, and fences stale executions. A cancelled request retains partial text
+and any uncertain charge. The saved-operation UI exposes Stop and recovery export.
+Interrupted or visible partial output cannot silently retry. Unknown outcomes
+continue to consume concurrency until reconciled.
+
+Authenticated development API checks passed for saved context and actions,
+message retries, active-reply fencing, foreign denial and cancellation retries.
+Direct publication checks used explicitly synthetic model output, no provider
+call. They passed citation filtering, exact version retention, one-stage maximum
+advancement, server history and stale publication denial. Chrome saved a tutor
+action and message and opened a cancelled partial recovery page without errors.
+Hosted streaming and actual provider cancellation remain unverified and unfinished.
+
+A real dropped Worker connection exposed an idle transaction holding a fixture
+workspace lock. Its two identified fixture connections were terminated. Application
+transactions now set local idle, statement and lock timeouts of 15, 30 and 10 seconds.
+The values were read back successfully from the development database. Database-wide
+settings were not changed. The subsequent tutor API and publication check passed.
+Earlier timeout and connection failures are not counted as successful checks.

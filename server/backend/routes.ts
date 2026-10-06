@@ -60,7 +60,7 @@ api.get('/status', c => {
 const configured = new Hono<BackendContext>();
 configured.use('*', async (c, next) => {
   // Unknown paths return 404 even when configuration is absent.
-  const known = c.req.path.startsWith('/api/auth/') || /^\/api\/v1\/(ai\/status|ai\/operations\/[^/]+|me|preferences|search|notifications|export|imports\/review|imports\/[^/]+\/(commit|original)|planner|progress|planner\/(availability|sessions|proposals|check-ins)|planner\/proposals\/[^/]+\/apply|courses(?:\/[^/]+(?:\/(topics|materials|uploads|generate|questions|sets|runs|attempts|exams|assessments|tutor))?)?|materials\/[^/]+(?:\/versions(?:\/[^/]+(?:\/(download|passages\/[^/]+))?)?)?|uploads\/[^/]+(?:\/finalize)?|sets\/[^/]+(?:\/runs)?|runs\/[^/]+(?:\/(answers|submit|transition|exam-transition))?|attempts\/[^/]+(?:\/feedback)?|exams\/[^/]+(?:\/runs)?|tutor\/[^/]+(?:\/messages)?)$/.test(c.req.path);
+  const known = c.req.path.startsWith('/api/auth/') || /^\/api\/v1\/(ai\/status|ai\/operations\/[^/]+(?:\/cancel)?|me|preferences|search|notifications|export|imports\/review|imports\/[^/]+\/(commit|original)|planner|progress|planner\/(availability|sessions|proposals|check-ins)|planner\/proposals\/[^/]+\/apply|courses(?:\/[^/]+(?:\/(topics|materials|uploads|generate|questions|sets|runs|attempts|exams|assessments|tutor))?)?|materials\/[^/]+(?:\/versions(?:\/[^/]+(?:\/(download|passages\/[^/]+))?)?)?|uploads\/[^/]+(?:\/finalize)?|sets\/[^/]+(?:\/runs)?|runs\/[^/]+(?:\/(answers|submit|transition|exam-transition))?|attempts\/[^/]+(?:\/feedback)?|exams\/[^/]+(?:\/runs)?|tutor\/[^/]+(?:\/messages)?)$/.test(c.req.path);
   if (!known) throw notFound();
   const missing = configurationProblems(c.env);
   if (missing.length) throw new ApiError(503, 'not_configured', `Online mode is not configured: ${missing.join(', ')}.`);
@@ -181,6 +181,7 @@ app.get('/search', async c => { const q = z.strictObject({ q: z.string().trim().
 app.get('/notifications', async c => c.json(await support.notifications(c.get('socket'), c.get('workspaceId'))));
 app.patch('/notifications', async c => { const input = await jsonInput(c, z.strictObject({ operationId: uuid, key: z.string().min(1).max(300), status: z.enum(['read', 'dismissed']) })); return c.json(await support.markReminder(c.get('socket'), c.get('workspaceId'), input.operationId, input.key, input.status)); });
 app.get('/ai/status', c => c.json({ available: false, reason: ai.unavailable }));
+app.post('/ai/operations/:id/cancel', async c => { const body = await jsonInput(c, z.strictObject({ operationId: uuid })); return c.json(await ai.cancelOperation(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), body.operationId)); });
 app.get('/ai/operations/:id', async c => c.json(await ai.viewOperation(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
 app.post('/courses/:id/generate', async c => c.json(await ai.prepareGeneration(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, ai.generateInput))));
 app.post('/attempts/:id/feedback', async c => c.json(await ai.prepareGrade(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, ai.gradeInput))));

@@ -1,3 +1,4 @@
+import { transaction } from './db';
 import { and, asc, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { uploadInput } from '../../src/shared/materials';
@@ -36,7 +37,7 @@ async function fail(tx: Transaction, row: Upload, reason: string) {
   return failed!;
 }
 export async function getUpload(db: SocketDb, workspaceId: string, id: string) {
-  return db.transaction(async tx => {
+  return transaction(db, async tx => {
     await lockStorage(tx, workspaceId);
     const row = await lockUpload(tx, workspaceId, id);
     return publicUpload(row.state === 'pending' && row.expiresAt.getTime() <= Date.now() ? await fail(tx, row, 'Upload expired. Select the file to start a new upload.') : row);
@@ -50,7 +51,7 @@ export async function listUploads(db: ReadDb, workspaceId: string, courseId: str
 export async function initiate(db: SocketDb, env: BackendBindings, workspaceId: string, courseId: string, input: z.infer<typeof uploadInput>) {
   const max = limits(env);
   // Ownership is checked even if storage configuration is missing.
-  await db.transaction(async tx => {
+  await transaction(db, async tx => {
     await lockCourse(tx, workspaceId, courseId);
     if (input.materialId) { const material = await ownMaterial(tx, workspaceId, input.materialId); if (material.courseId !== courseId) throw notFound(); }
     await validateTopics(tx, workspaceId, courseId, input.topicIds);
@@ -59,7 +60,7 @@ export async function initiate(db: SocketDb, env: BackendBindings, workspaceId: 
   if (!input.fileName.toLowerCase().endsWith(`.${input.type}`)) throw new ApiError(400, 'invalid_file', 'The filename must match the selected file format.');
   await verifyStorageTarget(env);
   const fingerprint = await hash(JSON.stringify({ ...input, topicIds: [...input.topicIds].sort() }));
-  const row = await db.transaction(async tx => {
+  const row = await transaction(db, async tx => {
     const usage = await lockStorage(tx, workspaceId);
     await lockCourse(tx, workspaceId, courseId);
     const [existing] = await tx.select().from(uploads).where(eq(uploads.id, input.requestId)).for('update');
@@ -89,7 +90,7 @@ export async function initiate(db: SocketDb, env: BackendBindings, workspaceId: 
   return { upload: publicUpload(row), url: await signedUrl(env, row.stagingKey, 'PUT', Math.floor((row.expiresAt.getTime() - Date.now()) / 1000), type), headers: { 'Content-Type': type } };
 }
 export async function finalize(db: SocketDb, env: BackendBindings, workspaceId: string, id: string) {
-  const claimed = await db.transaction(async tx => {
+  const claimed = await transaction(db, async tx => {
     await lockStorage(tx, workspaceId);
     const row = await lockUpload(tx, workspaceId, id);
     await lockCourse(tx, workspaceId, row.courseId);
@@ -121,7 +122,7 @@ export async function finalize(db: SocketDb, env: BackendBindings, workspaceId: 
       if (!stored) throw new ApiError(409, 'candidate_conflict', 'Retry finalization with a new storage attempt.');
       return { bytes, content, stored };
     })());
-    const result = await db.transaction(async tx => {
+    const result = await transaction(db, async tx => {
       await lockStorage(tx, workspaceId);
       const current = await lockUpload(tx, workspaceId, id);
       if (current.state === 'ready') return publicUpload(current);
@@ -153,7 +154,7 @@ export async function finalize(db: SocketDb, env: BackendBindings, workspaceId: 
   } catch (error) {
     // Preserve candidate metadata after transfer or ambiguous DB commit. Never delete here.
     try {
-      await db.transaction(async tx => {
+      await transaction(db, async tx => {
         await lockStorage(tx, workspaceId); const current = await lockUpload(tx, workspaceId, id);
         if (current.state !== 'pending' || current.leaseToken !== token) return;
         if (error instanceof ApiError && (error.status === 400 || error.code === 'revision_conflict' || error.code === 'not_found')) await fail(tx, current, error.message);
@@ -175,12 +176,12 @@ export async function download(db: ReadDb, env: BackendBindings, workspaceId: st
 export async function reconcile(db: SocketDb, env: BackendBindings, limit = 25) {
   const now = new Date(); let expired = 0, cleaned = 0;
   const staleLeases = await db.select().from(uploads).where(and(eq(uploads.state, 'pending'), lt(uploads.leaseExpiresAt, now))).limit(limit);
-  for (const row of staleLeases) await db.transaction(async tx => {
+  for (const row of staleLeases) await transaction(db, async tx => {
     const current = await lockUpload(tx, row.workspaceId, row.id);
     if (current.state === 'pending' && current.leaseExpiresAt && current.leaseExpiresAt <= now) await tx.update(uploads).set({ leaseToken: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(uploads.id, row.id));
   });
   const abandoned = await db.select().from(uploads).where(and(eq(uploads.state, 'pending'), lt(uploads.expiresAt, now))).orderBy(asc(uploads.expiresAt)).limit(limit);
-  for (const row of abandoned) await db.transaction(async tx => {
+  for (const row of abandoned) await transaction(db, async tx => {
     await lockStorage(tx, row.workspaceId); const current = await lockUpload(tx, row.workspaceId, row.id);
     if (current.state === 'pending' && current.expiresAt <= now) { await fail(tx, current, 'Upload expired. Start a new upload.'); expired++; }
   });
@@ -189,7 +190,7 @@ export async function reconcile(db: SocketDb, env: BackendBindings, limit = 25) 
   const bucket = env.MATERIALS_BUCKET;
   const candidates = await db.select().from(uploadCandidates).where(and(lt(uploadCandidates.createdAt, new Date(Date.now() - 3600000)), or(isNull(uploadCandidates.cleanedAt), lt(uploadCandidates.cleanedAt, new Date(Date.now() - 3600000))), or(eq(uploadCandidates.state, 'candidate'), eq(uploadCandidates.state, 'deleting')))).orderBy(sql`${uploadCandidates.cleanedAt} asc nulls first`, asc(uploadCandidates.createdAt)).limit(limit);
   for (const candidate of candidates) {
-    const canDelete = await db.transaction(async tx => {
+    const canDelete = await transaction(db, async tx => {
       const [upload] = await tx.select().from(uploads).where(eq(uploads.id, candidate.uploadId)).for('update');
       if (!upload) return false;
       const [current] = await tx.select().from(uploadCandidates).where(eq(uploadCandidates.token, candidate.token)).for('update');
