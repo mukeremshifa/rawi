@@ -138,6 +138,8 @@ A later explicit import validates versioned exports, remaps references, preserve
 
 Budget enforcement precedes hosted provider calls even though billing arrives later. Ownership stays independent of payment from checkpoint 1 without requiring billing implementation then.
 
+Checkpoint 3 will proceed in smaller executable slices. Start with saved practice sets, runs, answers, and attempts using BACKEND_IMPLEMENTATION_BRIEF_03.md. Include the checkpoint 2 material-editor draft-preservation fix in that slice. Subsequent slices cover remaining question formats, exam rehearsals, planner and progress, and tutor history. Completing the first slice does not complete all of checkpoint 3. Hosted generation and feedback remain checkpoint 4.
+
 ## 11. Operations and remaining decisions
 
 Use Workers logs and metrics with request and operation IDs, latency, failures, and job age where applicable. Exclude credentials, session tokens, signed URLs, and private learning text. Measure Neon cold and warm behavior, API latency, model latency, extraction, and cost separately.
