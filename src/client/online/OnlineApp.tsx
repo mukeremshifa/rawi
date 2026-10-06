@@ -7,6 +7,11 @@ import { authClient, errorMessage, OnlineError, request, setActiveAccount } from
 import { CourseLibrary, CourseEditor, NewOnlineCourse, PreferencesEditor } from './pages';
 import { OnlineMaterials, OnlineMaterialReader } from './Materials';
 import { OnlinePlanner, OnlineProgress } from './Planning';
+import { OnlineAiOperation } from './Ai';
+import { OnlineDraftBoundary } from './learning-hooks';
+import { OnlineNavigation } from './Navigation';
+import { Logo } from '@/components/Logo';
+import { OnlineSearch, OnlineNotifications } from './Support';
 import { OnlineTransfer } from './Transfer';
 import { OnlineTutorLibrary, OnlineTutor } from './Tutor';
 import { OnlineExams } from './Exams';
@@ -97,23 +102,29 @@ export function OnlineApp() {
     } catch (e) { setError(errorMessage(e)); }
     finally { authBusy.current = false; setBusy(false); }
   };
-  return <div className="h-dvh overflow-auto bg-background text-foreground">
-    <header className="border-b p-4 flex flex-wrap items-center gap-4">
-      <Link to="/online" className="font-semibold">Rawi</Link><span className="rounded border px-2 py-1 text-xs">Online mode</span>
-      <Link to="/online/courses">Courses</Link><Link to="/online/planner">Planner</Link><Link to="/online/progress">Progress and history</Link><Link to="/online/settings">Preferences</Link><Link to="/online/data">Workspace data</Link>
+  return <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
+    <header className="border-b px-gutter h-14 shrink-0 flex items-center gap-4">
+      <Link to="/online" className="font-semibold"><Logo /></Link><span className="rounded border px-2 py-1 text-xs">Online mode</span>
       <a href="/courses" className="ml-auto underline">Switch to local mode</a>
       {configured && <Button variant="outline" disabled={busy} onClick={() => void signOut()}>Sign out</Button>}
     </header>
+    <div className="flex min-h-0 flex-1">
+    {me && <aside className="hidden lg:flex w-60 shrink-0 flex-col overflow-y-auto border-r"><OnlineNavigation /></aside>}
+    <main className="min-w-0 flex-1 overflow-y-auto">
+    {me && <details className="lg:hidden border-b"><summary className="p-3">Navigation</summary><OnlineNavigation /></details>}
     {checking && <p role="status" className="p-6">Checking your online account…</p>}
-    {!checking && !me && <Page className="py-10" width="prose"><PageHeader title="Your online workspace" description="Sign in with Google to save courses, topics and preferences to your personal account." />
+    {!checking && !me && <Page className="py-10" width="prose"><PageHeader title="Your online workspace" description="Sign in with Google to open your saved personal learning workspace." />
       <p>Local work remains available in local mode on this browser. Signing in does not upload or replace it. Workspace data offers an explicit reviewed local import after sign-in.</p>
       {(error || location.search.includes('signin=failed')) && <p role="alert">{error || 'Google sign-in did not finish. Try again.'}</p>}
       <div className="flex gap-3"><Button disabled={!configured || busy} onClick={() => void signIn()}>{busy ? 'Please wait…' : 'Continue with Google'}</Button><Button variant="outline" disabled={busy} onClick={() => void refresh()}>Check again</Button></div>
     </Page>}
-    {me && <Account.Provider value={me}><div hidden={checking} key={me.user.id}>
+    {me && <Account.Provider value={me}><OnlineDraftBoundary key={me.user.id}><div hidden={checking}>
       <p className="px-6 pt-4 text-sm text-muted-foreground">{me.user.email} · {me.preferences.values.workspaceName}</p>
       <Routes>
         <Route path="/online" element={<OnlineProgress home />} />
+        <Route path="/online/ai/:id" element={<OnlineAiOperation key={location.pathname} />} />
+        <Route path="/online/search" element={<OnlineSearch />} />
+        <Route path="/online/notifications" element={<OnlineNotifications />} />
         <Route path="/online/data" element={<OnlineTransfer />} />
         <Route path="/online/planner" element={<OnlinePlanner />} />
         <Route path="/online/progress" element={<OnlineProgress />} />
@@ -134,8 +145,9 @@ export function OnlineApp() {
         <Route path="/online/runs/:id" element={<OnlineRun key={location.pathname} />} />
         <Route path="/online/attempts/:id" element={<OnlineAttempt key={location.pathname} />} />
         <Route path="/online/settings" element={<PreferencesEditor onSaved={preferences => setMe(previous => previous?.workspace.id === preferences.workspaceId ? { ...previous, preferences } : previous)} />} />
-        <Route path="*" element={<Page className="py-10"><PageHeader title="This area is not available online yet" description="Tutoring, practice, exams, planning and history are available in local mode. Online mode does not save learning activity on this device." /><Button asChild><Link to="/online/courses">Back to courses</Link></Button></Page>} />
+        <Route path="*" element={<Page className="py-10"><PageHeader title="Page not found" description="Open a course or your study workspace to continue." /><Button asChild><Link to="/online/courses">Back to courses</Link></Button></Page>} />
       </Routes>
-    </div></Account.Provider>}
+    </div></OnlineDraftBoundary></Account.Provider>}
+    </main></div>
   </div>;
 }

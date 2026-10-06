@@ -2,10 +2,11 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { Attempt, Material, Topic } from '../../src/shared/types';
 import { planWeek, replacedByPlan, addDays } from '../../src/shared/planner';
-import { deriveAllEvidence, dueReviews, recurringMistakes } from '../../src/shared/progress';
+import { deriveAllEvidence, dueReviews, recurringMistakes, buildPlan } from '../../src/shared/progress';
 import { zonedParts, type plannerWrite, type scheduleWrite, type assessmentWrite, type proposalInput, type checkInInput } from '../../src/shared/online-planner';
-import { plannerState, plannedSessions, assessments, checkIns, planProposals, courses, topics, learningAttempts, learningRuns, materials, materialTopicLinks, questionVersions, preferences } from './schema';
+import { plannerState, plannedSessions, assessments, checkIns, planProposals, courses, topics, learningAttempts, learningRuns, materials, passages, materialTopicLinks, questionVersions, preferences } from './schema';
 import { operation } from './learning';
+import { withFeedback } from './feedback';
 import { hash, validateTopics } from './materials';
 import { getCourse } from './service';
 import { conflict, notFound, ApiError } from './errors';
@@ -20,7 +21,9 @@ export async function bumpPlanner(tx: Transaction, workspaceId: string) {
   await tx.update(plannerState).set({ revision: sql`${plannerState.revision} + 1` }).where(eq(plannerState.workspaceId, workspaceId));
 }
 export async function learningData(db: ReadDb | Transaction, workspaceId: string) {
-  const rows = await db.select({ snapshot: learningAttempts.snapshot, setId: learningAttempts.setId }).from(learningAttempts).where(eq(learningAttempts.workspaceId, workspaceId));
+  const original = await db.select({ snapshot: learningAttempts.snapshot, setId: learningAttempts.setId }).from(learningAttempts).where(eq(learningAttempts.workspaceId, workspaceId));
+  const current = await withFeedback(db, workspaceId, original.map(r => r.snapshot));
+  const rows = original.map((r, i) => ({ ...r, snapshot: current[i]! }));
   const attempts: Attempt[] = rows.map(({ snapshot: a, setId }) => a.imported ? { ...a.imported, marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable } : ({ id: a.id, courseId: a.courseId, kind: a.exam ? 'exam' : 'practice', mode: a.exam ? 'exam' : a.questions.every(q => q.question.format === 'flashcard') ? 'self-rated' : 'practice', title: a.title, topicIds: [...new Set(a.questions.map(q => q.question.topicId))], startedAt: a.startedAt, completedAt: a.completedAt, questions: a.questions.map(q => q.result), marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable, assistanceRecord: 'tracked', practiceSetId: a.exam ? undefined : setId, examConfigSnapshot: a.exam?.configSnapshot, finish: a.finish, plannedSessionId: a.plannedSessionId, remediatesAttemptId: a.remediatesAttemptId }));
   return { attempts, snapshots: rows.map(r => r.snapshot) };
 }
@@ -36,7 +39,8 @@ export async function planningData(tx: Transaction, workspaceId: string) {
   const questionRows = await tx.select({ content: questionVersions.content }).from(questionVersions).where(eq(questionVersions.workspaceId, workspaceId));
   const materialRows = await tx.select().from(materials).where(eq(materials.workspaceId, workspaceId));
   const links = await tx.select().from(materialTopicLinks).where(eq(materialTopicLinks.workspaceId, workspaceId));
-  const materialData: Material[] = materialRows.map(m => ({ id: m.id, courseId: m.courseId, title: m.title, kind: 'reading', origin: 'preview', archived: m.archived, addedAt: m.createdAt.toISOString(), topicIds: links.filter(l => l.materialId === m.id).map(l => l.topicId), passages: [] }));
+  const readable = await tx.select({ materialId: passages.materialId, id: passages.id, heading: passages.heading, text: passages.text }).from(passages).innerJoin(materials, and(eq(materials.currentVersionId, passages.versionId), eq(materials.workspaceId, passages.workspaceId))).where(eq(passages.workspaceId, workspaceId));
+  const materialData: Material[] = materialRows.map(m => ({ id: m.id, courseId: m.courseId, title: m.title, kind: m.kind === 'notes' ? 'student-note' : m.kind === 'slides' ? 'lecture-notes' : 'reading', origin: 'pasted', archived: m.archived, addedAt: m.createdAt.toISOString(), topicIds: links.filter(l => l.materialId === m.id).map(l => l.topicId), passages: readable.filter(p => p.materialId === m.id).map(p => ({ ...p, topicIds: links.filter(l => l.materialId === m.id).map(l => l.topicId) })) }));
   const { attempts, snapshots } = await learningData(tx, workspaceId);
   return { revision: planner.revision, availability: planner.availability, timezone: prefs?.timezone ?? 'UTC', courses: courseRows.map(c => ({ ...c, createdAt: c.createdAt.toISOString() })), topics: topicData, assessments: assessmentRows.map(r => ({ ...r.content, revision: r.revision })), sessions: sessionRows.map(r => ({ ...r.content, revision: r.revision })), checkIns: checkInRows.map(r => r.content), questions: questionRows.map(r => r.content), materials: materialData, attempts, snapshots };
 }
@@ -110,6 +114,10 @@ export async function progress(db: SocketDb, workspaceId: string) {
     let streak = 0, day = days.includes(now.date) ? now.date : addDays(now.date, -1);
     while (days.includes(day)) { streak++; day = addDays(day, -1); }
     const runs = await tx.select({ id: learningRuns.id, courseId: learningRuns.courseId, title: learningRuns.title }).from(learningRuns).where(and(eq(learningRuns.workspaceId, workspaceId), eq(learningRuns.state, 'active'))).orderBy(asc(learningRuns.id)).limit(100);
-    return { rulesVersion: 'evidence-v1', today: now.date, timezone: data.timezone, streak, topics: data.topics, courses: data.courses, evidence: [...deriveAllEvidence(data.topics, data.attempts).values()], due: dueReviews(data.topics, data.attempts), mistakes: recurringMistakes(data.attempts, id => data.questions.find(q => q.id === id)?.prompt), attempts: data.attempts, pending: data.snapshots.reduce((n, a) => n + a.pending, 0), runs, sessions: data.sessions.filter(s => s.date === now.date), assessments: data.assessments.filter(a => a.date >= now.date), checkIns: data.checkIns.filter(c => zonedParts(new Date(c.at), data.timezone).date === now.date) };
+    const suggestions = buildPlan({ ...data, todaysSessions: data.sessions.filter(s => s.date === now.date), now: new Date() }).map(s => {
+      const path = s.sessionId ? `/online/planner?session=${s.sessionId}` : `/online/course/${s.courseId}/${s.kind === 'exam' ? 'exams' : ['tutor', 'materials', 'setup'].includes(s.kind) ? 'materials' : 'practice'}${s.topicId ? `?topicId=${s.topicId}` : ''}`;
+      return { ...s, to: path, ...(s.kind === 'tutor' ? { title: s.title.replace(/^Learn /, 'Read about '), reason: `${s.reason} Tutor replies are unavailable online, so open the material to continue.` } : {}) };
+    });
+    return { suggestions, rulesVersion: 'evidence-v1', today: now.date, timezone: data.timezone, streak, topics: data.topics, courses: data.courses, evidence: [...deriveAllEvidence(data.topics, data.attempts, data.timezone).values()], due: dueReviews(data.topics, data.attempts, new Date(), data.timezone), mistakes: recurringMistakes(data.attempts, id => data.questions.find(q => q.id === id)?.prompt), attempts: data.attempts, pending: data.snapshots.reduce((n, a) => n + a.pending, 0), runs, sessions: data.sessions.filter(s => s.date === now.date), assessments: data.assessments.filter(a => a.date >= now.date), checkIns: data.checkIns.filter(c => zonedParts(new Date(c.at), data.timezone).date === now.date) };
   }, { isolationLevel: 'repeatable read' });
 }

@@ -95,7 +95,7 @@ function daysBetween(a: string, b: string): number {
  * remember that question. Answering two different ones demonstrates something
  * about the topic, which is the claim the level actually makes.
  */
-export function deriveEvidence(topicId: string, attempts: Attempt[]): TopicEvidence {
+export function deriveEvidence(topicId: string, attempts: Attempt[], timezone?: string): TopicEvidence {
   const relevant = attempts
     /* An answer awaiting feedback is neither evidence for nor against a topic
        until it is marked, so it is left out entirely. */
@@ -146,7 +146,7 @@ export function deriveEvidence(topicId: string, attempts: Attempt[]): TopicEvide
             independentCorrect += 1;
             unaidedWins.push({
               questionId: qa.questionId,
-              day: (attempt.completedAt ?? attempt.startedAt).slice(0, 10),
+              day: localISO(attempt.completedAt ?? attempt.startedAt, timezone),
             });
           }
           break;
@@ -180,8 +180,9 @@ export function deriveEvidence(topicId: string, attempts: Attempt[]): TopicEvide
 export function deriveAllEvidence(
   topics: Topic[],
   attempts: Attempt[],
+  timezone?: string,
 ): Map<string, TopicEvidence> {
-  return new Map(topics.map((t) => [t.id, deriveEvidence(t.id, attempts)]));
+  return new Map(topics.map((t) => [t.id, deriveEvidence(t.id, attempts, timezone)]));
 }
 
 /* ── Reviews ──────────────────────────────────────────────────────────── */
@@ -199,14 +200,15 @@ export function dueReviews(
   topics: Topic[],
   attempts: Attempt[],
   now: Date = new Date(),
+  timezone?: string,
 ): ReviewDue[] {
-  const today = now.toISOString();
+  const today = localISO(now, timezone);
   const due: ReviewDue[] = [];
 
   for (const topic of topics) {
-    const evidence = deriveEvidence(topic.id, attempts);
+    const evidence = deriveEvidence(topic.id, attempts, timezone);
     if (evidence.level === 'not-checked' || !evidence.lastWorkedAt) continue;
-    const days = daysBetween(evidence.lastWorkedAt, today);
+    const days = daysBetween(localISO(evidence.lastWorkedAt, timezone), today);
     if (days >= 3) {
       due.push({
         courseId: topic.courseId,
@@ -281,10 +283,10 @@ export function recurringMistakes(
 /* ── Assessments ──────────────────────────────────────────────────────── */
 
 /** Whole days from today until an assessment. Negative once it has passed. */
-export function daysUntil(date: string, now: Date = new Date()): number {
-  const today = localISO(now);
+export function daysUntil(date: string, now: Date = new Date(), timezone?: string): number {
+  const today = localISO(now, timezone);
   return Math.round(
-    (new Date(`${date}T12:00:00`).getTime() - new Date(`${today}T12:00:00`).getTime()) /
+    (new Date(`${date}T12:00:00Z`).getTime() - new Date(`${today}T12:00:00Z`).getTime()) /
       DAY_MS,
   );
 }
@@ -298,9 +300,9 @@ export function daysUntil(date: string, now: Date = new Date()): number {
  */
 export function nextAssessment(
   assessments: PlannedAssessment[],
-  now: Date = new Date(),
+  now: Date = new Date(), timezone?: string,
 ): PlannedAssessment | undefined {
-  const today = localISO(now);
+  const today = localISO(now, timezone);
   return [...assessments]
     .filter((a) => a.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date))[0];
@@ -308,9 +310,9 @@ export function nextAssessment(
 
 export function upcomingAssessments(
   assessments: PlannedAssessment[],
-  now: Date = new Date(),
+  now: Date = new Date(), timezone?: string,
 ): PlannedAssessment[] {
-  const today = localISO(now);
+  const today = localISO(now, timezone);
   return [...assessments]
     .filter((a) => a.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -455,10 +457,10 @@ export function streak(events: ActivityEvent[], now: Date = new Date()): StreakS
 export function minutesToday(
   plannedMinutes: number,
   checkIns: CheckIn[],
-  now: Date = new Date(),
+  now: Date = new Date(), timezone?: string,
 ): number {
-  const today = localISO(now);
-  const todays = checkIns.filter((c) => localISO(c.at) === today);
+  const today = localISO(now, timezone);
+  const todays = checkIns.filter((c) => localISO(c.at, timezone) === today);
   const latest = todays[todays.length - 1];
   if (latest?.minutesToday !== undefined) return latest.minutesToday;
   return plannedMinutes;
@@ -467,10 +469,10 @@ export function minutesToday(
 /** The most recent check-in from today, if any. */
 export function todaysCheckIn(
   checkIns: CheckIn[],
-  now: Date = new Date(),
+  now: Date = new Date(), timezone?: string,
 ): CheckIn | undefined {
-  const today = localISO(now);
-  return [...checkIns].reverse().find((c) => localISO(c.at) === today);
+  const today = localISO(now, timezone);
+  return [...checkIns].reverse().find((c) => localISO(c.at, timezone) === today);
 }
 
 /** The subset of a planner session this module needs. */
@@ -486,6 +488,7 @@ export interface PlannedSessionLike {
 }
 
 export interface PlanInput {
+  timezone?: string;
   courses: { id: string; name: string; archived?: boolean }[];
   topics: Topic[];
   attempts: Attempt[];
@@ -536,7 +539,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   } = input;
   const now = input.now ?? new Date();
   const suggestions: Suggestion[] = [];
-  const checkIn = todaysCheckIn(checkIns, now);
+  const checkIn = todaysCheckIn(checkIns, now, input.timezone);
   const active = courses.filter((c) => !c.archived);
   const courseName = new Map(active.map((c) => [c.id, c.name]));
 
@@ -711,7 +714,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
 
   /* 6 — Reviews that have come due. */
   const activeTopics = topics.filter((t) => active.some((c) => c.id === t.courseId));
-  for (const review of dueReviews(activeTopics, attempts, now).slice(0, 2)) {
+  for (const review of dueReviews(activeTopics, attempts, now, input.timezone).slice(0, 2)) {
     const topic = activeTopics.find((t) => t.id === review.topicId);
     if (!topic) continue;
     if (suggestions.some((s) => s.topicId === topic.id)) continue;
@@ -752,7 +755,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   };
 
   for (const topic of activeTopics) {
-    const evidence = deriveEvidence(topic.id, attempts);
+    const evidence = deriveEvidence(topic.id, attempts, input.timezone);
     if (evidence.level === 'retained') continue;
     if (suggestions.some((s) => s.topicId === topic.id)) continue;
 
@@ -764,9 +767,9 @@ export function buildPlan(input: PlanInput): Suggestion[] {
 
     const covering = upcomingAssessments(
       assessments.filter((a) => a.courseId === topic.courseId),
-      now,
+      now, input.timezone,
     ).find((a) => a.topicIds.length === 0 || a.topicIds.includes(topic.id));
-    const daysAway = covering ? daysUntil(covering.date, now) : 999;
+    const daysAway = covering ? daysUntil(covering.date, now, input.timezone) : 999;
     const proximity = daysAway <= 7 ? 20 : daysAway <= 14 ? 12 : daysAway <= 28 ? 6 : 0;
 
     const weight =
@@ -844,10 +847,10 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   /* 8 — A rehearsal, when an assessment is close enough for pace to matter. */
   const soon = nextAssessment(
     assessments.filter((a) => active.some((c) => c.id === a.courseId)),
-    now,
+    now, input.timezone,
   );
   if (soon && attempts.length > 0) {
-    const daysAway = daysUntil(soon.date, now);
+    const daysAway = daysUntil(soon.date, now, input.timezone);
     const lastExam = [...attempts]
       .filter((a) => a.kind === 'exam' && a.courseId === soon.courseId)
       .sort((a, b) => ((a.completedAt ?? '') < (b.completedAt ?? '') ? 1 : -1))[0];
@@ -875,7 +878,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
 
   /* 9 — Reduced time changes what is offered, not just the estimate. */
   if (checkIn?.mood === 'less-time') {
-    const available = minutesToday(30, checkIns, now);
+    const available = minutesToday(30, checkIns, now, input.timezone);
     const course = checkIn.courseId ?? active[0]?.id;
     /* Only offer the short round if that course actually has flashcards. */
     const hasFlashcards =

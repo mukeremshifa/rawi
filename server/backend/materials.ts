@@ -84,6 +84,7 @@ export async function createMaterial(db: SocketDb, workspaceId: string, courseId
   const fingerprint = await hash(JSON.stringify({ ...input, topicIds: [...input.topicIds].sort() }));
   return db.transaction(async tx => {
     await lockCourse(tx, workspaceId, courseId);
+    if (input.noteSource) { const ref = input.noteSource; const [source] = await tx.select({ id: passages.id }).from(passages).where(and(eq(passages.workspaceId, workspaceId), eq(passages.courseId, courseId), eq(passages.materialId, ref.materialId), eq(passages.versionId, ref.versionId), eq(passages.id, ref.passageId))); if (!source) throw notFound(); }
     const { text, format, topicIds, ...fields } = input;
     const [inserted] = await tx.insert(materials).values({ ...fields, workspaceId, courseId, createFingerprint: fingerprint }).onConflictDoNothing().returning();
     const row = inserted ?? await ownMaterial(tx, workspaceId, input.id);

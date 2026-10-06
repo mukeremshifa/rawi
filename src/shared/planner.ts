@@ -91,8 +91,12 @@ export function todayISO(now: Date = new Date()): string {
  * looking at, so every date in this app that represents a *day* goes through
  * here rather than through `toISOString().slice(0, 10)`.
  */
-export function localISO(date: Date | string): string {
+export function localISO(date: Date | string, timezone?: string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
+  if (timezone) {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+    return ['year', 'month', 'day'].map(k => parts.find(p => p.type === k)!.value).join('-');
+  }
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -288,6 +292,7 @@ interface Candidate {
 }
 
 export interface PlanInputs {
+  timezone?: string;
   courses: Course[];
   topics: Topic[];
   attempts: Attempt[];
@@ -361,7 +366,7 @@ function candidates(input: PlanInputs): Candidate[] {
       .sort((a, b) => a.date.localeCompare(b.date));
 
     for (const topic of courseTopics) {
-      const evidence = deriveEvidence(topic.id, attempts);
+      const evidence = deriveEvidence(topic.id, attempts, input.timezone);
 
       /* The nearest assessment that actually covers this topic. An assessment
          with no recorded coverage is treated as covering the whole course,
@@ -476,7 +481,7 @@ function candidates(input: PlanInputs): Candidate[] {
     }
 
     /* Reviews that have come due are their own, shorter, kind of work. */
-    for (const review of dueReviews(courseTopics, attempts).slice(0, 2)) {
+    for (const review of dueReviews(courseTopics, attempts, new Date(), input.timezone).slice(0, 2)) {
       const topic = courseTopics.find((t) => t.id === review.topicId);
       if (!topic) continue;
       /* A review is a flashcard round when flashcards exist, and whatever

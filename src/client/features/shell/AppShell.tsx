@@ -4,7 +4,7 @@ import { NotificationEntry } from './NotificationsPage';
 import { exportWorkspace } from './SettingsPage';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
+import { Link, Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
 import {
   BookOpenIcon,
   CalendarDaysIcon,
@@ -39,7 +39,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Badge } from '@/components/ui/badge';
 import { MEDIA_WIDE, useMediaQuery } from '@/components/layout';
 import { CourseDot, DueChip } from '@/components/domain';
 import { useStore } from '@/store/store';
@@ -49,7 +48,7 @@ import {
   useCourseById,
   useUpcomingAssessments,
 } from '@/store/selectors';
-import { cn } from '@/lib/utils';
+import { NavGroup, type NavItem } from './Navigation';
 
 /**
  * The shell: student-wide navigation above, course navigation inside.
@@ -83,15 +82,6 @@ import { cn } from '@/lib/utils';
  * a reading pane beside a conversation — sets it up inside `<main>` and takes
  * `h-full`, which is the case the rule is written to permit.
  */
-
-interface NavItem {
-  to: string;
-  label: string;
-  icon: typeof LayoutDashboardIcon;
-  /** Matches nested routes, so /materials/x keeps Materials highlighted. */
-  match: string;
-  end?: boolean;
-}
 
 const GLOBAL_NAV: NavItem[] = [
   { to: '/', label: 'Home', icon: HomeIcon, match: '/', end: true },
@@ -136,56 +126,6 @@ function courseNav(courseId: string): NavItem[] {
       match: `${base}/progress`,
     },
   ];
-}
-
-function isActive(pathname: string, item: NavItem): boolean {
-  if (item.end) return pathname === item.match;
-  return pathname === item.match || pathname.startsWith(`${item.match}/`);
-}
-
-function NavGroup({
-  items,
-  onNavigate,
-  badges,
-}: {
-  items: NavItem[];
-  onNavigate?: () => void;
-  badges?: Record<string, number>;
-}) {
-  const { pathname } = useLocation();
-
-  return (
-    <div className="flex flex-col gap-hairline">
-      {items.map((item) => {
-        const active = isActive(pathname, item);
-        const Icon = item.icon;
-        const badge = badges?.[item.to];
-        return (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            onClick={onNavigate}
-            aria-current={active ? 'page' : undefined}
-            className={cn(
-              'flex items-center gap-snug rounded-md px-snug py-2 text-sm transition-colors',
-              'focus-visible:ring-ring outline-none focus-visible:ring-2',
-              active
-                ? 'bg-secondary text-secondary-foreground font-medium'
-                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-            )}
-          >
-            <Icon className="size-4 shrink-0" aria-hidden />
-            <span className="flex-1 truncate">{item.label}</span>
-            {badge !== undefined && badge > 0 && (
-              <Badge variant="secondary" className="font-mono tabular-nums">
-                {badge}
-              </Badge>
-            )}
-          </NavLink>
-        );
-      })}
-    </div>
-  );
 }
 
 /** The switcher, so changing course never means going back to a list first. */

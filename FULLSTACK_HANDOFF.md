@@ -24,7 +24,7 @@ claiming execution. No substitute responses count as hosted verification.
 
 ## Migration record
 
-Pending implementation. Applied migrations 0000 and 0001 must remain unchanged.
+Applied migrations 0000 and 0001 remain unchanged. New migration details follow.
 
 ## Material draft milestone
 
@@ -94,3 +94,116 @@ feedback revisions, extraction beyond text, full parity of local feature control
 full local-import coverage and online archive restoration. The main shell remains
 explicit online mode because full behavior parity has not been established.
 The remaining verification matrix is not implied by the checks above.
+
+
+## Recovery and supporting feature milestone
+
+Migrations 0007 through 0010 were generated, reviewed and applied to the same
+designated development database. They add note sources, reminder state, AI
+operations and execution reservations, immutable feedback revisions, and scoped
+attempt constraints. The unique constraint in 0010 was moved before its dependent
+foreign key before application. No infrastructure, credentials or deployment
+changed.
+
+Implemented since the earlier inventory:
+
+- Shared navigation rendering with the existing shell, online course rail,
+  account search and persisted in-app reminder read/dismiss state.
+- Material notes retain exact source versions. Practice links filter an exact
+  version. Practice defaults use account preferences. Selection loads a complete
+  bank up to 5,000 records, failing explicitly above the bound.
+- Planner launch links reach practice and exam run creation. Completion records
+  the attempt once. Planner availability drafts retain their base revision and
+  can be reviewed after a conflict. Home suggestions reuse the deterministic
+  rules and direct unavailable tutoring suggestions to readable material.
+- Learner timezone is used for evidence days, due reviews, streaks and proposals.
+  Calendar arithmetic uses date values without host timezone assumptions.
+- Run acknowledgement retains unmatched drafts, including answers excluded by
+  finalization. Navigation protection uses the router blocker, including Back.
+- Reviewed local imports now include assessments, rehearsal settings, planner
+  sessions and check-ins, plus earlier course/material/question/attempt support.
+  Local unfinished exams remain recovery-only because their clocks cannot be
+  promoted into server authority. Tutor sessions and active practice remain
+  recovery-only, disclosed before import.
+- Saved AI request pages and authenticated generation/feedback preparation use
+  account records. No client material text, conversation history or grade is
+  accepted as authority. Hosted requests remain blocked without sending.
+- Internal AI reservation functions serialize cost and concurrency in Neon.
+  Duplicate reservations do not authorize sending twice. Unknown outcomes retain
+  their estimate and prevent automatic retry. Partial checkpoints require the
+  current execution. Validated structured publication atomically saves generated
+  questions and their set, or appends a feedback revision. Current results and
+  progress apply revisions without overwriting the original attempt.
+
+Additional actual checks:
+
+- Authenticated APIs: own/foreign search, exact-source note, foreign note denial,
+  concurrent answer save versus submission, one linked planner completion,
+  blocked generation and feedback records, foreign AI operation denial, reminder
+  dismissal and duplicate retry passed.
+- Neon direct service checks used explicitly synthetic fixtures with no provider
+  call: concurrent reservation limit, duplicate send fencing, partial checkpoint,
+  uncertain-charge retention, stale checkpoint denial and duplicate settlement
+  passed. Synthetic feedback was labelled `verification-fixture-no-provider`.
+  Its revision changed current totals while the original response and snapshot
+  remained unchanged. This is application validation, not hosted AI proof.
+- Expanded import review/commit, duplicate review and commit, remapped IDs,
+  readable historical sources, private original archive and account export passed.
+  An intentionally inconsistent fixture referencing another course was rejected
+  during review before publication.
+- Chrome opened the updated routes, including search and reminders. Edge resumed
+  a fresh reveal from Chrome. Copied foreign run access was denied. No page errors
+  occurred. A first repeated browser check reused an already-revealed fixture and
+  timed out, then passed with a new run. The first nine-format UI check overlapped
+  a Worker hot reload and its last save returned 503. The repeated check passed all nine browser answer controls, autosave and
+  submission after each request was observed by its answer item. A lost response
+  after a committed save preserved the draft and retried without duplication.
+  Declining browser Back preserved unsent work. The combined check then waited
+  for an account-switch fixture request that had already completed, so that
+  subcheck was rerun separately.
+
+## Current API map
+
+All paths below have the `/api/v1` prefix, authenticated account ownership,
+no-store responses and configured-route allowlisting.
+
+| UI | API routes |
+| --- | --- |
+| Account, courses, settings and reviewed outline | `me`, `preferences`, `courses`, `courses/:id`, `courses/:id/topics` |
+| Materials, notes, exact sources, archive and recovery | `courses/:id/materials`, `materials/:id`, `materials/:id/versions`, `materials/:id/versions/:versionId`, `materials/:id/versions/:versionId/passages/:passageId`, `materials/:id/versions/:versionId/download`, `courses/:id/uploads`, `uploads/:id`, `uploads/:id/finalize` |
+| Practice library, runs and results | `courses/:id/questions`, `courses/:id/sets`, `sets/:id`, `sets/:id/runs`, `courses/:id/runs`, `runs/:id`, `runs/:id/answers`, `runs/:id/transition`, `runs/:id/submit`, `courses/:id/attempts`, `attempts/:id` |
+| Exam configuration and server transitions | `courses/:id/exams`, `exams/:id`, `exams/:id/runs`, `runs/:id/exam-transition` |
+| Tutor history and saved messages | `courses/:id/tutor`, `tutor/:id`, `tutor/:id/messages` |
+| AI request preparation and recovery | `ai/status`, `ai/operations/:id`, `courses/:id/generate`, `attempts/:id/feedback` |
+| Planner, progress and home | `planner`, `planner/availability`, `planner/sessions`, `planner/check-ins`, `planner/proposals`, `planner/proposals/:id/apply`, `courses/:id/assessments`, `progress` |
+| Search, reminders and transfer | `search`, `notifications`, `export`, `imports/review`, `imports/:id/original`, `imports/:id/commit` |
+
+## Gaps and concrete next actions
+
+The full migration is not complete. These are not all external dependencies.
+
+| Gap | Remaining work |
+| --- | --- |
+| Hosted AI execution | Runtime Vertex authentication is unavailable. Integrate an authenticated Worker-compatible execution adapter using the existing provider/model configuration. Connect it to reservation and publication boundaries, without a detached background promise. No credential setup or provisioning was attempted. |
+| Tutor learning behavior | Load bounded exact context and server history into the existing prompts, validate citations, integrate streaming, Stop, recovery, stages and summaries. Current tutor messages are saved with blocked replies and do not create learning evidence. These application paths remain unfinished, not merely unverified. |
+| Written feedback execution | Publication and revisions exist. Connect provider output to these functions and expose revision history/regrading controls. Current UI requests are explicitly blocked. |
+| Full UI parity | Shared answer components, domain rules and navigation are reused. Assessment editing, advanced planner controls, flashcard second-pass state, full exam controls and some library conflict flows still need adaptation. Keep explicit online mode until parity is established. |
+| Transfer coverage | Add tutor session and unfinished practice import with per-record validation. Online archive restoration needs its own reviewed remapping path. Original files, drafts and unsupported records are recoverable from the retained local export. |
+| Extraction | TXT and Markdown are supported. PDF, DOCX and PPTX originals remain downloadable but unreadable. Integrate an available parser if one becomes configured, preserving real locations. Parser selection and processing infrastructure remain outside scope. |
+| Verification | Complete the remaining browser race, expiry, topic removal, import failure and local-mode matrix. No real tutor stream, cancellation, provider timeout or hosted citation result has been verified. |
+
+The principal tradeoff is normalized immutable learning history plus coarse,
+short workspace write serialization. This simplifies retries and finalization for
+a personal workspace, with less concurrent write throughput. Full server-derived
+planner inputs avoid first-page aggregates but are not yet optimized for very
+large accounts. Online mode remains explicitly selected and local work is intact.
+
+
+Further verification: a remote material content revision rejected the older text
+draft and preserved both text and title. Per-section locking rejected writes
+without revealing feedback, and manual submission racing expiry produced one
+expired result. Pure shared-rule fixtures passed learner midnight evidence,
+calendar-day reviews and host-independent date arithmetic. `npm run typecheck`,
+`npm run build` and Worker dry-run packaging passed. Vite reported the existing
+large-chunk warning, now about 1.39 MB minified for the combined local/online entry.
+No public deployment occurred.

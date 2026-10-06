@@ -1,12 +1,13 @@
 import { and, asc, eq, gt, inArray, lte } from 'drizzle-orm';
 import { z } from 'zod';
-import { createSetInput, metadataInput, questionInput, runWriteInput, transitionInput, validResponse, type VersionedQuestion, type LearningRun, type LearningAttempt } from '../../src/shared/learning';
+import { createSetInput, metadataInput, questionInput, runWriteInput, transitionInput, validResponse, sameAnswer, type VersionedQuestion, type LearningRun, type LearningAttempt } from '../../src/shared/learning';
 import { attemptTotals, toQuestionAttempt } from '../../src/shared/marking';
 import { sectionLocked, locate } from '../../src/shared/exam';
 import { uuid } from '../../src/shared/online';
 import { questionVersions, questionSources, learningSets, setItems, learningRuns, runAnswers, learningAttempts, learningOperations, workspaces, topics, passages, plannedSessions } from './schema';
 import { hash, lockCourse } from './materials';
 import { bumpPlanner } from './planning';
+import { withFeedback } from './feedback';
 import { getCourse } from './service';
 import { ApiError, conflict, notFound } from './errors';
 import type { ReadDb, SocketDb, Transaction } from './db';
@@ -144,12 +145,14 @@ async function saveBatch(tx: Transaction, run: typeof learningRuns.$inferSelect,
       if (!loc || sectionLocked(runtime, loc.sectionIndex) || (runtime.configSnapshot.navigation === 'sequential' && items.findIndex(i => i.id === item.id) < run.position)) throw new ApiError(409, 'section_locked', 'This section or question is locked.');
     }
     const prior = answers.find(a => a.itemId === entry.itemId);
-    if (prior?.checked && JSON.stringify(prior.response) !== JSON.stringify(entry.response)) throw new ApiError(409, 'answer_locked', 'This answer was checked. Start a new attempt to answer it again.');
+    if (prior?.checked && !sameAnswer(prior.response, entry.response)) throw new ApiError(409, 'answer_locked', 'This answer was checked. Start a new attempt to answer it again.');
     if (entry.response.kind === 'self-rating' && !prior?.revealed) throw new ApiError(409, 'reveal_required', 'Reveal the flashcard before rating your recall.');
     await tx.insert(runAnswers).values({ workspaceId: run.workspaceId, courseId: run.courseId, runId: run.id, setId: run.setId, itemId: item.id, response: entry.response }).onConflictDoUpdate({ target: [runAnswers.runId, runAnswers.itemId], set: { response: entry.response } });
   }
 }
 export async function writeRun(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof runWriteInput>, submit: boolean) {
+  // Commit deadline reconciliation even when the following write is rejected.
+  await getRun(db, workspaceId, id);
   return operation(db, workspaceId, input.operationId, { action: submit ? 'submit' : 'save-answers', id, input }, async tx => {
     const run = await reconcileRun(tx, await ownRun(tx, workspaceId, id));
     if (run.state === 'submitted') {
@@ -164,6 +167,7 @@ export async function writeRun(db: SocketDb, workspaceId: string, id: string, in
   });
 }
 export async function transition(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof transitionInput>) {
+  await getRun(db, workspaceId, id);
   return operation(db, workspaceId, input.operationId, { action: 'transition', id, input }, async tx => {
     const run = await reconcileRun(tx, await ownRun(tx, workspaceId, id));
     if (run.exam) throw new ApiError(409, 'exam_feedback_locked', 'Exam feedback is available only after submitting the whole paper.');
@@ -181,12 +185,13 @@ export async function transition(db: SocketDb, workspaceId: string, id: string, 
 export async function history(db: Db, workspaceId: string, courseId: string, limit: number, cursor?: string) {
   await getCourse(db, workspaceId, courseId);
   const rows = await db.select({ id: learningAttempts.id, snapshot: learningAttempts.snapshot }).from(learningAttempts).where(and(eq(learningAttempts.workspaceId, workspaceId), eq(learningAttempts.courseId, courseId), cursor ? gt(learningAttempts.id, cursor) : undefined)).orderBy(asc(learningAttempts.id)).limit(limit + 1);
-  return { attempts: rows.slice(0, limit).map(r => ({ id: r.id, title: r.snapshot.title, completedAt: r.snapshot.completedAt, marksAwarded: r.snapshot.marksAwarded, marksAvailable: r.snapshot.marksAvailable, pending: r.snapshot.pending })), nextCursor: rows.length > limit ? rows[limit - 1]!.id : null };
+  const current = await withFeedback(db, workspaceId, rows.slice(0, limit).map(r => r.snapshot));
+  return { attempts: current.map(a => ({ id: a.id, title: a.title, completedAt: a.completedAt, marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable, pending: a.pending })), nextCursor: rows.length > limit ? rows[limit - 1]!.id : null };
 }
 export async function attempt(db: Db, workspaceId: string, id: string) {
   const [row] = await db.select({ snapshot: learningAttempts.snapshot }).from(learningAttempts).where(and(eq(learningAttempts.workspaceId, workspaceId), eq(learningAttempts.id, id)));
   if (!row) throw notFound();
-  return row.snapshot;
+  return (await withFeedback(db, workspaceId, [row.snapshot]))[0]!;
 }
 export async function activeRuns(db: Db, workspaceId: string, courseId: string, limit: number, cursor?: string) {
   await getCourse(db, workspaceId, courseId);

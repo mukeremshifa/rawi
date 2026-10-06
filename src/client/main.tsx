@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter, createBrowserRouter, RouterProvider } from 'react-router-dom';
 
 import { ErrorBoundary } from '@/components/ErrorBoundary.tsx';
 import { ThemeProvider } from '@/components/theme.tsx';
@@ -18,11 +18,12 @@ import '@/styles/globals.css';
 const root = document.getElementById('root');
 if (!root) throw new Error('#root is missing from index.html');
 const online = window.location.pathname === '/online' || window.location.pathname.startsWith('/online/');
+const onlineRouter = online ? createBrowserRouter([{ path: '*', element: <OnlineApp /> }]) : null;
 
 createRoot(root).render(
   <StrictMode>
     <ErrorBoundary>
-      {online ? <BrowserRouter><OnlineApp /></BrowserRouter> : <StoreProvider>
+      {onlineRouter ? <RouterProvider router={onlineRouter} /> : <StoreProvider>
         <ThemeProvider>
           <TooltipProvider delayDuration={300}>
             <BrowserRouter>

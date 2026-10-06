@@ -19,6 +19,8 @@ import * as exams from './exams';
 import * as planning from './planning';
 import * as tutoring from './tutoring';
 import * as transfer from './transfer';
+import * as support from './support';
+import * as ai from './ai';
 import { newTutorInput, tutorMessageInput, tutorMetadataInput } from '../../src/shared/online-tutor';
 import { plannerWrite, scheduleWrite, assessmentWrite, proposalInput, checkInInput } from '../../src/shared/online-planner';
 import { createExamInput, examTransitionInput } from '../../src/shared/online-exams';
@@ -58,7 +60,7 @@ api.get('/status', c => {
 const configured = new Hono<BackendContext>();
 configured.use('*', async (c, next) => {
   // Unknown paths return 404 even when configuration is absent.
-  const known = c.req.path.startsWith('/api/auth/') || /^\/api\/v1\/(me|preferences|export|imports\/review|imports\/[^/]+\/(commit|original)|planner|progress|planner\/(availability|sessions|proposals|check-ins)|planner\/proposals\/[^/]+\/apply|courses(?:\/[^/]+(?:\/(topics|materials|uploads|questions|sets|runs|attempts|exams|assessments|tutor))?)?|materials\/[^/]+(?:\/versions(?:\/[^/]+(?:\/(download|passages\/[^/]+))?)?)?|uploads\/[^/]+(?:\/finalize)?|sets\/[^/]+(?:\/runs)?|runs\/[^/]+(?:\/(answers|submit|transition|exam-transition))?|attempts\/[^/]+|exams\/[^/]+(?:\/runs)?|tutor\/[^/]+(?:\/messages)?)$/.test(c.req.path);
+  const known = c.req.path.startsWith('/api/auth/') || /^\/api\/v1\/(ai\/status|ai\/operations\/[^/]+|me|preferences|search|notifications|export|imports\/review|imports\/[^/]+\/(commit|original)|planner|progress|planner\/(availability|sessions|proposals|check-ins)|planner\/proposals\/[^/]+\/apply|courses(?:\/[^/]+(?:\/(topics|materials|uploads|generate|questions|sets|runs|attempts|exams|assessments|tutor))?)?|materials\/[^/]+(?:\/versions(?:\/[^/]+(?:\/(download|passages\/[^/]+))?)?)?|uploads\/[^/]+(?:\/finalize)?|sets\/[^/]+(?:\/runs)?|runs\/[^/]+(?:\/(answers|submit|transition|exam-transition))?|attempts\/[^/]+(?:\/feedback)?|exams\/[^/]+(?:\/runs)?|tutor\/[^/]+(?:\/messages)?)$/.test(c.req.path);
   if (!known) throw notFound();
   const missing = configurationProblems(c.env);
   if (missing.length) throw new ApiError(503, 'not_configured', `Online mode is not configured: ${missing.join(', ')}.`);
@@ -175,6 +177,13 @@ app.get('/export', async c => c.json(await transfer.exportWorkspace(c.get('socke
 app.post('/imports/review', async c => { const input = await jsonInput(c, z.strictObject({ export: z.unknown() })); return c.json(await transfer.prepareImport(c.get('socket'), c.get('workspaceId'), input.export)); });
 app.get('/imports/:id/original', async c => c.json(await transfer.importOriginal(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
 app.post('/imports/:id/commit', async c => { const input = await jsonInput(c, z.strictObject({ operationId: uuid })); return c.json(await transfer.commitImport(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), input.operationId)); });
+app.get('/search', async c => { const q = z.strictObject({ q: z.string().trim().max(100).default('') }).parse(c.req.query()); return c.json(q.q ? await support.search(c.get('db'), c.get('workspaceId'), q.q) : { results: [], limitPerCategory: 10 }); });
+app.get('/notifications', async c => c.json(await support.notifications(c.get('socket'), c.get('workspaceId'))));
+app.patch('/notifications', async c => { const input = await jsonInput(c, z.strictObject({ operationId: uuid, key: z.string().min(1).max(300), status: z.enum(['read', 'dismissed']) })); return c.json(await support.markReminder(c.get('socket'), c.get('workspaceId'), input.operationId, input.key, input.status)); });
+app.get('/ai/status', c => c.json({ available: false, reason: ai.unavailable }));
+app.get('/ai/operations/:id', async c => c.json(await ai.viewOperation(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
+app.post('/courses/:id/generate', async c => c.json(await ai.prepareGeneration(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, ai.generateInput))));
+app.post('/attempts/:id/feedback', async c => c.json(await ai.prepareGrade(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, ai.gradeInput))));
 configured.route('/v1', app);
 api.route('/', configured);
 api.notFound(() => { throw notFound(); });

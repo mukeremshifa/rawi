@@ -17,8 +17,10 @@ configuration: AI actions say what is missing instead.
 ## Chosen backend stack
 
 Decision recorded on 4 October 2026. Local mode uses the Node API and browser
-storage described below. Checkpoint 1 adds an explicitly selected online mode
-for Google accounts, courses, topics and preferences.
+storage described below. Explicit online mode now saves courses, materials,
+practice, exam rehearsals, planning and learning history to the account. The
+coordinated migration is still in progress. See FULLSTACK_HANDOFF.md for actual
+verification and remaining gaps.
 
 | Responsibility | Choice |
 | --- | --- |
@@ -51,13 +53,15 @@ promise UAE data residency or free hosting at a particular user count.
 Keep `npm install` and `npm run dev` usable throughout the migration, and preserve
 existing saved work. Provisioning and production deployment remain later work.
 
-## Online development: checkpoint 1
+## Online development
 
 Open `/online`, or choose **Local mode** in the workspace header to switch.
 The modes have separate composition roots. Signing in never uploads or replaces
 `rawi.state.v1`. Existing restoration, migration and export remain in local mode.
-Online materials are available in checkpoint 2. Other learning areas explain
-that they are unavailable until later checkpoints.
+Online mode includes versioned materials, all nine saved question formats,
+resumable practice, immutable attempts, server-timed rehearsals, planner review,
+progress, search and in-app reminders. The navigation uses the existing product
+rail. Online mode remains explicit while full feature parity is unfinished.
 
 For online development, copy `.dev.vars.example` to the ignored `.dev.vars`
 and fill in `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
@@ -86,10 +90,23 @@ proxies Vite's public origin to it. Stop `npm run dev` before starting it becaus
 both use port 5173. Use `npm run dev` for the local AI prototype.
 
 The online UI keeps unsent edits in memory on save failure. Revision conflicts
-require reviewing the latest record before saving again. Navigating away or
-reloading discards unsent online edits. Account changes clear online memory.
-Saved online appearance preferences apply to online mode only. Study and reminder
-preferences are stored for later learning features.
+require reviewing the latest record before saving again. Learning and material
+drafts warn before navigation and offer recovery copies where applicable.
+Unacknowledged work is not saved across reloads. Account changes clear online
+memory. Practice defaults and reminder preferences apply to online features.
+
+`/online/data` exports a versioned account archive and reviews local version 1
+exports before importing. Imports add remapped records atomically and deduplicate
+identical files. Unsupported records are listed before confirmation and retained
+in the original recovery archive. No import removes or replaces local data.
+Online archive restoration remains unfinished.
+
+Hosted tutor replies, question generation and written grading are blocked. Their
+requests are saved, with no provider call or charge. Neon reservation, partial
+checkpoint and structured publication functions exist, including immutable
+feedback revisions. A Worker-compatible Vertex authentication and execution
+adapter, tutor streaming and cancellation still need integration. Local ADC and
+the Node AI server are not used as substitutes for hosted execution.
 
 `npm run typecheck` covers the client, local server and Worker.
 `npm run worker:types` regenerates runtime types. The Worker compatibility date

@@ -4,7 +4,7 @@ import { buildRun, flatQuestionIds, locate, sectionLocked, validateConfig, withE
 import type { createExamInput, examTransitionInput, ExamRuntime } from '../../src/shared/online-exams';
 import type { metadataInput } from '../../src/shared/learning';
 import { examConfigs, learningRuns, learningSets, materials, questionVersions, setItems } from './schema';
-import { operation, ownRun, reconcileRun, runView, finalizeRun, validatePlannedLink } from './learning';
+import { operation, ownRun, reconcileRun, runView, finalizeRun, validatePlannedLink, getRun } from './learning';
 import { lockCourse, validateTopics } from './materials';
 import { getCourse } from './service';
 import { ApiError, conflict, notFound } from './errors';
@@ -62,6 +62,7 @@ export async function startExam(db: SocketDb, workspaceId: string, configId: str
   });
 }
 export async function examTransition(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof examTransitionInput>) {
+  await getRun(db, workspaceId, id);
   return operation(db, workspaceId, input.operationId, { action: 'exam-transition', id, input }, async tx => {
     const run = await reconcileRun(tx, await ownRun(tx, workspaceId, id));
     if (run.state === 'submitted') return runView(tx, workspaceId, id);

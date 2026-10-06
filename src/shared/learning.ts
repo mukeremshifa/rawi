@@ -59,3 +59,8 @@ export type LearningSet = { id: string; courseId: string; name: string; archived
 export type RunItem = { id: string; question: Question; response: AnswerValue; checked: boolean; revealed: boolean; hinted: boolean; feedback?: QuestionAttempt };
 export type LearningRun = { id: string; courseId: string; setId: string; title: string; revision: number; state: 'active' | 'submitted'; position: number; feedback: 'immediate' | 'end'; hintsAllowed: boolean; items: RunItem[]; attemptId: string | null; startedAt: string; exam?: ExamRuntime | null; serverNow?: string };
 export type LearningAttempt = { id: string; runId: string; courseId: string; title: string; startedAt: string; completedAt: string; markingVersion: string; questions: { question: VersionedQuestion; result: QuestionAttempt }[]; marksAwarded: number; marksAvailable: number; pending: number; exam?: ExamRuntime | null; finish?: 'manual' | 'expired'; plannedSessionId?: string; remediatesAttemptId?: string; imported?: Attempt };
+
+export function sameAnswer(a: unknown, b: unknown): boolean {
+  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])) : value;
+  return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+}

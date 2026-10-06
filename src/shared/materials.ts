@@ -8,7 +8,7 @@ export const materialFields = z.strictObject({
 });
 // Do not trim source content. Wording and whitespace belong to the learner.
 export const sourceText = z.string().min(1).max(1048576).refine(text => text.trim().length > 0);
-export const createMaterialInput = materialFields.extend({ id: uuid, text: sourceText, format: z.enum(['txt', 'md']) }).strict();
+export const createMaterialInput = materialFields.extend({ id: uuid, text: sourceText, format: z.enum(['txt', 'md']), noteSource: z.strictObject({ materialId: uuid, versionId: uuid, passageId: uuid }).optional() }).strict();
 export const materialPatch = materialFields.partial().extend({ archived: z.boolean().optional(), expectedRevision: revision }).strict();
 export const textVersionInput = z.strictObject({ requestId: uuid, expectedRevision: revision, text: sourceText, format: z.enum(['txt', 'md']) });
 export const uploadInput = materialFields.extend({
@@ -22,6 +22,7 @@ export const materialListInput = pageInput.extend({ archived: z.enum(['true', 'f
 export interface OnlineMaterial {
   id: string; courseId: string; title: string; kind: z.infer<typeof materialFields>['kind']; attribution: string;
   archived: boolean; currentVersionId: string | null; revision: number; createdAt: string; updatedAt: string; topicIds: string[];
+  noteSource?: { materialId: string; versionId: string; passageId: string } | null;
   contentStatus: 'readable' | 'not_extracted' | 'failed' | null;
 }
 export interface MaterialVersion {

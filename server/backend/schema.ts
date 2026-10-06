@@ -8,6 +8,7 @@ import type { ExamRuntime } from '../../src/shared/online-exams';
 import type { Availability, PlannedAssessment, PlannedSession, PlanProposal, CheckIn } from '../../src/shared/types';
 import type { OnlineTutorSession, OnlineTutorMessage } from '../../src/shared/online-tutor';
 import type { ImportReview } from '../../src/shared/transfer';
+import type { WrittenGrading } from '../../src/shared/types';
 
 const timestamps = () => ({
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -84,7 +85,7 @@ function currentVersionColumns(): [AnyPgColumn, AnyPgColumn, AnyPgColumn, AnyPgC
 }
 export const materials = pgTable('materials', {
   id: uuid('id').primaryKey(), ...materialScope(), title: text('title').notNull(), kind: text('kind').notNull(),
-  attribution: text('attribution').notNull(), archived: boolean('archived').notNull().default(false),
+  attribution: text('attribution').notNull(), noteSource: jsonb('note_source').$type<{ materialId: string; versionId: string; passageId: string }>(), archived: boolean('archived').notNull().default(false),
   currentVersionId: uuid('current_version_id').references((): AnyPgColumn => materialVersions.id),
   revision: integer('revision').notNull().default(1), createFingerprint: text('create_fingerprint').notNull(), ...timestamps(),
 }, t => [
@@ -202,7 +203,7 @@ export const runAnswers = pgTable('run_answers', {
 export const learningAttempts = pgTable('learning_attempts', {
   id: uuid('id').primaryKey(), ...materialScope(), runId: uuid('run_id').notNull().unique(), setId: uuid('set_id').notNull(),
   snapshot: jsonb('snapshot').$type<LearningAttempt>().notNull(), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-}, t => [foreignKey({ columns: [t.workspaceId, t.courseId, t.setId, t.runId], foreignColumns: [learningRuns.workspaceId, learningRuns.courseId, learningRuns.setId, learningRuns.id] }),
+}, t => [unique('attempts_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ columns: [t.workspaceId, t.courseId, t.setId, t.runId], foreignColumns: [learningRuns.workspaceId, learningRuns.courseId, learningRuns.setId, learningRuns.id] }),
   index('attempts_course_idx').on(t.workspaceId, t.courseId, t.id)]);
 export const learningOperations = pgTable('learning_operations', {
   workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id), id: uuid('id').notNull(),
@@ -244,3 +245,25 @@ export const workspaceImports = pgTable('workspace_imports', {
   id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id), fingerprint: text('fingerprint').notNull(),
   original: jsonb('original').$type<unknown>().notNull(), review: jsonb('review').$type<ImportReview>().notNull(), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [unique('imports_deduplicate').on(t.workspaceId, t.fingerprint)]);
+export const reminderStates = pgTable('reminder_states', {
+  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id), key: text('key').notNull(), status: text('status').$type<'read' | 'dismissed'>().notNull(),
+}, t => [primaryKey({ columns: [t.workspaceId, t.key] })]);
+export const aiOperations = pgTable('ai_operations', {
+  id: uuid('id').primaryKey(), ...materialScope(), task: text('task').$type<'tutor' | 'generate' | 'grade'>().notNull(),
+  targetId: uuid('target_id').notNull(), fingerprint: text('fingerprint').notNull(), input: jsonb('input').$type<unknown>().notNull(),
+  state: text('state').$type<'blocked' | 'running' | 'complete' | 'failed' | 'cancelled' | 'interrupted'>().notNull(),
+  model: text('model').notNull(), promptVersion: text('prompt_version').notNull(), reason: text('reason'),
+  activeExecutionId: uuid('active_execution_id'), result: jsonb('result').$type<unknown>(), ...timestamps(),
+}, t => [unique('ai_operations_scope_unique').on(t.workspaceId, t.id), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('ai_operations_target_idx').on(t.workspaceId, t.targetId, t.createdAt)]);
+export const aiExecutions = pgTable('ai_executions', {
+  id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull(), operationId: uuid('operation_id').notNull(),
+  state: text('state').$type<'reserved' | 'settled' | 'ambiguous' | 'released'>().notNull(),
+  reservedMicros: bigint('reserved_micros', { mode: 'number' }).notNull(), chargedMicros: bigint('charged_micros', { mode: 'number' }),
+  usage: jsonb('usage').$type<unknown>(), partial: text('partial').notNull().default(''),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(), settledAt: timestamp('settled_at', { withTimezone: true }),
+}, t => [foreignKey({ columns: [t.workspaceId, t.operationId], foreignColumns: [aiOperations.workspaceId, aiOperations.id] }), index('ai_executions_budget_idx').on(t.state, t.createdAt), check('ai_reservation_nonnegative', sql`${t.reservedMicros} >= 0 AND (${t.chargedMicros} IS NULL OR ${t.chargedMicros} >= 0)`)]);
+export const feedbackRevisions = pgTable('feedback_revisions', {
+  id: uuid('id').primaryKey(), ...materialScope(), attemptId: uuid('attempt_id').notNull().references(() => learningAttempts.id), questionId: uuid('question_id').notNull(),
+  operationId: uuid('operation_id').notNull().unique(), revision: integer('revision').notNull(), grading: jsonb('grading').$type<WrittenGrading>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, t => [unique('feedback_revision_unique').on(t.attemptId, t.questionId, t.revision), foreignKey({ name: 'feedback_attempt_scope_fk', columns: [t.workspaceId, t.courseId, t.attemptId], foreignColumns: [learningAttempts.workspaceId, learningAttempts.courseId, learningAttempts.id] }), foreignKey({ columns: [t.workspaceId, t.operationId], foreignColumns: [aiOperations.workspaceId, aiOperations.id] }), foreignKey({ columns: [t.workspaceId, t.courseId, t.questionId], foreignColumns: [questionVersions.workspaceId, questionVersions.courseId, questionVersions.id] })]);
