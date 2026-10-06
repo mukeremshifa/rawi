@@ -62,7 +62,7 @@ export function QuestionFeedback({
       <div className="flex flex-wrap items-center gap-tight">
         <OutcomeBadge outcome={attempt.outcome} />
         <span className="text-muted-foreground font-mono text-xs tabular-nums">
-          {attempt.marksAwarded}/{attempt.marksAvailable} marks
+          {attempt.outcome === 'pending' ? 'Awaiting feedback' : `${attempt.marksAwarded}/${attempt.marksAvailable} marks`}
         </span>
         <Separator orientation="vertical" className="h-3" />
         <span className="text-muted-foreground text-xs">
@@ -96,7 +96,7 @@ export function QuestionFeedback({
       <div className="bg-muted/40 flex flex-col gap-tight rounded-lg border p-gutter">
         <span className="text-xs font-medium">Explanation</span>
         <Prose text={question.explanation} size="compact" />
-        <SourceLink source={question.source} className="mt-tight" />
+        {question.source && <SourceLink source={question.source} className="mt-tight" />}
       </div>
 
       {written && attempt.grading?.status === 'graded' && (

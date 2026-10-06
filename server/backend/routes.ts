@@ -14,6 +14,15 @@ import { createMaterialInput, materialPatch, textVersionInput, uploadInput, mate
 import * as materialService from './materials';
 import * as uploadService from './uploads';
 import { limits } from './storage';
+import * as learning from './learning';
+import * as exams from './exams';
+import * as planning from './planning';
+import * as tutoring from './tutoring';
+import * as transfer from './transfer';
+import { newTutorInput, tutorMessageInput, tutorMetadataInput } from '../../src/shared/online-tutor';
+import { plannerWrite, scheduleWrite, assessmentWrite, proposalInput, checkInInput } from '../../src/shared/online-planner';
+import { createExamInput, examTransitionInput } from '../../src/shared/online-exams';
+import { createSetInput, metadataInput, runWriteInput, transitionInput, pageQuery } from '../../src/shared/learning';
 
 export type BackendContext = {
   Bindings: BackendBindings;
@@ -49,7 +58,7 @@ api.get('/status', c => {
 const configured = new Hono<BackendContext>();
 configured.use('*', async (c, next) => {
   // Unknown paths return 404 even when configuration is absent.
-  const known = c.req.path.startsWith('/api/auth/') || /^\/api\/v1\/(me|preferences|courses(?:\/[^/]+(?:\/(topics|materials|uploads))?)?|materials\/[^/]+(?:\/versions(?:\/[^/]+(?:\/(download|passages\/[^/]+))?)?)?|uploads\/[^/]+(?:\/finalize)?)$/.test(c.req.path);
+  const known = c.req.path.startsWith('/api/auth/') || /^\/api\/v1\/(me|preferences|export|imports\/review|imports\/[^/]+\/(commit|original)|planner|progress|planner\/(availability|sessions|proposals|check-ins)|planner\/proposals\/[^/]+\/apply|courses(?:\/[^/]+(?:\/(topics|materials|uploads|questions|sets|runs|attempts|exams|assessments|tutor))?)?|materials\/[^/]+(?:\/versions(?:\/[^/]+(?:\/(download|passages\/[^/]+))?)?)?|uploads\/[^/]+(?:\/finalize)?|sets\/[^/]+(?:\/runs)?|runs\/[^/]+(?:\/(answers|submit|transition|exam-transition))?|attempts\/[^/]+|exams\/[^/]+(?:\/runs)?|tutor\/[^/]+(?:\/messages)?)$/.test(c.req.path);
   if (!known) throw notFound();
   const missing = configurationProblems(c.env);
   if (missing.length) throw new ApiError(503, 'not_configured', `Online mode is not configured: ${missing.join(', ')}.`);
@@ -129,6 +138,43 @@ app.post('/courses/:id/uploads', async c => c.json(await uploadService.initiate(
 app.get('/uploads/:id', async c => c.json(await uploadService.getUpload(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
 app.post('/uploads/:id/finalize', async c => c.json(await uploadService.finalize(c.get('socket'), c.env, c.get('workspaceId'), uuid.parse(c.req.param('id')))));
 app.post('/materials/:id/versions/:versionId/download', async c => c.json(await uploadService.download(c.get('db'), c.env, c.get('workspaceId'), uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')))));
+
+app.get('/courses/:id/questions', async c => { const q = pageQuery.parse(c.req.query()); return c.json(await learning.bank(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), q.limit, q.cursor)); });
+app.post('/courses/:id/questions', async c => c.json(await learning.importBank(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, learning.importBankInput))));
+app.get('/courses/:id/sets', async c => { const q = pageQuery.parse(c.req.query()); return c.json(await learning.listSets(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), q.archived, q.limit, q.cursor)); });
+app.post('/courses/:id/sets', async c => c.json(await learning.createSet(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, createSetInput))));
+app.get('/sets/:id', async c => { const id = uuid.parse(c.req.param('id')); const workspace = c.get('workspaceId'); return c.json({ set: await learning.ownSet(c.get('db'), workspace, id), items: await learning.setQuestions(c.get('db'), workspace, id) }); });
+app.patch('/sets/:id', async c => c.json(await learning.patchSet(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, metadataInput))));
+app.post('/sets/:id/runs', async c => { const input = await jsonInput(c, z.strictObject({ id: uuid, plannedSessionId: uuid.optional() })); return c.json(await learning.startRun(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), input.id, input.plannedSessionId)); });
+app.get('/runs/:id', async c => c.json(await learning.getRun(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
+app.put('/runs/:id/answers', async c => c.json(await learning.writeRun(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, runWriteInput), false)));
+app.post('/runs/:id/submit', async c => c.json(await learning.writeRun(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, runWriteInput), true)));
+app.post('/runs/:id/transition', async c => c.json(await learning.transition(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, transitionInput))));
+app.get('/courses/:id/runs', async c => { const q = pageQuery.parse(c.req.query()); return c.json(await learning.activeRuns(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), q.limit, q.cursor)); });
+app.get('/courses/:id/attempts', async c => { const q = pageQuery.parse(c.req.query()); return c.json(await learning.history(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), q.limit, q.cursor)); });
+app.get('/attempts/:id', async c => c.json(await learning.attempt(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
+app.get('/courses/:id/exams', async c => { const q = pageQuery.parse(c.req.query()); return c.json(await exams.listExams(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), q.limit, q.cursor)); });
+app.post('/courses/:id/exams', async c => c.json(await exams.createExam(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, createExamInput))));
+app.patch('/exams/:id', async c => c.json(await exams.patchExam(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, metadataInput))));
+app.post('/exams/:id/runs', async c => { const input = await jsonInput(c, z.strictObject({ id: uuid, plannedSessionId: uuid.optional() })); return c.json(await exams.startExam(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), input.id, input.plannedSessionId)); });
+app.post('/runs/:id/exam-transition', async c => c.json(await exams.examTransition(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, examTransitionInput))));
+app.get('/planner', async c => c.json(await planning.plannerView(c.get('socket'), c.get('workspaceId'))));
+app.get('/progress', async c => c.json(await planning.progress(c.get('socket'), c.get('workspaceId'))));
+app.put('/planner/availability', async c => c.json(await planning.saveAvailability(c.get('socket'), c.get('workspaceId'), await jsonInput(c, plannerWrite))));
+app.put('/planner/sessions', async c => c.json(await planning.saveSession(c.get('socket'), c.get('workspaceId'), await jsonInput(c, scheduleWrite))));
+app.put('/courses/:id/assessments', async c => c.json(await planning.saveAssessment(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, assessmentWrite))));
+app.post('/planner/check-ins', async c => { const body = await jsonInput(c, z.strictObject({ operationId: uuid, checkIn: checkInInput })); return c.json(await planning.addCheckIn(c.get('socket'), c.get('workspaceId'), body.operationId, body.checkIn)); });
+app.post('/planner/proposals', async c => c.json(await planning.propose(c.get('socket'), c.get('workspaceId'), await jsonInput(c, proposalInput))));
+app.post('/planner/proposals/:id/apply', async c => { const body = await jsonInput(c, z.strictObject({ operationId: uuid })); return c.json(await planning.applyProposal(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), body.operationId)); });
+app.get('/courses/:id/tutor', async c => { const q = pageQuery.parse(c.req.query()); return c.json(await tutoring.listSessions(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), q.limit, q.cursor)); });
+app.post('/courses/:id/tutor', async c => c.json(await tutoring.createSession(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, newTutorInput))));
+app.get('/tutor/:id', async c => { const q = z.strictObject({ cursor: z.coerce.number().int().min(-1).max(1000000).default(-1) }).parse(c.req.query()); return c.json(await tutoring.detail(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), q.cursor)); });
+app.post('/tutor/:id/messages', async c => c.json(await tutoring.saveMessage(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, tutorMessageInput))));
+app.patch('/tutor/:id', async c => c.json(await tutoring.patchSession(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, tutorMetadataInput))));
+app.get('/export', async c => c.json(await transfer.exportWorkspace(c.get('socket'), c.get('workspaceId'))));
+app.post('/imports/review', async c => { const input = await jsonInput(c, z.strictObject({ export: z.unknown() })); return c.json(await transfer.prepareImport(c.get('socket'), c.get('workspaceId'), input.export)); });
+app.get('/imports/:id/original', async c => c.json(await transfer.importOriginal(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
+app.post('/imports/:id/commit', async c => { const input = await jsonInput(c, z.strictObject({ operationId: uuid })); return c.json(await transfer.commitImport(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), input.operationId)); });
 configured.route('/v1', app);
 api.route('/', configured);
 api.notFound(() => { throw notFound(); });

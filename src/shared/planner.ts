@@ -72,8 +72,8 @@ const DAY_MS = 1000 * 60 * 60 * 24;
 
 /** ISO date `n` days after an ISO date. */
 export function addDays(date: string, n: number): string {
-  const d = new Date(`${date}T12:00:00`);
-  d.setDate(d.getDate() + n);
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 }
 
@@ -101,10 +101,10 @@ export function localISO(date: Date | string): string {
 
 /** The Monday of the week containing an ISO date. */
 export function weekStart(date: string): string {
-  const d = new Date(`${date}T12:00:00`);
-  const day = d.getDay();
-  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
-  return localISO(d);
+  const d = new Date(`${date}T12:00:00Z`);
+  const day = d.getUTCDay();
+  d.setUTCDate(d.getUTCDate() + (day === 0 ? -6 : 1 - day));
+  return d.toISOString().slice(0, 10);
 }
 
 /** The seven ISO dates of the week beginning `monday`. */
@@ -114,13 +114,13 @@ export function weekDates(monday: string): string[] {
 
 export function daysBetweenDates(from: string, to: string): number {
   return Math.round(
-    (new Date(`${to}T12:00:00`).getTime() - new Date(`${from}T12:00:00`).getTime()) /
+    (new Date(`${to}T12:00:00Z`).getTime() - new Date(`${from}T12:00:00Z`).getTime()) /
       DAY_MS,
   );
 }
 
 export function weekdayOf(date: string): Weekday {
-  return new Date(`${date}T12:00:00`).getDay() as Weekday;
+  return new Date(`${date}T12:00:00Z`).getUTCDay() as Weekday;
 }
 
 /** `540` → `"09:00"`. */

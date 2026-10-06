@@ -42,3 +42,55 @@ Learning persistence is in progress. Migration 0002 was reviewed and applied to
 the designated development database. API checks have passed for all nine formats,
 retry receipts, stale revisions, answer locks, foreign reads, pending totals and
 concurrent submission. UI and remaining milestone checks are still pending.
+
+## Learning persistence milestone, in progress
+
+Implemented account routes now include:
+
+- `/online/course/:id/practice`, `/online/sets/:id`, `/online/runs/:id`
+  and `/online/attempts/:id`. Nine-format answer controls and feedback reuse the
+  existing components. Server transitions track checks, hints and reveals.
+- `/online/course/:id/exams`. Rehearsals snapshot settings and resolve questions
+  with the shared existing selection and validation rules. Active exam reads
+  omit solutions. A per-section run also has an outer deadline equal to the sum
+  of its section allowances so closing a browser cannot park unused sections.
+- `/online/planner`, `/online/progress`, course progress and overview routes.
+  Availability, date exceptions, assessments, check-ins and manual sessions are
+  persisted separately. Proposals are stored before review and checked against
+  their revision and complete input fingerprint before applying.
+- `/online/course/:id/tutor` and `/online/tutor/:id`. Libraries, metadata,
+  ordered student messages, exact source references and saved-answer context.
+  Replies are explicitly blocked. No hosted provider call has been implemented
+  or claimed, and opening a tutor never records completed learning.
+- `/online/data`. Reviewed local import and account export. Current import
+  limitations are listed before confirmation and originals are kept privately.
+
+New migrations 0002 through 0006 were generated, reviewed and applied to the
+existing designated development database. Earlier migrations were not changed.
+0002 adds normalized learning records and immutable-history triggers. 0003 adds
+exams and planning. 0004 adds tutor persistence. 0005 adds reviewed import archives.
+0006 adds linked planning, calendar date columns with backfill, expiry indexing,
+and a composite passage-source constraint. Its unique constraints were ordered
+before dependent foreign keys before application.
+
+Actual checks so far:
+
+- TypeScript passed after these feature additions.
+- Real authenticated Worker/Neon checks passed for all nine formats, immutable
+  set contents, stable bank/set/run/answer retries, checked-answer locks,
+  concurrent finalization, foreign reads and pending totals.
+- A real four-second exam expired on access after browser-independent elapsed
+  time. It produced an expired result and rejected further answer writes.
+- Availability retry, learner timezone storage, stale proposal rejection,
+  successful reviewed apply, foreign proposal denial and progress derivation passed.
+- Tutor messages survived reads and retries without duplication. The saved
+  execution state was blocked and foreign-session access returned 404.
+- Chrome opened practice, results, exams, planner, progress, tutor and data pages.
+  Edge resumed a reveal saved in Chrome. A second account could not open that
+  run. No browser page errors occurred. Screenshots are ignored local artifacts.
+
+Still unfinished: hosted provider execution, spending reservations, streaming,
+feedback revisions, extraction beyond text, full parity of local feature controls,
+full local-import coverage and online archive restoration. The main shell remains
+explicit online mode because full behavior parity has not been established.
+The remaining verification matrix is not implied by the checks above.

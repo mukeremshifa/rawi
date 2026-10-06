@@ -1,0 +1,47 @@
+import { useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import type { z } from 'zod';
+import { createExamInput, type OnlineExamConfig } from '@shared/online-exams';
+import { formats, type LearningRun } from '@shared/learning';
+import type { CourseDetail } from '@shared/online';
+import type { OnlineMaterial } from '@shared/materials';
+import { Page, PageHeader } from '@/components/layout';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { useLearningWrite, useOnlineRecord } from './learning-hooks';
+
+type Config = z.infer<typeof createExamInput>['config'];
+const section = () => ({ id: crypto.randomUUID(), title: 'Section', instructions: '', formats: ['multiple-choice'] as Config['sections'][number]['formats'], topicIds: [] as string[], count: 5, minutes: 15 });
+export function OnlineExams() {
+  const { id = '' } = useParams(); const nav = useNavigate(); const op = useLearningWrite();
+  const library = useOnlineRecord<{ exams: OnlineExamConfig[]; nextCursor: string | null }>(`/v1/courses/${id}/exams?limit=100`);
+  const outline = useOnlineRecord<CourseDetail>(`/v1/courses/${id}/topics`);
+  const materials = useOnlineRecord<{ materials: OnlineMaterial[] }>(`/v1/courses/${id}/materials?limit=100`);
+  const [config, setConfig] = useState<Config>(() => ({ name: '', sections: [section()], timing: 'overall', totalMinutes: 30, extraTimePercent: 0, book: 'closed', allowedMaterialIds: [], navigation: 'free', flaggingEnabled: true, lockSectionsOnFinish: false }));
+  const [validation, setValidation] = useState(''), [filter, setFilter] = useState('');
+  const pending = useRef<{ path: string; body: unknown; method: string } | null>(null);
+  function send(path: string, body: unknown, method: string, done: (v: unknown) => void) { pending.current ??= { path, body, method }; void op.run(pending.current.path, pending.current.body, pending.current.method, v => { pending.current = null; done(v); }); }
+  return <Page className="py-8" width="prose"><PageHeader title="Exam rehearsals" description="Server-timed personal practice. No feedback appears before whole-paper submission." actions={<Link to={`/online/course/${id}`}>Course</Link>} />
+    {[library.error, outline.error, materials.error, op.error, validation].filter(Boolean).map(e => <p role="alert" key={e}>{e}</p>)}
+    {pending.current && !op.busy && <Button onClick={() => send(pending.current!.path, pending.current!.body, pending.current!.method, () => window.location.reload())}>Retry pending request</Button>}
+    <Input aria-label="Search rehearsals" placeholder="Search rehearsals" value={filter} onChange={e => setFilter(e.target.value)} />
+    {library.value?.exams.filter(e => e.config.name.toLowerCase().includes(filter.toLowerCase())).map(e => <article key={e.id} className="border rounded p-4 my-4 space-y-3"><h2>{e.config.name}{e.archived ? ' · Archived' : ''}</h2><p>{e.config.sections.length} sections · {e.config.timing}</p><Button disabled={op.busy || !!pending.current || e.archived} onClick={() => send(`/v1/exams/${e.id}/runs`, { id: crypto.randomUUID() }, 'POST', v => nav(`/online/runs/${(v as LearningRun).id}`))}>Start rehearsal</Button><Button variant="outline" disabled={op.busy || !!pending.current} onClick={() => send(`/v1/exams/${e.id}`, { operationId: crypto.randomUUID(), expectedRevision: e.revision, name: e.config.name, archived: !e.archived }, 'PATCH', v => library.setValue({ ...library.value!, exams: library.value!.exams.map(row => row.id === e.id ? v as OnlineExamConfig : row) }))}>{e.archived ? 'Restore' : 'Archive'}</Button><Button variant="outline" onClick={() => setConfig({ ...e.config, name: `${e.config.name} copy` })}>Use settings for a new rehearsal</Button></article>)}
+    <Link className="underline" to={`/online/course/${id}/practice`}>Resume runs and open results</Link>
+    <section className="space-y-4 border-t pt-6 mt-6"><h2 className="text-xl font-semibold">New rehearsal</h2><fieldset disabled={op.busy || !!pending.current} className="space-y-4">
+      <label className="block">Name<Input value={config.name} onChange={e => setConfig({ ...config, name: e.target.value })} /></label>
+      <label className="block">Timing<Select value={config.timing} onChange={e => setConfig({ ...config, timing: e.target.value as Config['timing'] })}><option value="overall">Whole paper</option><option value="per-section">Per section</option><option value="untimed">Untimed</option></Select></label>
+      {config.timing === 'overall' && <label className="block">Whole-paper minutes<Input type="number" value={config.totalMinutes} onChange={e => setConfig({ ...config, totalMinutes: Number(e.target.value) })} /></label>}
+      {config.timing === 'per-section' && <p>Each section starts on entry. The whole run also ends after the sum of its section allowances, including extra time. Closing the browser does not pause that limit.</p>}
+      <label className="block">Extra time percent<Input type="number" min={0} max={100} value={config.extraTimePercent} onChange={e => setConfig({ ...config, extraTimePercent: Number(e.target.value) })} /></label>
+      <label className="block">Navigation<Select value={config.navigation} onChange={e => setConfig({ ...config, navigation: e.target.value as Config['navigation'] })}><option value="free">Free navigation</option><option value="sequential">Sequential, no return</option></Select></label>
+      <label className="block"><input type="checkbox" checked={config.flaggingEnabled} onChange={e => setConfig({ ...config, flaggingEnabled: e.target.checked })} /> Allow flags</label><label className="block"><input type="checkbox" checked={config.lockSectionsOnFinish} onChange={e => setConfig({ ...config, lockSectionsOnFinish: e.target.checked })} /> Lock a section when finished</label>
+      <label className="block">Materials<Select value={config.book} onChange={e => setConfig({ ...config, book: e.target.value as Config['book'] })}><option value="closed">Closed book</option><option value="open">Open book</option></Select></label>
+      {config.book === 'open' && materials.value?.materials.map(m => <label className="block" key={m.id}><input type="checkbox" checked={config.allowedMaterialIds.includes(m.id)} onChange={e => setConfig({ ...config, allowedMaterialIds: e.target.checked ? [...config.allowedMaterialIds, m.id] : config.allowedMaterialIds.filter(x => x !== m.id) })} /> {m.title}</label>)}
+      {config.sections.map((s, i) => { const update = (patch: Partial<typeof s>) => setConfig({ ...config, sections: config.sections.map((v, j) => j === i ? { ...v, ...patch } : v) }); return <fieldset className="border p-4 space-y-3" key={s.id}><legend>Section {i + 1}</legend><label className="block">Title<Input value={s.title} onChange={e => update({ title: e.target.value })} /></label><label className="block">Instructions<Textarea value={s.instructions} onChange={e => update({ instructions: e.target.value })} /></label><label className="block">Questions<Input type="number" min={1} max={50} value={s.count} onChange={e => update({ count: Number(e.target.value) })} /></label>{config.timing === 'per-section' && <label className="block">Minutes<Input type="number" min={1} value={s.minutes} onChange={e => update({ minutes: Number(e.target.value) })} /></label>}
+        <p>Formats</p>{formats.filter(f => f !== 'flashcard').map(f => <label className="block" key={f}><input type="checkbox" checked={s.formats.includes(f)} onChange={e => update({ formats: e.target.checked ? [...s.formats, f] : s.formats.filter(v => v !== f) })} /> {f}</label>)}<p>Topics, or leave empty for all</p>{outline.value?.topics.map(t => <label className="block" key={t.id}><input type="checkbox" checked={s.topicIds.includes(t.id)} onChange={e => update({ topicIds: e.target.checked ? [...s.topicIds, t.id] : s.topicIds.filter(v => v !== t.id) })} /> {t.title}</label>)}<Button variant="outline" disabled={config.sections.length === 1} onClick={() => setConfig({ ...config, sections: config.sections.filter(v => v.id !== s.id) })}>Remove section</Button></fieldset>; })}
+      <Button variant="outline" disabled={config.sections.length >= 10} onClick={() => setConfig({ ...config, sections: [...config.sections, section()] })}>Add section</Button>
+    </fieldset><Button disabled={op.busy || !!pending.current} onClick={() => { const parsed = createExamInput.safeParse({ operationId: crypto.randomUUID(), id: crypto.randomUUID(), config }); if (!parsed.success) { setValidation(parsed.error.issues.map(i => i.message).join(' ')); return; } setValidation(''); send(`/v1/courses/${id}/exams`, parsed.data, 'POST', v => { library.setValue({ exams: [...(library.value?.exams ?? []), v as OnlineExamConfig], nextCursor: library.value?.nextCursor ?? null }); setConfig({ ...config, name: '' }); }); }}>Save rehearsal</Button></section>
+  </Page>;
+}

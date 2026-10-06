@@ -1,0 +1,10 @@
+import { z } from 'zod';
+import { uuid } from './online';
+import { sourceInput, writeInput } from './learning';
+import type { AnswerReview } from './types';
+export const newTutorInput = z.strictObject({ id: uuid, title: z.string().trim().min(1).max(200), topicId: uuid, source: sourceInput.optional(), review: z.strictObject({ attemptId: uuid, questionId: uuid }).optional() });
+export const tutorMessageInput = writeInput.extend({ text: z.string().trim().min(1).max(20000) });
+export const tutorMetadataInput = writeInput.extend({ title: z.string().trim().min(1).max(200), archived: z.boolean() });
+export type OnlineTutorSession = { id: string; courseId: string; topicId: string; topicLabel: string; title: string; archived: boolean; revision: number; source: z.infer<typeof sourceInput> | null; review: AnswerReview | null; stage: 'orient' | 'understand' | 'recall' | 'reason' | 'apply' | 'reflect'; createdAt: string; updatedAt: string };
+export type OnlineTutorMessage = { id: string; ordinal: number; text: string; role: 'student' | 'tutor'; state: 'complete' | 'blocked' | 'cancelled' | 'interrupted' | 'failed'; createdAt: string; operationId: string; failure: string | null };
+export type TutorDetail = { session: OnlineTutorSession; messages: OnlineTutorMessage[]; nextCursor: number | null; execution: { available: boolean; reason: string } };

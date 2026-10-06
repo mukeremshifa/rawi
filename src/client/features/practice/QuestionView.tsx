@@ -42,6 +42,7 @@ export function QuestionView({
   readOnly = false,
   hintsAllowed = false,
   onHintUsed,
+  revealed = false,
 }: {
   question: Question;
   answer: AnswerValue | undefined;
@@ -49,6 +50,7 @@ export function QuestionView({
   readOnly?: boolean;
   hintsAllowed?: boolean;
   onHintUsed?: () => void;
+  revealed?: boolean;
 }) {
   const [hintShown, setHintShown] = useState(false);
 
@@ -71,6 +73,7 @@ export function QuestionView({
         answer={answer}
         onChange={onChange}
         readOnly={readOnly}
+        revealed={revealed}
       />
 
       {/* No hint on a flashcard: "reveal the answer" already is the hint, and
@@ -126,11 +129,13 @@ function AnswerInput({
   answer,
   onChange,
   readOnly,
+  revealed,
 }: {
   question: Question;
   answer: AnswerValue | undefined;
   onChange: (answer: AnswerValue) => void;
   readOnly: boolean;
+  revealed: boolean;
 }) {
   switch (question.format) {
     case 'multiple-choice':
@@ -202,6 +207,7 @@ function AnswerInput({
     case 'flashcard':
       return (
         <FlashcardInput
+          initiallyRevealed={revealed}
           question={question}
           rating={answer?.kind === 'self-rating' ? answer.rating : undefined}
           readOnly={readOnly}
@@ -532,16 +538,18 @@ const RATINGS: { value: SelfRating; label: string; blurb: string }[] = [
  */
 function FlashcardInput({
   question,
+  initiallyRevealed = false,
   rating,
   readOnly,
   onChange,
 }: {
   question: Question;
+  initiallyRevealed?: boolean;
   rating: SelfRating | undefined;
   readOnly: boolean;
   onChange: (rating: SelfRating) => void;
 }) {
-  const [revealed, setRevealed] = useState(readOnly || rating !== undefined);
+  const [revealed, setRevealed] = useState(initiallyRevealed || readOnly || rating !== undefined);
 
   return (
     <div className="flex flex-col gap-base">
