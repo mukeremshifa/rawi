@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
 import { useAccount } from './OnlineApp';
-import { errorMessage, request } from './api';
+import { errorMessage, OnlineError, request } from './api';
 
 type Fields = z.infer<typeof materialFields>;
 const empty: Fields = { title: '', kind: 'reading', attribution: '', topicIds: [] };
@@ -29,16 +29,17 @@ function FieldsEditor({ value, onChange, topics }: { value: Fields; onChange: (v
 }
 function useOperation() {
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState('');
   const controller = useRef(new AbortController()), locked = useRef(false);
   useEffect(() => { controller.current = new AbortController(); return () => controller.current.abort(); }, []);
   const run = async (fn: (signal: AbortSignal) => Promise<void>) => {
     if (locked.current) return;
-    locked.current = true; setBusy(true); setError(''); setMessage('');
+    locked.current = true; setBusy(true); setError(''); setErrorCode(''); setMessage('');
     try { await fn(controller.current.signal); }
-    catch (e) { if (!controller.current.signal.aborted) setError(errorMessage(e)); }
+    catch (e) { if (!controller.current.signal.aborted) { setError(errorMessage(e)); setErrorCode(e instanceof OnlineError ? e.code : ''); } }
     finally { locked.current = false; if (!controller.current.signal.aborted) setBusy(false); }
   };
-  return { busy, message, error, setMessage, run };
+  return { busy, message, error, errorCode, setMessage, run };
 }
 function Status({ op }: { op: ReturnType<typeof useOperation> }) { return <div aria-live="polite">{op.busy && <p>Working…</p>}<p role="status">{op.message}</p>{op.error && <p role="alert" className="text-destructive">{op.error}</p>}</div>; }
 
@@ -83,9 +84,10 @@ function PendingUpload({ initial, onSaved }: { initial: UploadState; onSaved: (v
     {value.state === 'pending' && <Button disabled={op.busy} onClick={() => void op.run(async signal => { const next = await request<UploadState>(`/v1/uploads/${value.id}/finalize`, user.id, {}, 'POST', signal); setValue(next); if (next.state === 'ready') onSaved(next); })}>Retry finalization</Button>}
   </div>;
 }
-function UploadControl({ courseId, fields, material, onSaved }: { courseId: string; fields: Fields; material?: OnlineMaterial; onSaved: (v: UploadState) => void }) {
+function UploadControl({ courseId, fields, material, onSaved, onBusy }: { onBusy?: (busy: boolean) => void; courseId: string; fields: Fields; material?: OnlineMaterial; onSaved: (v: UploadState) => void }) {
   const { user } = useAccount(); const op = useOperation(); const [file, setFile] = useState<File | null>(null), [progress, setProgress] = useState(0), [pending, setPending] = useState<UploadState | null>(null);
   const submitted = useRef<z.infer<typeof uploadInput> | null>(null);
+  useEffect(() => { onBusy?.(op.busy); }, [op.busy, onBusy]);
   return <div className="space-y-3 rounded border p-4"><h3 className="font-semibold">{material ? 'Replace source with a new version' : 'Or upload an original file'}</h3><p>UTF-8 .txt and .md are readable. PDF, DOCX and PPTX are stored for download only. Their text is not yet available for studying. Up to 25 MiB per file, or 1 MiB for text.</p>
     <Field title="Source file"><input type="file" accept=".txt,.md,.pdf,.docx,.pptx" disabled={op.busy} onChange={e => { setFile(e.target.files?.[0] ?? null); submitted.current = null; setPending(null); setProgress(0); }} /></Field>
     <Status op={op} />{op.busy && <progress aria-label="File upload progress" max={100} value={progress} />}
@@ -130,6 +132,11 @@ export function OnlineMaterialReader() {
   const [versions, setVersions] = useState<MaterialVersion[]>([]), [historyCursor, setHistoryCursor] = useState<string | null>(null);
   const [fields, setFields] = useState<Fields>(empty), [text, setText] = useState(''), [format, setFormat] = useState<'txt' | 'md'>('md'), [editing, setEditing] = useState(false);
   const [review, setReview] = useState<OnlineMaterial | null>(null), [reviewText, setReviewText] = useState(''); const textRequest = useRef<{ requestId: string; expectedRevision: number; text: string; format: 'txt' | 'md' } | null>(null);
+  const initialized = useRef(false);
+  const textBase = useRef<number | null>(null);
+  const textConflict = useRef(false);
+  const metadataRequest = useRef<(Fields & { expectedRevision: number }) | null>(null);
+  const [replacing, setReplacing] = useState(false);
   const [loadError, setLoadError] = useState('');
   async function history(signal: AbortSignal, cursor?: string) {
     const page = await request<{ versions: MaterialVersion[]; nextCursor: string | null }>(`/v1/materials/${materialId}/versions${cursor ? `?cursor=${cursor}` : ''}`, user.id, undefined, 'GET', signal);
@@ -141,7 +148,8 @@ export function OnlineMaterialReader() {
     return text;
   }
   async function reload(signal: AbortSignal) {
-    const row = await request<OnlineMaterial>(`/v1/materials/${materialId}`, user.id, undefined, 'GET', signal); setMaterial(row); setFields({ title: row.title, kind: row.kind, attribution: row.attribution, topicIds: row.topicIds });
+    const row = await request<OnlineMaterial>(`/v1/materials/${materialId}`, user.id, undefined, 'GET', signal); setMaterial(row);
+    if (!initialized.current) { setFields({ title: row.title, kind: row.kind, attribution: row.attribution, topicIds: row.topicIds }); initialized.current = true; }
     const course = await request<CourseDetail>(`/v1/courses/${row.courseId}/topics`, user.id, undefined, 'GET', signal); setTopics(course.topics);
     const selected = versionId ?? row.currentVersionId;
     if (selected) {
@@ -166,14 +174,15 @@ export function OnlineMaterialReader() {
       {detail.nextCursor !== null && <Button variant="outline" disabled={op.busy} onClick={() => void op.run(async signal => { const page = await request<VersionDetail>(`/v1/materials/${materialId}/versions/${detail.version.id}?cursor=${detail.nextCursor}`, user.id, undefined, 'GET', signal); setDetail({ ...page, passages: [...detail.passages, ...page.passages] }); })}>Read more passages</Button>}
       <p className="text-sm text-muted-foreground">Online tutoring and practice are not available yet.</p>
       <section className="border-t pt-6 space-y-4"><h2 className="text-xl font-semibold">Version history</h2><ul>{versions.map(v => <li key={v.id}><Link className="underline" to={`${materialPath(materialId)}/versions/${v.id}`}>Version {v.number}, {new Date(v.createdAt).toLocaleString()}, {v.origin}</Link></li>)}</ul>{historyCursor && <Button variant="outline" onClick={() => void op.run(signal => history(signal, historyCursor))}>More versions</Button>}</section>
-      {!versionId && <section className="border-t pt-6 space-y-4"><h2 className="text-xl font-semibold">Edit material</h2><p>Unsent changes stay on this page after errors. Reloading or navigating away discards them.</p><fieldset disabled={op.busy}><FieldsEditor value={fields} onChange={setFields} topics={topics} /></fieldset>
-        <Button disabled={op.busy} onClick={() => void op.run(async signal => { const saved = await request<OnlineMaterial>(`/v1/materials/${materialId}`, user.id, { ...materialFields.parse(fields), expectedRevision: material.revision }, 'PATCH', signal); setMaterial(saved); op.setMessage('Metadata saved.'); })}>Save metadata</Button>
-        {!editing && <Button variant="outline" disabled={op.busy} onClick={() => void op.run(async signal => { setText(await allText(detail.version.id, signal)); setFormat(detail.version.format === 'md' ? 'md' : 'txt'); setEditing(true); })}>Edit readable text</Button>}
-        {editing && <><Field title="Text format"><Select value={format} disabled={!!textRequest.current} onChange={e => setFormat(e.target.value as 'txt' | 'md')}><option value="md">Markdown</option><option value="txt">Plain text</option></Select></Field><Field title="New version text"><Textarea className="min-h-64" disabled={op.busy || !!textRequest.current} value={text} onChange={e => setText(e.target.value)} /></Field><Button disabled={op.busy} onClick={() => void op.run(async signal => { textRequest.current ??= { requestId: crypto.randomUUID(), expectedRevision: material.revision, text, format }; await request(`/v1/materials/${materialId}/versions`, user.id, textRequest.current, 'POST', signal); textRequest.current = null; setEditing(false); await reload(signal); op.setMessage('New version saved. Earlier passages remain available.'); })}>{textRequest.current ? 'Retry saving version' : 'Save new version'}</Button><Button variant="outline" disabled={op.busy} onClick={() => { textRequest.current = null; op.setMessage('You can revise the unsent text.'); }}>Revise unsent text</Button></>}
+      {!versionId && <section className="border-t pt-6 space-y-4"><h2 className="text-xl font-semibold">Edit material</h2><p>Unsent changes stay on this page after errors. Reloading or navigating away discards them.</p><fieldset disabled={op.busy || replacing || !!metadataRequest.current}><FieldsEditor value={fields} onChange={setFields} topics={topics} /></fieldset>
+        <Button disabled={op.busy || replacing || !!textRequest.current} onClick={() => void op.run(async signal => { metadataRequest.current ??= { ...materialFields.parse(fields), expectedRevision: material.revision }; const saved = await request<OnlineMaterial>(`/v1/materials/${materialId}`, user.id, metadataRequest.current, 'PATCH', signal); if (editing && saved.currentVersionId === material.currentVersionId && textBase.current === material.revision) textBase.current = saved.revision; metadataRequest.current = null; setMaterial(saved); op.setMessage('Metadata saved.'); })}>{metadataRequest.current ? 'Retry metadata save' : 'Save metadata'}</Button>
+        {!editing && <Button variant="outline" disabled={op.busy || replacing || !!metadataRequest.current} onClick={() => void op.run(async signal => { setText(await allText(detail.version.id, signal)); textBase.current = material.revision; setFormat(detail.version.format === 'md' ? 'md' : 'txt'); setEditing(true); })}>Edit readable text</Button>}
+        {editing && <><Field title="Text format"><Select value={format} disabled={!!textRequest.current} onChange={e => setFormat(e.target.value as 'txt' | 'md')}><option value="md">Markdown</option><option value="txt">Plain text</option></Select></Field><Field title="New version text"><Textarea className="min-h-64" disabled={op.busy || !!textRequest.current} value={text} onChange={e => setText(e.target.value)} /></Field><Button disabled={op.busy} onClick={() => void op.run(async signal => { textRequest.current ??= { requestId: crypto.randomUUID(), expectedRevision: textBase.current!, text, format }; try { await request(`/v1/materials/${materialId}/versions`, user.id, textRequest.current, 'POST', signal); } catch (e) { textConflict.current = e instanceof OnlineError && e.code === 'revision_conflict'; throw e; } textRequest.current = null; textConflict.current = false; setEditing(false); await reload(signal); op.setMessage('New version saved. Earlier passages remain available.'); })}>{textRequest.current ? 'Retry saving version' : 'Save new version'}</Button><Button variant="outline" disabled={op.busy || !!textRequest.current} onClick={() => { setEditing(false); textBase.current = null; }}>Close text editor</Button><p>Retry an uncertain save before changing its text. For a revision conflict, review the saved material below.</p></>}
         <Button variant="outline" disabled={op.busy} onClick={() => void op.run(async signal => { const latest = await request<OnlineMaterial>(`/v1/materials/${materialId}`, user.id, undefined, 'GET', signal); const latestText = latest.currentVersionId ? await allText(latest.currentVersionId, signal) : ''; setReview(latest); setReviewText(latestText); })}>Review latest saved material</Button>
-        {review && <div className="rounded border p-4 space-y-3"><h3 className="font-semibold">Latest saved revision {review.revision}</h3><p>{review.title}</p><p>{review.attribution}</p><p>Kind: {review.kind}. {review.archived ? 'Archived' : 'Active'}. Topics: {review.topicIds.map(id => topics.find(t => t.id === id)?.title ?? id).join(', ') || 'None'}.</p><pre className="max-h-64 overflow-auto whitespace-pre-wrap">{reviewText}</pre><p>Your unsent fields remain above. Saving again will use this revision.</p><Button onClick={() => { setMaterial(review); setReview(null); textRequest.current = null; }}>Keep my edits and use this revision</Button></div>}
+        {review && <div className="rounded border p-4 space-y-3"><h3 className="font-semibold">Latest saved revision {review.revision}</h3><p>{review.title}</p><p>{review.attribution}</p><p>Kind: {review.kind}. {review.archived ? 'Archived' : 'Active'}. Topics: {review.topicIds.map(id => topics.find(t => t.id === id)?.title ?? id).join(', ') || 'None'}.</p><pre className="max-h-64 overflow-auto whitespace-pre-wrap">{reviewText}</pre><p>Your unsent fields remain above. Saving again will use this revision.</p><Button disabled={op.busy || replacing || (!!textRequest.current && !textConflict.current)} onClick={() => { setMaterial(review); textBase.current = review.revision; setReview(null); textRequest.current = null; textConflict.current = false; metadataRequest.current = null; }}>Keep my edits and use this revision</Button></div>}
         <p>Replacing a source changes its content only. Save title, attribution and topic edits separately.</p>
-        <UploadControl courseId={material.courseId} fields={{ title: material.title, kind: material.kind, attribution: material.attribution, topicIds: material.topicIds }} material={material} onSaved={() => void op.run(reload)} />
+        {editing && <p>Close the text editor before replacing its source. Your metadata edits remain above.</p>}
+        <fieldset disabled={op.busy || editing || !!metadataRequest.current}><UploadControl onBusy={setReplacing} courseId={material.courseId} fields={{ title: material.title, kind: material.kind, attribution: material.attribution, topicIds: material.topicIds }} material={material} onSaved={() => void op.run(reload)} /></fieldset>
       </section>}
     </>}
   </Page>;
