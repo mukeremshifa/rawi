@@ -1,9 +1,9 @@
 # Working on Rawi
 
-Read README.md, SINGLE_APP_IMPLEMENTATION_BRIEF.md, and the code relevant to the
-task. Rawi is becoming one full-stack learning app with bounded offline access.
-The active brief replaces earlier requirements to preserve separate local and
-online modes. Architecture and product behavior can evolve.
+Read README.md, ACCOUNT_APP_IMPLEMENTATION_BRIEF.md, and the relevant code.
+Rawi is one account-based full-stack app. The active brief removes offline
+support, persistent browser workspaces, device-storage UI, and user-facing JSON
+recovery/export workflows. Earlier briefs requiring them are superseded.
 
 - Keep development runnable with `npm install` and `npm run dev`.
 - Use the designated development backend. Sample courses belong in an explicit

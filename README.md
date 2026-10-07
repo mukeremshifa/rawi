@@ -1,5 +1,11 @@
 # Rawi
 
+New product direction: [ACCOUNT_APP_IMPLEMENTATION_BRIEF.md](ACCOUNT_APP_IMPLEMENTATION_BRIEF.md)
+is the active brief. It requires a proper account/auth flow and removes offline
+support, persistent browser data, Device storage, and JSON recovery/import/export
+features. The offline descriptions below document the current implementation,
+pending that cleanup. They are not requirements to retain it.
+
 One full-stack learning workspace with bounded offline reading and draft recovery.
 The authenticated account is the source of truth. New accounts start empty.
 

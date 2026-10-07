@@ -1,6 +1,6 @@
 # Rawi full-stack implementation brief
 
-Superseded on 7 October 2026 by [SINGLE_APP_IMPLEMENTATION_BRIEF.md](SINGLE_APP_IMPLEMENTATION_BRIEF.md). Its single-app and offline-feature requirements replace the dual-mode migration requirements below. This document remains a feature and historical reference, not the active kickoff.
+Superseded. Use [ACCOUNT_APP_IMPLEMENTATION_BRIEF.md](ACCOUNT_APP_IMPLEMENTATION_BRIEF.md). This document remains a feature and historical reference, not the active kickoff. Its local-mode and recovery/export requirements no longer apply.
 
 Prepared 7 October 2026. This was the full-stack migration brief preceding the single-app decision. It superseded the limited scope and kickoff in BACKEND_IMPLEMENTATION_BRIEF_03.md. BACKEND_PLAN.md remains the architectural reference.
 

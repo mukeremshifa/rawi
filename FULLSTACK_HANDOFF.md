@@ -1,6 +1,9 @@
 # Single-app implementation handoff
 
-Current assignment: [SINGLE_APP_IMPLEMENTATION_BRIEF.md](SINGLE_APP_IMPLEMENTATION_BRIEF.md).
+Next assignment: [ACCOUNT_APP_IMPLEMENTATION_BRIEF.md](ACCOUNT_APP_IMPLEMENTATION_BRIEF.md).
+The owner has withdrawn offline support and user-facing storage/recovery features.
+The implementation and verification below describe the previous assignment.
+Keep them as historical evidence while recording the account-app cleanup.
 Updated 7 October 2026. The current record below supersedes the historical migration
 notes that follow it.
 

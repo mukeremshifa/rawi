@@ -1,6 +1,8 @@
 # Rawi single-app implementation brief
 
-Prepared 7 October 2026. This is the active execution brief. It supersedes FULLSTACK_IMPLEMENTATION_BRIEF.md and BACKEND_IMPLEMENTATION_BRIEF_03.md wherever they require retaining local mode, separate online routes, or separate application roots. Preserve their learning behavior and data-integrity requirements, not their migration architecture. Continue from the implemented backend and FULLSTACK_HANDOFF.md rather than starting over.
+Superseded by [ACCOUNT_APP_IMPLEMENTATION_BRIEF.md](ACCOUNT_APP_IMPLEMENTATION_BRIEF.md). The owner has removed offline support, device storage, and user-facing JSON recovery from scope. Do not execute the offline requirements below. This document is historical.
+
+Prepared 7 October 2026. This was the single-app consolidation brief. It superseded FULLSTACK_IMPLEMENTATION_BRIEF.md and BACKEND_IMPLEMENTATION_BRIEF_03.md wherever they required retaining local mode, separate online routes, or separate application roots.
 
 ## Product decision
 

@@ -2,11 +2,11 @@
 
 Updated 4 October 2026. README.md is authoritative for the chosen stack. This document replaces the earlier provisional architecture. BACKEND_IMPLEMENTATION_BRIEF.md defines the first executable checkpoint.
 
-Execution update, 7 October 2026: [SINGLE_APP_IMPLEMENTATION_BRIEF.md](SINGLE_APP_IMPLEMENTATION_BRIEF.md) is the active brief. Deliver one full-stack app with bounded offline reading and draft recovery. Retire the separate local runtime and move fictional content into an explicit development seed. Infrastructure decisions and provisioning remain outside that assignment.
+Execution update, 7 October 2026: [ACCOUNT_APP_IMPLEMENTATION_BRIEF.md](ACCOUNT_APP_IMPLEMENTATION_BRIEF.md) is the active brief. Deliver a conventional account-based full-stack app with proper authentication. Remove offline support, persistent private browser data, storage-management UI, and user-facing JSON recovery/import/export. Infrastructure decisions and provisioning remain outside that assignment.
 
 ## 1. Product boundaries
 
-Rawi is a personal learning SaaS with individual subscriptions and institutional sponsorship. Learners own independent workspaces and can study any subject. Organizations administer access without automatically gaining access to private study content. Institutional integrations and general offline write synchronization are later work. Bounded offline reading and draft recovery belong to the same app, without separate local and online modes.
+Rawi is a personal learning SaaS with individual subscriptions and institutional sponsorship. Learners own independent workspaces and can study any subject. Organizations administer access without automatically gaining access to private study content. Institutional integrations are later work. The current product requires connectivity and has no offline workflow. Application data belongs in Neon and R2, with temporary client state in memory and authentication managed through server sessions.
 
 The initial audience is 1,000 users in the Middle East. Measure latency from UAE networks. This does not imply 1,000 simultaneous generations or UAE data residency.
 
@@ -72,7 +72,7 @@ A billing account pays, an access grant provides benefits for a period, and a us
 
 Proposed policy: combine feature access from active grants, but attribute each paid operation to one eligible funding grant. Do not silently charge an individual when sponsored allowance runs out. Centralize grant selection and allowance rules. Prices and funding precedence remain product decisions.
 
-Show overlapping personal and sponsored coverage. Offer an explicit subscription transition instead of silently cancelling or restarting billing. Sponsorship expiry preserves learning records. Proposed lapse behavior permits reading and exporting while restricting new paid AI. Retention and edit permissions remain open.
+Show overlapping personal and sponsored coverage. Offer an explicit subscription transition instead of silently cancelling or restarting billing. Sponsorship expiry preserves learning records. Proposed lapse behavior permits reading saved work while restricting new paid AI. Retention and edit permissions remain open. Raw workspace exports are not part of the current product.
 
 Invitations are short-lived, single-use, and accepted into an authenticated account. Allocate the seat and grant atomically. Keep reassignment history. Email domains alone do not establish organizational authority.
 
@@ -122,9 +122,9 @@ Keep npm install and npm run dev usable for one full-stack development path. Ret
 
 Use one router and application shell backed by authenticated services. Redirect previous /online links to canonical product routes. Preserve the existing product UI and complete missing controls rather than maintaining a reduced second application. New accounts start empty. Fictional data is loaded only by an explicit development seed.
 
-Use bounded account-scoped caches for offline reading and recoverable drafts, with the server remaining authoritative. Show freshness, saving, saved-on-device, saved-to-account, conflict, and unavailable states accurately. Reconnect through session validation and revision review. Mutations, AI, and exam decisions require server authorization. Do not mirror the entire workspace or build general offline synchronization.
+Use authenticated server reads and writes with temporary account-scoped caches and unsent edits in memory. Show loading, saving, saved, conflict, and failure states accurately. Acknowledged server work survives reload, unsubmitted memory does not. Use ordinary retry and navigation warnings. Remove IndexedDB records, local workspace copies, service-worker offline access, and cached-identity authorization. Authentication and network failures are distinct states.
 
-An explicit recovery/import flow validates versioned exports, remaps references, preserves source and legacy provenance, and deduplicates repeated imports. Stage large imports before publishing. Retain unsupported records as downloads and preserve user-created browser originals until verified or explicitly discarded. Recovery does not retain a separate local application.
+Remove the public device-storage and raw-data transfer screens and their API entry points. Existing imported server records remain intact. Keep validated import utilities only where needed by internal development seeding. Original uploaded files remain downloadable through authorized material actions. Retire old Rawi service workers, offline caches, and obsolete browser records through the targeted transition described in the active brief.
 
 ## 10. Delivery checkpoints
 
@@ -136,11 +136,11 @@ An explicit recovery/import flow validates versioned exports, remaps references,
 | 4. Hosted AI and processing | Database budgets, hosted credentials, streaming, durable jobs, evaluated extraction | Answers survive failure, jobs recover, required formats readable |
 | 5. Individual subscriptions | Payment provider, grants, limits, reconciliation | Renewal and lapse correct, concurrency respects allowances |
 | 6. Sponsorship | Organizations, invitations, seats, reporting | Workspace preserved, seats cannot overallocate |
-| 7. Release readiness | Complete import/export, deletion, restore, capacity measurements | Existing work transfers safely and recovery demonstrated |
+| 7. Release readiness | Account lifecycle, operational backup/restore, deletion, capacity measurements | Server recovery and account isolation demonstrated |
 
 Budget enforcement precedes hosted provider calls even though billing arrives later. Ownership stays independent of payment from checkpoint 1 without requiring billing implementation then.
 
-Use SINGLE_APP_IMPLEMENTATION_BRIEF.md to execute the remaining application work and review fixes. The checkpoint table remains a historical roadmap for capability and release evidence, including the earlier local-mode preservation milestone. Current delivery removes that split. Neither the old briefs nor the new brief imply infrastructure-dependent features or release readiness are complete.
+Use ACCOUNT_APP_IMPLEMENTATION_BRIEF.md for current execution. Earlier local-mode and offline-cache milestones are historical, not current product requirements. Server backup and restore are operational responsibilities, not a user-facing JSON storage workflow. Completion of this cleanup does not imply hosted AI, extraction, or release readiness are complete.
 
 ## 11. Operations and remaining decisions
 
