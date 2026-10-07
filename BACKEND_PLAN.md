@@ -42,7 +42,7 @@ Use Better Auth's stable user ID as the workspace owner reference. Email is muta
 
 Derive ownership from the server-validated session. Scope every record lookup, nested relationship, upload, source reference, and AI operation. Browser-supplied owner IDs never confer access. Use scoped foreign keys where applicable. Row-level security is an optional additional layer rather than a substitute for service authorization or a checkpoint 1 requirement.
 
-Organization permissions apply to organization administration. Sponsorship does not transfer ownership. Private support access, if introduced, is explicit and audited. Account changes clear private client caches before another workspace renders.
+Organization permissions apply to organization administration. Sponsorship does not transfer ownership. Private support access, if introduced, is explicit and audited. Account changes abort protected requests and clear private screen memory before another workspace renders. BroadcastChannel invalidates other tabs without persistent identity records.
 
 ## 4. Data model
 
@@ -118,19 +118,21 @@ Preserve PDF pages, slide locations, and Word paragraph or section anchors. Sepa
 
 ## 9. Client migration
 
-Keep npm install and npm run dev usable for one full-stack development path. Retire the local runtime, mode switch, and automatic demo seeding. Backend failures never fall back to sample storage. Signing in does not automatically merge legacy browser work into an account.
+Keep npm install and npm run dev usable for one full-stack development path. The local runtime, mode switch, and automatic demo seeding are retired. Backend failures never fall back to sample storage. Signing in never imports legacy browser work.
 
 Use one router and application shell backed by authenticated services. Redirect previous /online links to canonical product routes. Preserve the existing product UI and complete missing controls rather than maintaining a reduced second application. New accounts start empty. Fictional data is loaded only by an explicit development seed.
 
 Use authenticated server reads and writes with temporary account-scoped caches and unsent edits in memory. Show loading, saving, saved, conflict, and failure states accurately. Acknowledged server work survives reload, unsubmitted memory does not. Use ordinary retry and navigation warnings. Remove IndexedDB records, local workspace copies, service-worker offline access, and cached-identity authorization. Authentication and network failures are distinct states.
 
-Remove the public device-storage and raw-data transfer screens and their API entry points. Existing imported server records remain intact. Keep validated import utilities only where needed by internal development seeding. Original uploaded files remain downloadable through authorized material actions. Retire old Rawi service workers, offline caches, and obsolete browser records through the targeted transition described in the active brief.
+The account flow has a dedicated sign-in page, validated return destinations and server-persisted onboarding. Existing preference records without an onboarding flag remain complete, while new workspace defaults require onboarding. Profile name updates use the supported Better Auth API behind the authenticated account-mismatch guard. Email editing and automatic account linking are disabled.
+
+The public device-storage and raw-data transfer screens and API entry points are removed. Existing imported server records remain intact. Validated import utilities remain internal to development seeding. Original uploaded files remain downloadable through authorized material actions. Temporary retirement code removes only the old Rawi worker, shell caches, offline database and known legacy keys. It never forces open tabs to navigate. Older tabs must close their database connections before blocked deletion completes.
 
 ## 10. Delivery checkpoints
 
 | Checkpoint | Scope | Completion evidence |
 | --- | --- | --- |
-| 1. Online foundation | Hono, Neon, Drizzle, Google auth, workspace, courses, topics, preferences | Two accounts isolated, second browser sees saved work, local mode preserved |
+| 1. Account foundation | Hono, Neon, Drizzle, Google auth, workspace, courses, topics, preferences | Two accounts isolated, a second session sees saved work |
 | 2. Material storage | R2 lifecycle, immutable versions, text passages | Duplicate finalization safe, unauthorized access rejected |
 | 3. Learning persistence | Runs, answers, attempts, tutor history, planner, server rules | Conflicts visible, repeated submit creates one attempt |
 | 4. Hosted AI and processing | Database budgets, hosted credentials, streaming, durable jobs, evaluated extraction | Answers survive failure, jobs recover, required formats readable |

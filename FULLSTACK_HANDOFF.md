@@ -1,13 +1,116 @@
-# Single-app implementation handoff
+# Account app implementation handoff
 
-Next assignment: [ACCOUNT_APP_IMPLEMENTATION_BRIEF.md](ACCOUNT_APP_IMPLEMENTATION_BRIEF.md).
-The owner has withdrawn offline support and user-facing storage/recovery features.
-The implementation and verification below describe the previous assignment.
-Keep them as historical evidence while recording the account-app cleanup.
-Updated 7 October 2026. The current record below supersedes the historical migration
-notes that follow it.
+Updated 7 October 2026. ACCOUNT_APP_IMPLEMENTATION_BRIEF.md is the active brief.
+The offline records below the historical divider describe previous assignments.
+They are not current behavior or verification of this cleanup.
 
-## Current implementation
+## Delivered
+
+The single app has a dedicated Google sign-in page, a protected account boundary,
+validated route returns, first-use onboarding, an identity menu and profile and
+preference settings. Existing preferences without an onboarding flag count as
+complete. New workspace defaults require onboarding. Completion is persisted in
+the existing revisioned preference record, without a schema migration. Profile
+names use Better Auth's supported update API through the authenticated ownership
+guard. Google manages email. Automatic account linking is disabled.
+
+Session refresh keeps the same screen mounted. A connectivity failure preserves
+current memory, while 401 and explicit account mismatch invalidate it. Resource
+403 responses do not sign the learner out. Generation guards and request aborts
+reject late responses after account changes. BroadcastChannel invalidates other
+tabs without stored identities. Sign-out clears private memory only after server
+success and offers retry on failure. Unsaved work uses ordinary discard warnings.
+
+All offline reads, snapshots, device drafts, cached identities, recovery downloads
+and public JSON transfer endpoints are removed. The old storage and data routes
+redirect to settings. Material, tutor and practice drafts retain their existing
+component state and retry payloads. Server revisions, receipts, autosave and the
+material editor's separate metadata and text revisions remain in use. No private
+workspace data is written to browser storage. Pane layouts no longer persist.
+Internal validated imports remain available to the explicit development seed.
+Existing imported records, source files and immutable history are unchanged.
+
+## Checks performed now
+
+- `npm run dev` started Vite and the designated Worker. TypeScript, production
+  build and Worker dry-run packaging passed. No deployment occurred. Vite retains
+  its large-chunk warning, about 816 kB minified and 244 kB gzipped. Worker packaging
+  is about 3,260 KiB and 591 KiB gzipped. Wrangler also reported a newer version
+  and that scheduled jobs are not triggered automatically in local development.
+- Live authenticated API calls verified concurrent bootstrap returning one
+  workspace, an empty fresh account, onboarding completion, profile updates,
+  rejected email edits, preference persistence in a second session, repeated
+  operation receipts, stale revision rejection and existing-account onboarding
+  defaults. These used explicitly synthetic verification sessions, not Google
+  login. The temporary account and its operations were removed and sessions revoked.
+- The real Better Auth endpoints produced a Google authorization URL, returned a
+  valid cancelled OAuth callback to sign-in, rejected an external callback URL,
+  and revoked a session on sign-out. A successful Google OAuth exchange was not run.
+- Live reads passed for course outlines, materials, saved sets, runs, attempts,
+  exams, tutor records, planner, progress, search and reminders. Responses were
+  no-store. Foreign courses and original files were inaccessible. An owned R2
+  original downloaded successfully and matched its stored checksum.
+- Both free and sequential exam navigation rejected future-section save and submit
+  batches atomically. Entered sections accepted answers. Active payloads omitted
+  solutions and feedback. Repeating submission returned the same attempt. A dev
+  reload interrupted one sequential navigation check, which was reread and resumed
+  successfully. Verification rehearsals and seeded courses were archived.
+- Controlled responses against the actual request module verified 401 invalidation,
+  resource 403 handling, network and 503 failures, and rejection of a late response
+  from the previous account. Direct checks covered safe return targets and Arabic,
+  mixed-language and English prompt normalization. These were manual executions,
+  not an added test suite.
+- The explicit seed returned the same course IDs across repeated runs and preserved
+  an intervening course edit. Artifact scans found none of the checked fictional
+  bodies or seed entry points in browser or Worker output.
+- Locally served production deep links returned the app document. Both preview and
+  Worker asset serving returned the pass-through retirement script at `/sw.js`.
+  Worker serving applied `Cache-Control: no-store`. Export and import endpoints
+  returned JSON 404 responses. Source scans found persistent browser storage access
+  only in the isolated retirement code, which deletes known records.
+
+## Browser verification still required
+
+The browser automation inventory had no browsers. Attempts to open Chrome and the
+in-app browser both reported unavailable. Actual screen interaction, successful
+Google sign-in, focus behavior, sign-out failure, cross-tab account changes,
+autosave failure and retry, all nine answer controls, both material-editor draft
+scenarios and browser storage inspection were not exercised in this assignment.
+Their earlier UI checks below are historical. No synthetic session is evidence
+of a successful OAuth flow. The dev server is left running for these checks.
+
+## Retirement scope and limits
+
+`public/sw.js` replaces the former script with a worker that activates, claims
+clients, deletes only rawi-shell-* caches and unregisters. It has no fetch handler
+and never navigates a tab. The new client updates only registrations with the
+same-origin `/sw.js` script URL and deletes rawi-offline-v1 plus rawi.state.v1,
+rawi.theme and rawi.device-lock.v1 from local and session storage. Session cookies
+and unrelated caches and keys are untouched. Failures can retry on focus or the
+next visit. A blocked database deletion remains pending until connections close.
+
+A returning browser may render its old cached page before the worker update is
+fetched. Subsequent navigation uses the network after retirement. Already-open
+old JavaScript can run until the learner closes or reloads that tab, and may
+recreate obsolete records before then. This tradeoff avoids destroying unsaved
+work through forced navigation. Returning-worker activation, blocked deletion,
+multiple tabs and offline reload must still be verified in a real browser. Keep
+both retirement files and the no-store header through the transition, then remove
+them together after old installations no longer need them.
+
+## Remaining application work
+
+Hosted tutor replies, generation, written feedback and streaming remain unfinished
+application integrations with separate provider authentication dependencies.
+Blocked operation records are not completed AI output. PDF, DOCX and PPTX text
+extraction remains unfinished. Original files remain downloadable. No services,
+credentials, migrations, tests or CI were added or provisioned for this cleanup.
+
+---
+
+# Historical implementation and verification
+
+## Historical single-app implementation
 
 Rawi now has one account boundary, router, shell and theme path. Canonical routes
 serve the account features. Old `/online` links redirect with query strings,
@@ -56,7 +159,7 @@ practice retains unknown historical assistance even after current server marking
 Repeated imports do not republish records. Active local exam timers confer no
 server authority. README documents the seed and storage controls.
 
-## Checks performed for this assignment
+## Historical single-app checks
 
 Checks used the existing isolated development identities, designated Neon database
 and R2 bucket. Chrome exercised the real API and UI through Vite and a locally
@@ -109,7 +212,7 @@ served production build. No hosted AI output was substituted as provider evidenc
   A real account archive was reviewed and restored. A larger archive containing
   34 attempts also passed review.
 
-## Remaining limits and dependencies
+## Historical single-app limits
 
 Hosted tutor, generation and written-feedback execution and streaming are still
 unfinished application work. They also need available runtime provider
