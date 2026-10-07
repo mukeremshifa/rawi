@@ -2,9 +2,6 @@
 
 One account-based learning app. Google sign-in opens a personal workspace backed
 by Neon and private R2 files. New accounts start empty. A connection is required.
-[SCHEMA_AND_ACCOUNT_SEED_BRIEF.md](SCHEMA_AND_ACCOUNT_SEED_BRIEF.md) is the active
-execution brief for schema review, migration, and complete development seeding.
-The account architecture in ACCOUNT_APP_IMPLEMENTATION_BRIEF.md remains in force.
 
 Requires Node.js 22.12+ and npm.
 
@@ -56,7 +53,8 @@ Original uploaded files remain available through authorized material downloads.
 Temporary retirement code in `src/client/retire-storage.ts` and `public/sw.js`
 removes the previous Rawi caches, offline database and known legacy keys without
 clearing unrelated storage or session cookies. Open tabs are never forced to
-reload. See the handoff for transition limits.
+reload. Remove both files and the `/sw.js` no-store header together once
+returning-browser retirement has been checked and old installations are gone.
 
 ## Learning
 
@@ -101,6 +99,11 @@ Authored tutor replies and written feedback carry Sample labels with no provider
 operations or charges. No fixtures or seed entry points ship in client or Worker
 bundles. Nothing seeds during startup, migration, onboarding or sign-in.
 
-[SCHEMA_REVIEW.md](SCHEMA_REVIEW.md) describes the final schema and recovery record.
-See [FULLSTACK_HANDOFF.md](FULLSTACK_HANDOFF.md) for actual checks, verification
-limits and remaining AI and extraction work.
+## Remaining work
+
+- Hosted AI: tutor replies, question generation, written feedback grading and
+  streaming. Blocked operation records are not completed AI output.
+- Text extraction from PDF, DOCX and PPTX originals.
+- Browser verification: Google sign-in, protected routes, cross-tab sign-out,
+  autosave failure and retry, the nine answer controls, material-editor drafts
+  and returning-browser storage retirement.

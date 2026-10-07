@@ -1,10 +1,8 @@
 # Working on Rawi
 
-Read README.md, SCHEMA_AND_ACCOUNT_SEED_BRIEF.md, and the relevant code.
-Rawi is one account-based full-stack app. The current assignment audits and
-migrates the schema as needed, seeds the explicitly named development account,
-and finishes outstanding account-app verification. Offline storage, device-storage
-UI, and user-facing JSON recovery/export remain excluded.
+Read README.md and the relevant code. Rawi is one account-based full-stack app.
+README.md lists the remaining work. Offline storage, device-storage UI, and
+user-facing JSON recovery/export remain excluded.
 
 - Keep development runnable with `npm install` and `npm run dev`.
 - Use the designated development backend. Sample courses belong in an explicit
