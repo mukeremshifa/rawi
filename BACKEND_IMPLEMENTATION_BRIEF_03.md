@@ -1,6 +1,6 @@
 # Backend implementation brief: checkpoint 3, first slice
 
-Superseded. The active brief is [ACCOUNT_APP_IMPLEMENTATION_BRIEF.md](ACCOUNT_APP_IMPLEMENTATION_BRIEF.md). This document remains a historical record of the earlier limited slice, including the material-draft finding.
+Superseded. The active brief is [SCHEMA_AND_ACCOUNT_SEED_BRIEF.md](SCHEMA_AND_ACCOUNT_SEED_BRIEF.md). This document remains a historical record of the earlier limited slice, including the material-draft finding.
 
 Prepared 6 October 2026. Checkpoint 2 has been reviewed. Carry its material-editor draft issue into this work rather than creating a separate cleanup checkpoint.
 

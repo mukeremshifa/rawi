@@ -2,7 +2,7 @@
 
 Updated 4 October 2026. README.md is authoritative for the chosen stack. This document replaces the earlier provisional architecture. BACKEND_IMPLEMENTATION_BRIEF.md defines the first executable checkpoint.
 
-Execution update, 7 October 2026: [ACCOUNT_APP_IMPLEMENTATION_BRIEF.md](ACCOUNT_APP_IMPLEMENTATION_BRIEF.md) is the active brief. Deliver a conventional account-based full-stack app with proper authentication. Remove offline support, persistent private browser data, storage-management UI, and user-facing JSON recovery/import/export. Infrastructure decisions and provisioning remain outside that assignment.
+Execution update, 7 October 2026: [SCHEMA_AND_ACCOUNT_SEED_BRIEF.md](SCHEMA_AND_ACCOUNT_SEED_BRIEF.md) is the active brief. Audit the actual schema and queries, apply justified migrations, fully seed the explicitly named development account, and finish outstanding account-app checks. The connected account architecture and removal of offline/storage/recovery UI remain in force. Infrastructure decisions and provisioning remain outside that assignment.
 
 ## 1. Product boundaries
 
@@ -142,7 +142,7 @@ The public device-storage and raw-data transfer screens and API entry points are
 
 Budget enforcement precedes hosted provider calls even though billing arrives later. Ownership stays independent of payment from checkpoint 1 without requiring billing implementation then.
 
-Use ACCOUNT_APP_IMPLEMENTATION_BRIEF.md for current execution. Earlier local-mode and offline-cache milestones are historical, not current product requirements. Server backup and restore are operational responsibilities, not a user-facing JSON storage workflow. Completion of this cleanup does not imply hosted AI, extraction, or release readiness are complete.
+Use SCHEMA_AND_ACCOUNT_SEED_BRIEF.md for current execution and ACCOUNT_APP_IMPLEMENTATION_BRIEF.md for the retained account architecture. Earlier local-mode and offline-cache milestones are historical, not current product requirements. Server backup and restore are operational responsibilities, not a user-facing JSON storage workflow. Schema migration and sample content do not imply hosted AI, extraction, or release readiness are complete.
 
 ## 11. Operations and remaining decisions
 

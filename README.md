@@ -2,8 +2,9 @@
 
 One account-based learning app. Google sign-in opens a personal workspace backed
 by Neon and private R2 files. New accounts start empty. A connection is required.
-[ACCOUNT_APP_IMPLEMENTATION_BRIEF.md](ACCOUNT_APP_IMPLEMENTATION_BRIEF.md) is the
-active product brief.
+[SCHEMA_AND_ACCOUNT_SEED_BRIEF.md](SCHEMA_AND_ACCOUNT_SEED_BRIEF.md) is the active
+execution brief for schema review, migration, and complete development seeding.
+The account architecture in ACCOUNT_APP_IMPLEMENTATION_BRIEF.md remains in force.
 
 Requires Node.js 22.12+ and npm.
 

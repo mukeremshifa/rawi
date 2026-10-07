@@ -1,6 +1,11 @@
 # Account app implementation handoff
 
-Updated 7 October 2026. ACCOUNT_APP_IMPLEMENTATION_BRIEF.md is the active brief.
+Next assignment: [SCHEMA_AND_ACCOUNT_SEED_BRIEF.md](SCHEMA_AND_ACCOUNT_SEED_BRIEF.md).
+Audit and migrate the schema as needed, seed the named development account, and
+complete the outstanding browser/account checks below. No migration or account
+seed was executed while preparing that brief.
+
+Updated 7 October 2026 for the completed ACCOUNT_APP_IMPLEMENTATION_BRIEF.md work.
 The offline records below the historical divider describe previous assignments.
 They are not current behavior or verification of this cleanup.
 

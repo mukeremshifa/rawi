@@ -1,6 +1,8 @@
 # Rawi account-based application brief
 
-Prepared 7 October 2026. This is the active execution brief. It supersedes SINGLE_APP_IMPLEMENTATION_BRIEF.md, including its offline access, device storage, draft recovery, and user-facing JSON import/export requirements. Earlier full-stack briefs remain historical feature references. Build on the current single application and backend rather than restarting them.
+Implementation follow-up: [SCHEMA_AND_ACCOUNT_SEED_BRIEF.md](SCHEMA_AND_ACCOUNT_SEED_BRIEF.md) is now the active execution brief. The account-based architecture and offline-removal requirements here remain in force. The new brief carries forward unfinished verification and issues.
+
+Prepared 7 October 2026. This account-app brief superseded SINGLE_APP_IMPLEMENTATION_BRIEF.md, including its offline access, device storage, draft recovery, and user-facing JSON import/export requirements. Earlier full-stack briefs remain historical feature references.
 
 ## Outcome
 
