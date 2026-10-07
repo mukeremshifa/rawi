@@ -37,12 +37,13 @@ export async function request<T>(path: string, userId?: string, body?: unknown, 
   if (!response.ok) {
     const result = await response.json().catch(() => null) as ApiErrorBody | null;
     if (userId && [401, 403, 404].includes(response.status)) await forgetSnapshot(path, userId).catch(() => {});
-    if ([401, 403].includes(response.status) && userId) { lockDevice(); window.dispatchEvent(new Event('rawi-account-invalid')); }
+    if ([401, 403].includes(response.status) && (userId || path === '/v1/me')) { lockDevice(); window.dispatchEvent(new Event('rawi-account-invalid')); }
     throw new OnlineError(result?.error?.code ?? 'unavailable', result?.error?.message ?? 'The online request failed. Your unsent text remains in this page.', result?.error?.requestId);
   }
   const result = await response.json() as T;
   if (userId && (generation !== accountGeneration || userId !== activeUser)) throw new OnlineError('account_changed', 'Your account changed. Reload your workspace.');
   if (userId && method === 'GET') await cacheRead(path, userId, result).catch(() => { window.dispatchEvent(new Event('rawi-cache-failed')); });
+  if (userId && (generation !== accountGeneration || userId !== activeUser)) throw new OnlineError('account_changed', 'Your account changed. Reload your workspace.');
   return result;
 }
 export function errorMessage(error: unknown) { return error instanceof Error ? error.message : 'The request could not be completed.'; }

@@ -1,3 +1,139 @@
+# Single-app implementation handoff
+
+Current assignment: [SINGLE_APP_IMPLEMENTATION_BRIEF.md](SINGLE_APP_IMPLEMENTATION_BRIEF.md).
+Updated 7 October 2026. The current record below supersedes the historical migration
+notes that follow it.
+
+## Current implementation
+
+Rawi now has one account boundary, router, shell and theme path. Canonical routes
+serve the account features. Old `/online` links redirect with query strings,
+fragments and exact material references intact. The former course editor link
+redirects to `/course/:id/syllabus`. `npm run dev` builds the shell and starts
+Vite with the Worker API. The mounted local application, live workspace store,
+fallback data and Node AI entry point were removed.
+
+The single shell includes course setup and outline review, material editing and
+version navigation, all nine practice formats, second passes, review practice,
+rehearsals, planner controls, tutor records and summaries, history filters, topic
+progress, search, reminders, preferences and recovery. Feedback revision history
+is visible. Server section activation and sequential progression now gate every
+answer in save and submit batches, with atomic rejection and deadline checks.
+Question deduplication uses the shared Unicode-aware prompt key.
+
+Private offline data uses IndexedDB `rawi-offline-v1`, schema 1, partitioned by
+schema, user and workspace. Only explicitly allowed successful read views enter
+the cache. Defaults are a 24-hour session-check grace, seven-day snapshot retention,
+a 50 MiB snapshot budget with recent-view eviction, 2 MiB per item, and a separate
+10 MiB protected draft budget. Cached history arrays retain at most 100 entries,
+planner sessions at most 200. Evidence totals remain server-derived. Storage
+controls inspect and remove snapshots and separately export or discard drafts.
+
+The production service worker caches only its versioned public shell and static
+assets. It waits for existing tabs to close, then removes obsolete Rawi shell
+caches. It never intercepts API writes or caches authentication and signed URLs.
+IndexedDB version changes close old connections. This is the first cache schema,
+so there is no previous deployed cache schema to migrate. Future incompatible
+schemas need an explicit recovery-preserving migration before changing this default.
+
+Eligible note, material, practice-answer and tutor-message drafts retain their
+base revision and narrow retry payload. Restoring and saving are explicit.
+Conflicts require review. An ambiguous save retries its original operation ID.
+Storage failures offer export without claiming device recovery. Sign-out offers
+recovery, locks all tabs and clears private storage. Offline sign-out completes
+server sign-out before reopening an account. Online session rejection never
+falls back to an unlocked cached identity. No offline mutation queue exists.
+
+Fictional courses live only in `dev/fixtures`. The manual seed requires an existing
+development workspace and the designated `.dev.vars` target. Stable provenance
+makes repeats preserve edits and history. Browser legacy data remains an explicit
+recovery original. Reviewed imports support unfinished practice and account
+archives, including exact readable versions and feedback history. Restored
+practice retains unknown historical assistance even after current server marking.
+Repeated imports do not republish records. Active local exam timers confer no
+server authority. README documents the seed and storage controls.
+
+## Checks performed for this assignment
+
+Checks used the existing isolated development identities, designated Neon database
+and R2 bucket. Chrome exercised the real API and UI through Vite and a locally
+served production build. No hosted AI output was substituted as provider evidence.
+
+- TypeScript, production build and Worker dry-run packaging passed. The client
+  entry is about 832 kB minified and 249 kB gzipped. Vite still reports its large
+  chunk warning. Worker packaging is about 3,313 KiB and 602 KiB gzipped.
+- Actual `npm run dev` starts the single app. Canonical pages, legacy redirects,
+  deep passage reload and browser Back were checked. An authenticated account
+  with no active courses displayed the empty library without seeding.
+- Both material regressions passed: unsaved metadata survived a text save and a
+  real R2 source replacement. Replacement stayed disabled with a text editor open.
+- All nine question formats were answered in Chrome and submitted through the
+  API. Pending written feedback stayed pending. Save receipts, revision conflicts,
+  answer locks, foreign reads and concurrent finalization passed API checks.
+  Chrome reveal and Edge resume retained the same saved state. Canonical learning
+  pages opened without runtime errors. Saved tutor summaries, grounding labels,
+  disabled ended composers and blocked-only summaries passed using existing
+  explicitly synthetic fixtures, with no provider call.
+- Future-section save and submit batches failed atomically for sequential and
+  free navigation. Skipped sequential progression failed. Entered sections saved.
+  Section locks, expiry and concurrent manual/access finalization passed.
+- Three distinct Arabic prompts stayed distinct. True duplicates, mixed text and
+  English case and punctuation normalization behaved as intended without AI calls.
+- Production offline deep reload, exact passage reading, freshness labels,
+  blocked mutations, unchanged-record note saving and closed-tab text recovery
+  passed. A concurrent edit required explicit conflict review. A simulated quota
+  failure offered export. A lost response after commit reused its original receipt.
+- Offline tutor drafts recovered. Offline sign-out locked two tabs and cleared
+  all private stores, then completed server sign-out before reopening. Account
+  switching during a held committed save ignored the late response. A 25-hour
+  cache window and online 401 and 403 responses prevented cached reopening.
+- A waiting worker left a dirty editor intact. Activation preserved its draft,
+  deleted only obsolete Rawi shell caches and retained an unrelated cache. Cache
+  Storage contained no API or signed-URL requests. An uncached offline route
+  explained its connection requirement and Back returned to cached content.
+- A synthetic size exercise through the actual cache module verified the 50 MiB
+  bound, recent-view eviction, per-item limit and read allowlist. The storage UI
+  cleared snapshots while preserving its protected draft.
+- Planner UI saved dated availability ending at midnight, linked session topics
+  and assessments, and a scoped check-in. Rehearsal copying, question navigation,
+  manual section locking without early feedback and hidden exam-set denial passed.
+- The seed ran twice with identical course IDs and preserved an intervening user
+  edit. Browser and Worker artifacts contained none of the checked fictional
+  course bodies. No startup or sign-in seeding path remains.
+- Mixed sample and edited browser data downloaded byte-for-byte and remained
+  unchanged through explicit review. Unfinished practice import, repeated commit,
+  rejection of active-exam promotion and recovered marking provenance passed.
+  A real account archive was reviewed and restored. A larger archive containing
+  34 attempts also passed review.
+
+## Remaining limits and dependencies
+
+Hosted tutor, generation and written-feedback execution and streaming are still
+unfinished application work. They also need available runtime provider
+authentication. Operation records, context builders, validators, reservations and
+publication fences are present, but blocked operations are not working AI.
+Synthetic tutor fixtures in historical verification remain explicitly synthetic.
+PDF, DOCX and PPTX extraction is unfinished. Originals remain recoverable online.
+
+Offline original-file downloads and pinning are deferred. Readable cached text
+ships now. First visits need a connection, and remote revocation cannot be known
+while disconnected. State-version-1 legacy data has exact download and manual
+recovery, not automatic import. Account archives disclose unsupported provider
+execution records, file bytes, preferences, reminder state and active timers,
+which remain in the retained original rather than being executed or promoted.
+
+A new Google OAuth sign-in, a newly created account, a future incompatible cache
+schema migration and every browser storage implementation were not exercised.
+No production deployment, infrastructure change, credential setup, applied
+migration rewrite, automated test suite or CI was added. The development server
+is left running. Sessions for the two isolated verification identities were revoked.
+The following older results describe their original checkpoints,
+not additional checks performed in this assignment.
+
+---
+
+## Historical full-stack migration record
+
 # Full-stack migration handoff
 
 Next assignment: [SINGLE_APP_IMPLEMENTATION_BRIEF.md](SINGLE_APP_IMPLEMENTATION_BRIEF.md).

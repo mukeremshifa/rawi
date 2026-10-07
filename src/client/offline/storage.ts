@@ -23,9 +23,12 @@ export function markSignOutComplete() { localStorage.setItem(LOCK, 'locked'); }
 function db() {
   return connection ??= new Promise((resolve, reject) => {
     const request = indexedDB.open('rawi-offline-v1', SCHEMA);
-    request.onupgradeneeded = () => { for (const name of ['meta', 'snapshots', 'drafts']) request.result.createObjectStore(name, { keyPath: 'key' }); };
+    request.onupgradeneeded = () => { for (const name of ['meta', 'snapshots', 'drafts']) if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name, { keyPath: 'key' }); };
     request.onerror = () => { connection = undefined; reject(request.error); };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      request.result.onversionchange = () => { request.result.close(); connection = undefined; };
+      resolve(request.result);
+    };
   });
 }
 function result<T>(request: IDBRequest<T>): Promise<T> { return new Promise((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); }
@@ -51,8 +54,9 @@ export async function rememberAccount(me: Me) {
 }
 export async function offlineAccount(): Promise<Me | null> {
   if (deviceLocked()) return null;
+  const epoch = generation;
   const identity = await result<Identity | undefined>((await db()).transaction('meta').objectStore('meta').get('identity'));
-  if (!identity || Date.now() - identity.checkedAt >= GRACE_MS) return null;
+  if (epoch !== generation || deviceLocked() || !identity || Date.now() - identity.checkedAt >= GRACE_MS) return null;
   active = identity;
   return identity.me;
 }
@@ -133,12 +137,13 @@ export async function cachedRead<T>(path: string, user: string): Promise<T | und
 }
 export async function storageContents() {
   if (!unlocked()) return { snapshots: [] as Snapshot[], drafts: [] as Draft[] };
-  const account = active!.account;
+  const account = active!.account, epoch = generation;
   const database = await db();
   const [snapshots, drafts] = await Promise.all([
     result<Snapshot[]>(database.transaction('snapshots').objectStore('snapshots').getAll()),
     result<Draft[]>(database.transaction('drafts').objectStore('drafts').getAll()),
   ]);
+  if (epoch !== generation || !unlocked()) return { snapshots: [] as Snapshot[], drafts: [] as Draft[] };
   return { snapshots: snapshots.filter(s => s.account === account), drafts: drafts.filter(d => d.account === account) };
 }
 export async function clearSnapshots(key?: string) {

@@ -244,6 +244,12 @@ export async function finalizeRun(tx: Transaction, run: typeof learningRuns.$inf
   const questions = items.map(item => { const a = answers.find(a => a.itemId === item.id); return { question: item.question, result: toQuestionAttempt(item.question, a?.response ?? { kind: 'none' }, !!a?.hinted) }; });
   const set = await ownSet(tx, run.workspaceId, run.setId);
   const snapshot: LearningAttempt = { id: crypto.randomUUID(), runId: run.id, courseId: run.courseId, title: run.title, startedAt: run.startedAt.toISOString(), completedAt: completedAt.toISOString(), markingVersion: 'objective-v1', flashcardReview: run.flashcardReview, questions, ...attemptTotals(questions.map(q => q.result)), exam: run.exam, plannedSessionId: run.plannedSessionId ?? undefined, remediatesAttemptId: set.remediatesAttemptId ?? undefined, ...(run.exam ? { finish } : {}) };
+  const [provenance] = await tx.select({ fingerprint: learningSets.fingerprint }).from(learningSets).where(and(eq(learningSets.workspaceId, run.workspaceId), eq(learningSets.id, run.setId)));
+  // Only the restored run has uncertain earlier assistance. New runs start clean.
+  if (provenance?.fingerprint.startsWith(`legacy-recovery:${run.id}:`)) {
+    snapshot.markingVersion = 'recovered-objective-v1';
+    snapshot.imported = { id: snapshot.id, courseId: run.courseId, kind: 'practice', mode: 'practice', title: run.title, startedAt: snapshot.startedAt, completedAt: snapshot.completedAt, topicIds: [...new Set(questions.map(q => q.question.topicId))], questions: questions.map(q => q.result), marksAwarded: snapshot.marksAwarded, marksAvailable: snapshot.marksAvailable, assistanceRecord: 'unknown', practiceSetId: set.id };
+  }
   await tx.insert(learningAttempts).values({ id: snapshot.id, workspaceId: run.workspaceId, courseId: run.courseId, runId: run.id, setId: run.setId, snapshot });
   await tx.update(learningRuns).set({ revision: run.revision + 1, state: 'submitted', completedAt }).where(eq(learningRuns.id, run.id));
   if (run.plannedSessionId) {

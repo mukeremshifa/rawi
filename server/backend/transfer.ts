@@ -85,8 +85,8 @@ function reviewFor(id: string, data: LocalTransfer): ImportReview {
   if (incomplete) unsupported.push(`${incomplete} incomplete attempts stay in the recovery original.`);
   return { id, state: 'review', courses: st.courses.length, materials: st.materials.length, questions: st.questions.length, sets: st.savedPractice.length, attempts: st.attempts.length - incomplete, unsupported };
 }
-export async function prepareImport(db: SocketDb, workspaceId: string, input: unknown) {
-  const data = validate(input); const fingerprint = await hash(JSON.stringify(input));
+export async function prepareImport(db: SocketDb, workspaceId: string, input: unknown, developmentProvenance?: string) {
+  const data = validate(input); const fingerprint = await hash(developmentProvenance ?? JSON.stringify(input));
   return transaction(db, async tx => {
     const id = crypto.randomUUID();
     const review = reviewFor(id, data);
@@ -158,15 +158,15 @@ export async function commitImport(db: SocketDb, workspaceId: string, id: string
       await tx.insert(s.questionVersions).values({ id: content.id, workspaceId, courseId: content.courseId, content }); questionMap.set(q.id, content);
       if (source) await tx.insert(s.questionSources).values({ workspaceId, courseId: content.courseId, questionId: content.id, ...source });
     }
-    async function saveSet(id: string, courseId: string, name: string, questions: string[], feedback: 'immediate' | 'end', hintsAllowed: boolean, archived = false) {
-      await tx.insert(s.learningSets).values({ id, workspaceId, courseId, name, archived, feedback, hintsAllowed, fingerprint: row!.fingerprint });
+    async function saveSet(id: string, courseId: string, name: string, questions: string[], feedback: 'immediate' | 'end', hintsAllowed: boolean, archived = false, recoveredRunId?: string) {
+      await tx.insert(s.learningSets).values({ id, workspaceId, courseId, name, archived, feedback, hintsAllowed, fingerprint: recoveredRunId ? `legacy-recovery:${recoveredRunId}:${row!.fingerprint}` : row!.fingerprint });
       if (questions.length) await tx.insert(s.setItems).values(questions.map((q, position) => ({ id: crypto.randomUUID(), workspaceId, courseId, setId: id, questionId: questionMap.get(q)!.id, position })));
     }
     for (const set of state.savedPractice) await saveSet(remap('set', set.id), remap('course', set.courseId), set.name, set.questionIds, set.config.feedback, set.config.hintsAllowed, set.archived);
     for (const run of state.practiceRuns) {
       const courseId = remap('course', run.courseId), setId = crypto.randomUUID(), runId = remap('run', run.id);
       const title = `Recovered practice: ${state.savedPractice.find(s => s.id === run.setId)?.name ?? 'Unfinished practice'}`;
-      await saveSet(setId, courseId, title, run.questionIds, run.feedback, run.hintsAllowed);
+      await saveSet(setId, courseId, title, run.questionIds, run.feedback, run.hintsAllowed, false, runId);
       await tx.insert(s.learningRuns).values({ id: runId, workspaceId, courseId, setId, title, position: run.index, startedAt: new Date(run.startedAt) });
       const items = await tx.select().from(s.setItems).where(eq(s.setItems.setId, setId));
       for (const [oldId, response] of Object.entries(run.answers)) {

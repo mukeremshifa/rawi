@@ -16,10 +16,10 @@ import { hash } from './materials';
 import { ApiError, notFound } from './errors';
 import type { ReadDb, SocketDb, Transaction } from './db';
 
-export const unavailable = 'Hosted Vertex AI authentication is not connected. This request is saved, but no provider request or charge was made.';
+export const unavailable = 'Hosted AI replies are not connected. This request is saved, but no provider request or charge was made.';
 export const generateInput = z.strictObject({ operationId: uuid, name: z.string().trim().min(1).max(200), format: z.enum(['flashcard', 'multiple-choice', 'written-recall']), count: z.number().int().min(1).max(10), topicIds: z.array(uuid).min(1).max(20), materialIds: z.array(uuid).min(1).max(20), difficulties: z.array(z.enum(['recall', 'reasoning', 'stretch'])).min(1).max(3) });
 export const gradeInput = z.strictObject({ operationId: uuid, questionId: uuid });
-// Matches the chosen local main model and engineering budget defaults. No
+// Retains the chosen model and engineering budget defaults. No
 // workstation credentials, SDK client, filesystem ledger or paid call lives here.
 export const engineeringLimits = { model: 'gemini-3.8-flash', userConcurrent: 1, globalConcurrent: 2, userDailyMicros: 5_000_000, globalDailyMicros: 5_000_000, userTotalMicros: 80_000_000, globalTotalMicros: 80_000_000, maxAttempts: 2 };
 export async function recordBlocked(tx: Transaction, workspaceId: string, courseId: string, id: string, targetId: string, task: 'tutor' | 'generate' | 'grade', input: unknown) {

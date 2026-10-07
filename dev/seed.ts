@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { socketDb } from '../server/backend/db';
-import { workspaces } from '../server/backend/schema';
+import { workspaces, workspaceImports } from '../server/backend/schema';
 import { prepareImport, commitImport } from '../server/backend/transfer';
 import { seedState } from './fixtures/workspace';
 
@@ -19,7 +19,8 @@ try {
   state.courses = state.courses.map(c => ({ ...c, description: `Fictional development course. ${c.description}` }));
   state.attempts = state.attempts.map(a => ({ ...a, title: `Fictional activity: ${a.title}` }));
   const input = { format: 'rawi-workspace', version: 1, seedProvenance: 'rawi-fictional-v1', state };
-  const review = await prepareImport(connection.db, workspace.id, input);
+  const [previous] = await connection.db.select({ review: workspaceImports.review }).from(workspaceImports).where(and(eq(workspaceImports.workspaceId, workspace.id), sql`${workspaceImports.original}->>'seedProvenance' = 'rawi-fictional-v1'`)).limit(1);
+  const review = previous?.review ?? await prepareImport(connection.db, workspace.id, input, 'development-seed:rawi-fictional-v1');
   const saved = await commitImport(connection.db, workspace.id, review.id, crypto.randomUUID());
   console.log(JSON.stringify({ state: saved.state, courses: saved.courseIds, repeated: review.state === 'complete' }));
 } finally { await connection.close(); }

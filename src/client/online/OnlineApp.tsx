@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ConnectionStatus, StoragePage } from '@/offline/Recovery';
-import { rememberAccount, offlineAccount, clearPrivate, lockDevice, pendingSignOut, markSignOutComplete, setDisconnected, deviceLocked, storageContents } from '@/offline/storage';
+import { rememberAccount, offlineAccount, clearPrivate, lockDevice, pendingSignOut, markSignOutComplete, setDisconnected, isDisconnected, deviceLocked, storageContents } from '@/offline/storage';
 import { downloadRecovery } from './learning-hooks';
 import type { Me } from '@shared/online';
 import { Button } from '@/components/ui/button';
@@ -102,7 +102,7 @@ export function OnlineApp() {
     };
   }, [refresh]);
   useEffect(() => {
-    const timer = setInterval(() => { if (me) void offlineAccount().then(account => { if (!account || deviceLocked()) { setActiveAccount(null); setMe(null); setError('Sign in again to renew access to cached content.'); } }); }, 30000);
+    const timer = setInterval(() => { if (me && isDisconnected()) void offlineAccount().catch(() => null).then(account => { if (!account || deviceLocked()) { setActiveAccount(null); setMe(null); setError('Sign in again to renew access to cached content.'); } }); }, 30000);
     return () => clearInterval(timer);
   }, [me]);
   useEffect(() => {
