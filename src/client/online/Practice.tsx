@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { useDisconnected, useRecovery } from '@/offline/Recovery';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { z } from 'zod';
 import { createSetInput, formats, sameAnswer, type LearningSet, type LearningRun, type LearningAttempt, type VersionedQuestion, type runWriteInput } from '@shared/learning';
@@ -16,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { QuestionView } from '@/features/practice/QuestionView';
 import { QuestionFeedback } from '@/features/practice/QuestionFeedback';
-import { useLearningWrite, useOnlineRecord, useOnlineCollection, useUnsentGuard, downloadRecovery } from './learning-hooks';
+import { useLearningWrite, useOnlineRecord, useOnlineCollection, useUnsentGuard } from './learning-hooks';
 
 export function OnlinePractice() {
   const { id = '' } = useParams(); const nav = useNavigate(); const [params] = useSearchParams(); const planned = params.get('plannedSessionId');
@@ -50,7 +49,7 @@ export function OnlinePractice() {
       <label><input type="checkbox" checked={hints} onChange={e => setHints(e.target.checked)} /> Allow hints</label></fieldset>
       <p>{bank.value ? `${pool.length} matching questions in the complete course bank.` : 'Loading the complete question bank…'}</p>
       <Button disabled={op.busy || !name.trim() || !pool.length || count < 1 || count > 50} onClick={() => { pending.current ??= createSetInput.parse({ id: crypto.randomUUID(), name, questionIds: selectQuestions(pool, {}, count).map(q => q.id), feedback, hintsAllowed: hints }); void op.run<LearningSet>(`/v1/courses/${id}/sets`, pending.current, 'POST', saved => { pending.current = null; setName(''); allowNavigation(); nav(`/sets/${saved.id}${planned ? `?plannedSessionId=${planned}` : ''}`); }); }}>{op.busy ? 'Saving…' : pending.current ? 'Retry saving set' : 'Save set'}</Button>
-      {bank.value?.length === 0 && <p>Your online bank is empty. Workspace import and material generation will provide questions when available.</p>}{!!bank.value?.length && !pool.length && <p>No saved questions match these filters.</p>}
+      {bank.value?.length === 0 && <p>Your online bank is empty. Question generation is not connected yet.</p>}{!!bank.value?.length && !pool.length && <p>No saved questions match these filters.</p>}
       <p>Online question generation is not connected yet. Your saved practice remains available.</p>
     </section>
     <OnlineGeneration courseId={id} />
@@ -84,8 +83,7 @@ export function OnlineRun() {
   const [clock, setClock] = useState(0);
   const clockBase = useRef({ server: Date.now(), mono: performance.now() });
   const run = record.value, item = run?.items[run.position]; const dirty = Object.keys(drafts).length > 0;
-  const offline = useDisconnected();
-  const recovery = useRecovery(`run:${id}`, run?.revision, { drafts, pending: pending.current }, dirty || !!pending.current, v => { setDrafts(v.drafts); pending.current = v.pending; });
+
   const allowNavigation = useUnsentGuard(dirty || !!pending.current);
   useEffect(() => { if (run?.serverNow) clockBase.current = { server: Date.parse(run.serverNow), mono: performance.now() }; }, [run?.serverNow]);
   useEffect(() => { if (!run?.exam || run.state !== 'active') return; const t = setInterval(() => setClock(clockBase.current.server + performance.now() - clockBase.current.mono), 1000); return () => clearInterval(t); }, [run?.id, run?.state]);
@@ -93,17 +91,17 @@ export function OnlineRun() {
   function accept(saved: LearningRun) {
     const remaining = Object.fromEntries(Object.entries(drafts).filter(([key, value]) => !sameAnswer(saved.items.find(i => i.id === key)?.response, value)));
     pending.current = null; setDrafts(remaining); record.setValue(saved);
-    setMessage(Object.keys(remaining).length ? 'Some drafts were not included in the saved result. Export them before leaving.' : 'Saved to your account.');
+    setMessage(Object.keys(remaining).length ? 'Some answers were not included in the saved result. Your unsaved answers remain on this page.' : 'Saved to your account.');
     if (saved.attemptId && !Object.keys(remaining).length) { allowNavigation(); nav(`/attempts/${saved.attemptId}`, { replace: true }); }
   }
   function save(submit = false, position = run?.position ?? 0) {
-    if (!run || recovery.blocked && !pending.current) return;
+    if (!run) return;
     const body: z.infer<typeof runWriteInput> = { operationId: crypto.randomUUID(), expectedRevision: run.revision, position, answers: Object.entries(drafts).map(([itemId, response]) => ({ itemId, response })) };
     pending.current ??= { path: `/v1/runs/${id}/${submit ? 'submit' : 'answers'}`, method: submit ? 'POST' : 'PUT', body };
     const write = pending.current;
-    void recovery.protect({ drafts, pending: write }).then(() => op.run<LearningRun>(write.path, write.body, write.method, accept)).catch(() => setMessage('The retry request could not be saved on this device. Export your answers before leaving.'));
+    void op.run<LearningRun>(write.path, write.body, write.method, accept);
   }
-  useEffect(() => { if (!dirty || offline || recovery.recovered || recovery.blocked || run?.state !== 'active' || op.busy || pending.current || op.error) return; const timer = setTimeout(() => save(), 1000); return () => clearTimeout(timer); }, [drafts, op.busy, run?.revision, offline, recovery.blocked]);
+  useEffect(() => { if (!dirty || run?.state !== 'active' || op.busy || pending.current || op.error) return; const timer = setTimeout(() => save(), 1000); return () => clearTimeout(timer); }, [drafts, op.busy, run?.revision]);
   function transition(action: 'check' | 'reveal' | 'hint') {
     if (!run || !item) return;
     pending.current ??= { path: `/v1/runs/${id}/transition`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: run.revision, itemId: item.id, action } };
@@ -114,10 +112,7 @@ export function OnlineRun() {
   const deadlines = exam ? [run?.deadlineAt, exam.configSnapshot.timing === 'overall' ? exam.deadlineAt : exam.sectionDeadlines[exam.configSnapshot.sections[exam.currentSectionIndex]!.id]].filter((d): d is string => !!d) : [];
   const deadline = deadlines.length ? new Date(Math.min(...deadlines.map(d => Date.parse(d)))).toISOString() : null;
   return <Page className="py-8" width="prose"><PageHeader title={run?.flashcardReview ? 'Second pass' : run?.title ?? 'Practice run'} description="Answers autosave after a short pause. Unsent work remains on this page if saving fails." />
-    {recovery.panel}
-    {offline && run?.exam && <p role="alert">Last authorized rehearsal view. Reconnect to check the server timer, navigate or submit. Device drafts do not establish an answer deadline.</p>}
     {record.error && <p role="alert">{record.error}</p>}{op.error && <p role="alert">{op.error}</p>}<p role="status">{op.busy ? 'Saving…' : dirty ? 'Unsaved changes' : message}</p>
-    {(dirty || pending.current) && <Button variant="outline" onClick={() => downloadRecovery('rawi-unsent-answers.json', { runId: id, drafts, pending: pending.current })}>Export unsent answers</Button>}
     {run?.attemptId && <Link to={`/attempts/${run.attemptId}`}>Open saved result</Link>}
     {run && item && run.state === 'active' && <div className="space-y-5">{run.flashcardReview && <p>Revisit the cards you found difficult. Both passes remain self-rated, and your first ratings are retained.</p>}<p>Question {run.position + 1} of {run.items.length}</p>{exam && <div className="border p-4 space-y-3"><h2>{exam.configSnapshot.sections[exam.currentSectionIndex]?.title}</h2><p>{exam.configSnapshot.sections[exam.currentSectionIndex]?.instructions}</p><p>{deadline ? `${Math.max(0, Math.ceil((Date.parse(deadline) - (clock || Date.parse(run.serverNow!))) / 1000))} seconds remaining` : 'Untimed'} · No feedback before whole-paper submission.</p>{locked && <p>This section is locked.</p>}<div className="flex flex-wrap gap-2" aria-label="Exam question navigation">{run.items.map((q, position) => <Button key={q.id} variant={position === run.position ? 'default' : 'outline'} aria-current={position === run.position ? 'step' : undefined} aria-label={`Question ${position + 1}${exam.flagged.includes(q.question.id) ? ', flagged' : ''}${q.response.kind !== 'none' ? ', answered' : ', unanswered'}`} disabled={dirty || op.busy || !!pending.current || (exam.configSnapshot.navigation === 'sequential' && (position < run.position || position > run.position + 1))} onClick={() => examAction('navigate', position)}>{position + 1}{exam.flagged.includes(q.question.id) ? ' ⚑' : ''}</Button>)}</div>{exam.materialVersions.map(m => <p key={m.materialId}><Link className="underline" target="_blank" to={`/materials/${m.materialId}/versions/${m.versionId}`}>{m.title}</Link></p>)}<Button variant="outline" disabled={dirty || op.busy || !!pending.current} onClick={() => examAction('finish-section')}>Finish section</Button>{exam.configSnapshot.flaggingEnabled && <Button variant="outline" disabled={dirty || op.busy || !!pending.current} onClick={() => examAction('flag')}>{exam.flagged.includes(item.question.id) ? 'Remove flag' : 'Flag question'}</Button>}</div>}
       {item.question.format === 'flashcard' && !item.revealed ? <><p>{item.question.prompt}</p><Button disabled={op.busy || dirty} onClick={() => transition('reveal')}>Reveal answer</Button></> : <QuestionView key={item.id} question={item.question} revealed={item.revealed} answer={drafts[item.id] ?? item.response} onChange={answer => { setDrafts(old => ({ ...old, [item.id]: answer })); setMessage(''); }} readOnly={op.busy || !!pending.current || item.checked || locked} />}
@@ -126,9 +121,9 @@ export function OnlineRun() {
       {run.feedback === 'immediate' && item.question.format !== 'flashcard' && !item.checked && <Button disabled={dirty || op.busy || !!pending.current} onClick={() => transition('check')}>Check saved answer</Button>}
       {item.feedback && <QuestionFeedback question={{ ...item.question, source: undefined }} attempt={item.feedback} />}
       <div className="flex flex-wrap gap-3"><Button variant="outline" disabled={op.busy || !!pending.current || run.position === 0 || (!!exam && (dirty || exam.configSnapshot.navigation === 'sequential'))} onClick={() => exam ? examAction('navigate', run.position - 1) : save(false, run.position - 1)}>Previous</Button><Button variant="outline" disabled={op.busy || !!pending.current || run.position + 1 === run.items.length || (!!exam && dirty)} onClick={() => exam ? examAction('navigate', run.position + 1) : save(false, run.position + 1)}>Next</Button><Button disabled={op.busy} onClick={() => save()}>{pending.current ? 'Retry saved request' : 'Save answers'}</Button>{!exam && !run.flashcardReview && run.position === run.items.length - 1 && run.items.some(i => i.response.kind === 'self-rating' && ['again', 'hard'].includes(i.response.rating)) && <Button disabled={dirty || op.busy || !!pending.current} onClick={() => { pending.current ??= { path: `/v1/runs/${id}/revisit`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: run.revision } }; void op.run<LearningRun>(pending.current.path, pending.current.body, pending.current.method, accept); }}>Revisit difficult flashcards</Button>}<Button disabled={op.busy || !!pending.current} onClick={() => save(true)}>Submit all answers</Button></div>
-      <Button variant="outline" onClick={() => downloadRecovery('rawi-unsent-answers.json', { runId: id, revision: run.revision, drafts, pending: pending.current })}>Export recovery copy</Button>
-      {(op.code === 'revision_conflict' || recovery.blocked) && <Button variant="outline" onClick={() => void op.run<LearningRun>(`/v1/runs/${id}`, undefined, 'GET', setReview)}>Review saved answers</Button>}
-      {review && <div className="border p-4"><h2>Saved revision {review.revision}</h2>{review.items.map(i => <div key={i.id}><p>{i.question.prompt}</p><pre className="whitespace-pre-wrap">{JSON.stringify(i.response)}</pre></div>)}<p>Your unsent answers remain above. Checked answers cannot be overwritten.</p><Button onClick={() => { recovery.reviewed(review.revision); record.setValue(review); setReview(null); pending.current = null; }}>Keep my drafts against this revision</Button></div>}
+
+      {(op.code === 'revision_conflict') && <Button variant="outline" onClick={() => void op.run<LearningRun>(`/v1/runs/${id}`, undefined, 'GET', setReview)}>Review saved answers</Button>}
+      {review && <div className="border p-4"><h2>Saved revision {review.revision}</h2>{review.items.map(i => <div key={i.id}><p>{i.question.prompt}</p><pre className="whitespace-pre-wrap">{JSON.stringify(i.response)}</pre></div>)}<p>Your unsent answers remain above. Checked answers cannot be overwritten.</p><Button onClick={() => { record.setValue(review); setReview(null); pending.current = null; }}>Keep my drafts against this revision</Button></div>}
     </div>}
   </Page>;
 }

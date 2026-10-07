@@ -10,6 +10,7 @@ export function createAuth(env: BackendBindings, db: SocketDb) {
     secret: env.BETTER_AUTH_SECRET!, baseURL: env.BETTER_AUTH_URL!, basePath: '/api/auth',
     trustedOrigins: [env.BETTER_AUTH_URL!],
     socialProviders: { google: { clientId: env.GOOGLE_CLIENT_ID!, clientSecret: env.GOOGLE_CLIENT_SECRET! } },
+    account: { accountLinking: { enabled: false } },
     advanced: { useSecureCookies: env.BETTER_AUTH_URL!.startsWith('https:') },
     // App logs carry a request ID and a safe error code, never provider or SQL details.
     logger: { disabled: true },

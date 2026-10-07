@@ -7,12 +7,12 @@ import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { useOnlineRecord, useOnlineCollection, useLearningWrite, useUnsentGuard, downloadRecovery } from './learning-hooks';
+import { useOnlineRecord, useOnlineCollection, useLearningWrite, useUnsentGuard } from './learning-hooks';
 type Operation = Awaited<ReturnType<typeof viewOperation>>;
 export function OnlineAiOperation() {
   const op = useLearningWrite(); const stopId = useRef(crypto.randomUUID());
   const { id = '' } = useParams(); const data = useOnlineRecord<Operation>(`/v1/ai/operations/${id}`);
-  return <Page className="py-8" width="prose"><PageHeader title="Saved AI request" description="Reload reads the saved operation. It does not send another provider request." />{data.error && <p role="alert">{data.error}</p>}{data.value && <div className="space-y-4">{op.error && <p role="alert">{op.error}</p>}<p>{data.value.task} · {data.value.state}</p><p role="status">{data.value.reason}</p>{data.value.executions.map(e => <article key={e.id}><p>{e.state}</p><p className="whitespace-pre-wrap">{e.partial}</p></article>)}{!['complete', 'cancelled'].includes(data.value.state) && <Button disabled={op.busy} onClick={() => void op.run<Operation>(`/v1/ai/operations/${id}/cancel`, { operationId: stopId.current }, 'POST', data.setValue)}>Stop this request</Button>}<Button variant="outline" onClick={() => downloadRecovery('rawi-ai-recovery.json', data.value)}>Export saved request state</Button><Button variant="outline" onClick={data.refresh}>Refresh saved status</Button></div>}</Page>;
+  return <Page className="py-8" width="prose"><PageHeader title="Saved AI request" description="Reload reads the saved operation. It does not send another provider request." />{data.error && <p role="alert">{data.error}</p>}{data.value && <div className="space-y-4">{op.error && <p role="alert">{op.error}</p>}<p>{data.value.task} · {data.value.state}</p><p role="status">{data.value.reason}</p>{data.value.executions.map(e => <article key={e.id}><p>{e.state}</p><p className="whitespace-pre-wrap">{e.partial}</p></article>)}{!['complete', 'cancelled'].includes(data.value.state) && <Button disabled={op.busy} onClick={() => void op.run<Operation>(`/v1/ai/operations/${id}/cancel`, { operationId: stopId.current }, 'POST', data.setValue)}>Stop this request</Button>}<Button variant="outline" onClick={data.refresh}>Refresh saved status</Button></div>}</Page>;
 }
 export function RequestFeedback({ attemptId, questionId }: { attemptId: string; questionId: string }) {
   const op = useLearningWrite(); const id = useRef(crypto.randomUUID()); const [saved, setSaved] = useState<Operation | null>(null);

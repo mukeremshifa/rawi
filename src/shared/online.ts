@@ -4,6 +4,7 @@ export const accents = ['indigo', 'amber', 'teal', 'rose', 'violet'] as const;
 export const uuid = z.uuid().transform(value => value.toLowerCase());
 export const revision = z.number().int().min(1).max(2147483646);
 export const preferenceFields = z.strictObject({
+  onboardingCompleted: z.boolean().default(true),
   displayName: z.string().trim().max(80),
   workspaceName: z.string().trim().min(1).max(80),
   accent: z.enum(accents),
@@ -20,6 +21,7 @@ export const preferenceFields = z.strictObject({
 });
 export type PreferenceFields = z.infer<typeof preferenceFields>;
 export const defaultPreferences: PreferenceFields = {
+  onboardingCompleted: false,
   displayName: '', workspaceName: 'My workspace', accent: 'indigo', questionCount: 6,
   hints: true, feedback: 'immediate', readingSize: 'normal', motion: 'system', theme: 'system',
   reminders: { assessments: true, study: true, review: false, days: 1 },

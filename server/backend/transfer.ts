@@ -1,5 +1,5 @@
 import { transaction } from './db';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { localTransferInput, type LocalTransfer, type ImportReview } from '../../src/shared/transfer';
 import { questionInput, validResponse, type LearningAttempt, type VersionedQuestion } from '../../src/shared/learning';
 import { attemptTotals } from '../../src/shared/marking';
@@ -8,7 +8,7 @@ import { hash } from './materials';
 import { operation } from './learning';
 import { bumpPlanner } from './planning';
 import * as s from './schema';
-import type { SocketDb, Transaction } from './db';
+import type { SocketDb } from './db';
 import { archiveTransfer } from './archive';
 
 const fail = (message: string): never => { throw new ApiError(400, 'invalid_import', message); };
@@ -94,9 +94,6 @@ export async function prepareImport(db: SocketDb, workspaceId: string, input: un
     await tx.insert(s.workspaceImports).values({ id, workspaceId, fingerprint, original: input, review }).onConflictDoNothing();
     const [row] = await tx.select().from(s.workspaceImports).where(and(eq(s.workspaceImports.workspaceId, workspaceId), eq(s.workspaceImports.fingerprint, fingerprint))); return row!.review;
   });
-}
-export async function importOriginal(db: SocketDb, workspaceId: string, id: string) {
-  const [row] = await db.select({ original: s.workspaceImports.original }).from(s.workspaceImports).where(and(eq(s.workspaceImports.workspaceId, workspaceId), eq(s.workspaceImports.id, id))); if (!row) throw notFound(); return row.original;
 }
 export async function commitImport(db: SocketDb, workspaceId: string, id: string, operationId: string) {
   return operation(db, workspaceId, operationId, { action: 'commit-import', id }, async tx => {
@@ -193,27 +190,4 @@ export async function commitImport(db: SocketDb, workspaceId: string, id: string
     const review: ImportReview = { ...row.review, state: 'complete', courseIds: state.courses.map(c => remap('course', c.id)) };
     await tx.update(s.workspaceImports).set({ review }).where(eq(s.workspaceImports.id, id)); await bumpPlanner(tx, workspaceId); return review;
   });
-}
-async function exportRows(tx: Transaction, workspaceId: string) {
-  // Explicit per-table account scope. Credentials, sessions, signed URLs and
-  // storage object keys are excluded from the portable account export.
-  return {
-    courses: await tx.select({ id: s.courses.id, name: s.courses.name, description: s.courses.description, goal: s.courses.goal, accent: s.courses.accent, archived: s.courses.archived, createdAt: s.courses.createdAt }).from(s.courses).where(eq(s.courses.workspaceId, workspaceId)).orderBy(asc(s.courses.id)),
-    topics: await tx.select().from(s.topics).where(eq(s.topics.workspaceId, workspaceId)), topicLinks: await tx.select().from(s.topicLinks).where(eq(s.topicLinks.workspaceId, workspaceId)),
-    materials: await tx.select({ id: s.materials.id, courseId: s.materials.courseId, title: s.materials.title, kind: s.materials.kind, attribution: s.materials.attribution, archived: s.materials.archived, currentVersionId: s.materials.currentVersionId, noteSource: s.materials.noteSource }).from(s.materials).where(eq(s.materials.workspaceId, workspaceId)),
-    versions: await tx.select({ id: s.materialVersions.id, courseId: s.materialVersions.courseId, materialId: s.materialVersions.materialId, number: s.materialVersions.number, origin: s.materialVersions.origin, contentStatus: s.materialVersions.contentStatus, format: s.materialVersions.format, createdAt: s.materialVersions.createdAt }).from(s.materialVersions).where(eq(s.materialVersions.workspaceId, workspaceId)),
-    passages: await tx.select().from(s.passages).where(eq(s.passages.workspaceId, workspaceId)), materialTopics: await tx.select().from(s.materialTopicLinks).where(eq(s.materialTopicLinks.workspaceId, workspaceId)),
-    questions: await tx.select({ content: s.questionVersions.content }).from(s.questionVersions).where(eq(s.questionVersions.workspaceId, workspaceId)), sets: await tx.select().from(s.learningSets).where(eq(s.learningSets.workspaceId, workspaceId)), setItems: await tx.select().from(s.setItems).where(eq(s.setItems.workspaceId, workspaceId)),
-    runs: await tx.select().from(s.learningRuns).where(eq(s.learningRuns.workspaceId, workspaceId)), answers: await tx.select().from(s.runAnswers).where(eq(s.runAnswers.workspaceId, workspaceId)), attempts: await tx.select({ snapshot: s.learningAttempts.snapshot }).from(s.learningAttempts).where(eq(s.learningAttempts.workspaceId, workspaceId)),
-    tutorSessions: await tx.select().from(s.tutorSessions).where(eq(s.tutorSessions.workspaceId, workspaceId)), tutorMessages: await tx.select().from(s.tutorMessages).where(eq(s.tutorMessages.workspaceId, workspaceId)),
-    exams: await tx.select().from(s.examConfigs).where(eq(s.examConfigs.workspaceId, workspaceId)), assessments: await tx.select().from(s.assessments).where(eq(s.assessments.workspaceId, workspaceId)), plannedSessions: await tx.select().from(s.plannedSessions).where(eq(s.plannedSessions.workspaceId, workspaceId)), planner: await tx.select().from(s.plannerState).where(eq(s.plannerState.workspaceId, workspaceId)), checkIns: await tx.select().from(s.checkIns).where(eq(s.checkIns.workspaceId, workspaceId)), preferences: await tx.select().from(s.preferences).where(eq(s.preferences.workspaceId, workspaceId)),
-    feedbackRevisions: await tx.select().from(s.feedbackRevisions).where(eq(s.feedbackRevisions.workspaceId, workspaceId)), aiOperations: await tx.select().from(s.aiOperations).where(eq(s.aiOperations.workspaceId, workspaceId)), aiExecutions: await tx.select().from(s.aiExecutions).where(eq(s.aiExecutions.workspaceId, workspaceId)), reminders: await tx.select().from(s.reminderStates).where(eq(s.reminderStates.workspaceId, workspaceId)),
-    recoveryOriginals: await tx.select({ id: s.workspaceImports.id, original: s.workspaceImports.original, review: s.workspaceImports.review }).from(s.workspaceImports).where(eq(s.workspaceImports.workspaceId, workspaceId)),
-  };
-}
-export async function exportWorkspace(db: SocketDb, workspaceId: string) {
-  return transaction(db, async tx => {
-    const data = await exportRows(tx, workspaceId); const result = { format: 'rawi-online-workspace', version: 1, exportedAt: new Date().toISOString(), data };
-    if (new TextEncoder().encode(JSON.stringify(result)).byteLength > 20 * 1048576) throw new ApiError(409, 'export_limit', 'This workspace exceeds the 20 MiB export limit. No partial export was produced.'); return result;
-  }, { isolationLevel: 'repeatable read' });
 }

@@ -18,7 +18,6 @@ import * as learning from './learning';
 import * as exams from './exams';
 import * as planning from './planning';
 import * as tutoring from './tutoring';
-import * as transfer from './transfer';
 import * as support from './support';
 import * as ai from './ai';
 import { newTutorInput, tutorMessageInput, tutorMetadataInput } from '../../src/shared/online-tutor';
@@ -60,10 +59,10 @@ api.get('/status', c => {
 const configured = new Hono<BackendContext>();
 configured.use('*', async (c, next) => {
   // Unknown paths return 404 even when configuration is absent.
-  const known = c.req.path.startsWith('/api/auth/') || /^\/api\/v1\/(ai\/status|ai\/operations\/[^/]+(?:\/cancel)?|me|preferences|search|notifications|export|imports\/review|imports\/[^/]+\/(commit|original)|planner|progress|planner\/(availability|sessions|proposals|check-ins)|planner\/proposals\/[^/]+\/apply|courses(?:\/[^/]+(?:\/(topics|materials|uploads|generate|questions|sets|runs|attempts|exams|assessments|tutor))?)?|materials\/[^/]+(?:\/versions(?:\/[^/]+(?:\/(download|passages\/[^/]+))?)?)?|uploads\/[^/]+(?:\/finalize)?|sets\/[^/]+(?:\/runs)?|runs\/[^/]+(?:\/(answers|submit|transition|exam-transition|revisit))?|attempts\/[^/]+(?:\/feedback)?|exams\/[^/]+(?:\/runs)?|tutor\/[^/]+(?:\/(messages|end))?)$/.test(c.req.path);
+  const known = c.req.path.startsWith('/api/auth/') || /^\/api\/v1\/(ai\/status|ai\/operations\/[^/]+(?:\/cancel)?|me|profile|preferences|search|notifications|planner|progress|planner\/(availability|sessions|proposals|check-ins)|planner\/proposals\/[^/]+\/apply|courses(?:\/[^/]+(?:\/(topics|materials|uploads|generate|questions|sets|runs|attempts|exams|assessments|tutor))?)?|materials\/[^/]+(?:\/versions(?:\/[^/]+(?:\/(download|passages\/[^/]+))?)?)?|uploads\/[^/]+(?:\/finalize)?|sets\/[^/]+(?:\/runs)?|runs\/[^/]+(?:\/(answers|submit|transition|exam-transition|revisit))?|attempts\/[^/]+(?:\/feedback)?|exams\/[^/]+(?:\/runs)?|tutor\/[^/]+(?:\/(messages|end))?)$/.test(c.req.path);
   if (!known) throw notFound();
   const missing = configurationProblems(c.env);
-  if (missing.length) throw new ApiError(503, 'not_configured', `The backend is not configured: ${missing.join(', ')}.`);
+  if (missing.length) throw new ApiError(503, 'not_configured', 'Your workspace is temporarily unavailable. Please try again.');
   const connection = socketDb(c.env.DATABASE_URL!);
   try {
     c.set('socket', connection.db);
@@ -103,6 +102,13 @@ app.use('*', async (c, next) => {
 app.get('/me', async c => {
   const user = c.get('user');
   return c.json({ user: { id: user.id, name: user.name, email: user.email, image: user.image ?? null }, ...await service.bootstrap(c.get('socket'), user.id) });
+});
+app.patch('/profile', async c => {
+  const body = await jsonInput(c, z.strictObject({ name: z.string().trim().min(1).max(80) }));
+  const { headers } = await c.get('auth').api.updateUser({ body, headers: c.req.raw.headers, returnHeaders: true });
+  for (const cookie of headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true });
+  const user = c.get('user');
+  return c.json({ id: user.id, name: body.name, email: user.email, image: user.image ?? null });
 });
 app.get('/courses', async c => {
   const query = z.strictObject({ archived: z.enum(['true', 'false', 'all']).default('false'), limit: z.coerce.number().int().min(1).max(100).default(30), cursor: uuid.optional() }).parse(c.req.query());
@@ -174,10 +180,6 @@ app.get('/tutor/:id', async c => { const q = z.strictObject({ cursor: z.coerce.n
 app.post('/tutor/:id/end', async c => c.json(await tutoring.endSession(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, writeInput))));
 app.post('/tutor/:id/messages', async c => c.json(await tutoring.saveMessage(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, tutorMessageInput))));
 app.patch('/tutor/:id', async c => c.json(await tutoring.patchSession(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, tutorMetadataInput))));
-app.get('/export', async c => c.json(await transfer.exportWorkspace(c.get('socket'), c.get('workspaceId'))));
-app.post('/imports/review', async c => { const input = await jsonInput(c, z.strictObject({ export: z.unknown() })); return c.json(await transfer.prepareImport(c.get('socket'), c.get('workspaceId'), input.export)); });
-app.get('/imports/:id/original', async c => c.json(await transfer.importOriginal(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
-app.post('/imports/:id/commit', async c => { const input = await jsonInput(c, z.strictObject({ operationId: uuid })); return c.json(await transfer.commitImport(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), input.operationId)); });
 app.get('/search', async c => { const q = z.strictObject({ q: z.string().trim().max(100).default('') }).parse(c.req.query()); return c.json(q.q ? await support.search(c.get('db'), c.get('workspaceId'), q.q) : { results: [], limitPerCategory: 10 }); });
 app.get('/notifications', async c => c.json(await support.notifications(c.get('socket'), c.get('workspaceId'))));
 app.patch('/notifications', async c => { const input = await jsonInput(c, z.strictObject({ operationId: uuid, key: z.string().min(1).max(300), status: z.enum(['read', 'dismissed']) })); return c.json(await support.markReminder(c.get('socket'), c.get('workspaceId'), input.operationId, input.key, input.status)); });
@@ -193,6 +195,6 @@ api.notFound(() => { throw notFound(); });
 api.onError((error, c) => {
   const safe = error instanceof ApiError ? error : error instanceof z.ZodError
     ? new ApiError(400, 'invalid_input', 'Some fields are invalid. Check required text, IDs, links, timezone and revision.')
-    : new ApiError(503, 'unavailable', 'The workspace is temporarily unavailable. Check the recovery status of your unsent changes before leaving.');
+    : new ApiError(503, 'unavailable', 'The workspace is temporarily unavailable. Keep this page open and retry to save your changes.');
   return c.json({ error: { code: safe.code, message: safe.message, requestId: c.get('requestId') } }, safe.status);
 });

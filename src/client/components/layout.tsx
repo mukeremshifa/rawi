@@ -1,5 +1,4 @@
 import { useCallback, useSyncExternalStore, type ReactNode } from 'react';
-import { useDefaultLayout } from 'react-resizable-panels';
 
 import { cn } from '@/lib/utils';
 import {
@@ -253,97 +252,11 @@ export function Rail({
 
 /* ── PaneGroup ────────────────────────────────────────────────────────── */
 
-/**
- * Resizable panes side by side — a two-pane reading shell.
- *
- * A thin wrapper over the `resizable` primitive, and worth having because it
- * fixes the two things a caller would otherwise get wrong: panes need
- * `overflow-hidden` or `minSize` is silently ignored, and the handle needs a
- * grab area wider than its hairline. Both are handled in the primitive; this
- * exists so a screen writes `PaneGroup` and gets them.
- *
- * `autoSaveId` persists the layout, which is the feature that makes a
- * resizable shell worth having at all — dragging a pane and finding it reset
- * on the next visit is worse than not being able to drag it.
- *
- * ── `autoSaveId` is ours, not the library's ─────────────────────────────
- *
- * **`autoSaveId` is a v2 prop and the installed library is v4.** Passing it
- * through typechecks against an untyped spread and does nothing at runtime.
- * v4 replaces it with `useDefaultLayout`, which hands back a `defaultLayout`
- * and an `onLayoutChanged` for the caller to wire up.
- *
- * So the name is kept and the wiring moved in here, for the reason the wrapper
- * exists at all: this is precisely a thing a caller would otherwise get wrong,
- * and getting it wrong is silent — a shell that appears to persist its layout
- * and does not. Every `PaneGroup` with an `autoSaveId` now actually persists.
- */
+/** Resizable panes keep their layout in memory for the current screen. */
 export function PaneGroup({
-  orientation = 'horizontal',
-  autoSaveId,
-  className,
-  children,
-  ...props
-}: {
-  orientation?: 'horizontal' | 'vertical';
-  /** Persists this group's layout under this id. Must be unique per group. */
-  autoSaveId?: string;
-  className?: string;
-  children: ReactNode;
-} & Omit<
-  React.ComponentProps<typeof ResizablePanelGroup>,
-  'orientation' | 'className' | 'children'
->) {
-  return autoSaveId === undefined ? (
-    <ResizablePanelGroup orientation={orientation} className={className} {...props}>
-      {children}
-    </ResizablePanelGroup>
-  ) : (
-    <PersistedPaneGroup
-      id={autoSaveId}
-      orientation={orientation}
-      className={className}
-      {...props}
-    >
-      {children}
-    </PersistedPaneGroup>
-  );
-}
-
-/**
- * The persisting branch, split out because `useDefaultLayout` is a hook and
- * cannot be called conditionally. Two components rather than one that always
- * persists: a group with no id would still write to storage under some
- * fallback key, and two unrelated shells sharing a key restore each other's
- * layouts.
- */
-function PersistedPaneGroup({
-  id,
-  children,
-  ...props
-}: { id: string; children: ReactNode } & Omit<
-  React.ComponentProps<typeof ResizablePanelGroup>,
-  'children'
->) {
-  /*
-   * `onlySaveAfterUserInteractions`, so a window resize — or the imperative
-   * layout the library computes on mount — does not overwrite the sizes the
-   * user actually dragged. Storage defaults to `localStorage`.
-   */
-  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id,
-    onlySaveAfterUserInteractions: true,
-  });
-
-  return (
-    <ResizablePanelGroup
-      defaultLayout={defaultLayout}
-      onLayoutChanged={onLayoutChanged}
-      {...props}
-    >
-      {children}
-    </ResizablePanelGroup>
-  );
+  orientation = 'horizontal', children, ...props
+}: React.ComponentProps<typeof ResizablePanelGroup>) {
+  return <ResizablePanelGroup orientation={orientation} {...props}>{children}</ResizablePanelGroup>;
 }
 
 /** One pane. `minSize`/`defaultSize` are percentages of the group. */

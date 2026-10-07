@@ -148,7 +148,7 @@ async function saveBatch(tx: Transaction, run: typeof learningRuns.$inferSelect,
     if (!item) throw notFound();
     if (!validResponse(item.question, entry.response)) throw new ApiError(400, 'invalid_response', 'The answer does not match this question.');
     if (run.exam) {
-      if (run.deadlineAt && run.deadlineAt.getTime() <= Date.now()) throw new ApiError(409, 'run_expired', 'The server deadline has passed. Keep rejected answers as recovery drafts.');
+      if (run.deadlineAt && run.deadlineAt.getTime() <= Date.now()) throw new ApiError(409, 'run_expired', 'The server deadline has passed. Rejected answers remain unsaved on this page.');
       const runtime = { ...run.exam, answers: {} }; const loc = locate(runtime, item.question.id);
       const section = loc && runtime.configSnapshot.sections[loc.sectionIndex];
       const entered = section && (runtime.activatedSectionIds?.includes(section.id) ?? (loc.sectionIndex === runtime.currentSectionIndex || !!runtime.sectionDeadlines[section.id]));

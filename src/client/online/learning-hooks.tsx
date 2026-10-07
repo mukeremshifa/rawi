@@ -6,7 +6,6 @@ import { useAccount } from './OnlineApp';
 export function useOnlineRecord<T>(path: string) {
   const { user } = useAccount();
   const [epoch, setEpoch] = useState(0);
-  useEffect(() => { const refresh = () => setEpoch(n => n + 1); window.addEventListener('rawi-record-refresh', refresh); return () => window.removeEventListener('rawi-record-refresh', refresh); }, []);
   const [value, setValue] = useState<T | null>(null), [error, setError] = useState('');
   useEffect(() => {
     const controller = new AbortController(); setValue(null); setError('');
@@ -48,12 +47,15 @@ export function useLearningWrite() {
   }
   return { busy, error, code, run };
 }
+let unsavedEdits = false;
+export function confirmDiscard() { return !unsavedEdits || window.confirm('You have unsaved changes. Discard them and sign out?'); }
 const DraftGuard = createContext<(id: symbol, dirty: boolean) => void>(() => {});
 export function OnlineDraftBoundary({ children }: { children: ReactNode }) {
   const entries = useRef(new Set<symbol>()); const [dirty, setDirty] = useState(false);
-  const register = useCallback((id: symbol, value: boolean) => { if (value) entries.current.add(id); else entries.current.delete(id); setDirty(entries.current.size > 0); }, []);
+  const register = useCallback((id: symbol, value: boolean) => { if (value) entries.current.add(id); else entries.current.delete(id); unsavedEdits = entries.current.size > 0; setDirty(unsavedEdits); }, []);
+  useEffect(() => () => { unsavedEdits = false; }, []);
   const blocker = useBlocker(useCallback(() => entries.current.size > 0, []));
-  useEffect(() => { if (blocker.state === 'blocked') { if (window.confirm('You have unsent work. Check device recovery or export a copy before leaving. Leave this page?')) blocker.proceed(); else blocker.reset(); } }, [blocker]);
+  useEffect(() => { if (blocker.state === 'blocked') { if (window.confirm('You have unsaved changes. Discard them and leave this page?')) blocker.proceed(); else blocker.reset(); } }, [blocker]);
   useEffect(() => {
     if (!dirty) return;
     const unload = (e: BeforeUnloadEvent) => { e.preventDefault(); };
@@ -71,8 +73,4 @@ export function useUnsentGuard(dirty: boolean) {
   const register = useContext(DraftGuard); const id = useRef(Symbol('draft'));
   useEffect(() => { register(id.current, dirty); return () => register(id.current, false); }, [dirty, register]);
   return () => register(id.current, false);
-}
-export function downloadRecovery(name: string, value: unknown) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
-  const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
