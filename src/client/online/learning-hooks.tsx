@@ -53,7 +53,7 @@ export function OnlineDraftBoundary({ children }: { children: ReactNode }) {
   const entries = useRef(new Set<symbol>()); const [dirty, setDirty] = useState(false);
   const register = useCallback((id: symbol, value: boolean) => { if (value) entries.current.add(id); else entries.current.delete(id); setDirty(entries.current.size > 0); }, []);
   const blocker = useBlocker(useCallback(() => entries.current.size > 0, []));
-  useEffect(() => { if (blocker.state === 'blocked') { if (window.confirm('Unsent work will be lost. Leave this page?')) blocker.proceed(); else blocker.reset(); } }, [blocker]);
+  useEffect(() => { if (blocker.state === 'blocked') { if (window.confirm('You have unsent work. Check device recovery or export a copy before leaving. Leave this page?')) blocker.proceed(); else blocker.reset(); } }, [blocker]);
   useEffect(() => {
     if (!dirty) return;
     const unload = (e: BeforeUnloadEvent) => { e.preventDefault(); };

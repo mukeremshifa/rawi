@@ -91,7 +91,16 @@ function projection(path: string, value: unknown) {
   const match = views.find(([pattern]) => pattern.test(path.split('?')[0]!));
   if (!match || !value || typeof value !== 'object') return undefined;
   const object = value as Record<string, unknown>;
-  return match[1] ? Object.fromEntries(match[1].filter(k => k in object).map(k => [k, object[k]])) : object;
+  const selected = match[1] ? Object.fromEntries(match[1].filter(k => k in object).map(k => [k, object[k]])) : { ...object };
+  if (path === '/v1/progress') {
+    for (const key of ['attempts', 'tutorActivity', 'mistakes', 'due', 'runs', 'sessions', 'assessments', 'checkIns']) {
+      if (Array.isArray(selected[key])) selected[key] = selected[key].slice(-100);
+    }
+    // Evidence uses server totals. Offline history keeps only display fields.
+    if (Array.isArray(selected.attempts)) selected.attempts = selected.attempts.map(({ questions: _questions, ...summary }) => summary);
+  }
+  if (path === '/v1/planner' && Array.isArray(selected.sessions)) selected.sessions = selected.sessions.slice(-200);
+  return selected;
 }
 function bytes(value: unknown) { return new TextEncoder().encode(JSON.stringify(value)).byteLength; }
 export async function cacheRead(path: string, user: string, value: unknown) {
@@ -134,6 +143,9 @@ export async function storageContents() {
 }
 export async function clearSnapshots(key?: string) {
   await transaction(['snapshots'], async tx => { await result(key ? tx.objectStore('snapshots').delete(key) : tx.objectStore('snapshots').clear()); });
+}
+export async function forgetSnapshot(path: string, user: string) {
+  if (active?.me.user.id === user) await clearSnapshots(`${active.account}:${path}`);
 }
 export async function readDraft(record: string) { return (await storageContents()).drafts.find(d => d.record === record); }
 export async function writeDraft(record: string, baseRevision: number, value: unknown) {

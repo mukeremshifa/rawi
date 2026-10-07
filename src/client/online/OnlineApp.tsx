@@ -143,11 +143,11 @@ export function OnlineApp() {
     } catch (e) { setError(errorMessage(e)); }
     finally { authBusy.current = false; setBusy(false); }
   };
-  if (location.pathname === '/online' || location.pathname.startsWith('/online/')) return <Navigate replace to={`${location.pathname.slice(7) || '/'}${location.search}${location.hash}`} />;
+  if (location.pathname === '/online' || location.pathname.startsWith('/online/')) return <Navigate replace to={`${/^\/online\/course\/[^/]+$/.test(location.pathname) ? location.pathname.slice(7) + '/syllabus' : location.pathname.slice(7) || '/'}${location.search}${location.hash}`} />;
   return <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
     <header className="border-b px-gutter h-14 shrink-0 flex items-center gap-4">
       <Link to="/" className="font-semibold mr-auto"><Logo /></Link>
-      {configured && <Button variant="outline" disabled={busy} onClick={() => void signOut()}>Sign out</Button>}
+      {(me || configured) && <Button variant="outline" disabled={busy} onClick={() => void signOut()}>Sign out</Button>}
     </header>
     {me && <ConnectionStatus />}
     <div className="flex min-h-0 flex-1">
@@ -162,12 +162,16 @@ export function OnlineApp() {
     </Page>}
     {me && <Account.Provider value={me}><OnlineDraftBoundary key={me.user.id}><div hidden={checking}>
       <p className="px-6 pt-4 text-sm text-muted-foreground">{me.user.email} · {me.preferences.values.workspaceName}</p>
+      {error && <p role="alert" className="px-6">{error}</p>}
       <Routes>
         <Route path="/storage" element={<StoragePage />} />
         <Route path="/history" element={<OnlineProgress />} />
         <Route path="/welcome" element={<Navigate replace to="/courses" />} />
         <Route path="/course/:id/syllabus" element={<CourseEditor key={location.pathname} />} />
         <Route path="/course/:id/settings" element={<CourseEditor key={location.pathname} />} />
+        <Route path="/planner/availability" element={<OnlinePlanner />} />
+        <Route path="/settings/:section" element={<PreferencesEditor onSaved={preferences => setMe(previous => previous ? { ...previous, preferences } : previous)} />} />
+        <Route path="/course/:id/progress/topic/:topicId" element={<OnlineProgress key={location.pathname} />} />
         <Route path="/" element={<OnlineProgress home />} />
         <Route path="/ai/:id" element={<OnlineAiOperation key={location.pathname} />} />
         <Route path="/search" element={<OnlineSearch />} />
@@ -179,7 +183,7 @@ export function OnlineApp() {
         <Route path="/course/:id/overview" element={<OnlineProgress home key={location.pathname} />} />
         <Route path="/courses" element={<CourseLibrary />} />
         <Route path="/courses/new" element={<NewOnlineCourse />} />
-        <Route path="/course/:id" element={<CourseEditor key={location.pathname} />} />
+        <Route path="/course/:id" element={<OnlineProgress home key={location.pathname} />} />
         <Route path="/course/:id/materials" element={<OnlineMaterials key={location.pathname} />} />
         <Route path="/materials/:materialId" element={<OnlineMaterialReader key={location.pathname} />} />
         <Route path="/materials/:materialId/versions/:versionId" element={<OnlineMaterialReader key={location.pathname} />} />

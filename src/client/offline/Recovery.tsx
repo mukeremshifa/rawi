@@ -11,6 +11,7 @@ export const useDisconnected = () => useSyncExternalStore(subscribeConnection, i
 export function useRecovery<T>(record: string, revision: number | undefined, value: T, dirty: boolean, restore: (value: T, base: number) => void) {
   const [found, setFound] = useState<Draft | null>(null), [status, setStatus] = useState('');
   const base = useRef<number | null>(null), ready = useRef(false), wasDirty = useRef(false), serial = useRef(Promise.resolve());
+  const manualSave = useRef(false);
   const [reviewRequired, setReviewRequired] = useState(false);
   useEffect(() => {
     let alive = true; ready.current = false;
@@ -20,28 +21,33 @@ export function useRecovery<T>(record: string, revision: number | undefined, val
   const serialized = JSON.stringify(value);
   useEffect(() => {
     if (!ready.current || found || revision === undefined) return;
-    if (!dirty) { if (wasDirty.current) { serial.current = serial.current.then(() => removeDraft(record)); setStatus(''); } wasDirty.current = false; base.current = null; return; }
+    if (!dirty) { if (wasDirty.current) { serial.current = serial.current.then(() => removeDraft(record)).catch(() => setStatus('The previous device draft could not be cleared. Review it before restoring.')); setStatus(''); } wasDirty.current = false; base.current = null; setReviewRequired(false); return; }
     wasDirty.current = true;
+    if (isDisconnected()) manualSave.current = true;
+    if (base.current !== null && base.current !== revision) setReviewRequired(true);
     base.current ??= revision;
     setStatus('Saving recovery draft…');
     let alive = true;
     serial.current = serial.current.catch(() => {}).then(() => writeDraft(record, base.current ?? revision, value)).then(() => { if (alive) setStatus('Saved on this device. Not submitted or graded.'); }).catch(() => { if (alive) setStatus('Recovery could not be saved. Export a copy before leaving.'); });
     return () => { alive = false; };
   }, [record, serialized, dirty, revision, found]);
-  const clear = async () => { await serial.current; await removeDraft(record); base.current = null; setFound(null); setStatus(''); setReviewRequired(false); };
+  const clear = async () => { await serial.current; await removeDraft(record); base.current = null; manualSave.current = false; setFound(null); setStatus(''); setReviewRequired(false); };
   const panel = <div className="space-y-2 text-sm" aria-live="polite">
     {status && <p role="status">{status}</p>}
     {found && <div className="rounded border p-3 space-y-2"><p>A recovery draft from {new Date(found.updatedAt).toLocaleString()} is saved on this device at revision {found.baseRevision}.</p>
-      {revision !== undefined && <Button variant="outline" onClick={() => { const changed = revision !== found.baseRevision; base.current = found.baseRevision; restore(found.value as T, found.baseRevision); setFound(null); setReviewRequired(changed); setStatus(changed ? 'The saved record changed. Review the latest record before saving this draft.' : 'Draft restored. Save explicitly when connected.'); }}>Restore draft for review</Button>}
+      {revision !== undefined && <Button variant="outline" onClick={() => { const changed = revision !== found.baseRevision; manualSave.current = true; base.current = found.baseRevision; restore(found.value as T, found.baseRevision); setFound(null); setReviewRequired(changed); setStatus(changed ? 'The saved record changed. Review the latest record before saving this draft.' : 'Draft restored. Save explicitly when connected.'); }}>Restore draft for review</Button>}
       <Button variant="outline" onClick={() => downloadRecovery('rawi-recovery-draft.json', found)}>Export draft</Button>
       <Button variant="ghost" onClick={() => { if (window.confirm('Discard this device draft?')) void clear(); }}>Discard device draft</Button>
     </div>}
     {dirty && <Button variant="outline" onClick={() => downloadRecovery('rawi-recovery-draft.json', { record, baseRevision: base.current ?? revision, value })}>Export current draft</Button>}
     {reviewRequired && <p role="alert">Review the latest saved record before using its revision. Your recovered text is still available.</p>}
   </div>;
-  return { panel, clear, blocked: !!found || reviewRequired, recovered: base.current !== null,
-    protect: async (next: T) => { await serial.current; await writeDraft(record, base.current ?? revision ?? 0, next); },
-    reviewed: () => { base.current = revision ?? null; setReviewRequired(false); } };
+  return { panel, clear, blocked: !!found || reviewRequired, recovered: manualSave.current,
+    protect: async (next: T) => {
+      try { await serial.current; await writeDraft(record, base.current ?? revision ?? 0, next); }
+      catch { setStatus('Device recovery could not be saved. Keep this page open or export a copy if the account save fails.'); }
+    },
+    reviewed: (nextRevision = revision) => { base.current = nextRevision ?? null; setReviewRequired(false); } };
 }
 
 export function ConnectionStatus() {

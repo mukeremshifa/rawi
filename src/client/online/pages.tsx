@@ -95,7 +95,7 @@ export function NewOnlineCourse() {
     if (!parsed.success) throw new Error('Enter a course name and check the field lengths.');
     setSubmitted(parsed.data);
     const result = await request<CourseDetail>('/v1/courses', user.id, parsed.data, 'POST');
-    allowNavigation(); navigate(`/course/${result.course.id}`, { replace: true });
+    allowNavigation(); navigate(`/course/${result.course.id}/syllabus`, { replace: true });
   });
   return <Page className="py-8" width="prose"><PageHeader title="Add a course" description="After saving, build its topic outline." />
     <form className="space-y-5" onSubmit={e => { e.preventDefault(); void create(); }}><fieldset disabled={save.saving || !!submitted}><CourseFields value={fields} onChange={v => { setFields(v); save.clear(); }} /></fieldset>
@@ -237,7 +237,7 @@ export function PreferencesEditor({ onSaved }: { onSaved: (value: OnlinePreferen
       <Field title="Motion"><Select value={values.motion} onChange={e => patch({ motion: e.target.value as typeof values.motion })}>{['system', 'reduced', 'full'].map(v => <option key={v}>{v}</option>)}</Select></Field>
       <fieldset className="space-y-2"><legend>Reminder preferences</legend>{(['assessments', 'study', 'review'] as const).map(key => <label className="flex gap-2" key={key}><input type="checkbox" checked={values.reminders[key]} onChange={e => patch({ reminders: { ...values.reminders, [key]: e.target.checked } })} />{key}</label>)}
         <Field title="Days ahead"><Select value={values.reminders.days} onChange={e => patch({ reminders: { ...values.reminders, days: Number(e.target.value) as 0 | 1 | 3 | 7 } })}>{[0, 1, 3, 7].map(v => <option key={v}>{v}</option>)}</Select></Field>
-      </fieldset><p className="text-sm text-muted-foreground">Study and reminder preferences are saved for later learning features. No online reminders are sent in this checkpoint. Appearance applies after saving.</p>
+      </fieldset><p className="text-sm text-muted-foreground">Study defaults and in-app reminders use these preferences. Appearance applies after saving.</p>
     </fieldset><Button disabled={save.saving || conflicted}>Save preferences</Button></form>
     <SaveStatus state={save} onReview={() => void loadReview()} />{reviewError && <p role="alert">{reviewError}</p>}
     {review && <section className="rounded border p-4 space-y-4"><h2 className="font-semibold">Latest saved preferences</h2><p>Your unsent preferences remain above.</p><dl className="space-y-1">{Object.entries({ 'Display name': review.values.displayName, Workspace: review.values.workspaceName, Timezone: review.timezone, Accent: review.values.accent, Questions: review.values.questionCount, Hints: review.values.hints ? 'On' : 'Off', Feedback: review.values.feedback, Theme: review.values.theme, 'Reading size': review.values.readingSize, Motion: review.values.motion, 'Assessment reminders': review.values.reminders.assessments ? 'On' : 'Off', 'Study reminders': review.values.reminders.study ? 'On' : 'Off', 'Review reminders': review.values.reminders.review ? 'On' : 'Off', 'Days ahead': review.values.reminders.days }).map(([k, v]) => <div key={k}><dt className="inline font-medium">{k}: </dt><dd className="inline">{v || 'None'}</dd></div>)}</dl>

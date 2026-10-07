@@ -1,7 +1,7 @@
 import { transaction } from './db';
 import { and, asc, eq } from 'drizzle-orm';
 import { localTransferInput, type LocalTransfer, type ImportReview } from '../../src/shared/transfer';
-import { questionInput, type LearningAttempt, type VersionedQuestion } from '../../src/shared/learning';
+import { questionInput, validResponse, type LearningAttempt, type VersionedQuestion } from '../../src/shared/learning';
 import { attemptTotals } from '../../src/shared/marking';
 import { ApiError, notFound } from './errors';
 import { hash } from './materials';
@@ -9,11 +9,13 @@ import { operation } from './learning';
 import { bumpPlanner } from './planning';
 import * as s from './schema';
 import type { SocketDb, Transaction } from './db';
+import { archiveTransfer } from './archive';
 
 const fail = (message: string): never => { throw new ApiError(400, 'invalid_import', message); };
 function validate(input: unknown) {
-  if (new TextEncoder().encode(JSON.stringify(input)).byteLength > 6 * 1048576) fail('Choose a Rawi export up to 6 MiB. Keep the original export for recovery.');
-  const data = localTransferInput.parse(input); const state = data.state;
+  if (new TextEncoder().encode(JSON.stringify(input)).byteLength > 20 * 1048576) fail('Choose a Rawi export up to 20 MiB. Keep the original export for recovery.');
+  const archive = input && typeof input === 'object' && 'format' in input && input.format === 'rawi-online-workspace' ? archiveTransfer(input) : null;
+  const data = localTransferInput.parse(archive ?? input); const state = data.state;
   const entities = [state.courses, state.topics, state.retiredTopics, state.materials, state.questions, state.savedPractice, state.attempts, state.examConfigs, state.assessments, state.sessions, state.tutorSessions];
   for (const rows of entities) if (new Set(rows.map(r => r.id)).size !== rows.length) fail('The export has duplicate record IDs.');
   const courseIds = new Set(state.courses.map(c => c.id));
@@ -56,12 +58,21 @@ function validate(input: unknown) {
   }
   if (new Set(state.checkIns.map(c => c.id)).size !== state.checkIns.length) fail('The export has duplicate check-in IDs.');
   for (const c of state.checkIns) { if (c.courseId && !courseIds.has(c.courseId)) fail('A check-in course is missing.'); if (c.topicId) { if (!c.courseId) fail('A check-in topic needs a course.'); topic(c.topicId, c.courseId!); } }
-  return data;
+  for (const run of state.practiceRuns) {
+    if (!courseIds.has(run.courseId) || !run.questionIds.length || run.questionIds.length > 50 || new Set(run.questionIds).size !== run.questionIds.length || run.index >= run.questionIds.length) fail('An unfinished practice run has an invalid course or question order.');
+    for (const id of [...run.questionIds, ...run.checkedIds, ...run.hintedIds, ...run.revisitIds]) if (!run.questionIds.includes(id) || questions.get(id)?.courseId !== run.courseId) fail('An unfinished practice run references a missing or foreign question.');
+    for (const [id, answer] of Object.entries(run.answers)) if (!run.questionIds.includes(id) || !validResponse(questions.get(id)!, answer)) fail('An unfinished practice answer does not match its question.');
+  }
+  for (const revision of archive?.feedbackHistory ?? []) {
+    const attempt = state.attempts.find(a => a.id === revision.attemptId);
+    if (!attempt?.questions.some(q => q.questionId === revision.questionId) || revision.grading.points?.some(p => p.awarded > p.max)) fail('A feedback revision does not match its saved attempt.');
+  }
+  return { ...data, materialHistory: archive?.materialHistory, feedbackHistory: archive?.feedbackHistory };
 }
 function reviewFor(id: string, data: LocalTransfer): ImportReview {
   const st = data.state;
   const unsupported: string[] = [];
-  for (const [label, records] of [['Unfinished practice', st.practiceRuns]] as const) if (records.length) unsupported.push(`${label}: ${records.length} records stay in the recovery original and will not appear as online activity.`);
+  if (st.practiceRuns.length) unsupported.push(`${st.practiceRuns.length} unfinished practice runs will be restored with their saved responses and assistance flags. Local checked grades and second-pass bookkeeping remain in the original. New grading uses server rules.`);
   unsupported.push(`${st.tutorSessions.length} tutor histories, ${st.examConfigs.length} rehearsal configurations, ${st.assessments.length} assessments, ${st.sessions.length} planner sessions and ${st.checkIns.length} check-ins will also be imported. Tutor provenance and historical planner completion are labelled as imported activity. Extra local tutor actions remain in the recovery original.`);
   if (st.activeExam) unsupported.push('An unfinished local exam cannot establish a server timer. It stays in the recovery original.');
   if (Object.keys(st.drafts ?? {}).length) unsupported.push('Local UI drafts stay in the recovery original.');
@@ -78,7 +89,9 @@ export async function prepareImport(db: SocketDb, workspaceId: string, input: un
   const data = validate(input); const fingerprint = await hash(JSON.stringify(input));
   return transaction(db, async tx => {
     const id = crypto.randomUUID();
-    await tx.insert(s.workspaceImports).values({ id, workspaceId, fingerprint, original: input, review: reviewFor(id, data) }).onConflictDoNothing();
+    const review = reviewFor(id, data);
+    if (data.materialHistory) review.unsupported.push('Account archive restoration preserves exact readable versions and recorded feedback revisions. Provider operations, spending records, source-file bytes, reminder state and preferences remain in the recovery original. Active timed exams cannot be resumed from an archive. Restored history is labelled imported.');
+    await tx.insert(s.workspaceImports).values({ id, workspaceId, fingerprint, original: input, review }).onConflictDoNothing();
     const [row] = await tx.select().from(s.workspaceImports).where(and(eq(s.workspaceImports.workspaceId, workspaceId), eq(s.workspaceImports.fingerprint, fingerprint))); return row!.review;
   });
 }
@@ -89,7 +102,7 @@ export async function commitImport(db: SocketDb, workspaceId: string, id: string
   return operation(db, workspaceId, operationId, { action: 'commit-import', id }, async tx => {
     const [row] = await tx.select().from(s.workspaceImports).where(and(eq(s.workspaceImports.workspaceId, workspaceId), eq(s.workspaceImports.id, id))).for('update'); if (!row) throw notFound();
     if (row.review.state === 'complete') return row.review;
-    const state = validate(row.original).state;
+    const data = validate(row.original); const state = data.state;
     const map = new Map<string, string>(); const remap = (kind: string, old: string) => { const key = `${kind}:${old}`; if (!map.has(key)) map.set(key, crypto.randomUUID()); return map.get(key)!; };
     for (const c of state.courses) await tx.insert(s.courses).values({ ...c, id: remap('course', c.id), workspaceId, createFingerprint: row.fingerprint, createdAt: new Date(c.createdAt) });
     const allTopics = [...state.topics, ...state.retiredTopics];
@@ -101,14 +114,16 @@ export async function commitImport(db: SocketDb, workspaceId: string, id: string
       const materialId = remap('material', m.id), courseId = remap('course', m.courseId);
       await tx.insert(s.materials).values({ id: materialId, workspaceId, courseId, title: m.title, kind: m.kind === 'reading' ? 'reading' : 'notes', attribution: `${m.attribution ?? ''}${m.origin === 'authored' ? '\nImported fictional demo content.' : ''}`, archived: m.archived ?? false, createFingerprint: row.fingerprint, createdAt: new Date(m.addedAt) });
       let number = 0;
-      for (const group of [m.priorPassages, m.passages]) {
-        if (!group.length && number) continue;
+      const history = data.materialHistory?.filter(v => v.materialId === m.id);
+      const groups = history?.length ? history.map(v => ({ passages: v.passages, number: v.number, current: v.current, format: v.format, createdAt: v.createdAt, readable: v.contentStatus === 'readable' })) : [m.priorPassages, m.passages].map((passages, index) => ({ passages, number: index + 1, current: index === 1, format: 'md' as const, createdAt: m.updatedAt ?? m.addedAt, readable: m.origin !== 'preview' }));
+      for (const group of groups) {
+        if (!group.passages.length && number && !group.current) continue;
         const versionId = crypto.randomUUID(); number++;
-        await tx.insert(s.materialVersions).values({ id: versionId, workspaceId, courseId, materialId, number, requestId: crypto.randomUUID(), fingerprint: row.fingerprint, origin: 'paste', contentStatus: m.origin === 'preview' ? 'not_extracted' : 'readable', format: 'md', createdAt: new Date(m.updatedAt ?? m.addedAt) });
-        if (group.length && m.origin !== 'preview') {
-          await tx.insert(s.passages).values(group.map((p, order) => { const passageId = remap('passage', `${m.id}:${p.id}`); sources.set(`${m.id}:${p.id}`, { materialId, versionId, passageId }); return { id: passageId, workspaceId, courseId, materialId, versionId, heading: p.heading, text: p.text, order }; }));
+        await tx.insert(s.materialVersions).values({ id: versionId, workspaceId, courseId, materialId, number: history?.length ? group.number : number, requestId: crypto.randomUUID(), fingerprint: row.fingerprint, origin: 'paste', contentStatus: group.readable ? 'readable' : 'not_extracted', format: group.format ?? 'md', createdAt: new Date(group.createdAt) });
+        if (group.passages.length && group.readable) {
+          await tx.insert(s.passages).values(group.passages.map((p, order) => { const passageId = remap('passage', `${m.id}:${p.id}`); sources.set(`${m.id}:${p.id}`, { materialId, versionId, passageId }); return { id: passageId, workspaceId, courseId, materialId, versionId, heading: p.heading, text: p.text, order }; }));
         }
-        await tx.update(s.materials).set({ currentVersionId: versionId }).where(eq(s.materials.id, materialId));
+        if (group.current) await tx.update(s.materials).set({ currentVersionId: versionId }).where(eq(s.materials.id, materialId));
       }
       const links = m.topicIds.filter(id => topicIds.has(id)).map(id => ({ workspaceId, courseId, materialId, topicId: remap('topic', id) })); if (links.length) await tx.insert(s.materialTopicLinks).values(links);
     }
@@ -148,6 +163,17 @@ export async function commitImport(db: SocketDb, workspaceId: string, id: string
       if (questions.length) await tx.insert(s.setItems).values(questions.map((q, position) => ({ id: crypto.randomUUID(), workspaceId, courseId, setId: id, questionId: questionMap.get(q)!.id, position })));
     }
     for (const set of state.savedPractice) await saveSet(remap('set', set.id), remap('course', set.courseId), set.name, set.questionIds, set.config.feedback, set.config.hintsAllowed, set.archived);
+    for (const run of state.practiceRuns) {
+      const courseId = remap('course', run.courseId), setId = crypto.randomUUID(), runId = remap('run', run.id);
+      const title = `Recovered practice: ${state.savedPractice.find(s => s.id === run.setId)?.name ?? 'Unfinished practice'}`;
+      await saveSet(setId, courseId, title, run.questionIds, run.feedback, run.hintsAllowed);
+      await tx.insert(s.learningRuns).values({ id: runId, workspaceId, courseId, setId, title, position: run.index, startedAt: new Date(run.startedAt) });
+      const items = await tx.select().from(s.setItems).where(eq(s.setItems.setId, setId));
+      for (const [oldId, response] of Object.entries(run.answers)) {
+        const item = items.find(i => i.questionId === remap('question', oldId))!;
+        await tx.insert(s.runAnswers).values({ workspaceId, courseId, setId, runId, itemId: item.id, response, hinted: run.hintedIds.includes(oldId), revealed: response.kind === 'self-rating', checked: response.kind === 'self-rating' });
+      }
+    }
     for (const a of state.attempts) {
       if (!a.completedAt) continue;
       const courseId = remap('course', a.courseId), runId = crypto.randomUUID(), setId = crypto.randomUUID(), attemptId = remap('attempt', a.id);
@@ -157,6 +183,12 @@ export async function commitImport(db: SocketDb, workspaceId: string, id: string
       const snapshot: LearningAttempt = { id: attemptId, courseId, runId, title: a.title, startedAt: a.startedAt, completedAt: a.completedAt, markingVersion: 'imported-recorded', questions, ...attemptTotals(questions.map(q => q.result)), imported, finish: a.finish };
       await tx.insert(s.learningRuns).values({ id: runId, workspaceId, courseId, setId, title: a.title, state: 'submitted', startedAt: new Date(a.startedAt), completedAt: new Date(a.completedAt) });
       await tx.insert(s.learningAttempts).values({ id: attemptId, workspaceId, courseId, runId, setId, snapshot });
+    }
+    for (const revision of data.feedbackHistory ?? []) {
+      const original = state.attempts.find(a => a.id === revision.attemptId)!;
+      const operationId = crypto.randomUUID(), courseId = remap('course', original.courseId), attemptId = remap('attempt', original.id);
+      await tx.insert(s.aiOperations).values({ id: operationId, workspaceId, courseId, task: 'grade', targetId: attemptId, fingerprint: row.fingerprint, input: {}, state: 'complete', model: revision.grading.model ?? 'imported', promptVersion: 'imported-recorded', reason: 'Restored feedback history. No provider request was executed.' });
+      await tx.insert(s.feedbackRevisions).values({ id: crypto.randomUUID(), workspaceId, courseId, attemptId, questionId: remap('question', revision.questionId), operationId, revision: revision.revision, grading: revision.grading, createdAt: new Date(revision.createdAt) });
     }
     const review: ImportReview = { ...row.review, state: 'complete', courseIds: state.courses.map(c => remap('course', c.id)) };
     await tx.update(s.workspaceImports).set({ review }).where(eq(s.workspaceImports.id, id)); await bumpPlanner(tx, workspaceId); return review;

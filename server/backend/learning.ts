@@ -148,6 +148,7 @@ async function saveBatch(tx: Transaction, run: typeof learningRuns.$inferSelect,
     if (!item) throw notFound();
     if (!validResponse(item.question, entry.response)) throw new ApiError(400, 'invalid_response', 'The answer does not match this question.');
     if (run.exam) {
+      if (run.deadlineAt && run.deadlineAt.getTime() <= Date.now()) throw new ApiError(409, 'run_expired', 'The server deadline has passed. Keep rejected answers as recovery drafts.');
       const runtime = { ...run.exam, answers: {} }; const loc = locate(runtime, item.question.id);
       const section = loc && runtime.configSnapshot.sections[loc.sectionIndex];
       const entered = section && (runtime.activatedSectionIds?.includes(section.id) ?? (loc.sectionIndex === runtime.currentSectionIndex || !!runtime.sectionDeadlines[section.id]));
@@ -170,7 +171,7 @@ export async function writeRun(db: SocketDb, workspaceId: string, id: string, in
   return operation(db, workspaceId, input.operationId, { action: submit ? 'submit' : 'save-answers', id, input }, async tx => {
     const run = await reconcileRun(tx, await ownRun(tx, workspaceId, id));
     if (run.state === 'submitted') {
-      if (submit) return runView(tx, workspaceId, id);
+      if (submit && !input.answers.length) return runView(tx, workspaceId, id);
       throw new ApiError(409, 'run_submitted', 'This run is submitted. Open its result.');
     }
     if (run.revision !== input.expectedRevision) throw conflict();

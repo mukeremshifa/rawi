@@ -51,7 +51,7 @@ api.use('*', async (c, next) => {
   await next();
   console.log(JSON.stringify({ requestId: c.get('requestId'), method: c.req.method, status: c.res.status, durationMs: Date.now() - start }));
 });
-api.use('*', bodyLimit({ maxSize: 7 * 1024 * 1024, onError: () => { throw new ApiError(400, 'invalid_input', 'The request is too large.'); } }));
+api.use('*', bodyLimit({ maxSize: 21 * 1024 * 1024, onError: () => { throw new ApiError(400, 'invalid_input', 'The request is too large.'); } }));
 api.get('/status', c => {
   const missing = configurationProblems(c.env);
   return c.json({ mode: 'online', configured: missing.length === 0, missing });
@@ -63,7 +63,7 @@ configured.use('*', async (c, next) => {
   const known = c.req.path.startsWith('/api/auth/') || /^\/api\/v1\/(ai\/status|ai\/operations\/[^/]+(?:\/cancel)?|me|preferences|search|notifications|export|imports\/review|imports\/[^/]+\/(commit|original)|planner|progress|planner\/(availability|sessions|proposals|check-ins)|planner\/proposals\/[^/]+\/apply|courses(?:\/[^/]+(?:\/(topics|materials|uploads|generate|questions|sets|runs|attempts|exams|assessments|tutor))?)?|materials\/[^/]+(?:\/versions(?:\/[^/]+(?:\/(download|passages\/[^/]+))?)?)?|uploads\/[^/]+(?:\/finalize)?|sets\/[^/]+(?:\/runs)?|runs\/[^/]+(?:\/(answers|submit|transition|exam-transition|revisit))?|attempts\/[^/]+(?:\/feedback)?|exams\/[^/]+(?:\/runs)?|tutor\/[^/]+(?:\/(messages|end))?)$/.test(c.req.path);
   if (!known) throw notFound();
   const missing = configurationProblems(c.env);
-  if (missing.length) throw new ApiError(503, 'not_configured', `Online mode is not configured: ${missing.join(', ')}.`);
+  if (missing.length) throw new ApiError(503, 'not_configured', `The backend is not configured: ${missing.join(', ')}.`);
   const connection = socketDb(c.env.DATABASE_URL!);
   try {
     c.set('socket', connection.db);
@@ -193,6 +193,6 @@ api.notFound(() => { throw notFound(); });
 api.onError((error, c) => {
   const safe = error instanceof ApiError ? error : error instanceof z.ZodError
     ? new ApiError(400, 'invalid_input', 'Some fields are invalid. Check required text, IDs, links, timezone and revision.')
-    : new ApiError(503, 'unavailable', 'The online workspace is temporarily unavailable. Your unsent changes are still in this page.');
+    : new ApiError(503, 'unavailable', 'The workspace is temporarily unavailable. Check the recovery status of your unsent changes before leaving.');
   return c.json({ error: { code: safe.code, message: safe.message, requestId: c.get('requestId') } }, safe.status);
 });
