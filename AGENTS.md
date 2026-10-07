@@ -1,13 +1,16 @@
 # Working on Rawi
 
-Read README.md and the code relevant to the task. This is a local prototype
-for an AI tutor and mentor; architecture and product behavior can evolve.
+Read README.md, SINGLE_APP_IMPLEMENTATION_BRIEF.md, and the code relevant to the
+task. Rawi is becoming one full-stack learning app with bounded offline access.
+The active brief replaces earlier requirements to preserve separate local and
+online modes. Architecture and product behavior can evolve.
 
 - Keep development runnable with `npm install` and `npm run dev`.
-- Use dummy local data until the owner chooses a backend/deployment checkpoint.
+- Use the designated development backend. Sample courses belong in an explicit
+  development seed, never automatic app data or a fallback workspace.
 - Keep changes focused and explain the main tradeoff. Avoid speculative infrastructure.
 - Do not add tests, CI, environment setup, or approval gates unless requested.
-- Check affected behavior in the dev server; report what was actually checked.
+- Check affected behavior in the dev server and report what was actually checked.
 - Keep documentation minimal and commit coherent changes.
 
 ## Punctuation in first-party prose

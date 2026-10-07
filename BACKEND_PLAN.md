@@ -2,11 +2,11 @@
 
 Updated 4 October 2026. README.md is authoritative for the chosen stack. This document replaces the earlier provisional architecture. BACKEND_IMPLEMENTATION_BRIEF.md defines the first executable checkpoint.
 
-Execution update, 7 October 2026: [FULLSTACK_IMPLEMENTATION_BRIEF.md](FULLSTACK_IMPLEMENTATION_BRIEF.md) is the active brief for the coordinated application migration. It supersedes the limited checkpoint 3 practice slice and combines the remaining learning-persistence and AI application work into internal milestones. Infrastructure decisions and provisioning remain outside that assignment.
+Execution update, 7 October 2026: [SINGLE_APP_IMPLEMENTATION_BRIEF.md](SINGLE_APP_IMPLEMENTATION_BRIEF.md) is the active brief. Deliver one full-stack app with bounded offline reading and draft recovery. Retire the separate local runtime and move fictional content into an explicit development seed. Infrastructure decisions and provisioning remain outside that assignment.
 
 ## 1. Product boundaries
 
-Rawi is a personal learning SaaS with individual subscriptions and institutional sponsorship. Learners own independent workspaces and can study any subject. Organizations administer access without automatically gaining access to private study content. Institutional integrations and offline synchronization are later work.
+Rawi is a personal learning SaaS with individual subscriptions and institutional sponsorship. Learners own independent workspaces and can study any subject. Organizations administer access without automatically gaining access to private study content. Institutional integrations and general offline write synchronization are later work. Bounded offline reading and draft recovery belong to the same app, without separate local and online modes.
 
 The initial audience is 1,000 users in the Middle East. Measure latency from UAE networks. This does not imply 1,000 simultaneous generations or UAE data residency.
 
@@ -118,13 +118,13 @@ Preserve PDF pages, slide locations, and Word paragraph or section anchors. Sepa
 
 ## 9. Client migration
 
-Keep npm install and npm run dev usable. Preserve explicit local mode during migration. Online failures never fall back to demo storage. Signing in does not automatically merge local work into an account.
+Keep npm install and npm run dev usable for one full-stack development path. Retire the local runtime, mode switch, and automatic demo seeding. Backend failures never fall back to sample storage. Signing in does not automatically merge legacy browser work into an account.
 
-Checkpoint 1 offers a selectable online foundation for courses, topics, and preferences. Other online areas show an unavailable state until migrated. Existing prototype features remain usable in local mode. Avoid silently mixing local activity with cloud records.
+Use one router and application shell backed by authenticated services. Redirect previous /online links to canonical product routes. Preserve the existing product UI and complete missing controls rather than maintaining a reduced second application. New accounts start empty. Fictional data is loaded only by an explicit development seed.
 
-Migrate each feature to a server cache plus local UI state. Show loading, saving, saved, conflict, and failed states. Preserve unsent text through brief connection failures without building general offline synchronization.
+Use bounded account-scoped caches for offline reading and recoverable drafts, with the server remaining authoritative. Show freshness, saving, saved-on-device, saved-to-account, conflict, and unavailable states accurately. Reconnect through session validation and revision review. Mutations, AI, and exam decisions require server authorization. Do not mirror the entire workspace or build general offline synchronization.
 
-A later explicit import validates versioned exports, remaps references, preserves source and legacy provenance, and deduplicates repeated imports. Stage large imports before publishing. Retain unsupported records as downloads and preserve browser originals until verified. Never silently import a course while dropping its history.
+An explicit recovery/import flow validates versioned exports, remaps references, preserves source and legacy provenance, and deduplicates repeated imports. Stage large imports before publishing. Retain unsupported records as downloads and preserve user-created browser originals until verified or explicitly discarded. Recovery does not retain a separate local application.
 
 ## 10. Delivery checkpoints
 
@@ -140,7 +140,7 @@ A later explicit import validates versioned exports, remaps references, preserve
 
 Budget enforcement precedes hosted provider calls even though billing arrives later. Ownership stays independent of payment from checkpoint 1 without requiring billing implementation then.
 
-Use FULLSTACK_IMPLEMENTATION_BRIEF.md to execute the remaining application migration, including the checkpoint 2 material-editor fix, learning persistence, and AI application integration. The checkpoint table remains the roadmap for capability and release evidence. The full-stack brief coordinates work across those boundaries without claiming infrastructure-dependent features or release readiness are complete. BACKEND_IMPLEMENTATION_BRIEF_03.md is superseded.
+Use SINGLE_APP_IMPLEMENTATION_BRIEF.md to execute the remaining application work and review fixes. The checkpoint table remains a historical roadmap for capability and release evidence, including the earlier local-mode preservation milestone. Current delivery removes that split. Neither the old briefs nor the new brief imply infrastructure-dependent features or release readiness are complete.
 
 ## 11. Operations and remaining decisions
 

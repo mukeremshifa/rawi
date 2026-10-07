@@ -1,5 +1,10 @@
 # Full-stack migration handoff
 
+Next assignment: [SINGLE_APP_IMPLEMENTATION_BRIEF.md](SINGLE_APP_IMPLEMENTATION_BRIEF.md).
+The owner now requires one full-stack app with bounded offline access and no
+separate local mode. The status and checks below record the preceding migration.
+Retain them as historical evidence while updating this handoff for the new work.
+
 
 Current status: the full brief is not complete. Authenticated persistence and
 recovery are implemented for materials, nine-format practice, second passes,

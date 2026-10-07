@@ -5,6 +5,14 @@ readings, tutoring, practice and exam rehearsal, planned across all of them.
 
 Requires Node.js 22.12+ and npm.
 
+Architecture decision, 7 October 2026: the next implementation consolidates Rawi
+into one full-stack app, with bounded offline reading and draft recovery in the
+same screens. Separate local/online modes will be removed, and fictional courses
+will become an explicit development seed. Use
+[SINGLE_APP_IMPLEMENTATION_BRIEF.md](SINGLE_APP_IMPLEMENTATION_BRIEF.md).
+The commands and mode descriptions below describe the current implementation
+until that migration lands, not a requirement to preserve the split.
+
 ```sh
 npm install
 npm run dev
