@@ -37,7 +37,7 @@ export async function viewOperation(db: ReadDb | Transaction, workspaceId: strin
 }
 export async function prepareGeneration(db: SocketDb, workspaceId: string, courseId: string, input: z.infer<typeof generateInput>) {
   return operation(db, workspaceId, input.operationId, { action: 'generate', courseId, input }, async tx => {
-    const data = await planningData(tx, workspaceId); const course = data.courses.find(c => c.id === courseId); if (!course) throw notFound();
+    const data = await planningData(tx, workspaceId, { passageCourseId: courseId }); const course = data.courses.find(c => c.id === courseId); if (!course) throw notFound();
     const topics = input.topicIds.map(id => { const t = data.topics.find(t => t.id === id && t.courseId === courseId); if (!t) throw notFound(); return { id: t.id, title: t.title, summary: t.summary }; });
     const selected = input.materialIds.map(id => { const m = data.materials.find(m => m.id === id && m.courseId === courseId); if (!m) throw notFound(); return m; });
     const context = selectPassages({ courseId, materials: selected, topicIds: input.topicIds, query: topics.map(t => t.title).join(' ') });

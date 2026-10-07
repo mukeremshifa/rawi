@@ -32,7 +32,7 @@ export const account = pgTable('account', {
   accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }),
   refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
   scope: text('scope'), password: text('password'), ...timestamps(),
-}, t => [index('account_user_idx').on(t.userId)]);
+}, t => [index('account_user_idx').on(t.userId), unique('account_provider_identity_unique').on(t.providerId, t.accountId)]);
 export const verification = pgTable('verification', {
   id: text('id').primaryKey(), identifier: text('identifier').notNull(), value: text('value').notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(), ...timestamps(),
@@ -189,6 +189,7 @@ export const learningRuns = pgTable('learning_runs', {
   state: text('state').$type<'active' | 'submitted'>().notNull().default('active'), revision: integer('revision').notNull().default(1), position: integer('position').notNull().default(0),
   startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(), completedAt: timestamp('completed_at', { withTimezone: true }),
   plannedSessionId: uuid('planned_session_id'),
+  sampleDataset: text('sample_dataset'),
   flashcardReview: jsonb('flashcard_review').$type<FlashcardReview>(),
   exam: jsonb('exam').$type<ExamRuntime>(), deadlineAt: timestamp('deadline_at', { withTimezone: true }),
 }, t => [unique('runs_scope_unique').on(t.workspaceId, t.courseId, t.setId, t.id),
@@ -205,7 +206,7 @@ export const learningAttempts = pgTable('learning_attempts', {
   id: uuid('id').primaryKey(), ...materialScope(), runId: uuid('run_id').notNull().unique(), setId: uuid('set_id').notNull(),
   snapshot: jsonb('snapshot').$type<LearningAttempt>().notNull(), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [unique('attempts_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ columns: [t.workspaceId, t.courseId, t.setId, t.runId], foreignColumns: [learningRuns.workspaceId, learningRuns.courseId, learningRuns.setId, learningRuns.id] }),
-  index('attempts_course_idx').on(t.workspaceId, t.courseId, t.id)]);
+  index('attempts_course_idx').on(t.workspaceId, t.courseId, t.id), index('attempts_chronology_idx').on(t.workspaceId, t.courseId, sql`(${t.snapshot}->>'completedAt')`, t.id)]);
 export const learningOperations = pgTable('learning_operations', {
   workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id), id: uuid('id').notNull(),
   fingerprint: text('fingerprint').notNull(), result: jsonb('result').$type<unknown>().notNull(),
@@ -221,13 +222,18 @@ export const plannerState = pgTable('planner_state', {
 });
 export const assessments = pgTable('assessments', {
   id: uuid('id').primaryKey(), ...materialScope(), date: date('date', { mode: 'string' }).notNull(), content: jsonb('content').$type<PlannedAssessment>().notNull(), revision: integer('revision').notNull().default(1),
-}, t => [foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('assessments_scope_idx').on(t.workspaceId, t.courseId)]);
+}, t => [foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('assessments_scope_idx').on(t.workspaceId, t.courseId), unique('assessments_scope_unique').on(t.workspaceId, t.courseId, t.id)]);
 export const plannedSessions = pgTable('planned_sessions', {
+  assessmentId: uuid('assessment_id').generatedAlwaysAs(sql`(content->>'assessmentId')::uuid`),
+  status: text('status').generatedAlwaysAs(sql`content->>'status'`),
+  activity: text('activity').generatedAlwaysAs(sql`content->>'activity'`),
   id: uuid('id').primaryKey(), ...materialScope(), date: date('date', { mode: 'string' }).notNull(), content: jsonb('content').$type<PlannedSession>().notNull(), revision: integer('revision').notNull().default(1),
-}, t => [unique('planned_sessions_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('planned_sessions_scope_idx').on(t.workspaceId, t.courseId)]);
+}, t => [unique('planned_sessions_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('planned_sessions_scope_idx').on(t.workspaceId, t.courseId), foreignKey({ name: 'planned_assessment_scope_fk', columns: [t.workspaceId, t.courseId, t.assessmentId], foreignColumns: [assessments.workspaceId, assessments.courseId, assessments.id] })]);
 export const checkIns = pgTable('check_ins', {
+  courseId: uuid('course_id').generatedAlwaysAs(sql`(content->>'courseId')::uuid`),
+  at: text('at').generatedAlwaysAs(sql`content->>'at'`),
   id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id), content: jsonb('content').$type<CheckIn>().notNull(),
-}, t => [index('check_ins_scope_idx').on(t.workspaceId)]);
+}, t => [index('check_ins_scope_idx').on(t.workspaceId), foreignKey({ name: 'check_in_course_scope_fk', columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] })]);
 export const planProposals = pgTable('plan_proposals', {
   id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id), baseRevision: integer('base_revision').notNull(),
   proposal: jsonb('proposal').$type<PlanProposal>().notNull(), fingerprint: text('fingerprint').notNull(), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -237,8 +243,9 @@ export const tutorSessions = pgTable('tutor_sessions', {
   archived: boolean('archived').notNull().default(false), revision: integer('revision').notNull().default(1), stage: text('stage').$type<OnlineTutorSession['stage']>().notNull().default('orient'),
   source: jsonb('source').$type<OnlineTutorSession['source']>(), review: jsonb('review').$type<OnlineTutorSession['review']>(), ...timestamps(),
   plannedSessionId: uuid('planned_session_id'), completedLearning: boolean('completed_learning').notNull().default(false),
+  sampleDataset: text('sample_dataset'),
   imported: boolean('imported').notNull().default(false), endedAt: timestamp('ended_at', { withTimezone: true }),
-}, t => [unique('tutor_sessions_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ name: 'tutor_planner_scope_fk', columns: [t.workspaceId, t.courseId, t.plannedSessionId], foreignColumns: [plannedSessions.workspaceId, plannedSessions.courseId, plannedSessions.id] }), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('tutor_sessions_scope_idx').on(t.workspaceId, t.courseId, t.id)]);
+}, t => [unique('tutor_sessions_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ name: 'tutor_planner_scope_fk', columns: [t.workspaceId, t.courseId, t.plannedSessionId], foreignColumns: [plannedSessions.workspaceId, plannedSessions.courseId, plannedSessions.id] }), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('tutor_sessions_scope_idx').on(t.workspaceId, t.courseId, t.id), index('tutor_chronology_idx').on(t.workspaceId, t.courseId, t.createdAt, t.id)]);
 export const tutorMessages = pgTable('tutor_messages', {
   id: uuid('id').primaryKey(), ...materialScope(), sessionId: uuid('session_id').notNull(), ordinal: integer('ordinal').notNull(),
   text: text('text').notNull(), role: text('role').$type<'student' | 'tutor'>().notNull(), state: text('state').$type<OnlineTutorMessage['state']>().notNull(),
@@ -268,6 +275,20 @@ export const aiExecutions = pgTable('ai_executions', {
 }, t => [foreignKey({ columns: [t.workspaceId, t.operationId], foreignColumns: [aiOperations.workspaceId, aiOperations.id] }), index('ai_executions_budget_idx').on(t.state, t.createdAt), check('ai_reservation_nonnegative', sql`${t.reservedMicros} >= 0 AND (${t.chargedMicros} IS NULL OR ${t.chargedMicros} >= 0)`)]);
 export const feedbackRevisions = pgTable('feedback_revisions', {
   id: uuid('id').primaryKey(), ...materialScope(), attemptId: uuid('attempt_id').notNull().references(() => learningAttempts.id), questionId: uuid('question_id').notNull(),
-  operationId: uuid('operation_id').notNull().unique(), revision: integer('revision').notNull(), grading: jsonb('grading').$type<WrittenGrading>().notNull(),
+  operationId: uuid('operation_id').unique(), sampleDataset: text('sample_dataset'), revision: integer('revision').notNull(), grading: jsonb('grading').$type<WrittenGrading>().notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [unique('feedback_revision_unique').on(t.attemptId, t.questionId, t.revision), foreignKey({ name: 'feedback_attempt_scope_fk', columns: [t.workspaceId, t.courseId, t.attemptId], foreignColumns: [learningAttempts.workspaceId, learningAttempts.courseId, learningAttempts.id] }), foreignKey({ columns: [t.workspaceId, t.operationId], foreignColumns: [aiOperations.workspaceId, aiOperations.id] }), foreignKey({ columns: [t.workspaceId, t.courseId, t.questionId], foreignColumns: [questionVersions.workspaceId, questionVersions.courseId, questionVersions.id] })]);
+
+// Explicit development provenance, never used by startup or authentication.
+export const developmentSeeds = pgTable('development_seeds', {
+  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id),
+  version: text('version').notNull(), anchorDate: date('anchor_date', { mode: 'string' }).notNull(),
+  timezone: text('timezone').notNull(), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, t => [primaryKey({ columns: [t.workspaceId, t.version] })]);
+export const developmentSeedRecords = pgTable('development_seed_records', {
+  workspaceId: uuid('workspace_id').notNull(), version: text('version').notNull(), key: text('key').notNull(),
+  entityType: text('entity_type').notNull(), entityId: uuid('entity_id').notNull(),
+  baseline: text('baseline').notNull(), result: jsonb('result').$type<unknown>().notNull(),
+}, t => [primaryKey({ columns: [t.workspaceId, t.version, t.key] }),
+  foreignKey({ columns: [t.workspaceId, t.version], foreignColumns: [developmentSeeds.workspaceId, developmentSeeds.version] }),
+  index('seed_records_entity_idx').on(t.workspaceId, t.entityType, t.entityId)]);

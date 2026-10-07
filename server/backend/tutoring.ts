@@ -25,7 +25,9 @@ async function ownSession(db: Db, workspaceId: string, id: string, lock = false)
 }
 export async function listSessions(db: Db, workspaceId: string, courseId: string, limit: number, cursor?: string) {
   await getCourse(db, workspaceId, courseId);
-  const rows = await db.select().from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.courseId, courseId), cursor ? gt(tutorSessions.id, cursor) : undefined)).orderBy(asc(tutorSessions.id)).limit(limit + 1);
+  const [pivot] = cursor ? await db.select({ at: sql<string>`${tutorSessions.createdAt}::text` }).from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.courseId, courseId), eq(tutorSessions.id, cursor))) : [];
+  if (cursor && !pivot) throw notFound();
+  const rows = await db.select().from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.courseId, courseId), pivot ? sql`(${tutorSessions.createdAt}, ${tutorSessions.id}) < (${pivot.at}::timestamptz, ${cursor}::uuid)` : undefined)).orderBy(desc(tutorSessions.createdAt), desc(tutorSessions.id)).limit(limit + 1);
   return { sessions: rows.slice(0, limit).map(({ workspaceId: _w, ...row }) => row), nextCursor: rows.length > limit ? rows[limit - 1]!.id : null };
 }
 export async function detail(db: Db, workspaceId: string, id: string, cursor = -1) {
@@ -57,7 +59,7 @@ export async function createSession(db: SocketDb, workspaceId: string, courseId:
 }
 /** Snapshot only owned, bounded context. Historical focus versions take precedence. */
 async function prepareTurn(tx: Transaction, workspaceId: string, session: Awaited<ReturnType<typeof ownSession>>, input: z.infer<typeof tutorMessageInput>) {
-  const data = await planningData(tx, workspaceId);
+  const data = await planningData(tx, workspaceId, { passageCourseId: session.courseId });
   const course = data.courses.find(c => c.id === session.courseId); if (!course) throw notFound();
   const topic = data.topics.find(t => t.id === session.topicId);
   const focus = session.source;

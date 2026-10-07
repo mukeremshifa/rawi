@@ -1,5 +1,5 @@
 import { transaction } from './db';
-import { and, asc, eq, gt, inArray, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { createSetInput, metadataInput, questionInput, runWriteInput, transitionInput, writeInput, validResponse, sameAnswer, type VersionedQuestion, type LearningRun, type LearningAttempt } from '../../src/shared/learning';
 import { attemptTotals, toQuestionAttempt } from '../../src/shared/marking';
@@ -221,7 +221,10 @@ export async function revisitFlashcards(db: SocketDb, workspaceId: string, id: s
 }
 export async function history(db: Db, workspaceId: string, courseId: string, limit: number, cursor?: string) {
   await getCourse(db, workspaceId, courseId);
-  const rows = await db.select({ id: learningAttempts.id, snapshot: learningAttempts.snapshot }).from(learningAttempts).where(and(eq(learningAttempts.workspaceId, workspaceId), eq(learningAttempts.courseId, courseId), cursor ? gt(learningAttempts.id, cursor) : undefined)).orderBy(asc(learningAttempts.id)).limit(limit + 1);
+  const completed = sql<string>`${learningAttempts.snapshot}->>'completedAt'`;
+  const [pivot] = cursor ? await db.select({ at: completed }).from(learningAttempts).where(and(eq(learningAttempts.workspaceId, workspaceId), eq(learningAttempts.courseId, courseId), eq(learningAttempts.id, cursor))) : [];
+  if (cursor && !pivot) throw notFound();
+  const rows = await db.select({ id: learningAttempts.id, snapshot: learningAttempts.snapshot }).from(learningAttempts).where(and(eq(learningAttempts.workspaceId, workspaceId), eq(learningAttempts.courseId, courseId), pivot ? sql`(${completed}, ${learningAttempts.id}) < (${pivot.at}, ${cursor}::uuid)` : undefined)).orderBy(desc(completed), desc(learningAttempts.id)).limit(limit + 1);
   const current = await withFeedback(db, workspaceId, rows.slice(0, limit).map(r => r.snapshot));
   return { attempts: current.map(a => ({ id: a.id, title: a.title, completedAt: a.completedAt, marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable, pending: a.pending })), nextCursor: rows.length > limit ? rows[limit - 1]!.id : null };
 }
@@ -243,7 +246,7 @@ export async function finalizeRun(tx: Transaction, run: typeof learningRuns.$inf
   const answers = await tx.select().from(runAnswers).where(eq(runAnswers.runId, run.id));
   const questions = items.map(item => { const a = answers.find(a => a.itemId === item.id); return { question: item.question, result: toQuestionAttempt(item.question, a?.response ?? { kind: 'none' }, !!a?.hinted) }; });
   const set = await ownSet(tx, run.workspaceId, run.setId);
-  const snapshot: LearningAttempt = { id: crypto.randomUUID(), runId: run.id, courseId: run.courseId, title: run.title, startedAt: run.startedAt.toISOString(), completedAt: completedAt.toISOString(), markingVersion: 'objective-v1', flashcardReview: run.flashcardReview, questions, ...attemptTotals(questions.map(q => q.result)), exam: run.exam, plannedSessionId: run.plannedSessionId ?? undefined, remediatesAttemptId: set.remediatesAttemptId ?? undefined, ...(run.exam ? { finish } : {}) };
+  const snapshot: LearningAttempt = { sampleDataset: run.sampleDataset ?? undefined, id: crypto.randomUUID(), runId: run.id, courseId: run.courseId, title: run.title, startedAt: run.startedAt.toISOString(), completedAt: completedAt.toISOString(), markingVersion: 'objective-v1', flashcardReview: run.flashcardReview, questions, ...attemptTotals(questions.map(q => q.result)), exam: run.exam, plannedSessionId: run.plannedSessionId ?? undefined, remediatesAttemptId: set.remediatesAttemptId ?? undefined, ...(run.exam ? { finish } : {}) };
   const [provenance] = await tx.select({ fingerprint: learningSets.fingerprint }).from(learningSets).where(and(eq(learningSets.workspaceId, run.workspaceId), eq(learningSets.id, run.setId)));
   // Only the restored run has uncertain earlier assistance. New runs start clean.
   if (provenance?.fingerprint.startsWith(`legacy-recovery:${run.id}:`)) {

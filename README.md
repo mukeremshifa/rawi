@@ -77,17 +77,30 @@ Text and Markdown are readable.
 
 ## Development seed
 
-Fictional course bodies live only in `dev/fixtures`. Seed an explicit existing
-development workspace, whose ID is returned by `/api/v1/me`:
+Fictional source fixtures live in `dev/fixtures`. Seed an explicit existing
+development account after applying the reviewed migrations:
 
 ```sh
-npm run db:seed -- --target EXISTING_DEVELOPMENT_WORKSPACE_ID
+npm run db:seed -- --email mukerem.dev@gmail.com
 ```
 
-Use `npm.cmd` in PowerShell if its npm shim consumes the argument separator.
-The command checks the designated development target and uses internal validated
-import utilities. Repeats preserve user edits and history. Those utilities have
-no public transfer endpoints. No fixtures ship in the browser or Worker bundle.
+PowerShell users should use `npm.cmd run db:seed -- --email mukerem.dev@gmail.com`
+if the npm shim consumes the argument separator. `--target WORKSPACE_ID` is also
+supported. Exactly one existing identity must resolve. Missing accounts must sign
+in once, the seed never creates Google identities or sessions.
 
+The current dataset is `rawi-account-v2`. Its persisted date anchor and learner
+timezone keep repeat runs on the same timeline. A scoped manifest preserves edits,
+archives and progress, and reports changed records. Legacy `rawi-fictional-v1`
+imports remain intact. The new sample lab is distinctly named and does not replay
+that import envelope. Untouched empty planner defaults can receive availability.
+
+The seed uses domain services and atomic validated historical writes. Four small
+originals use the designated R2 binding through the normal upload lifecycle.
+Authored tutor replies and written feedback carry Sample labels with no provider
+operations or charges. No fixtures or seed entry points ship in client or Worker
+bundles. Nothing seeds during startup, migration, onboarding or sign-in.
+
+[SCHEMA_REVIEW.md](SCHEMA_REVIEW.md) describes the final schema and recovery record.
 See [FULLSTACK_HANDOFF.md](FULLSTACK_HANDOFF.md) for actual checks, verification
 limits and remaining AI and extraction work.

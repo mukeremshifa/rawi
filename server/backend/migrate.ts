@@ -7,7 +7,9 @@ if (!url) {
   console.error('DATABASE_URL is missing. Configure the designated development database in .dev.vars.');
   process.exitCode = 1;
 } else {
-  const connection = socketDb(url);
+  const direct = new URL(url);
+  direct.hostname = direct.hostname.replace('-pooler.', '.');
+  const connection = socketDb(direct.toString());
   try {
     await migrate(connection.db, { migrationsFolder: './drizzle' });
     console.log('Development database migrations applied.');

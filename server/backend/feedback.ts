@@ -13,6 +13,7 @@ export async function withFeedback(db: ReadDb | Transaction, workspaceId: string
       return latest ? { ...item, result: applyGrading(item.question, item.result, latest.grading) } : item;
     });
     const totals = attemptTotals(questions.map(q => q.result));
-    return { ...original, questions, ...totals, ...(original.imported ? { imported: { ...original.imported, questions: questions.map(q => q.result), ...totals } } : {}), feedbackRevisions: revisions.filter(r => r.attemptId === original.id).map(({ workspaceId: _w, courseId: _c, ...r }) => r) };
+    const sampleTimingNotice = original.sampleDataset && original.finish === 'expired' && original.exam?.deadlineAt && original.completedAt < original.exam.deadlineAt ? 'Sample timing note: this early fixture ended before its configured deadline. A corrected expired example is also available in history.' : undefined;
+    return { ...original, sampleTimingNotice, questions, ...totals, ...(original.imported ? { imported: { ...original.imported, questions: questions.map(q => q.result), ...totals } } : {}), feedbackRevisions: revisions.filter(r => r.attemptId === original.id).map(({ workspaceId: _w, courseId: _c, ...r }) => r) };
   });
 }

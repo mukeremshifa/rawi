@@ -276,7 +276,7 @@ export interface QuestionAttempt {
 }
 
 export interface WrittenGrading {
-  method: 'ai';
+  method: 'ai' | 'sample';
   status: 'pending' | 'graded' | 'failed';
   model?: string;
   gradedAt?: string;

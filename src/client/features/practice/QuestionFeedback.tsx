@@ -101,7 +101,7 @@ export function QuestionFeedback({
 
       {written && attempt.grading?.status === 'graded' && (
         <SimulatedNotice>
-          {AI_MARKING_NOTICE} Marked by {attempt.grading.model ?? 'an AI model'}.
+          {attempt.grading.method === 'sample' ? 'Sample feedback. Authored to illustrate rubric review, with no model call or charge.' : `${AI_MARKING_NOTICE} Marked by ${attempt.grading.model ?? 'an AI model'}.`}
         </SimulatedNotice>
       )}
       {written && !attempt.grading && attempt.outcome !== 'skipped' && (

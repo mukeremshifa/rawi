@@ -1,9 +1,140 @@
-# Account app implementation handoff
+# Schema and account seed handoff
 
-Next assignment: [SCHEMA_AND_ACCOUNT_SEED_BRIEF.md](SCHEMA_AND_ACCOUNT_SEED_BRIEF.md).
-Audit and migrate the schema as needed, seed the named development account, and
-complete the outstanding browser/account checks below. No migration or account
-seed was executed while preparing that brief.
+Updated 7 October 2026. The schema audit, development migrations and named account
+seed are implemented and executed. Actual browser verification remains blocked
+by unavailable browser access. The earlier handoff below is historical.
+
+## Applied schema and preserved data
+
+[SCHEMA_REVIEW.md](SCHEMA_REVIEW.md) records the relationships, retained document
+fields, constraints, query changes and recovery details. Migrations 0014 through
+0016 were rehearsed and applied to the designated Neon development database.
+All 17 migration hashes and 596 catalog definitions match the rehearsal. A fresh
+database on the isolated rehearsal branch also applied the migration history.
+The ignored recovery backup is `.rawi/schema-account-before.dump`.
+
+Existing identities, provider links, sessions, preferences, courses, originals
+and learning histories were preserved. The owner's untouched empty planner
+default received sample availability. A separate verification workspace's planner
+revision advanced during manual checks. No substantive existing availability was
+overwritten. No deployment, provider call, credential change, test suite or CI was
+added. The existing development database and private R2 bucket remain selected.
+
+The main tradeoff is to retain immutable learning documents while enforcing their
+identity, membership and scope in PostgreSQL. Generated planner fields expose
+relationships without a second write authority. Calendar reads omit learning
+documents and passage text. History pagination is chronological with stable ties.
+Unsupported API methods now return JSON 404 rather than the SPA document.
+
+## Executed account seed
+
+Executed repeatedly, including a final successful repeat after all additions:
+
+```powershell
+npm.cmd run db:seed -- --email mukerem.dev@gmail.com
+```
+
+`npm.cmd` avoids the local PowerShell npm shim dropping forwarded arguments.
+The equivalent command in other shells is `npm run db:seed -- --email ...`.
+
+- Existing user: `Eqp7nRrtPo6wylC7mSv3IMUn988VYtbc`.
+- Personal workspace: `2009baaf-99b5-439a-b640-e408d01a0174`.
+- Dataset: `rawi-account-v2`, persisted anchor `2026-10-07`, existing timezone `UTC`.
+- Target: project `rawi`, database `neondb`, configured endpoint
+  `ep-sweet-poetry-b2w0sq3z`. Its existing branch is named `production`, but this is
+  the designated development backend. No backend switch occurred.
+
+| Feature | Final owner workspace count |
+| --- | --- |
+| Courses and topics | 1 preserved original course, 3 sample courses, 15 topics |
+| Materials | 18 materials, 21 immutable versions, 18 passages |
+| Originals | 4 real MD, PDF, DOCX and PPTX files, 5,807 bytes |
+| Questions and practice | 63 questions, all nine formats in both active samples, 7 practice sets |
+| Learning | 25 completed sample attempts, 2 untouched resumable practice runs |
+| Exams | 6 startable configurations across all three timing modes |
+| Tutor | 5 sessions, 30 messages, open, completed, archived and interrupted examples |
+| Feedback | 2 illustrative revisions on one unchanged written response |
+| Planning | 17 sessions, 4 check-ins, 2 assessments, availability and a dated exception |
+| Reminders | 1 read and 1 unread |
+| Provider operations | 0 in the target workspace |
+
+Two sample courses are active. The Arabic course and one sample note are archived.
+The manifest preserves edited records and stable keys. The final repeat kept the
+same counts, files and anchor, with zero pending uploads or reserved bytes. It
+reported and preserved the deliberately edited Arabic sample goal and an already
+completed planned session. Legacy v1 import records, if present, stay untouched.
+This target had none. Samples and the seed command are absent from release bundles.
+
+Two early expired fixtures ended five minutes before their configured deadline.
+Their immutable results are retained with a visible timing notice. Two corrected
+examples were appended, accounting for 25 attempts here versus 23 on a clean seed.
+Future seeds calculate the configured deadline correctly. No grades were rewritten.
+Authored feedback and tutor replies have explicit Sample labels and no fake model
+execution, token consumption or charges. Binary originals remain not extracted.
+
+## Owner walkthrough
+
+The dev server is left at [localhost:5173](http://localhost:5173). Sign in normally
+as the named account, then use these saved examples:
+
+- [Active history course](http://localhost:5173/course/4ca1b1d3-b653-53fe-a047-7efbd344178f)
+  and [mixed-language statistics](http://localhost:5173/course/5911186f-a2d6-57fd-aef2-d28885fcf164).
+- [Resume saved practice](http://localhost:5173/runs/fae4eb0b-33ac-5844-a159-70589f18c563).
+- [Result with feedback revisions](http://localhost:5173/attempts/ae78de17-03af-55cd-ac03-ec167becc52a).
+- [Saved-answer tutor discussion](http://localhost:5173/tutor/72d77132-f766-5b31-abde-99c80dca73db).
+- [Original Markdown and version reader](http://localhost:5173/materials/353dd724-ae3b-46c1-8539-336af0dd9e85/versions/4c6f4ce3-15bf-4acd-8849-c3fa2e666c61).
+- [Fresh rehearsal configurations](http://localhost:5173/course/4ca1b1d3-b653-53fe-a047-7efbd344178f/exams).
+- [Planner](http://localhost:5173/planner), including Open saved proposal. The latest
+  unapplied proposal has 9 sessions and 270 minutes. [Progress](http://localhost:5173/progress)
+  derives its totals from all saved activity.
+
+## Verification actually performed
+
+Live authenticated requests through the dev server read the exact owner workspace,
+all formats, chronological history pages, exact old passages, saved answers,
+feedback revisions, tutor examples, planner, progress and reminders. Four authorized
+original downloads matched their stored checksums. Owner reads reused an existing
+ordinary session, without creating or changing the owner's authentication.
+Final progress contained all 25 attempts, 39 pending responses after feedback and
+an eight-day streak. Both early timing notices and both corrected expiry examples
+were checked through the API. Tutor history pagination also passed.
+
+A separate disposable synthetic account verified concurrent empty-account bootstrap,
+onboarding, preferences across sessions, foreign-resource rejection and sign-out.
+It and its temporary sessions were removed. Real auth endpoints produced a Google
+authorization URL, handled cancellation and rejected an external return URL.
+
+Separate isolated learning fixtures exercised all nine response types, hints,
+flashcard reveal and second pass, idempotent autosave, concurrent submission to one
+attempt, submitted-write rejection and a fresh per-section rehearsal. Active exam
+payloads withheld keys, future-section answers were rejected, and navigation and
+whole-paper submission passed. Both material revision-conflict scenarios preserved
+old passages through API calls. Verification courses were archived and sessions
+revoked. The owner's resumable runs were not consumed.
+
+Rollback checks rejected 11 representative invalid or immutable writes. Before/after
+row hashes and scope checks passed with the planner exceptions noted above.
+`npm run typecheck`, `npm run build`, and Worker dry-run packaging passed. Vite still
+warns about its 816.87 kB JavaScript chunk, 244.08 kB gzipped. Worker packaging is
+3,264.36 KiB, 591.74 KiB gzipped. Nothing was deployed.
+
+## Remaining checks and capabilities
+
+Browser inventory was empty. Both Chrome and the in-app browser reported unavailable.
+No screen walkthrough, successful Google OAuth exchange, protected-route interaction,
+focus refresh, cross-tab account change, sign-out failure, autosave failure/retry UI,
+nine answer controls, material-editor draft retention, browser storage inspection or
+returning-worker retirement was verified. API checks do not substitute for these.
+Keep the retirement files until the returning-browser behavior is actually checked.
+
+Hosted AI execution and streaming, live grading and binary text extraction remain
+unfinished dependencies. Saved samples make their screens inspectable but do not
+enable those capabilities. Offline storage, device-storage UI and JSON recovery or
+export remain excluded.
+
+---
+
+# Historical account app implementation handoff
 
 Updated 7 October 2026 for the completed ACCOUNT_APP_IMPLEMENTATION_BRIEF.md work.
 The offline records below the historical divider describe previous assignments.

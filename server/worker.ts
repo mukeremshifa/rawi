@@ -7,6 +7,8 @@ import type { BackendBindings } from './backend/config';
 
 const worker = new Hono<BackendContext>();
 worker.route('/api', api);
+// Unsupported API methods must never fall through to the application document.
+worker.all('/api/*', c => { c.header('Cache-Control', 'no-store'); return c.json({ error: { code: 'not_found', message: 'This API route is unavailable.' } }, 404); });
 worker.all('*', c => c.env.ASSETS.fetch(c.req.raw));
 export default {
   fetch: worker.fetch,

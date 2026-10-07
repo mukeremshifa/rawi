@@ -1,5 +1,5 @@
 import { transaction } from './db';
-import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { Attempt, Material, Topic } from '../../src/shared/types';
 import { planWeek, replacedByPlan, addDays } from '../../src/shared/planner';
@@ -28,7 +28,7 @@ export async function learningData(db: ReadDb | Transaction, workspaceId: string
   const attempts: Attempt[] = rows.map(({ snapshot: a, setId }) => a.imported ? { ...a.imported, assistanceRecord: 'unknown', marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable } : ({ id: a.id, courseId: a.courseId, kind: a.exam ? 'exam' : 'practice', mode: a.exam ? 'exam' : a.questions.every(q => q.question.format === 'flashcard') ? 'self-rated' : 'practice', title: a.title, topicIds: [...new Set(a.questions.map(q => q.question.topicId))], startedAt: a.startedAt, completedAt: a.completedAt, questions: a.questions.map(q => q.result), marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable, assistanceRecord: 'tracked', practiceSetId: a.exam ? undefined : setId, examConfigSnapshot: a.exam?.configSnapshot, finish: a.finish, plannedSessionId: a.plannedSessionId, remediatesAttemptId: a.remediatesAttemptId }));
   return { attempts, snapshots: rows.map(r => r.snapshot) };
 }
-export async function planningData(tx: Transaction, workspaceId: string) {
+export async function planningData(tx: Transaction, workspaceId: string, options: { calendarOnly?: boolean; passageCourseId?: string } = {}) {
   const planner = await ensurePlanner(tx, workspaceId);
   const [prefs] = await tx.select().from(preferences).where(eq(preferences.workspaceId, workspaceId));
   const courseRows = await tx.select().from(courses).where(eq(courses.workspaceId, workspaceId));
@@ -40,18 +40,19 @@ export async function planningData(tx: Transaction, workspaceId: string) {
   const tutorLinks = await tx.select({ id: tutorSessions.plannedSessionId, endedAt: tutorSessions.endedAt }).from(tutorSessions).where(eq(tutorSessions.workspaceId, workspaceId));
   for (const row of sessionRows) if (activeLinks.some(r => r.id === row.id) || tutorLinks.some(r => !r.endedAt && r.id === row.id)) row.content = { ...row.content, locked: true };
   const checkInRows = await tx.select().from(checkIns).where(eq(checkIns.workspaceId, workspaceId));
-  const questionRows = await tx.select({ content: questionVersions.content }).from(questionVersions).where(eq(questionVersions.workspaceId, workspaceId));
-  const materialRows = await tx.select().from(materials).where(eq(materials.workspaceId, workspaceId));
-  const links = await tx.select().from(materialTopicLinks).where(eq(materialTopicLinks.workspaceId, workspaceId));
-  const readable = await tx.select({ materialId: passages.materialId, id: passages.id, heading: passages.heading, text: passages.text }).from(passages).innerJoin(materials, and(eq(materials.currentVersionId, passages.versionId), eq(materials.workspaceId, passages.workspaceId))).where(eq(passages.workspaceId, workspaceId));
+  const questionRows = options.calendarOnly ? [] : await tx.select({ content: questionVersions.content }).from(questionVersions).where(eq(questionVersions.workspaceId, workspaceId));
+  const materialRows = options.calendarOnly ? [] : await tx.select().from(materials).where(eq(materials.workspaceId, workspaceId));
+  const links = options.calendarOnly ? [] : await tx.select().from(materialTopicLinks).where(eq(materialTopicLinks.workspaceId, workspaceId));
+  const readable = options.calendarOnly ? [] : await tx.select({ materialId: passages.materialId, id: passages.id, heading: passages.heading, text: options.passageCourseId ? passages.text : sql<string>`''` }).from(passages).innerJoin(materials, and(eq(materials.currentVersionId, passages.versionId), eq(materials.workspaceId, passages.workspaceId))).where(and(eq(passages.workspaceId, workspaceId), options.passageCourseId ? eq(passages.courseId, options.passageCourseId) : undefined));
   const materialData: Material[] = materialRows.map(m => ({ id: m.id, courseId: m.courseId, title: m.title, kind: m.kind === 'notes' ? 'student-note' : m.kind === 'slides' ? 'lecture-notes' : 'reading', origin: 'pasted', archived: m.archived, addedAt: m.createdAt.toISOString(), topicIds: links.filter(l => l.materialId === m.id).map(l => l.topicId), passages: readable.filter(p => p.materialId === m.id).map(p => ({ ...p, topicIds: links.filter(l => l.materialId === m.id).map(l => l.topicId) })) }));
-  const { attempts, snapshots } = await learningData(tx, workspaceId);
+  const { attempts, snapshots } = options.calendarOnly ? { attempts: [], snapshots: [] } : await learningData(tx, workspaceId);
   return { revision: planner.revision, availability: planner.availability, timezone: prefs?.timezone ?? 'UTC', courses: courseRows.map(c => ({ ...c, createdAt: c.createdAt.toISOString() })), topics: topicData, assessments: assessmentRows.map(r => ({ ...r.content, revision: r.revision })), sessions: sessionRows.map(r => ({ ...r.content, revision: r.revision })), checkIns: checkInRows.map(r => r.content), questions: questionRows.map(r => r.content), materials: materialData, attempts, snapshots };
 }
 export async function plannerView(db: SocketDb, workspaceId: string) {
   return transaction(db, async tx => {
-    const data = await planningData(tx, workspaceId);
-    return { revision: data.revision, availability: data.availability, timezone: data.timezone, courses: data.courses, topics: data.topics, assessments: data.assessments, sessions: data.sessions, checkIns: data.checkIns, today: zonedParts(new Date(), data.timezone).date };
+    const data = await planningData(tx, workspaceId, { calendarOnly: true });
+    const [savedProposal] = await tx.select({ id: planProposals.id, baseRevision: planProposals.baseRevision, proposal: planProposals.proposal }).from(planProposals).where(and(eq(planProposals.workspaceId, workspaceId), eq(planProposals.baseRevision, data.revision))).orderBy(desc(planProposals.createdAt)).limit(1);
+    return { savedProposal: savedProposal ?? null, revision: data.revision, availability: data.availability, timezone: data.timezone, courses: data.courses, topics: data.topics, assessments: data.assessments, sessions: data.sessions, checkIns: data.checkIns, today: zonedParts(new Date(), data.timezone).date };
   }, { isolationLevel: 'repeatable read' });
 }
 export async function saveAvailability(db: SocketDb, workspaceId: string, input: z.infer<typeof plannerWrite>) {
