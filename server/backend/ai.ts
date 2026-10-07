@@ -1,3 +1,4 @@
+import { promptKey } from '../../src/shared/prompt-key';
 import { transaction } from './db';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -143,7 +144,7 @@ export async function publishStructured(db: SocketDb, workspaceId: string, execu
       const seen = new Set<string>(); const questions: VersionedQuestion[] = [];
       for (const row of proposed) {
         const q = generatedQuestion(row, req); if (!q) continue;
-        const key = q.prompt.toLowerCase().replace(/\W+/g, ' ').trim(); if (seen.has(key)) continue; seen.add(key);
+        const key = promptKey(q.prompt); if (seen.has(key)) continue; seen.add(key);
         const [source] = await tx.select().from(passages).where(and(eq(passages.workspaceId, workspaceId), eq(passages.courseId, op.courseId), eq(passages.id, q.sourcePassageId))); if (!source) throw notFound();
         const id = crypto.randomUUID(); const rubric = q.rubric?.map((r, i) => ({ ...r, id: `${id}:${i}`, keywords: [] }));
         const content = questionInput.parse({ format: req.format, topicId: q.topicId, difficulty: q.difficulty, marks: rubric?.reduce((n, p) => n + p.marks, 0) ?? 1, prompt: q.prompt, explanation: q.explanation, answer: q.answer, options: q.options, correctIndices: q.correctIndex === undefined ? undefined : [q.correctIndex], rubric, source: { materialId: source.materialId, versionId: source.versionId, passageId: source.id } });

@@ -149,7 +149,14 @@ async function saveBatch(tx: Transaction, run: typeof learningRuns.$inferSelect,
     if (!validResponse(item.question, entry.response)) throw new ApiError(400, 'invalid_response', 'The answer does not match this question.');
     if (run.exam) {
       const runtime = { ...run.exam, answers: {} }; const loc = locate(runtime, item.question.id);
-      if (!loc || sectionLocked(runtime, loc.sectionIndex) || (runtime.configSnapshot.navigation === 'sequential' && items.findIndex(i => i.id === item.id) < run.position)) throw new ApiError(409, 'section_locked', 'This section or question is locked.');
+      const section = loc && runtime.configSnapshot.sections[loc.sectionIndex];
+      const entered = section && (runtime.activatedSectionIds?.includes(section.id) ?? (loc.sectionIndex === runtime.currentSectionIndex || !!runtime.sectionDeadlines[section.id]));
+      const deadline = section && runtime.sectionDeadlines[section.id];
+      if (!loc || !entered || sectionLocked(runtime, loc.sectionIndex)
+        || (runtime.configSnapshot.timing === 'per-section' && (!deadline || Date.parse(deadline) <= Date.now()))
+        || (runtime.configSnapshot.navigation === 'sequential' && items.findIndex(i => i.id === item.id) !== run.position)) {
+        throw new ApiError(409, 'section_locked', 'Open an eligible question before saving its answer.');
+      }
     }
     const prior = answers.find(a => a.itemId === entry.itemId);
     if (prior?.checked && !sameAnswer(prior.response, entry.response)) throw new ApiError(409, 'answer_locked', 'This answer was checked. Start a new attempt to answer it again.');

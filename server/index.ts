@@ -1,3 +1,4 @@
+import { promptKey } from '../src/shared/prompt-key';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
 import type {
@@ -151,7 +152,7 @@ async function generate(req: IncomingMessage, res: ServerResponse) {
   for (const row of rows) {
     const q = validate.generatedQuestion(row, body);
     if (!q) continue;
-    const key = q.prompt.toLowerCase().replace(/\W+/g, ' ').trim();
+    const key = promptKey(q.prompt);
     if (seen.has(key)) continue;
     seen.add(key);
     questions.push(q);

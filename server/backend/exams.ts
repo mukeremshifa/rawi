@@ -53,7 +53,7 @@ export async function startExam(db: SocketDb, workspaceId: string, configId: str
     if (!initial) throw new ApiError(400, 'invalid_exam', 'This rehearsal has no available questions.');
     const { answers: _answers, ...runtime } = initial;
     const allowed = row.config.book === 'open' && row.config.allowedMaterialIds.length ? await tx.select({ materialId: materials.id, versionId: materials.currentVersionId, title: materials.title }).from(materials).where(and(eq(materials.workspaceId, workspaceId), eq(materials.courseId, row.courseId), inArray(materials.id, row.config.allowedMaterialIds))) : [];
-    const exam: ExamRuntime = { ...runtime, id, materialVersions: allowed.filter((m): m is typeof m & { versionId: string } => !!m.versionId) };
+    const exam: ExamRuntime = { ...runtime, id, activatedSectionIds: [runtime.configSnapshot.sections[0]!.id], materialVersions: allowed.filter((m): m is typeof m & { versionId: string } => !!m.versionId) };
     const setId = crypto.randomUUID();
     await tx.insert(learningSets).values({ id: setId, workspaceId, courseId: row.courseId, name: row.config.name, fingerprint: id, purpose: 'exam', feedback: 'end', hintsAllowed: false });
     await tx.insert(setItems).values(flatQuestionIds(initial).map((questionId, position) => ({ id: crypto.randomUUID(), workspaceId, courseId: row.courseId, setId, questionId, position })));
@@ -81,9 +81,11 @@ export async function examTransition(db: SocketDb, workspaceId: string, id: stri
       const section = exam.configSnapshot.sections[exam.currentSectionIndex]!;
       if (exam.configSnapshot.lockSectionsOnFinish && !exam.lockedSectionIds.includes(section.id)) { exam.lockedSectionIds.push(section.id); exam.sectionOutcomes.push({ sectionId: section.id, ended: 'submitted', endedAt: new Date().toISOString() }); }
     } else {
-      if (exam.configSnapshot.navigation === 'sequential' && input.position < run.position) throw new ApiError(409, 'question_locked', 'This rehearsal does not allow returning to earlier questions.');
+      if (exam.configSnapshot.navigation === 'sequential' && (input.position < run.position || input.position > run.position + 1 && ids.slice(run.position + 1, input.position).some(id => !sectionLocked(runtime, locate(runtime, id)!.sectionIndex)))) throw new ApiError(409, 'question_locked', 'Move to the next available question in this rehearsal.');
       if (sectionLocked(runtime, target.sectionIndex) && exam.configSnapshot.navigation === 'sequential') throw new ApiError(409, 'section_locked', 'This section is locked.');
       const section = exam.configSnapshot.sections[target.sectionIndex]!;
+      exam.activatedSectionIds ??= exam.configSnapshot.sections.filter((s, index) => index === exam.currentSectionIndex || !!exam.sectionDeadlines[s.id]).map(s => s.id);
+      if (!exam.activatedSectionIds.includes(section.id)) exam.activatedSectionIds.push(section.id);
       if (exam.configSnapshot.timing === 'per-section' && !exam.sectionDeadlines[section.id]) exam.sectionDeadlines[section.id] = new Date(Date.now() + withExtraTime(section.minutes, exam.configSnapshot.extraTimePercent) * 60000).toISOString();
       if (exam.configSnapshot.navigation === 'sequential' && target.sectionIndex > exam.currentSectionIndex) {
         for (let i = exam.currentSectionIndex; i < target.sectionIndex; i++) { const s = exam.configSnapshot.sections[i]!; if (!exam.lockedSectionIds.includes(s.id)) exam.lockedSectionIds.push(s.id); }
