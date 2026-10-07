@@ -35,7 +35,7 @@ function useSaveState() {
   const run = async (operation: () => Promise<void>) => {
     if (lock.current) return;
     lock.current = true; setSaving(true); setMessage(''); setError(null);
-    try { await operation(); if (alive.current) setMessage('Saved to your online workspace.'); }
+    try { await operation(); if (alive.current) setMessage('Saved to your account.'); }
     catch (e) { if (alive.current) setError(e); }
     finally { lock.current = false; if (alive.current) setSaving(false); }
   };
@@ -51,7 +51,7 @@ function SaveStatus({ state, onReview }: { state: ReturnType<typeof useSaveState
 }
 export function CourseLibrary() {
   const [filter, setFilter] = useState('false');
-  return <Page className="py-8"><PageHeader title="Your online courses" description="Courses saved to your personal account." actions={<Button asChild><Link to="/online/courses/new">Add a course</Link></Button>} />
+  return <Page className="py-8"><PageHeader title="Your courses" description="Courses saved to your personal account." actions={<Button asChild><Link to="/courses/new">Add a course</Link></Button>} />
     <Field title="Course status"><Select value={filter} onChange={e => setFilter(e.target.value)}><option value="false">Active</option><option value="true">Archived</option><option value="all">Active and archived</option></Select></Field>
     <CourseList key={filter} filter={filter} />
   </Page>;
@@ -78,7 +78,7 @@ function CourseList({ filter }: { filter: string }) {
   return <div className="grid gap-4">
     {loading && <p role="status">Loading courses…</p>}
     {error && <div role="alert"><p>{error}</p><Button variant="outline" onClick={() => void load(page?.nextCursor ?? undefined)}>Retry loading</Button></div>}
-    {page?.courses.map(course => <article className="rounded-lg border p-5 space-y-2" key={course.id}><h2 className="font-semibold text-lg"><Link className="underline" to={`/online/course/${course.id}`}>{course.name}</Link></h2><p>{course.description}</p><p className="text-muted-foreground text-sm">{course.archived ? 'Archived' : 'Active'}</p></article>)}
+    {page?.courses.map(course => <article className="rounded-lg border p-5 space-y-2" key={course.id}><h2 className="font-semibold text-lg"><Link className="underline" to={`/course/${course.id}`}>{course.name}</Link></h2><p>{course.description}</p><p className="text-muted-foreground text-sm">{course.archived ? 'Archived' : 'Active'}</p></article>)}
     {page?.courses.length === 0 && <p>No courses match this view. Add a course to begin.</p>}
     {page?.nextCursor && <Button variant="outline" disabled={loading} onClick={() => void load(page.nextCursor!)}>Load more courses</Button>}
   </div>;
@@ -95,13 +95,13 @@ export function NewOnlineCourse() {
     if (!parsed.success) throw new Error('Enter a course name and check the field lengths.');
     setSubmitted(parsed.data);
     const result = await request<CourseDetail>('/v1/courses', user.id, parsed.data, 'POST');
-    allowNavigation(); navigate(`/online/course/${result.course.id}`, { replace: true });
+    allowNavigation(); navigate(`/course/${result.course.id}`, { replace: true });
   });
-  return <Page className="py-8" width="prose"><PageHeader title="Add an online course" description="After saving, build its topic outline." />
+  return <Page className="py-8" width="prose"><PageHeader title="Add a course" description="After saving, build its topic outline." />
     <form className="space-y-5" onSubmit={e => { e.preventDefault(); void create(); }}><fieldset disabled={save.saving || !!submitted}><CourseFields value={fields} onChange={v => { setFields(v); save.clear(); }} /></fieldset>
       <Button disabled={save.saving}>{submitted ? 'Retry the same creation' : 'Create course'}</Button>
     </form>
-    {submitted && !save.saving && <p>Your creation details are kept unchanged for a safe retry. <Link className="underline" to={`/online/course/${id}`}>Check whether this course was saved</Link> before starting another.</p>}
+    {submitted && !save.saving && <p>Your creation details are kept unchanged for a safe retry. <Link className="underline" to={`/course/${id}`}>Check whether this course was saved</Link> before starting another.</p>}
     <SaveStatus state={save} />
   </Page>;
 }
@@ -114,7 +114,7 @@ export function CourseEditor() {
     void request<CourseDetail>(`/v1/courses/${id}/topics`, user.id, undefined, 'GET', abort.signal).then(setDetail).catch(e => { if (!abort.signal.aborted) setError(errorMessage(e)); });
     return () => abort.abort();
   }, [id, user.id, retry]);
-  if (error) return <Page className="py-8"><p role="alert">{error}</p><Button onClick={() => setRetry(n => n + 1)}>Retry loading</Button><Link to="/online/courses">Back to courses</Link></Page>;
+  if (error) return <Page className="py-8"><p role="alert">{error}</p><Button onClick={() => setRetry(n => n + 1)}>Retry loading</Button><Link to="/courses">Back to courses</Link></Page>;
   if (!detail) return <Page className="py-8"><p role="status">Loading course and outline…</p></Page>;
   return <LoadedCourse initial={detail} />;
 }
@@ -149,7 +149,7 @@ function LoadedCourse({ initial }: { initial: CourseDetail }) {
     catch (e) { setReviewError(errorMessage(e)); }
   };
   const dirty = () => { if (!conflicted) save.clear(); };
-  return <Page className="py-8" width="prose"><PageHeader title={base.course.name} description={base.course.archived ? 'Archived course. Restore it to your active library.' : 'Course settings and topic outline'} actions={<Button variant="outline" asChild><Link to="/online/courses">All courses</Link></Button>} />
+  return <Page className="py-8" width="prose"><PageHeader title={base.course.name} description={base.course.archived ? 'Archived course. Restore it to your active library.' : 'Course settings and topic outline'} actions={<Button variant="outline" asChild><Link to="/courses">All courses</Link></Button>} />
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); void update(); }}><fieldset disabled={save.saving || !!metadata.current}><CourseFields value={fields} onChange={v => { setFields(v); dirty(); }} /></fieldset>
       <div className="flex flex-wrap gap-3"><Button disabled={save.saving || conflicted}>Save course details</Button><Button type="button" variant="outline" disabled={save.saving || conflicted} onClick={() => void update(!base.course.archived)}>{base.course.archived ? 'Restore course' : 'Archive course'}</Button></div>
     </form>
@@ -162,7 +162,7 @@ function LoadedCourse({ initial }: { initial: CourseDetail }) {
     {review && <section className="rounded border p-4 space-y-4"><h2 className="font-semibold">Review the latest saved version</h2><p>Your unsent edits remain in the fields above. Compare them with this saved version before choosing.</p><CourseReview detail={review} />
       <div className="flex flex-wrap gap-3"><Button variant="outline" onClick={() => { metadata.current = null; outlineRequest.current = null; setBase(review); setFields(courseValues(review.course)); setTopics(review.topics.map(topicValues)); setReview(null); save.clear(); }}>Use latest version</Button><Button onClick={() => { metadata.current = null; outlineRequest.current = null; setBase(review); setReview(null); save.clear(); }}>Keep my edits for another save</Button></div>
     </section>}
-    <nav className="flex flex-wrap gap-4 border-t pt-6">{['materials', 'tutor', 'practice', 'exams', 'progress'].map(area => <Link className="underline" key={area} to={`/online/course/${base.course.id}/${area}`}>{area[0]!.toUpperCase() + area.slice(1)}</Link>)}</nav>
+    <nav className="flex flex-wrap gap-4 border-t pt-6">{['materials', 'tutor', 'practice', 'exams', 'progress'].map(area => <Link className="underline" key={area} to={`/course/${base.course.id}/${area}`}>{area[0]!.toUpperCase() + area.slice(1)}</Link>)}</nav>
   </Page>;
 }
 function topicValues(t: TopicInput): TopicInput { return { id: t.id, title: t.title, summary: t.summary, priority: t.priority, module: t.module, order: t.order, relatedTopicIds: [...t.relatedTopicIds] }; }
@@ -237,7 +237,7 @@ export function PreferencesEditor({ onSaved }: { onSaved: (value: OnlinePreferen
       <Field title="Motion"><Select value={values.motion} onChange={e => patch({ motion: e.target.value as typeof values.motion })}>{['system', 'reduced', 'full'].map(v => <option key={v}>{v}</option>)}</Select></Field>
       <fieldset className="space-y-2"><legend>Reminder preferences</legend>{(['assessments', 'study', 'review'] as const).map(key => <label className="flex gap-2" key={key}><input type="checkbox" checked={values.reminders[key]} onChange={e => patch({ reminders: { ...values.reminders, [key]: e.target.checked } })} />{key}</label>)}
         <Field title="Days ahead"><Select value={values.reminders.days} onChange={e => patch({ reminders: { ...values.reminders, days: Number(e.target.value) as 0 | 1 | 3 | 7 } })}>{[0, 1, 3, 7].map(v => <option key={v}>{v}</option>)}</Select></Field>
-      </fieldset><p className="text-sm text-muted-foreground">Study and reminder preferences are saved for later online learning features. No online reminders are sent in this checkpoint. Appearance applies after saving.</p>
+      </fieldset><p className="text-sm text-muted-foreground">Study and reminder preferences are saved for later learning features. No online reminders are sent in this checkpoint. Appearance applies after saving.</p>
     </fieldset><Button disabled={save.saving || conflicted}>Save preferences</Button></form>
     <SaveStatus state={save} onReview={() => void loadReview()} />{reviewError && <p role="alert">{reviewError}</p>}
     {review && <section className="rounded border p-4 space-y-4"><h2 className="font-semibold">Latest saved preferences</h2><p>Your unsent preferences remain above.</p><dl className="space-y-1">{Object.entries({ 'Display name': review.values.displayName, Workspace: review.values.workspaceName, Timezone: review.timezone, Accent: review.values.accent, Questions: review.values.questionCount, Hints: review.values.hints ? 'On' : 'Off', Feedback: review.values.feedback, Theme: review.values.theme, 'Reading size': review.values.readingSize, Motion: review.values.motion, 'Assessment reminders': review.values.reminders.assessments ? 'On' : 'Off', 'Study reminders': review.values.reminders.study ? 'On' : 'Off', 'Review reminders': review.values.reminders.review ? 'On' : 'Off', 'Days ahead': review.values.reminders.days }).map(([k, v]) => <div key={k}><dt className="inline font-medium">{k}: </dt><dd className="inline">{v || 'None'}</dd></div>)}</dl>

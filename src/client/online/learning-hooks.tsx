@@ -6,6 +6,7 @@ import { useAccount } from './OnlineApp';
 export function useOnlineRecord<T>(path: string) {
   const { user } = useAccount();
   const [epoch, setEpoch] = useState(0);
+  useEffect(() => { const refresh = () => setEpoch(n => n + 1); window.addEventListener('rawi-record-refresh', refresh); return () => window.removeEventListener('rawi-record-refresh', refresh); }, []);
   const [value, setValue] = useState<T | null>(null), [error, setError] = useState('');
   useEffect(() => {
     const controller = new AbortController(); setValue(null); setError('');
@@ -59,7 +60,7 @@ export function OnlineDraftBoundary({ children }: { children: ReactNode }) {
     const click = (e: MouseEvent) => {
       const link = (e.target as Element)?.closest('a[href]');
       // React Router handles internal navigation, including the Back button.
-      if (link instanceof HTMLAnchorElement && (link.origin !== location.origin || !link.pathname.startsWith('/online')) && !link.download && link.target !== '_blank' && !window.confirm('Unsent work will be lost. Leave this page?')) { e.preventDefault(); e.stopPropagation(); }
+      if (link instanceof HTMLAnchorElement && (link.origin !== location.origin || !link.pathname.startsWith('/')) && !link.download && link.target !== '_blank' && !window.confirm('Unsent work will be lost. Leave this page?')) { e.preventDefault(); e.stopPropagation(); }
     };
     window.addEventListener('beforeunload', unload); document.addEventListener('click', click, true);
     return () => { window.removeEventListener('beforeunload', unload); document.removeEventListener('click', click, true); };

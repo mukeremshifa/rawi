@@ -24,7 +24,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useSource } from '@/store/selectors';
 import { cn } from '@/lib/utils';
 
 /**
@@ -319,10 +318,9 @@ export function SourceLink({
   source: SourceRef | undefined;
   className?: string;
 }) {
-  const resolved = useSource(source);
   if (!source) return null;
-
-  if (!resolved) {
+  const versionId = 'versionId' in source && typeof source.versionId === 'string' ? source.versionId === '' ? null : source.versionId : null;
+  if (!versionId) {
     return (
       <span
         className={cn(
@@ -338,7 +336,7 @@ export function SourceLink({
 
   return (
     <Link
-      to={`/course/${resolved.material.courseId}/materials/${source.materialId}#${source.passageId}`}
+      to={`/materials/${source.materialId}/versions/${versionId}/passages/${source.passageId}`}
       className={cn(
         'text-muted-foreground hover:text-foreground inline-flex items-center gap-hairline text-xs underline-offset-4 hover:underline',
         className,
@@ -346,7 +344,7 @@ export function SourceLink({
     >
       <BookOpenIcon className="size-3 shrink-0" aria-hidden />
       <span className="truncate">
-        {resolved.material.title}: {resolved.passage.heading}
+        Read the exact source
       </span>
     </Link>
   );

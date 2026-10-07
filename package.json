@@ -7,17 +7,17 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "concurrently -k -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:api": "tsx watch server/index.ts",
+    "dev": "npm run build && concurrently -k -n worker,web \"npm:dev:worker\" \"npm:dev:web\"",
     "dev:web": "vite",
-    "dev:backend": "npm run build && concurrently -k -n worker,web \"npm:dev:worker\" \"vite --mode backend\"",
+    "dev:backend": "npm run dev",
     "dev:worker": "wrangler dev",
     "typecheck": "tsc --noEmit",
     "worker:types": "wrangler types worker-configuration.d.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx server/backend/migrate.ts",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "db:seed": "tsx dev/seed.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.7.7",
