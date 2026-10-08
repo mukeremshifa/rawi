@@ -1,79 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { z } from 'zod';
-import { createSetInput, formats, sameAnswer, type LearningSet, type LearningRun, type LearningAttempt, type VersionedQuestion, type runWriteInput } from '@shared/contracts/learning';
-import { selectQuestions } from '@shared/domain/question-selection';
+import { sameAnswer, type LearningSet, type LearningRun, type LearningAttempt, type runWriteInput } from '@shared/contracts/learning';
 import { sectionLocked, locate } from '@shared/domain/exam';
-import { QuestionGeneration, RequestFeedback } from '@/features/ai/AiOperation';
+import { RequestFeedback } from '@/features/ai/AiOperation';
 import { useAccount } from '@/lib/account';
 import { request } from '@/lib/api';
-import type { Material } from '@shared/contracts/materials';
 import type { AnswerValue } from '@shared/domain/types';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { NativeSelect as Select } from '@/components/ui/native-select';
 import { QuestionView } from '@/features/practice/QuestionView';
 import { QuestionFeedback } from '@/features/practice/QuestionFeedback';
-import { useLearningWrite, useRecord, useCollection, useUnsentGuard } from '@/lib/hooks';
+import { useLearningWrite, useRecord, useUnsentGuard } from '@/lib/hooks';
 
-export function Practice() {
-  const { id = '' } = useParams(); const nav = useNavigate(); const [params] = useSearchParams(); const planned = params.get('plannedSessionId');
-  const [archived, setArchived] = useState('false'), [cursor, setCursor] = useState(''), [query, setQuery] = useState('');
-  const sets = useRecord<{ sets: LearningSet[]; nextCursor: string | null }>(`/v1/courses/${id}/sets?archived=${archived}${cursor ? `&cursor=${cursor}` : ''}`);
-  const bank = useCollection<VersionedQuestion>(`/v1/courses/${id}/questions?limit=100`, 'questions');
-  const [runCursor, setRunCursor] = useState(''), [historyCursor, setHistoryCursor] = useState('');
-  const active = useRecord<{ runs: { id: string; title: string }[]; nextCursor: string | null }>(`/v1/courses/${id}/runs?limit=100${runCursor ? `&cursor=${runCursor}` : ''}`);
-  const history = useRecord<{ attempts: LearningAttempt[]; nextCursor: string | null }>(`/v1/courses/${id}/attempts?limit=100${historyCursor ? `&cursor=${historyCursor}` : ''}`);
-  const materialNames = useCollection<Material>(`/v1/courses/${id}/materials?limit=50&archived=all`, 'materials');
-  const defaults = useAccount().preferences.values;
-  const [name, setName] = useState(''), [format, setFormat] = useState('all'), [count, setCount] = useState(defaults.questionCount), [feedback, setFeedback] = useState<'immediate' | 'end'>(defaults.feedback), [hints, setHints] = useState(defaults.hints);
-  const [topic, setTopic] = useState(params.get('topicId') ?? ''), [difficulty, setDifficulty] = useState(''), [material, setMaterial] = useState(params.get('materialId') ?? '');
-  const op = useLearningWrite(); const pending = useRef<z.infer<typeof createSetInput> | null>(null);
-  const pool = bank.value?.filter(q => (format === 'all' || q.format === format) && (!topic || q.topicId === topic) && (!difficulty || q.difficulty === difficulty) && (!material || q.source?.materialId === material) && (!params.get('versionId') || q.source?.versionId === params.get('versionId'))) ?? [];
-  const allowNavigation = useUnsentGuard(!!pending.current || !!name);
-  return <Page className="py-8" width="narrow"><PageHeader title="Practice" description="Saved sets, resumable work and repeated attempts." actions={<Link to={`/course/${id}`}>Course</Link>} />
-    {[sets.error, bank.error, materialNames.error, active.error, history.error, op.error].filter(Boolean).map(e => <p role="alert" key={e}>{e}</p>)}
-    {!sets.value && !sets.error && <p role="status">Loading practice…</p>}
-    <section className="space-y-3"><h2 className="text-xl font-semibold">Continue studying</h2>{active.value?.runs.map(r => <p key={r.id}><Link className="underline" to={`/runs/${r.id}`}>{r.title}</Link></p>)}{active.value?.runs.length === 0 && <p>No active practice runs.</p>}{active.value?.nextCursor && <Button onClick={() => setRunCursor(active.value!.nextCursor!)}>More active runs</Button>}{runCursor && <Button onClick={() => setRunCursor('')}>First active runs</Button>}</section>
-    <section className="space-y-3 border-t py-5"><h2 className="text-xl font-semibold">Saved sets</h2><Input aria-label="Search sets on this page" placeholder="Search this page" value={query} onChange={e => setQuery(e.target.value)} /><Select aria-label="Set status" value={archived} onChange={e => { setArchived(e.target.value); setCursor(''); }}><option value="false">Active</option><option value="true">Archived</option><option value="all">All</option></Select>
-      {sets.value?.sets.filter(s => s.name.toLowerCase().includes(query.toLowerCase())).map(s => <p key={s.id}><Link className="underline" to={`/sets/${s.id}${planned ? `?plannedSessionId=${planned}` : ''}`}>{s.name}</Link></p>)}{sets.value?.sets.length === 0 && <p>No saved sets in this view.</p>}{sets.value?.nextCursor && <Button onClick={() => setCursor(sets.value!.nextCursor!)}>Next page</Button>}{cursor && <Button variant="secondary" onClick={() => setCursor('')}>First page</Button>}</section>
-    <section className="space-y-3 border-t py-5"><h2 className="text-xl font-semibold">Build from your question bank</h2><p>Questions keep their saved content and sources. No demo questions are added automatically.</p><fieldset className="space-y-3" disabled={op.busy || !!pending.current}>
-      <label className="block">Set name<Input value={name} onChange={e => setName(e.target.value)} maxLength={200} /></label>
-      <label className="block">Format<Select value={format} onChange={e => setFormat(e.target.value)}><option value="all">All formats</option>{formats.map(f => <option key={f}>{f}</option>)}</Select></label>
-      <label className="block">Topic<Select value={topic} onChange={e => setTopic(e.target.value)}><option value="">All topics</option>{[...new Map(bank.value?.map(q => [q.topicId, q.topicLabel]) ?? []).entries()].map(([id, label]) => <option key={id} value={id}>{label}</option>)}</Select></label>
-      <label className="block">Difficulty<Select value={difficulty} onChange={e => setDifficulty(e.target.value)}><option value="">All difficulties</option>{['recall', 'reasoning', 'stretch'].map(d => <option key={d}>{d}</option>)}</Select></label>
-      <label className="block">Source material<Select value={material} onChange={e => setMaterial(e.target.value)}><option value="">All materials</option>{[...new Set(bank.value?.flatMap(q => q.source ? [q.source.materialId] : []) ?? [])].map(id => <option key={id} value={id}>{materialNames.value?.find(m => m.id === id)?.title ?? 'Saved material'}</option>)}</Select></label>{params.get('versionId') && <p>Filtered to the exact material version you opened.</p>}
-      <label className="block">Questions<Input type="number" min={1} max={50} value={count} onChange={e => setCount(Number(e.target.value))} /></label>
-      <label className="block">Feedback<Select value={feedback} onChange={e => setFeedback(e.target.value as 'immediate' | 'end')}><option value="immediate">After checking each answer</option><option value="end">At the end</option></Select></label>
-      <label><input type="checkbox" checked={hints} onChange={e => setHints(e.target.checked)} /> Allow hints</label></fieldset>
-      <p>{bank.value ? `${pool.length} matching questions in the complete course bank.` : 'Loading the complete question bank…'}</p>
-      <Button disabled={op.busy || !name.trim() || !pool.length || count < 1 || count > 50} onClick={() => { pending.current ??= createSetInput.parse({ id: crypto.randomUUID(), name, questionIds: selectQuestions(pool, {}, count).map(q => q.id), feedback, hintsAllowed: hints }); void op.run<LearningSet>(`/v1/courses/${id}/sets`, pending.current, 'POST', saved => { pending.current = null; setName(''); allowNavigation(); nav(`/sets/${saved.id}${planned ? `?plannedSessionId=${planned}` : ''}`); }); }}>{op.busy ? 'Saving…' : pending.current ? 'Retry saving set' : 'Save set'}</Button>
-      {bank.value?.length === 0 && <p>Your question bank is empty. Question generation isn't available yet.</p>}{!!bank.value?.length && !pool.length && <p>No saved questions match these filters.</p>}
-      <p>Question generation isn't available yet. Your saved practice remains available.</p>
-    </section>
-    <QuestionGeneration courseId={id} />
-    <section className="space-y-3 border-t py-5"><h2 className="text-xl font-semibold">Attempt history</h2>{history.value?.attempts.map(a => <p key={a.id}><Link className="underline" to={`/attempts/${a.id}`}>{a.title}</Link> · {a.marksAvailable ? `${a.marksAwarded}/${a.marksAvailable} graded marks` : 'Not graded'} · {a.pending} pending</p>)}{history.value?.nextCursor && <Button onClick={() => setHistoryCursor(history.value!.nextCursor!)}>Older history page</Button>}{historyCursor && <Button onClick={() => setHistoryCursor('')}>First history page</Button>}</section>
-  </Page>;
-}
-export function PracticeSet() {
-  const { id = '' } = useParams(); const nav = useNavigate(); const [params] = useSearchParams(); const planned = params.get('plannedSessionId'); const op = useLearningWrite();
-  const record = useRecord<{ set: LearningSet; items: { id: string; question: VersionedQuestion }[] }>(`/v1/sets/${id}`);
-  const [name, setName] = useState<string | null>(null); const startId = useRef(crypto.randomUUID()); const edit = useRef<unknown>(null);
-  const row = record.value?.set;
-  useUnsentGuard(!!edit.current || name !== null && name !== row?.name);
-  const [reviewSet, setReviewSet] = useState<typeof record.value>(null);
-  return <Page className="py-8" width="narrow"><PageHeader title={row?.name ?? 'Saved practice set'} description="Every attempt uses these same saved questions." />{record.error && <p role="alert">{record.error}</p>}{op.error && <p role="alert">{op.error}</p>}
-    {op.code === 'revision_conflict' && <Button variant="secondary" onClick={() => void op.run(`/v1/sets/${id}`, undefined, 'GET', v => setReviewSet(v as typeof record.value))}>Review latest set</Button>}{reviewSet && <div className="border p-4"><p>Saved name: {reviewSet.set.name}. {reviewSet.set.archived ? 'Archived' : 'Active'}. Your draft is retained.</p><Button onClick={() => { record.setValue(reviewSet); edit.current = null; setReviewSet(null); }}>Use reviewed revision</Button></div>}
-    {row && <><Link className="underline" to={`/course/${row.courseId}/practice`}>Practice library</Link><p>{record.value!.items.length} questions · {row.archived ? 'Archived' : 'Active'}</p>
-      <Button disabled={op.busy || row.archived} onClick={() => void op.run<LearningRun>(`/v1/sets/${id}/runs`, { id: startId.current, ...(planned ? { plannedSessionId: planned } : {}) }, 'POST', run => nav(`/runs/${run.id}`))}>Start another attempt</Button>
-      <label className="block mt-6">Name<Input value={name ?? row.name} disabled={op.busy || !!edit.current} onChange={e => setName(e.target.value)} /></label>
-      <Button disabled={op.busy} onClick={() => { edit.current ??= { operationId: crypto.randomUUID(), expectedRevision: row.revision, name: name ?? row.name, archived: row.archived }; void op.run<LearningSet>(`/v1/sets/${id}`, edit.current, 'PATCH', set => { edit.current = null; setName(null); record.setValue({ ...record.value!, set }); }); }}>Save name</Button>
-      <Button variant="secondary" disabled={op.busy || !!edit.current} onClick={() => { edit.current = { operationId: crypto.randomUUID(), expectedRevision: row.revision, name: row.name, archived: !row.archived }; void op.run<LearningSet>(`/v1/sets/${id}`, edit.current, 'PATCH', set => { edit.current = null; setName(null); record.setValue({ ...record.value!, set }); }); }}>{row.archived ? 'Restore' : 'Archive'}</Button>
-      {record.value!.items.map(i => <p className="border-t py-4" key={i.id}>{i.question.prompt} · {i.question.topicLabel} · {i.question.origin}</p>)}
-    </>}
-  </Page>;
-}
 export function Run() {
   const { id = '' } = useParams(); const nav = useNavigate(); const op = useLearningWrite();
   const record = useRecord<LearningRun>(`/v1/runs/${id}`);

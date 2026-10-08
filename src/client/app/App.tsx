@@ -19,7 +19,9 @@ import { useConfirm } from '@/components/ui/alert-dialog';
 import { Search, Notifications } from '@/features/support/Support';
 import { TutorLibrary, Tutor } from '@/features/tutor/Tutor';
 import { Exams } from '@/features/exams/Exams';
-import { Practice, PracticeSet, Run, AttemptReview } from '@/features/practice/Practice';
+import { Run, AttemptReview } from '@/features/practice/Practice';
+import { Practice } from '@/features/practice/PracticeHome';
+import { PracticeSet } from '@/features/practice/SetDetail';
 
 import { Onboarding } from '@/features/account/AccountSettings';
 import { Settings } from '@/features/account/Settings';

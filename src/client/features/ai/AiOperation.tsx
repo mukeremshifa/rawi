@@ -1,28 +1,61 @@
 import { useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import type { AiOperationView } from '../../../server/api-types';
-import type { CourseDetail } from '@shared/contracts/workspace';
-import type { Material } from '@shared/contracts/materials';
+
 import { Page, PageHeader } from '@/components/layout';
+import { ErrorState, Notice, PageLoading } from '@/components/states';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { NativeSelect as Select } from '@/components/ui/native-select';
-import { useRecord, useCollection, useLearningWrite, useUnsentGuard } from '@/lib/hooks';
+import { FieldError } from '@/components/ui/field';
+import { useApi, useSave } from '@/lib/data';
+
 type Operation = AiOperationView;
+
+const TASK_LABEL: Record<string, string> = { tutor: 'Tutor reply', generate: 'Question generation', grade: 'Written feedback', feedback: 'Written feedback' };
+const STATE_LABEL: Record<string, string> = {
+  blocked: 'Not available', queued: 'Waiting', running: 'Working', complete: 'Finished', cancelled: 'Stopped', failed: 'Failed', interrupted: 'Interrupted',
+};
+
+/**
+ * A saved AI request and its status. Reloading reads the saved record and
+ * never sends another request to a provider.
+ */
 export function AiOperation() {
-  const op = useLearningWrite(); const stopId = useRef(crypto.randomUUID());
-  const { id = '' } = useParams(); const data = useRecord<Operation>(`/v1/ai/operations/${id}`);
-  return <Page className="py-8" width="narrow"><PageHeader title="Saved AI request" description="Reload reads the saved operation. It does not send another provider request." />{data.error && <p role="alert">{data.error}</p>}{data.value && <div className="space-y-4">{op.error && <p role="alert">{op.error}</p>}<p>{data.value.task} · {data.value.state}</p><p role="status">{data.value.reason}</p>{data.value.executions.map(e => <article key={e.id}><p>{e.state}</p><p className="whitespace-pre-wrap">{e.partial}</p></article>)}{!['complete', 'cancelled'].includes(data.value.state) && <Button disabled={op.busy} onClick={() => void op.run<Operation>(`/v1/ai/operations/${id}/cancel`, { operationId: stopId.current }, 'POST', data.setValue)}>Stop this request</Button>}<Button variant="secondary" onClick={data.refresh}>Refresh saved status</Button></div>}</Page>;
+  const { id = '' } = useParams();
+  const data = useApi<Operation>(`/v1/ai/operations/${id}`);
+  const stop = useSave();
+  const stopId = useRef(crypto.randomUUID());
+  if (data.isPending) return <Page width="narrow"><PageLoading label="Loading request" /></Page>;
+  if (data.error) return <Page width="narrow"><ErrorState error={data.error} onRetry={() => void data.refetch()} /></Page>;
+  const op = data.data;
+  return (
+    <Page width="narrow">
+      <PageHeader title={TASK_LABEL[op.task] ?? 'AI request'} description="Saved with the materials it would use." actions={<Badge>{STATE_LABEL[op.state] ?? op.state}</Badge>} />
+      <Notice>{op.reason}</Notice>
+      {op.executions.filter(e => e.partial).map(e => (
+        <div key={e.id} className="rawi-prose rounded-md border p-4 whitespace-pre-wrap">{e.partial}</div>
+      ))}
+      <div className="flex flex-wrap gap-tight">
+        {!['complete', 'cancelled'].includes(op.state) && (
+          <Button variant="secondary" loading={stop.busy} onClick={() => stop.run<Operation>({ path: `/v1/ai/operations/${id}/cancel`, body: { operationId: stopId.current } }, { id: 'stop', onSuccess: data.setData })}>Stop this request</Button>
+        )}
+        <Button variant="ghost" loading={data.isFetching} onClick={() => void data.refetch()}>Refresh status</Button>
+      </div>
+      {stop.error && <FieldError>{stop.error}</FieldError>}
+    </Page>
+  );
 }
+
+/** Ask for written feedback on one saved answer. Shows the saved request after. */
 export function RequestFeedback({ attemptId, questionId }: { attemptId: string; questionId: string }) {
-  const op = useLearningWrite(); const id = useRef(crypto.randomUUID()); const [saved, setSaved] = useState<Operation | null>(null);
-  return <div>{op.error && <p role="alert">{op.error}</p>}{saved ? <><p>{saved.reason}</p><Link className="underline" to={`/ai/${saved.id}`}>Open saved feedback request</Link></> : <Button variant="secondary" disabled={op.busy} onClick={() => void op.run<Operation>(`/v1/attempts/${attemptId}/feedback`, { operationId: id.current, questionId }, 'POST', setSaved)}>Request written feedback</Button>}</div>;
-}
-export function QuestionGeneration({ courseId }: { courseId: string }) {
-  const outline = useRecord<CourseDetail>(`/v1/courses/${courseId}/topics`);
-  const materials = useCollection<Material>(`/v1/courses/${courseId}/materials?limit=50`, 'materials');
-  const [name, setName] = useState(''), [format, setFormat] = useState('flashcard'), [count, setCount] = useState(5), [topics, setTopics] = useState<string[]>([]), [selected, setSelected] = useState<string[]>([]);
-  const op = useLearningWrite(), nav = useNavigate(); const pending = useRef<unknown>(null);
-  const allowNavigation = useUnsentGuard(!!name || !!pending.current);
-  return <section className="border-t py-5 space-y-3"><h2 className="text-xl font-semibold">Generate from material</h2><p>Hosted replies are unavailable. You can save a grounded request and reopen its status. No questions are created until validated provider output is available.</p>{[outline.error, materials.error, op.error].filter(Boolean).map(e => <p role="alert" key={e}>{e}</p>)}<fieldset disabled={op.busy || !!pending.current} className="space-y-3"><label className="block">Generated set name<Input maxLength={200} value={name} onChange={e => setName(e.target.value)} /></label><label className="block">Generated format<Select value={format} onChange={e => setFormat(e.target.value)}>{['flashcard', 'multiple-choice', 'written-recall'].map(f => <option key={f}>{f}</option>)}</Select></label><label className="block">Number of generated questions<Input type="number" min={1} max={10} value={count} onChange={e => setCount(Number(e.target.value))} /></label><h3>Topics</h3>{outline.value?.topics.map(t => <label className="block" key={t.id}><input type="checkbox" checked={topics.includes(t.id)} onChange={e => setTopics(e.target.checked ? [...topics, t.id] : topics.filter(id => id !== t.id))} /> {t.title}</label>)}<h3>Materials</h3>{materials.value?.map(m => <label className="block" key={m.id}><input type="checkbox" checked={selected.includes(m.id)} onChange={e => setSelected(e.target.checked ? [...selected, m.id] : selected.filter(id => id !== m.id))} /> {m.title}</label>)}</fieldset><Button disabled={op.busy || !name.trim() || !topics.length || !selected.length || count < 1 || count > 10} onClick={() => { pending.current ??= { operationId: crypto.randomUUID(), name, format, count, topicIds: topics, materialIds: selected, difficulties: ['recall', 'reasoning', 'stretch'] }; void op.run<Operation>(`/v1/courses/${courseId}/generate`, pending.current, 'POST', saved => { pending.current = null; setName(''); allowNavigation(); nav(`/ai/${saved.id}`); }); }}>{op.busy ? 'Saving…' : pending.current ? 'Retry saved request' : 'Save generation request'}</Button></section>;
+  const save = useSave();
+  const id = useRef(crypto.randomUUID());
+  const [saved, setSaved] = useState<Operation | null>(null);
+  if (saved) return <p className="text-muted-foreground text-sm">{saved.reason} <Link className="text-primary-text underline underline-offset-2" to={`/ai/${saved.id}`}>View request</Link></p>;
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <Button variant="secondary" size="sm" loading={save.busy} onClick={() => save.run<Operation>({ path: `/v1/attempts/${attemptId}/feedback`, body: { operationId: id.current, questionId } }, { id: 'feedback', onSuccess: setSaved })}>Request written feedback</Button>
+      {save.error && <FieldError>{save.error}</FieldError>}
+    </div>
+  );
 }
