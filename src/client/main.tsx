@@ -5,12 +5,14 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
 import { App } from '@/app/App';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@/lib/query';
 import '@/styles/globals.css';
 import { retireBrowserStorage } from '@/app/retire-storage';
 retireBrowserStorage();
 const router = createBrowserRouter([{ path: '*', element: <App /> }]);
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><ErrorBoundary><TooltipProvider delayDuration={300}>
+  <StrictMode><ErrorBoundary><QueryClientProvider client={queryClient}><TooltipProvider delayDuration={300}>
     <RouterProvider router={router} /><Toaster />
-  </TooltipProvider></ErrorBoundary></StrictMode>,
+  </TooltipProvider></QueryClientProvider></ErrorBoundary></StrictMode>,
 );

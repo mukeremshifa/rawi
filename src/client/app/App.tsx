@@ -19,6 +19,7 @@ import { Practice, PracticeSet, Run, AttemptReview } from '@/features/practice/P
 import { AccountSettings, Onboarding } from '@/features/account/AccountSettings';
 import { safeReturnTo } from '@/app/return-to';
 import { AccountContext } from '@/lib/account';
+import { queryClient } from '@/lib/query';
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [state, setState] = useState<'checking' | 'authenticated' | 'unauthenticated' | 'unavailable'>('checking');
@@ -33,7 +34,7 @@ export function App() {
   const destination = location.pathname === '/sign-in' ? returnTo : safeReturnTo(location.pathname + location.search + location.hash);
   const clear = useCallback(() => {
     sessionRequest.current?.abort();
-    ++epoch.current; setActiveAccount(null); currentAccount.current = null; setMe(null); setState('unauthenticated'); setError('');
+    ++epoch.current; setActiveAccount(null); queryClient.clear(); currentAccount.current = null; setMe(null); setState('unauthenticated'); setError('');
   }, []);
   const refresh = useCallback(async () => {
     if (authBusy.current) return;
@@ -43,6 +44,8 @@ export function App() {
     try {
       const account = await request<Me>('/v1/me', undefined, undefined, 'GET', controller.signal);
       if (epoch.current !== current) return;
+      // A different account must never see the previous account's cache.
+      if (currentAccount.current && currentAccount.current.user.id !== account.user.id) queryClient.clear();
       setActiveAccount(account.user.id); currentAccount.current = account; setMe(account); setState('authenticated'); setError('');
       channel.current?.postMessage({ type: 'identity', id: account.user.id });
     } catch (e) {

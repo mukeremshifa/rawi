@@ -1,0 +1,68 @@
+import { QueryClient, type QueryKey } from '@tanstack/react-query';
+import { RequestError } from '@/lib/api';
+
+/** Codes where retrying a read cannot help. */
+const FINAL = new Set(['unauthenticated', 'account_changed', 'not_found', 'forbidden', 'invalid_input']);
+
+/**
+ * One cache for the signed-in account. App clears it on sign-out and on
+ * account switch. Nothing is persisted, because offline storage is excluded.
+ */
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Cached data shows at once and refreshes in the background on every visit.
+      staleTime: 0,
+      refetchOnWindowFocus: false,
+      retry: (count, error) => count < 2 && !(error instanceof RequestError && FINAL.has(error.code)),
+    },
+    mutations: { retry: false },
+  },
+});
+
+/**
+ * Keys mirror API paths, so a key and the path it reads never disagree and a
+ * prefix invalidates everything beneath it: `keys.course(id).all` covers the
+ * course's topics, materials, sets, runs and the rest.
+ */
+export function pathKey(path: string): QueryKey {
+  const [pathname = '', search = ''] = path.split('?');
+  const parts: unknown[] = pathname.split('/').filter(Boolean);
+  const params = Object.fromEntries(new URLSearchParams(search));
+  return Object.keys(params).length ? [...parts, params] : parts;
+}
+
+export const keys = {
+  me: () => pathKey('/v1/me'),
+  courses: {
+    all: pathKey('/v1/courses'),
+    list: (archived: string) => pathKey(`/v1/courses?archived=${archived}`),
+  },
+  course: (id: string) => ({
+    all: pathKey(`/v1/courses/${id}`),
+    topics: pathKey(`/v1/courses/${id}/topics`),
+    materials: pathKey(`/v1/courses/${id}/materials`),
+    uploads: pathKey(`/v1/courses/${id}/uploads`),
+    sets: pathKey(`/v1/courses/${id}/sets`),
+    runs: pathKey(`/v1/courses/${id}/runs`),
+    attempts: pathKey(`/v1/courses/${id}/attempts`),
+    questions: pathKey(`/v1/courses/${id}/questions`),
+    exams: pathKey(`/v1/courses/${id}/exams`),
+    tutor: pathKey(`/v1/courses/${id}/tutor`),
+  }),
+  material: (id: string) => pathKey(`/v1/materials/${id}`),
+  set: (id: string) => pathKey(`/v1/sets/${id}`),
+  run: (id: string) => pathKey(`/v1/runs/${id}`),
+  attempt: (id: string) => pathKey(`/v1/attempts/${id}`),
+  exam: (id: string) => pathKey(`/v1/exams/${id}`),
+  tutorSession: (id: string) => pathKey(`/v1/tutor/${id}`),
+  aiOperation: (id: string) => pathKey(`/v1/ai/operations/${id}`),
+  planner: pathKey('/v1/planner'),
+  progress: pathKey('/v1/progress'),
+  notifications: pathKey('/v1/notifications'),
+  preferences: pathKey('/v1/preferences'),
+  search: (q: string) => pathKey(`/v1/search?q=${encodeURIComponent(q)}`),
+};
+
+/** Learning activity touches the planner, progress and reminders at once. */
+export const activityKeys: QueryKey[] = [keys.planner, keys.progress, keys.notifications];

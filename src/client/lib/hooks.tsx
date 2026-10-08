@@ -1,51 +1,27 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import { useBlocker } from 'react-router-dom';
-import { errorMessage, RequestError, request } from '@/lib/api';
-import { useAccount } from '@/lib/account';
+import { errorMessage } from '@/lib/api';
+import { useApi, useApiAll, useSave } from '@/lib/data';
 
+/* Transitional adapters over lib/data.ts. Pages move to useApi and useSave as they are redesigned. */
 export function useRecord<T>(path: string) {
-  const { user } = useAccount();
-  const [epoch, setEpoch] = useState(0);
-  const [value, setValue] = useState<T | null>(null), [error, setError] = useState('');
-  useEffect(() => {
-    const controller = new AbortController(); setValue(null); setError('');
-    void request<T>(path, user.id, undefined, 'GET', controller.signal).then(setValue).catch(e => { if (!controller.signal.aborted) setError(errorMessage(e)); });
-    return () => controller.abort();
-  }, [path, user.id, epoch]);
-  return { value, setValue, error, refresh: () => setEpoch(v => v + 1) };
+  const query = useApi<T>(path);
+  return { value: query.data ?? null, setValue: query.setData, error: query.error ? errorMessage(query.error) : '', refresh: () => void query.refetch() };
 }
 /** Load a complete, bounded selection pool. Never expose an incomplete pool as complete. */
 export function useCollection<T>(path: string, key: string) {
-  const { user } = useAccount();
-  const [value, setValue] = useState<T[] | null>(null), [error, setError] = useState('');
-  useEffect(() => {
-    const controller = new AbortController(); setValue(null); setError('');
-    void (async () => {
-      const rows: T[] = []; let cursor: string | null = null;
-      do {
-        const page: Record<string, unknown> & { nextCursor: string | null } = await request(`${path}${cursor ? `&cursor=${cursor}` : ''}`, user.id, undefined, 'GET', controller.signal);
-        rows.push(...page[key] as T[]); cursor = page.nextCursor;
-        if (rows.length > 5000) throw new Error('This selection exceeds 5,000 records. Use a smaller course before building a set.');
-      } while (cursor);
-      if (!controller.signal.aborted) setValue(rows);
-    })().catch(e => { if (!controller.signal.aborted) setError(errorMessage(e)); });
-    return () => controller.abort();
-  }, [path, key, user.id]);
-  return { value, error };
+  const query = useApiAll<T>(path, key);
+  return { value: query.data ?? null, error: query.error ? errorMessage(query.error) : '' };
 }
 export function useLearningWrite() {
-  const { user } = useAccount();
-  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [code, setCode] = useState('');
-  const lock = useRef(false), controller = useRef(new AbortController());
-  useEffect(() => { controller.current = new AbortController(); return () => controller.current.abort(); }, []);
-  async function run<T>(path: string, body: unknown, method: string, accept: (value: T) => void) {
-    if (lock.current) return;
-    lock.current = true; setBusy(true); setError(''); setCode('');
-    try { const saved = await request<T>(path, user.id, body, method, controller.current.signal); if (!controller.current.signal.aborted) accept(saved); }
-    catch (e) { if (!controller.current.signal.aborted) { setError(errorMessage(e)); setCode(e instanceof RequestError ? e.code : ''); } }
-    finally { lock.current = false; if (!controller.current.signal.aborted) setBusy(false); }
+  const save = useSave();
+  function run<T>(path: string, body: unknown, method: string, accept: (value: T) => void) {
+    // Callers keep their own retry body, so each call is its own request here.
+    if (save.busy) return;
+    save.discard();
+    save.run<T>({ path, body, method }, { id: crypto.randomUUID(), onSuccess: accept });
   }
-  return { busy, error, code, run };
+  return { busy: save.busy, error: save.error, code: save.code, run };
 }
 let unsavedEdits = false;
 export function confirmDiscard() { return !unsavedEdits || window.confirm('You have unsaved changes. Discard them and sign out?'); }
