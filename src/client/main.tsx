@@ -4,9 +4,9 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
-import { OnlineApp } from '@/online/OnlineApp';
+import { OnlineApp } from '@/app/App';
 import '@/styles/globals.css';
-import { retireBrowserStorage } from '@/retire-storage';
+import { retireBrowserStorage } from '@/app/retire-storage';
 retireBrowserStorage();
 const router = createBrowserRouter([{ path: '*', element: <OnlineApp /> }]);
 createRoot(document.getElementById('root')!).render(

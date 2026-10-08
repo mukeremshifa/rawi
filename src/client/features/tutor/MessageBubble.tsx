@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
-import type { TutorMessage, SourceRef } from '@shared/types';
+import type { TutorMessage, SourceRef } from '@shared/domain/types';
 import { Prose } from '@/components/Prose';
 import { SourceLink } from '@/components/domain';
 import { cn } from '@/lib/utils';
-import { renderCitations } from './engine';
+import { renderCitations } from '@/features/tutor/citations';
 
 const GROUNDING_LABEL: Record<NonNullable<TutorMessage['grounding']>, string> = {
   materials: 'From your materials',

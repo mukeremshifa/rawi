@@ -35,6 +35,20 @@ Schema changes use `npm run db:generate` and `npm run db:migrate` against the
 designated development database. Startup never migrates. Applied migrations
 remain unchanged.
 
+## Layout
+
+- `src/client`: the React app. `app/` holds the shell, routing and sign-in,
+  `features/` holds one folder per area of the product, `components/` holds
+  shared UI and `lib/` holds the API client, account context and data hooks.
+- `src/server`: the Hono Worker. `worker.ts` is the entry point, `app.ts`
+  applies middleware and mounts `routes/`, which call `services/`. The
+  database client, schema and migration runner live in `db/`.
+  `api-types.ts` is the only server file the client may import, types only.
+- `src/shared`: code used by both sides. `contracts/` holds request schemas
+  and response shapes, `domain/` holds pure learning logic.
+- `dev`: the development seed and its fictional fixtures.
+- `drizzle`: generated migrations.
+
 ## Accounts and saving
 
 Protected links preserve their path, query and fragment through Google sign-in.
@@ -50,7 +64,7 @@ failures do not establish sign-out or open a cached account.
 
 There is no offline workspace, device-storage screen or JSON import/export flow.
 Original uploaded files remain available through authorized material downloads.
-Temporary retirement code in `src/client/retire-storage.ts` and `public/sw.js`
+Temporary retirement code in `src/client/app/retire-storage.ts` and `public/sw.js`
 removes the previous Rawi caches, offline database and known legacy keys without
 clearing unrelated storage or session cookies. Open tabs are never forced to
 reload. Remove both files and the `/sw.js` no-store header together once

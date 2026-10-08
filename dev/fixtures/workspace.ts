@@ -1,20 +1,20 @@
-import { SEED_COURSE, SEED_TOPICS, ATLANTIC_COURSE_ID } from './topics.ts';
-import { SEED_MATERIALS } from './materials.ts';
-import { SEED_QUESTIONS } from './questions.ts';
-import { SEED_ATTEMPTS, SEED_EXAM_PRESETS } from './history.ts';
+import { SEED_COURSE, SEED_TOPICS, ATLANTIC_COURSE_ID } from './topics';
+import { SEED_MATERIALS } from './materials';
+import { SEED_QUESTIONS } from './questions';
+import { SEED_ATTEMPTS, SEED_EXAM_PRESETS } from './history';
 import {
   STATS_COURSE,
   STATS_COURSE_ID,
   STATS_MATERIALS,
   STATS_QUESTIONS,
   STATS_TOPICS,
-} from './stats.ts';
+} from './stats';
 import {
   SEED_ASSESSMENTS,
   SEED_AVAILABILITY,
   seedSessions,
   statsAttempts,
-} from './planning.ts';
+} from './planning';
 
 
 export function seedState() {

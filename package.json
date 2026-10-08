@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "worker:types": "wrangler types worker-configuration.d.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx server/backend/migrate.ts",
+    "db:migrate": "tsx src/server/db/migrate.ts",
     "build": "vite build",
     "preview": "vite preview",
     "db:seed": "tsx dev/seed.ts"

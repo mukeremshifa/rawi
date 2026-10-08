@@ -1,4 +1,4 @@
-import type { Course, Topic } from '../../src/shared/types.ts';
+import type { Course, Topic } from '../../src/shared/domain/types';
 
 /**
  * The seeded course.

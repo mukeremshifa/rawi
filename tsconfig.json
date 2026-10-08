@@ -37,7 +37,6 @@
   },
   "include": [
     "src",
-    "server",
     "vite.config.ts",
     "drizzle.config.ts",
     "worker-configuration.d.ts",

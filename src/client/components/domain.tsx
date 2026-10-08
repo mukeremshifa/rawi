@@ -13,9 +13,9 @@ import type {
   QuestionFormat,
   SessionActivity,
   SourceRef,
-} from '@shared/types.ts';
-import { EVIDENCE_DETAIL, EVIDENCE_LABEL, EVIDENCE_TONE } from '@shared/progress.ts';
-import { localISO } from '@shared/planner.ts';
+} from '@shared/domain/types';
+import { EVIDENCE_DETAIL, EVIDENCE_LABEL, EVIDENCE_TONE } from '@shared/domain/progress';
+import { localISO } from '@shared/domain/planner';
 
 import { Badge } from '@/components/ui/badge';
 import { Meter, EmptyMeter } from '@/components/Meter';

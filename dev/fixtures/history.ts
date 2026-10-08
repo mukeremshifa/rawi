@@ -1,6 +1,6 @@
-import type { Attempt, ExamConfig } from '../../src/shared/types.ts';
-import { ATLANTIC_COURSE_ID } from './topics.ts';
-import { STATS_COURSE_ID } from './stats.ts';
+import type { Attempt, ExamConfig } from '../../src/shared/domain/types';
+import { ATLANTIC_COURSE_ID } from './topics';
+import { STATS_COURSE_ID } from './stats';
 
 /**
  * The returning student's prior work.

@@ -1,7 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
-import { Page } from './layout.tsx';
-import { ErrorState } from './states.tsx';
+import { Page } from '@/components/layout';
+import { ErrorState } from '@/components/states';
 
 /**
  * The last line of defence.

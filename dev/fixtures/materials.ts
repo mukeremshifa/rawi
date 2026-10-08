@@ -1,5 +1,5 @@
-import type { Material } from '../../src/shared/types.ts';
-import { ATLANTIC_COURSE_ID } from './topics.ts';
+import type { Material } from '../../src/shared/domain/types';
+import { ATLANTIC_COURSE_ID } from './topics';
 
 /**
  * The seeded library.

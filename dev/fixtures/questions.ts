@@ -1,5 +1,5 @@
-import type { Question } from '../../src/shared/types.ts';
-import { ATLANTIC_COURSE_ID } from './topics.ts';
+import type { Question } from '../../src/shared/domain/types';
+import { ATLANTIC_COURSE_ID } from './topics';
 
 /**
  * The authored question bank.

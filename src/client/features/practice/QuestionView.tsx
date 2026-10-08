@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { ArrowDownIcon, ArrowUpIcon, LightbulbIcon } from 'lucide-react';
 
-import type { AnswerValue, Question, SelfRating } from '@shared/types.ts';
+import type { AnswerValue, Question, SelfRating } from '@shared/domain/types';
 
 import { Prose } from '@/components/Prose';
 import { Button } from '@/components/ui/button';

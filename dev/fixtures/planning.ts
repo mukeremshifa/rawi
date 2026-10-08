@@ -3,9 +3,9 @@ import type {
   Availability,
   PlannedAssessment,
   PlannedSession,
-} from '../../src/shared/types.ts';
-import { ATLANTIC_COURSE_ID, seedDate } from './topics.ts';
-import { STATS_COURSE_ID } from './stats.ts';
+} from '../../src/shared/domain/types';
+import { ATLANTIC_COURSE_ID, seedDate } from './topics';
+import { STATS_COURSE_ID } from './stats';
 
 /**
  * The student-wide seed: assessments, availability and a part-planned week.

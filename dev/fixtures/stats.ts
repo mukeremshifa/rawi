@@ -1,4 +1,4 @@
-import type { Course, Material, Question, Topic } from '../../src/shared/types.ts';
+import type { Course, Material, Question, Topic } from '../../src/shared/domain/types';
 
 /**
  * The second seeded course: "Statistical Inference for Social Research".

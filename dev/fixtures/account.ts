@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { AnswerValue, Question, Course, Topic, Material } from '../../src/shared/types';
+import type { AnswerValue, Question, Course, Topic, Material } from '../../src/shared/domain/types';
 import { SEED_COURSE, SEED_TOPICS } from './topics';
 import { STATS_COURSE, STATS_TOPICS, STATS_MATERIALS, STATS_QUESTIONS } from './stats';
 import { SEED_MATERIALS } from './materials';

@@ -8,8 +8,8 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-import type { AnswerValue, Question, QuestionAttempt, WrittenGrading } from '@shared/types.ts';
-import { AI_MARKING_NOTICE, LEGACY_MARKING_NOTICE, rubricFor } from '@shared/marking.ts';
+import type { AnswerValue, Question, QuestionAttempt, WrittenGrading } from '@shared/domain/types';
+import { AI_MARKING_NOTICE, LEGACY_MARKING_NOTICE, rubricFor } from '@shared/domain/marking';
 
 import { Prose } from '@/components/Prose';
 import { Button } from '@/components/ui/button';

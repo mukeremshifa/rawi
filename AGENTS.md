@@ -30,7 +30,7 @@ Four places keep an em dash on purpose, so leave them alone:
 - The source attributions under a question's extract, such as
   `- Valderrama, *Atlantic Crossings* (fictional)`. That is a citation
   convention rather than prose punctuation.
-- `SAMPLE_SYLLABUS` in `src/shared/syllabus.ts`. It stands in for a document
+- `SAMPLE_SYLLABUS` in `src/shared/domain/syllabus.ts`. It stands in for a document
   somebody else wrote, and the syllabus reader has to cope with the punctuation
   real syllabuses use.
 - The outline matchers in the same file, which must recognise an em dash in
