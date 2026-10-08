@@ -104,6 +104,8 @@ bundles. Nothing seeds during startup, migration, onboarding or sign-in.
 - Hosted AI: tutor replies, question generation, written feedback grading and
   streaming. Blocked operation records are not completed AI output.
 - Text extraction from PDF, DOCX and PPTX originals.
-- Browser verification: Google sign-in, protected routes, cross-tab sign-out,
-  autosave failure and retry, the nine answer controls, material-editor drafts
-  and returning-browser storage retirement.
+- Latency: planner and progress reads run their queries one after another
+  inside a socket transaction. Batching them would cut seconds per load.
+- Browser check of the failed sign-out message. Sign-in, protected routes,
+  cross-tab sign-out, autosave failure and retry, all nine answer controls,
+  material-editor drafts and storage retirement were checked on 8 October 2026.
