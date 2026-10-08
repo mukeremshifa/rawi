@@ -42,6 +42,12 @@ const bodyOf = (p: Passage) => {
   const match = /^\s*#{1,6}\s+(.+?)\s*\n/.exec(p.text);
   return match && match[1]!.trim() === p.heading.trim() ? p.text.slice(match[0].length) : p.text;
 };
+/** A passage's text: Markdown without HTML or images, and links only to the web. */
+export function PassageText({ passage, markdown }: { passage: Passage; markdown: boolean }) {
+  return markdown
+    ? <Markdown skipHtml components={{ img: () => null, h1: 'h3', h2: 'h3', a: ({ children, href }) => <a href={href && /^https?:\/\//i.test(href) ? href : undefined} rel="noreferrer noopener" target="_blank">{children}</a> }}>{bodyOf(passage)}</Markdown>
+    : <div className="whitespace-pre-wrap">{bodyOf(passage)}</div>;
+}
 const passagePath = (m: string, v: string, p: string) => `/materials/${m}/versions/${v}/passages/${p}`;
 
 /** Read every passage of a version, for editing its text. */
@@ -127,9 +133,7 @@ export function MaterialReader() {
             </div>
             {p.heading && <h2 className="mt-section mb-3 pr-10 font-serif text-xl leading-snug font-semibold sm:pr-0">{p.heading}</h2>}
             <div className="rawi-prose font-serif">
-              {version.format === 'md'
-                ? <Markdown skipHtml components={{ img: () => null, h1: 'h3', h2: 'h3', a: ({ children, href }) => <a href={href && /^https?:\/\//i.test(href) ? href : undefined} rel="noreferrer noopener" target="_blank">{children}</a> }}>{bodyOf(p)}</Markdown>
-                : <div className="whitespace-pre-wrap">{bodyOf(p)}</div>}
+              <PassageText passage={p} markdown={version.format === 'md'} />
             </div>
           </section>
         ))}

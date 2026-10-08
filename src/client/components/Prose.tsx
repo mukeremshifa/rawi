@@ -30,17 +30,18 @@ function parse(text: string): Block[] {
   return blocks.filter(b => 'lines' in b ? b.lines.length > 0 : b.items.length > 0);
 }
 
-const Lines = ({ lines }: { lines: string[] }) => <>{lines.map((line, j) => <Fragment key={j}>{j > 0 && ' '}<InlineText text={line} /></Fragment>)}</>;
+const Lines = ({ lines, onCitation }: { lines: string[]; onCitation?: (n: number) => void }) => <>{lines.map((line, j) => <Fragment key={j}>{j > 0 && ' '}<InlineText text={line} onCitationClick={onCitation} /></Fragment>)}</>;
 
-export function Prose({ text, className, size = 'reading' }: { text: string; className?: string; size?: 'reading' | 'compact' }) {
+/** `onCitation` makes `[n]` markers buttons, for text whose sources are known. */
+export function Prose({ text, className, size = 'reading', onCitation }: { text: string; className?: string; size?: 'reading' | 'compact'; onCitation?: (n: number) => void }) {
   return (
     <div className={cn('rawi-prose', size === 'compact' && 'text-base! leading-relaxed!', className)}>
       {parse(text).map((block, i) => {
         switch (block.kind) {
-          case 'p': return <p key={i}><Lines lines={block.lines} /></p>;
-          case 'quote': return <blockquote key={i}><Lines lines={block.lines} /></blockquote>;
-          case 'ul': return <ul key={i}>{block.items.map((item, j) => <li key={j}><InlineText text={item} /></li>)}</ul>;
-          case 'ol': return <ol key={i}>{block.items.map((item, j) => <li key={j}><InlineText text={item} /></li>)}</ol>;
+          case 'p': return <p key={i}><Lines lines={block.lines} onCitation={onCitation} /></p>;
+          case 'quote': return <blockquote key={i}><Lines lines={block.lines} onCitation={onCitation} /></blockquote>;
+          case 'ul': return <ul key={i}>{block.items.map((item, j) => <li key={j}><InlineText text={item} onCitationClick={onCitation} /></li>)}</ul>;
+          case 'ol': return <ol key={i}>{block.items.map((item, j) => <li key={j}><InlineText text={item} onCitationClick={onCitation} /></li>)}</ol>;
         }
       })}
     </div>
