@@ -6,7 +6,7 @@ import { CourseLibrary } from '@/features/courses/Courses';
 import { CourseEditor } from '@/features/courses/Syllabus';
 import { MaterialReader } from '@/features/materials/Reader';
 import { Materials } from '@/features/materials/Library';
-import { Planner } from '@/features/planning/Planning';
+import { Planner } from '@/features/planning/Planner';
 import { Home } from '@/features/home/Home';
 import { CourseOverview } from '@/features/courses/CourseOverview';
 import { Progress } from '@/features/progress/Progress';
@@ -141,7 +141,7 @@ export function App() {
         <Route path="/welcome" element={<Navigate replace to="/courses" />} />
         <Route path="/course/:id/syllabus" element={<CourseEditor key={location.pathname} />} />
         <Route path="/course/:id/settings" element={<CourseEditor key={location.pathname} />} />
-        <Route path="/planner/availability" element={<Planner />} />
+        <Route path="/planner/availability" element={<Navigate replace to="/planner?availability=1" />} />
         <Route path="/settings/:section" element={settings} />
         <Route path="/course/:id/progress/topic/:topicId" element={<TopicRedirect />} />
         <Route path="/" element={<Home />} />
