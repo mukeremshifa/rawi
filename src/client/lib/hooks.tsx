@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, useCallback, ty
 import { useBlocker } from 'react-router-dom';
 import { errorMessage } from '@/lib/api';
 import { useApi, useApiAll, useSave } from '@/lib/data';
+import { useConfirm } from '@/components/ui/alert-dialog';
 
 /* Transitional adapters over lib/data.ts. Pages move to useApi and useSave as they are redesigned. */
 export function useRecord<T>(path: string) {
@@ -24,25 +25,36 @@ export function useLearningWrite() {
   return { busy: save.busy, error: save.error, code: save.code, run };
 }
 let unsavedEdits = false;
-export function confirmDiscard() { return !unsavedEdits || window.confirm('You have unsaved changes. Discard them and sign out?'); }
+/** Whether any open editor holds unsent work. Read before signing out. */
+export function hasUnsavedEdits() { return unsavedEdits; }
 const DraftGuard = createContext<(id: symbol, dirty: boolean) => void>(() => {});
 export function DraftBoundary({ children }: { children: ReactNode }) {
   const entries = useRef(new Set<symbol>()); const [dirty, setDirty] = useState(false);
+  const confirm = useConfirm();
   const register = useCallback((id: symbol, value: boolean) => { if (value) entries.current.add(id); else entries.current.delete(id); unsavedEdits = entries.current.size > 0; setDirty(unsavedEdits); }, []);
   useEffect(() => () => { unsavedEdits = false; }, []);
   const blocker = useBlocker(useCallback(() => entries.current.size > 0, []));
-  useEffect(() => { if (blocker.state === 'blocked') { if (window.confirm('You have unsaved changes. Discard them and leave this page?')) blocker.proceed(); else blocker.reset(); } }, [blocker]);
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return;
+    void confirm({ title: 'Leave without saving?', description: 'Your changes on this page have not been saved.', confirmLabel: 'Discard and leave', cancelLabel: 'Keep editing', destructive: true })
+      .then(leave => { if (leave) blocker.proceed(); else blocker.reset(); });
+  }, [blocker, confirm]);
   useEffect(() => {
     if (!dirty) return;
-    const unload = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    // The browser shows its own prompt here. Pages cannot replace it.
+    let leaving = false;
+    const unload = (e: BeforeUnloadEvent) => { if (!leaving) e.preventDefault(); };
     const click = (e: MouseEvent) => {
       const link = (e.target as Element)?.closest('a[href]');
       // React Router handles internal navigation, including the Back button.
-      if (link instanceof HTMLAnchorElement && (link.origin !== location.origin || !link.pathname.startsWith('/')) && !link.download && link.target !== '_blank' && !window.confirm('Unsent work will be lost. Leave this page?')) { e.preventDefault(); e.stopPropagation(); }
+      if (!(link instanceof HTMLAnchorElement) || (link.origin === location.origin && link.pathname.startsWith('/')) || link.download || link.target === '_blank') return;
+      e.preventDefault(); e.stopPropagation();
+      void confirm({ title: 'Leave without saving?', description: 'Unsent work on this page will be lost.', confirmLabel: 'Discard and leave', cancelLabel: 'Keep editing', destructive: true })
+        .then(leave => { if (leave) { leaving = true; window.location.href = link.href; } });
     };
     window.addEventListener('beforeunload', unload); document.addEventListener('click', click, true);
     return () => { window.removeEventListener('beforeunload', unload); document.removeEventListener('click', click, true); };
-  }, [dirty]);
+  }, [dirty, confirm]);
   return <DraftGuard.Provider value={register}>{children}</DraftGuard.Provider>;
 }
 export function useUnsentGuard(dirty: boolean) {

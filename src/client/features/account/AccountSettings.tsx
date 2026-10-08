@@ -3,10 +3,13 @@ import type { Me, Preferences } from '@shared/contracts/workspace';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { NativeSelect as Select } from '@/components/ui/native-select';
 import { useAccount } from '@/lib/account';
 import { request, errorMessage, RequestError } from '@/lib/api';
 import { useUnsentGuard } from '@/lib/hooks';
+import { Logo } from '@/components/Logo';
+import { Field, FieldError } from '@/components/ui/field';
+import { NumberField } from '@/components/ui/number-field';
+import { RadioCards } from '@/components/ui/radio-group';
 import { PreferencesEditor } from '@/features/courses/Courses';
 
 export function AccountSettings({ onProfile, onSaved }: { onProfile: (user: Me['user']) => void; onSaved: (value: Preferences) => void }) {
@@ -60,11 +63,28 @@ export function Onboarding({ onSaved }: { onSaved: (account: Me) => void }) {
     }
     finally { setBusy(false); }
   }
-  return <Page className="py-12" width="narrow"><PageHeader title="Make room for learning" description="Choose how you would like to start. You can change these preferences later." />
-    <form className="space-y-5" onSubmit={e => { e.preventDefault(); void finish(); }}><fieldset className="space-y-5" disabled={busy || !!pending.current}>
-      <label className="block">Your display name<Input required maxLength={80} value={name} onChange={e => setName(e.target.value)} /></label>
-      <label className="block">Questions per practice<Input type="number" min={1} max={30} value={count} onChange={e => setCount(Number(e.target.value))} /></label>
-      <label className="block">Feedback<Select value={feedback} onChange={e => setFeedback(e.target.value as typeof feedback)}><option value="immediate">After each answer</option><option value="end">At the end</option></Select></label>
-    </fieldset><p>Your workspace starts empty. Add a course whenever you are ready.</p>
-    {error && <p role="alert">{error}</p>}<Button disabled={busy || !name.trim()}>{busy ? 'Saving…' : pending.current ? 'Retry saving' : 'Open my workspace'}</Button></form></Page>;
+  return <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-section px-4 py-12">
+      <Logo />
+      <div className="flex flex-col gap-2">
+        <h1 className="font-serif text-2xl leading-tight font-medium tracking-tight">Set up your workspace</h1>
+        <p className="text-muted-foreground text-md">A few defaults for practice. You can change them any time in Settings.</p>
+      </div>
+      <form className="flex flex-col gap-gutter" onSubmit={e => { e.preventDefault(); void finish(); }}>
+        <fieldset className="flex flex-col gap-gutter" disabled={busy || !!pending.current}>
+          <Field label="Your name" required><Input maxLength={80} value={name} onChange={e => setName(e.target.value)} autoComplete="name" /></Field>
+          <Field label="Questions per practice set" description="Between 1 and 30."><NumberField value={count} onValueChange={v => setCount(v ?? 1)} min={1} max={30} /></Field>
+          <div className="flex flex-col gap-1.5">
+            <span id="onboarding-feedback" className="text-sm font-medium">When to show feedback</span>
+            <RadioCards aria-labelledby="onboarding-feedback" value={feedback} onValueChange={setFeedback} options={[
+              { value: 'immediate', label: 'After each answer', description: 'Check as you go.' },
+              { value: 'end', label: 'At the end', description: 'Answer everything first.' },
+            ]} />
+          </div>
+        </fieldset>
+        {error && <FieldError>{error}</FieldError>}
+        <Button size="lg" loading={busy} disabled={!name.trim()} className="self-start">{pending.current && !busy ? 'Retry' : 'Open my workspace'}</Button>
+      </form>
+    </div>
+  </main>;
 }

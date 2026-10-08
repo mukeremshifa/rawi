@@ -1,16 +1,16 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import type { Me } from '@shared/contracts/workspace';
-import { Button } from '@/components/ui/button';
-import { Page, PageHeader } from '@/components/layout';
 import { authClient, RequestError, request, setActiveAccount } from '@/lib/api';
 import { CourseLibrary, CourseEditor, NewCourse } from '@/features/courses/Courses';
 import { Materials, MaterialReader } from '@/features/materials/Materials';
 import { Planner, Progress } from '@/features/planning/Planning';
 import { AiOperation } from '@/features/ai/AiOperation';
-import { confirmDiscard, DraftBoundary } from '@/lib/hooks';
-import { Navigation } from '@/app/Navigation';
-import { Logo } from '@/components/Logo';
+import { DraftBoundary, hasUnsavedEdits } from '@/lib/hooks';
+import { Shell } from '@/app/Shell';
+import { CheckingScreen, ConnectionBanner, SignInScreen, UnavailableScreen } from '@/app/AuthScreens';
+import { NotFound } from '@/app/NotFound';
+import { useConfirm } from '@/components/ui/alert-dialog';
 import { Search, Notifications } from '@/features/support/Support';
 import { TutorLibrary, Tutor } from '@/features/tutor/Tutor';
 import { Exams } from '@/features/exams/Exams';
@@ -28,11 +28,14 @@ export function App() {
   const [state, setState] = useState<'checking' | 'authenticated' | 'unauthenticated' | 'unavailable'>('checking');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Which action the banner's Retry repeats: the connection check or sign-out.
+  const [failed, setFailed] = useState<'connection' | 'sign-out'>('connection');
   const epoch = useRef(0), authBusy = useRef(false);
   const currentAccount = useRef<Me | null>(null);
   const sessionRequest = useRef<AbortController | null>(null);
   const channel = useRef<BroadcastChannel | null>(null);
   const location = useLocation();
+  const confirm = useConfirm();
   const returnTo = safeReturnTo(new URLSearchParams(location.search).get('returnTo'));
   const destination = location.pathname === '/sign-in' ? returnTo : safeReturnTo(location.pathname + location.search + location.hash);
   const clear = useCallback(() => {
@@ -54,7 +57,7 @@ export function App() {
     } catch (e) {
       if (epoch.current !== current) return;
       if (e instanceof RequestError && (e.code === 'unauthenticated' || e.code === 'account_changed')) clear();
-      else { setState('unavailable'); setError('We could not reach your account. Keep this page open and try again.'); }
+      else { setFailed('connection'); setState('unavailable'); setError('We could not reach your account. Keep this page open and try again.'); }
     }
   }, [clear]);
   useEffect(() => {
@@ -101,35 +104,25 @@ export function App() {
     finally { authBusy.current = false; setBusy(false); }
   };
   const signOut = async () => {
-    if (!confirmDiscard()) return;
+    if (hasUnsavedEdits() && !await confirm({ title: 'Sign out without saving?', description: 'Your unsaved changes will be lost.', confirmLabel: 'Discard and sign out', cancelLabel: 'Keep editing', destructive: true })) return;
     authBusy.current = true; ++epoch.current; setBusy(true); setError('');
     try {
       const result = await authClient.signOut();
       if (result.error) throw new Error('Sign-out failed');
       clear(); channel.current?.postMessage({ type: 'signed-out' });
-    } catch { setError('Sign-out did not complete. Your session may still be active. Try signing out again.'); }
+    } catch { setFailed('sign-out'); setError('Sign-out did not complete, so your session may still be active. Try signing out again.'); }
     finally { authBusy.current = false; setBusy(false); }
   };
   if (location.pathname === '/online' || location.pathname.startsWith('/online/')) return <Navigate replace to={`${/^\/online\/course\/[^/]+$/.test(location.pathname) ? location.pathname.slice(7) + '/syllabus' : location.pathname.slice(7) || '/'}${location.search}${location.hash}`} />;
   if (state === 'unauthenticated' && location.pathname !== '/sign-in') return <Navigate replace to={`/sign-in?returnTo=${encodeURIComponent(destination)}`} />;
-  return <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
-    <header className="border-b px-gutter h-14 shrink-0 flex items-center gap-4">
-      <Link to="/" className="font-semibold mr-auto"><Logo /></Link>
-      {me && <details className="relative"><summary className="cursor-pointer rounded-md border px-3 py-2 text-sm">{me.user.name || 'Your account'}</summary><div className="absolute right-0 z-50 mt-2 w-72 rounded-lg border bg-background p-4 shadow-lg space-y-3"><p className="font-medium">{me.user.name}</p><p className="break-words text-sm text-muted-foreground">{me.user.email}</p><Link className="block underline" to="/settings/profile">Account and profile</Link><Link className="block underline" to="/settings/preferences">Study preferences</Link><Button variant="secondary" disabled={busy} onClick={() => void signOut()}>{busy ? 'Signing out…' : 'Sign out'}</Button></div></details>}
-    </header>
-    <div className="flex min-h-0 flex-1">
-      {me && me.preferences.values.onboardingCompleted && <aside className="hidden lg:flex w-60 shrink-0 flex-col overflow-y-auto border-r"><Navigation /></aside>}
-      <main className="min-w-0 flex-1 overflow-y-auto">
-        {state === 'checking' && <p role="status" className="p-6">Opening your workspace…</p>}
-        {!me && state !== 'checking' && <Page className="py-16" width="narrow"><div className="rounded-xl border p-8 space-y-6"><PageHeader title={state === 'unavailable' ? 'We could not open your account' : 'Welcome to Rawi'} description="Your courses, practice and study plans, together in your personal workspace." />
-          <p className="text-muted-foreground">Sign in to pick up where you left off, or start with an empty workspace and make it yours.</p>
-          {(error || new URLSearchParams(location.search).has('error')) && <p role="alert">{error || 'Google sign-in was cancelled or did not finish. Please try again.'}</p>}
-          <div className="flex flex-wrap gap-3">{state !== 'unavailable' && <Button disabled={busy} onClick={() => void signIn()}>{busy ? 'Connecting…' : 'Continue with Google'}</Button>}{state === 'unavailable' && <Button variant="secondary" disabled={busy} onClick={() => void refresh()}>Try again</Button>}</div>
-        </div></Page>}
-        {me && <AccountContext.Provider value={me}><DraftBoundary key={me.user.id}>
-          {error && <div role="alert" className="border-b p-4">{error} <Button variant="secondary" disabled={busy} onClick={() => void refresh()}>Retry connection</Button></div>}
-          {!me.preferences.values.onboardingCompleted ? <Onboarding onSaved={account => { currentAccount.current = account; setMe(account); }} /> : <>
-          <details className="lg:hidden border-b"><summary className="p-3">Navigation</summary><Navigation /></details>
+  const signInError = error || (new URLSearchParams(location.search).has('error') ? 'Google sign-in was cancelled or did not finish. Please try again.' : '');
+  if (state === 'checking' && !me) return <CheckingScreen />;
+  if (!me) return state === 'unavailable'
+    ? <UnavailableScreen busy={busy} error={error} onRetry={() => void refresh()} />
+    : <SignInScreen busy={busy} error={signInError} onSignIn={() => void signIn()} />;
+  return <AccountContext.Provider value={me}><DraftBoundary key={me.user.id}>
+    {!me.preferences.values.onboardingCompleted ? <Onboarding onSaved={account => { currentAccount.current = account; setMe(account); }} /> :
+    <Shell onSignOut={() => void signOut()} signingOut={busy} banner={error && <ConnectionBanner message={error} busy={busy} onRetry={() => void (failed === 'sign-out' ? signOut() : refresh())} />}>
       <Routes>
         {Kit && <Route path="/dev/kit" element={<Suspense><Kit /></Suspense>} />}
         <Route path="/sign-in" element={<Navigate replace to={returnTo} />} />
@@ -165,11 +158,8 @@ export function App() {
         <Route path="/runs/:id" element={<Run key={location.pathname} />} />
         <Route path="/attempts/:id" element={<AttemptReview key={location.pathname} />} />
         <Route path="/settings" element={<AccountSettings onProfile={user => setMe(previous => previous?.user.id === user.id ? { ...previous, user } : previous)} onSaved={preferences => setMe(previous => previous?.workspace.id === preferences.workspaceId ? { ...previous, preferences } : previous)} />} />
-        <Route path="*" element={<Page className="py-10"><PageHeader title="Page not found" description="Open a course or your study workspace to continue." /><Button asChild><Link to="/courses">Back to courses</Link></Button></Page>} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
-          </>}
-        </DraftBoundary></AccountContext.Provider>}
-      </main>
-    </div>
-  </div>;
+    </Shell>}
+  </DraftBoundary></AccountContext.Provider>;
 }
