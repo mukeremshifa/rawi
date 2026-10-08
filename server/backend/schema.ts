@@ -7,7 +7,8 @@ import type { ExamConfig } from '../../src/shared/types';
 import type { ExamRuntime } from '../../src/shared/online-exams';
 import type { Availability, PlannedAssessment, PlannedSession, PlanProposal, CheckIn } from '../../src/shared/types';
 import type { OnlineTutorSession, OnlineTutorMessage, TutorMessageProvenance } from '../../src/shared/online-tutor';
-import type { ImportReview } from '../../src/shared/transfer';
+/** Review summary kept with legacy workspace imports. */
+type ImportReview = { id: string; state: 'review' | 'complete'; courses: number; materials: number; questions: number; sets: number; attempts: number; unsupported: string[]; courseIds?: string[] };
 import type { WrittenGrading } from '../../src/shared/types';
 
 const timestamps = () => ({
