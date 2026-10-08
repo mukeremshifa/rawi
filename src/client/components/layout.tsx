@@ -31,8 +31,8 @@ export function Breadcrumbs({ items, className }: { items: Crumb[]; className?: 
       <ol className="flex min-w-0 items-center gap-1">
         {items.map((item, i) => (
           <Fragment key={i}>
-            {i > 0 && <ChevronRightIcon className="size-3 shrink-0 opacity-60" aria-hidden />}
-            <li className={cn('min-w-0 truncate', i === items.length - 1 && 'text-foreground')} aria-current={i === items.length - 1 ? 'page' : undefined}>
+            {i > 0 && <ChevronRightIcon className={cn('size-3 shrink-0 opacity-60', i < items.length - 1 && 'hidden sm:block', i === items.length - 1 && 'hidden sm:block')} aria-hidden />}
+            <li className={cn('min-w-0 truncate', i === items.length - 1 ? 'text-foreground' : 'hidden sm:block')} aria-current={i === items.length - 1 ? 'page' : undefined}>
               {item.to && i < items.length - 1 ? <Link to={item.to} className="hover:text-foreground">{item.label}</Link> : item.label}
             </li>
           </Fragment>

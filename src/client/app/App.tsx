@@ -2,7 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import type { Me } from '@shared/contracts/workspace';
 import { authClient, RequestError, request, setActiveAccount } from '@/lib/api';
-import { CourseLibrary, CourseEditor, NewCourse } from '@/features/courses/Courses';
+import { CourseLibrary } from '@/features/courses/Courses';
+import { CourseEditor } from '@/features/courses/Syllabus';
 import { Materials, MaterialReader } from '@/features/materials/Materials';
 import { Planner } from '@/features/planning/Planning';
 import { Home } from '@/features/home/Home';
@@ -149,7 +150,7 @@ export function App() {
         <Route path="/course/:id/progress" element={<CourseRedirect />} />
         <Route path="/course/:id/overview" element={<CourseRedirect />} />
         <Route path="/courses" element={<CourseLibrary />} />
-        <Route path="/courses/new" element={<NewCourse />} />
+        <Route path="/courses/new" element={<Navigate replace to="/courses?new=1" />} />
         <Route path="/course/:id" element={<CourseOverview key={location.pathname} />} />
         <Route path="/course/:id/materials" element={<Materials key={location.pathname} />} />
         <Route path="/materials/:materialId" element={<MaterialReader key={location.pathname} />} />
