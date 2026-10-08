@@ -1,7 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import { BookOpenIcon, CalendarDaysIcon, ClipboardListIcon, GraduationCapIcon, HomeIcon, LayersIcon, LayoutDashboardIcon, ListTreeIcon, MessageSquareIcon, TrendingUpIcon, SearchIcon, BellIcon } from 'lucide-react';
 import { NavGroup, type NavItem } from '@/components/NavGroup';
-export function OnlineNavigation() {
+export function Navigation() {
   const { pathname } = useLocation(); const course = /^\/course\/([^/]+)/.exec(pathname)?.[1];
   const item = (to: string, label: string, icon: NavItem['icon'], end = false): NavItem => ({ to, label, icon, match: to, end });
   const global = [item('/', 'Home', HomeIcon, true), item('/courses', 'Courses', LayersIcon), item('/planner', 'Planner', CalendarDaysIcon), item('/history', 'Progress & history', TrendingUpIcon), item('/search', 'Search', SearchIcon), item('/notifications', 'Reminders', BellIcon)];

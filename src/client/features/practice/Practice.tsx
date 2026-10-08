@@ -4,10 +4,10 @@ import type { z } from 'zod';
 import { createSetInput, formats, sameAnswer, type LearningSet, type LearningRun, type LearningAttempt, type VersionedQuestion, type runWriteInput } from '@shared/contracts/learning';
 import { selectQuestions } from '@shared/domain/question-selection';
 import { sectionLocked, locate } from '@shared/domain/exam';
-import { OnlineGeneration, RequestFeedback } from '@/features/ai/AiOperation';
+import { QuestionGeneration, RequestFeedback } from '@/features/ai/AiOperation';
 import { useAccount } from '@/lib/account';
 import { request } from '@/lib/api';
-import type { OnlineMaterial } from '@shared/contracts/materials';
+import type { Material } from '@shared/contracts/materials';
 import type { AnswerValue } from '@shared/domain/types';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
@@ -15,17 +15,17 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { QuestionView } from '@/features/practice/QuestionView';
 import { QuestionFeedback } from '@/features/practice/QuestionFeedback';
-import { useLearningWrite, useOnlineRecord, useOnlineCollection, useUnsentGuard } from '@/lib/hooks';
+import { useLearningWrite, useRecord, useCollection, useUnsentGuard } from '@/lib/hooks';
 
-export function OnlinePractice() {
+export function Practice() {
   const { id = '' } = useParams(); const nav = useNavigate(); const [params] = useSearchParams(); const planned = params.get('plannedSessionId');
   const [archived, setArchived] = useState('false'), [cursor, setCursor] = useState(''), [query, setQuery] = useState('');
-  const sets = useOnlineRecord<{ sets: LearningSet[]; nextCursor: string | null }>(`/v1/courses/${id}/sets?archived=${archived}${cursor ? `&cursor=${cursor}` : ''}`);
-  const bank = useOnlineCollection<VersionedQuestion>(`/v1/courses/${id}/questions?limit=100`, 'questions');
+  const sets = useRecord<{ sets: LearningSet[]; nextCursor: string | null }>(`/v1/courses/${id}/sets?archived=${archived}${cursor ? `&cursor=${cursor}` : ''}`);
+  const bank = useCollection<VersionedQuestion>(`/v1/courses/${id}/questions?limit=100`, 'questions');
   const [runCursor, setRunCursor] = useState(''), [historyCursor, setHistoryCursor] = useState('');
-  const active = useOnlineRecord<{ runs: { id: string; title: string }[]; nextCursor: string | null }>(`/v1/courses/${id}/runs?limit=100${runCursor ? `&cursor=${runCursor}` : ''}`);
-  const history = useOnlineRecord<{ attempts: LearningAttempt[]; nextCursor: string | null }>(`/v1/courses/${id}/attempts?limit=100${historyCursor ? `&cursor=${historyCursor}` : ''}`);
-  const materialNames = useOnlineCollection<OnlineMaterial>(`/v1/courses/${id}/materials?limit=50&archived=all`, 'materials');
+  const active = useRecord<{ runs: { id: string; title: string }[]; nextCursor: string | null }>(`/v1/courses/${id}/runs?limit=100${runCursor ? `&cursor=${runCursor}` : ''}`);
+  const history = useRecord<{ attempts: LearningAttempt[]; nextCursor: string | null }>(`/v1/courses/${id}/attempts?limit=100${historyCursor ? `&cursor=${historyCursor}` : ''}`);
+  const materialNames = useCollection<Material>(`/v1/courses/${id}/materials?limit=50&archived=all`, 'materials');
   const defaults = useAccount().preferences.values;
   const [name, setName] = useState(''), [format, setFormat] = useState('all'), [count, setCount] = useState(defaults.questionCount), [feedback, setFeedback] = useState<'immediate' | 'end'>(defaults.feedback), [hints, setHints] = useState(defaults.hints);
   const [topic, setTopic] = useState(params.get('topicId') ?? ''), [difficulty, setDifficulty] = useState(''), [material, setMaterial] = useState(params.get('materialId') ?? '');
@@ -49,16 +49,16 @@ export function OnlinePractice() {
       <label><input type="checkbox" checked={hints} onChange={e => setHints(e.target.checked)} /> Allow hints</label></fieldset>
       <p>{bank.value ? `${pool.length} matching questions in the complete course bank.` : 'Loading the complete question bank…'}</p>
       <Button disabled={op.busy || !name.trim() || !pool.length || count < 1 || count > 50} onClick={() => { pending.current ??= createSetInput.parse({ id: crypto.randomUUID(), name, questionIds: selectQuestions(pool, {}, count).map(q => q.id), feedback, hintsAllowed: hints }); void op.run<LearningSet>(`/v1/courses/${id}/sets`, pending.current, 'POST', saved => { pending.current = null; setName(''); allowNavigation(); nav(`/sets/${saved.id}${planned ? `?plannedSessionId=${planned}` : ''}`); }); }}>{op.busy ? 'Saving…' : pending.current ? 'Retry saving set' : 'Save set'}</Button>
-      {bank.value?.length === 0 && <p>Your online bank is empty. Question generation is not connected yet.</p>}{!!bank.value?.length && !pool.length && <p>No saved questions match these filters.</p>}
-      <p>Online question generation is not connected yet. Your saved practice remains available.</p>
+      {bank.value?.length === 0 && <p>Your question bank is empty. Question generation isn't available yet.</p>}{!!bank.value?.length && !pool.length && <p>No saved questions match these filters.</p>}
+      <p>Question generation isn't available yet. Your saved practice remains available.</p>
     </section>
-    <OnlineGeneration courseId={id} />
+    <QuestionGeneration courseId={id} />
     <section className="space-y-3 border-t py-5"><h2 className="text-xl font-semibold">Attempt history</h2>{history.value?.attempts.map(a => <p key={a.id}><Link className="underline" to={`/attempts/${a.id}`}>{a.title}</Link> · {a.marksAvailable ? `${a.marksAwarded}/${a.marksAvailable} graded marks` : 'Not graded'} · {a.pending} pending</p>)}{history.value?.nextCursor && <Button onClick={() => setHistoryCursor(history.value!.nextCursor!)}>Older history page</Button>}{historyCursor && <Button onClick={() => setHistoryCursor('')}>First history page</Button>}</section>
   </Page>;
 }
-export function OnlineSet() {
+export function PracticeSet() {
   const { id = '' } = useParams(); const nav = useNavigate(); const [params] = useSearchParams(); const planned = params.get('plannedSessionId'); const op = useLearningWrite();
-  const record = useOnlineRecord<{ set: LearningSet; items: { id: string; question: VersionedQuestion }[] }>(`/v1/sets/${id}`);
+  const record = useRecord<{ set: LearningSet; items: { id: string; question: VersionedQuestion }[] }>(`/v1/sets/${id}`);
   const [name, setName] = useState<string | null>(null); const startId = useRef(crypto.randomUUID()); const edit = useRef<unknown>(null);
   const row = record.value?.set;
   useUnsentGuard(!!edit.current || name !== null && name !== row?.name);
@@ -74,9 +74,9 @@ export function OnlineSet() {
     </>}
   </Page>;
 }
-export function OnlineRun() {
+export function Run() {
   const { id = '' } = useParams(); const nav = useNavigate(); const op = useLearningWrite();
-  const record = useOnlineRecord<LearningRun>(`/v1/runs/${id}`);
+  const record = useRecord<LearningRun>(`/v1/runs/${id}`);
   const [drafts, setDrafts] = useState<Record<string, AnswerValue>>({}), [message, setMessage] = useState(''), [review, setReview] = useState<LearningRun | null>(null);
   const pending = useRef<{ path: string; method: string; body: unknown } | null>(null);
   const { user } = useAccount();
@@ -131,8 +131,8 @@ export function OnlineRun() {
     </div>}
   </Page>;
 }
-export function OnlineAttempt() {
-  const { id = '' } = useParams(); const op = useLearningWrite(); const nav = useNavigate(); const setId = useRef(crypto.randomUUID()); const { value: a, error } = useOnlineRecord<LearningAttempt & { feedbackRevisions?: { id: string; questionId: string; revision: number; createdAt: string; grading: import("@shared/domain/types").WrittenGrading }[] }>(`/v1/attempts/${id}`);
+export function AttemptReview() {
+  const { id = '' } = useParams(); const op = useLearningWrite(); const nav = useNavigate(); const setId = useRef(crypto.randomUUID()); const { value: a, error } = useRecord<LearningAttempt & { feedbackRevisions?: { id: string; questionId: string; revision: number; createdAt: string; grading: import("@shared/domain/types").WrittenGrading }[] }>(`/v1/attempts/${id}`);
   const missed = a?.questions.filter(q => ['incorrect', 'partial', 'skipped'].includes(q.result.outcome) || q.result.response.kind === 'self-rating' && ['again', 'hard'].includes(q.result.response.rating)).slice(0, 50) ?? [];
-  return <Page className="py-8" width="prose"><PageHeader title={a?.title ?? 'Attempt result'} description="Saved responses and marking from this attempt." />{error && <p role="alert">{error}</p>}{a && <div className="space-y-6"><Link className="underline" to={`/course/${a.courseId}/practice`}>Practice library</Link>{op.error && <p role="alert">{op.error}</p>}{missed.length > 0 && <Button disabled={op.busy} onClick={() => void op.run<LearningSet>(`/v1/courses/${a.courseId}/sets`, { id: setId.current, name: `Review: ${a.title}`.slice(0, 200), questionIds: missed.map(q => q.question.id), feedback: 'immediate', hintsAllowed: true, remediatesAttemptId: a.id }, 'POST', saved => nav(`/sets/${saved.id}`))}>Practise missed questions and difficult cards ({missed.length})</Button>}{a.sampleTimingNotice && <p role="note">{a.sampleTimingNotice}</p>}{a.sampleDataset && <p>Sample activity. Objective answers use the normal marking rules. Sample written feedback is illustrative.</p>}{a.imported && <p>{a.markingVersion === 'recovered-objective-v1' ? 'Recovered practice, marked by the server. Earlier assistance could not be verified.' : 'Imported history. Recorded grading and assistance provenance are preserved from the original export.'}</p>}{a.finish && <p>Ended {a.finish === 'expired' ? 'when time expired' : 'by manual submission'}.</p>}<p>{a.marksAvailable ? `${a.marksAwarded}/${a.marksAvailable} graded marks` : 'Not graded'} · {a.pending} pending answers</p>{a.pending > 0 && <p>Written answers are saved. Online written feedback is not connected yet. Pending answers do not lower your grade.</p>}{a.questions.map(({ question, result }) => <section className="border-t pt-5 space-y-4" key={question.id}><h2>{question.prompt}</h2>{a.flashcardReview?.firstRatings[question.id] && <p>First pass: {a.flashcardReview.firstRatings[question.id]!.rating}. Final ratings remain self-rated.</p>}{result.response.kind === 'text' && question.rubric && <RequestFeedback attemptId={a.id} questionId={question.id} />}<QuestionFeedback question={{ ...question, source: undefined }} attempt={result} />{a.feedbackRevisions?.some(r => r.questionId === question.id) && <details><summary>Feedback revision history</summary>{a.feedbackRevisions.filter(r => r.questionId === question.id).map(r => <article key={r.id}><p>Revision {r.revision} · {r.grading.model} · {new Date(r.createdAt).toLocaleString()}</p><p>{r.grading.summary}</p>{r.grading.points?.map(p => <p key={p.rubricId}>{p.awarded}/{p.max}: {p.feedback}</p>)}</article>)}</details>}<Link className="underline" to={`/course/${a.courseId}/tutor?attemptId=${a.id}&questionId=${question.id}&topicId=${question.topicId}`}>Discuss this saved answer</Link>{question.source && <Link className="underline" to={`/materials/${question.source.materialId}/versions/${question.source.versionId}/passages/${question.source.passageId}`}>Read the exact source</Link>}</section>)}</div>}</Page>;
+  return <Page className="py-8" width="prose"><PageHeader title={a?.title ?? 'Attempt result'} description="Saved responses and marking from this attempt." />{error && <p role="alert">{error}</p>}{a && <div className="space-y-6"><Link className="underline" to={`/course/${a.courseId}/practice`}>Practice library</Link>{op.error && <p role="alert">{op.error}</p>}{missed.length > 0 && <Button disabled={op.busy} onClick={() => void op.run<LearningSet>(`/v1/courses/${a.courseId}/sets`, { id: setId.current, name: `Review: ${a.title}`.slice(0, 200), questionIds: missed.map(q => q.question.id), feedback: 'immediate', hintsAllowed: true, remediatesAttemptId: a.id }, 'POST', saved => nav(`/sets/${saved.id}`))}>Practise missed questions and difficult cards ({missed.length})</Button>}{a.sampleTimingNotice && <p role="note">{a.sampleTimingNotice}</p>}{a.sampleDataset && <p>Sample activity. Objective answers use the normal marking rules. Sample written feedback is illustrative.</p>}{a.imported && <p>{a.markingVersion === 'recovered-objective-v1' ? 'Recovered practice, marked by the server. Earlier assistance could not be verified.' : 'Imported history. Recorded grading and assistance provenance are preserved from the original export.'}</p>}{a.finish && <p>Ended {a.finish === 'expired' ? 'when time expired' : 'by manual submission'}.</p>}<p>{a.marksAvailable ? `${a.marksAwarded}/${a.marksAvailable} graded marks` : 'Not graded'} · {a.pending} pending answers</p>{a.pending > 0 && <p>Written answers are saved. Written feedback isn't available yet. Pending answers do not lower your grade.</p>}{a.questions.map(({ question, result }) => <section className="border-t pt-5 space-y-4" key={question.id}><h2>{question.prompt}</h2>{a.flashcardReview?.firstRatings[question.id] && <p>First pass: {a.flashcardReview.firstRatings[question.id]!.rating}. Final ratings remain self-rated.</p>}{result.response.kind === 'text' && question.rubric && <RequestFeedback attemptId={a.id} questionId={question.id} />}<QuestionFeedback question={{ ...question, source: undefined }} attempt={result} />{a.feedbackRevisions?.some(r => r.questionId === question.id) && <details><summary>Feedback revision history</summary>{a.feedbackRevisions.filter(r => r.questionId === question.id).map(r => <article key={r.id}><p>Revision {r.revision} · {r.grading.model} · {new Date(r.createdAt).toLocaleString()}</p><p>{r.grading.summary}</p>{r.grading.points?.map(p => <p key={p.rubricId}>{p.awarded}/{p.max}: {p.feedback}</p>)}</article>)}</details>}<Link className="underline" to={`/course/${a.courseId}/tutor?attemptId=${a.id}&questionId=${question.id}&topicId=${question.topicId}`}>Discuss this saved answer</Link>{question.source && <Link className="underline" to={`/materials/${question.source.materialId}/versions/${question.source.versionId}/passages/${question.source.passageId}`}>Read the exact source</Link>}</section>)}</div>}</Page>;
 }

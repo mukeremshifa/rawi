@@ -1,14 +1,14 @@
 import type {
   Attempt,
   Availability,
-  Course,
-  Material,
+  StudyCourse,
+  StudyMaterial,
   PlanProposal,
   PlannedAssessment,
   PlannedSession,
   Question,
   SessionActivity,
-  Topic,
+  StudyTopic,
   UnscheduledWork,
   Weekday,
 } from './types';
@@ -293,8 +293,8 @@ interface Candidate {
 
 export interface PlanInputs {
   timezone?: string;
-  courses: Course[];
-  topics: Topic[];
+  courses: StudyCourse[];
+  topics: StudyTopic[];
   attempts: Attempt[];
   assessments: PlannedAssessment[];
   availability: Availability;
@@ -305,7 +305,7 @@ export interface PlanInputs {
    * what a topic actually supports before proposing an activity for it.
    */
   questions: Question[];
-  materials: Material[];
+  materials: StudyMaterial[];
   weekStart: string;
   today: string;
 }

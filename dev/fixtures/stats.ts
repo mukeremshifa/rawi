@@ -1,4 +1,4 @@
-import type { Course, Material, Question, Topic } from '../../src/shared/domain/types';
+import type { StudyCourse, StudyMaterial, Question, StudyTopic } from '../../src/shared/domain/types';
 
 /**
  * The second seeded course: "Statistical Inference for Social Research".
@@ -32,7 +32,7 @@ import type { Course, Material, Question, Topic } from '../../src/shared/domain/
 
 export const STATS_COURSE_ID = 'course-stats';
 
-export const STATS_COURSE: Course = {
+export const STATS_COURSE: StudyCourse = {
   id: STATS_COURSE_ID,
   name: 'Statistical Inference for Social Research',
   description:
@@ -42,7 +42,7 @@ export const STATS_COURSE: Course = {
   createdAt: new Date('2026-10-07T08:00:00.000Z').toISOString(),
 };
 
-export const STATS_TOPICS: Topic[] = [
+export const STATS_TOPICS: StudyTopic[] = [
   {
     id: 'stat-sampling',
     courseId: STATS_COURSE_ID,
@@ -113,7 +113,7 @@ export const STATS_TOPICS: Topic[] = [
 
 const ADDED = new Date(Date.parse('2026-10-07T08:00:00.000Z') - 1000 * 60 * 60 * 24 * 9).toISOString();
 
-export const STATS_MATERIALS: Material[] = [
+export const STATS_MATERIALS: StudyMaterial[] = [
   {
     id: 'mat-stat-intervals',
     courseId: STATS_COURSE_ID,

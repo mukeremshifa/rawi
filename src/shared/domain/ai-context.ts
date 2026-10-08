@@ -1,5 +1,5 @@
 import { AI_LIMITS, type AiPassage, type AiTopic } from './ai';
-import type { Attempt, Material, Passage, Question, Topic } from './types';
+import type { Attempt, StudyMaterial, StudyPassage, Question, StudyTopic } from './types';
 
 /**
  * Bounded context for AI requests, built from one course's records.
@@ -17,7 +17,7 @@ import type { Attempt, Material, Passage, Question, Topic } from './types';
  * file Rawi could not read, and its text is a description of that failure,
  * so it must never be sent as if it were course content.
  */
-export function isUsableMaterial(material: Material): boolean {
+export function isUsableMaterial(material: StudyMaterial): boolean {
   return !material.archived && material.origin !== 'preview' && material.passages.some((p) => p.text.trim());
 }
 
@@ -44,7 +44,7 @@ function overlap(a: Set<string>, text: string): number {
 }
 
 /** Usable materials in this course that relate to the topic at all. */
-export function materialsForTopic(topic: Topic, materials: Material[]): Material[] {
+export function materialsForTopic(topic: StudyTopic, materials: StudyMaterial[]): StudyMaterial[] {
   const topicTerms = terms(`${topic.title} ${topic.summary}`);
   return materials.filter(
     (m) =>
@@ -56,11 +56,11 @@ export function materialsForTopic(topic: Topic, materials: Material[]): Material
   );
 }
 
-export function toAiTopic(topic: Topic): AiTopic {
+export function toAiTopic(topic: StudyTopic): AiTopic {
   return { id: topic.id, title: topic.title, summary: topic.summary };
 }
 
-export function toAiPassage(material: Material, passage: Passage): AiPassage {
+export function toAiPassage(material: StudyMaterial, passage: StudyPassage): AiPassage {
   return {
     id: passage.id,
     materialId: material.id,
@@ -81,7 +81,7 @@ export function toAiPassage(material: Material, passage: Passage): AiPassage {
  */
 export function selectPassages(params: {
   courseId: string;
-  materials: Material[];
+  materials: StudyMaterial[];
   topicIds: string[];
   query: string;
   focusPassageId?: string;

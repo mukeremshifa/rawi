@@ -16,7 +16,7 @@ import { getCourse } from './workspace';
 import { conflict, notFound, ApiError } from '../errors';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
 
-const reason = 'Your message is saved. Tutor replies are not connected in this online workspace yet. No AI request was sent.';
+const reason = 'Your message is saved. Tutor replies are not available yet. No AI request was sent.';
 type Db = ReadDb | Transaction;
 async function ownSession(db: Db, workspaceId: string, id: string, lock = false) {
   const query = db.select().from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, id)));
@@ -106,9 +106,9 @@ export async function patchSession(db: SocketDb, workspaceId: string, id: string
 }
 
 async function messageCounts(db: Db, workspaceId: string, id: string) {
-  return db.select({ role: tutorMessages.role, state: tutorMessages.state, stage: sql<OnlineStage | null>`${tutorMessages.provenance}->>'stage'`, imported: sql<boolean>`coalesce(${tutorMessages.provenance}->>'imported' = 'true', false)`, count: sql<number>`count(*)::int` }).from(tutorMessages).where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.sessionId, id))).groupBy(tutorMessages.role, tutorMessages.state, sql`${tutorMessages.provenance}->>'stage'`, sql`coalesce(${tutorMessages.provenance}->>'imported' = 'true', false)`);
+  return db.select({ role: tutorMessages.role, state: tutorMessages.state, stage: sql<SessionStage | null>`${tutorMessages.provenance}->>'stage'`, imported: sql<boolean>`coalesce(${tutorMessages.provenance}->>'imported' = 'true', false)`, count: sql<number>`count(*)::int` }).from(tutorMessages).where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.sessionId, id))).groupBy(tutorMessages.role, tutorMessages.state, sql`${tutorMessages.provenance}->>'stage'`, sql`coalesce(${tutorMessages.provenance}->>'imported' = 'true', false)`);
 }
-type OnlineStage = Awaited<ReturnType<typeof ownSession>>['stage'];
+type SessionStage = Awaited<ReturnType<typeof ownSession>>['stage'];
 async function sessionSummary(db: Db, workspaceId: string, session: Awaited<ReturnType<typeof ownSession>>) {
   const counts = await messageCounts(db, workspaceId, session.id);
   return summariseTutorTurns({ id: session.id, topicId: session.topicId, stage: session.stage, stages: counts.flatMap(m => m.stage && m.state === 'complete' ? [m.stage] : []), studentTurns: counts.filter(m => m.role === 'student').reduce((n, m) => n + m.count, 0) });

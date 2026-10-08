@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
-import type { TutorMessage, SourceRef } from '@shared/domain/types';
+import type { TutorTurn, SourceRef } from '@shared/domain/types';
 import { Prose } from '@/components/Prose';
 import { SourceLink } from '@/components/domain';
 import { cn } from '@/lib/utils';
 import { renderCitations } from '@/features/tutor/citations';
 
-const GROUNDING_LABEL: Record<NonNullable<TutorMessage['grounding']>, string> = {
+const GROUNDING_LABEL: Record<NonNullable<TutorTurn['grounding']>, string> = {
   materials: 'From your materials',
   mixed: 'Partly beyond your materials',
   general: 'General explanation, not from your materials',
@@ -13,7 +13,7 @@ const GROUNDING_LABEL: Record<NonNullable<TutorMessage['grounding']>, string> = 
 };
 
 /** One turn in the transcript, with its provenance where it has one. */
-export function MessageBubble({ message, renderSource = source => <SourceLink source={source} /> }: { message: TutorMessage; renderSource?: (source: SourceRef) => ReactNode }) {
+export function MessageBubble({ message, renderSource = source => <SourceLink source={source} /> }: { message: TutorTurn; renderSource?: (source: SourceRef) => ReactNode }) {
   const ids = (message.citations ?? []).map((c) => c.passageId);
   /* Earlier builds' authored replies carry neither a model nor a status. */
   const legacy =

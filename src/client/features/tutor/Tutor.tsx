@@ -3,22 +3,22 @@ import { MessageBubble } from '@/features/tutor/MessageBubble';
 import { useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { CourseDetail } from '@shared/contracts/workspace';
-import type { OnlineTutorSession, TutorDetail } from '@shared/contracts/tutor';
+import type { TutorSession, TutorDetail } from '@shared/contracts/tutor';
 import { STAGE_LABEL } from '@shared/domain/tutor';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { useLearningWrite, useOnlineRecord, useUnsentGuard } from '@/lib/hooks';
-export function OnlineTutorLibrary() {
+import { useLearningWrite, useRecord, useUnsentGuard } from '@/lib/hooks';
+export function TutorLibrary() {
   const { id = '' } = useParams(); const [params] = useSearchParams(); const nav = useNavigate(); const op = useLearningWrite();
-  const [cursor, setCursor] = useState(''); const rows = useOnlineRecord<{ sessions: OnlineTutorSession[]; nextCursor: string | null }>(`/v1/courses/${id}/tutor${cursor ? `?cursor=${cursor}` : ''}`);
-  const outline = useOnlineRecord<CourseDetail>(`/v1/courses/${id}/topics`);
+  const [cursor, setCursor] = useState(''); const rows = useRecord<{ sessions: TutorSession[]; nextCursor: string | null }>(`/v1/courses/${id}/tutor${cursor ? `?cursor=${cursor}` : ''}`);
+  const outline = useRecord<CourseDetail>(`/v1/courses/${id}/topics`);
   const [title, setTitle] = useState(''), [topicId, setTopicId] = useState(params.get('topicId') ?? ''), [query, setQuery] = useState(''), [archived, setArchived] = useState(false);
   const pending = useRef<unknown>(null);
   const allowNavigation = useUnsentGuard(!!title || !!pending.current);
-  return <Page className="py-8" width="prose"><PageHeader title="Tutor" description="Save a session and your questions. Tutor replies are not connected online yet." actions={<Link to={`/course/${id}`}>Course</Link>} />{[rows.error, outline.error, op.error].filter(Boolean).map(e => <p role="alert" key={e}>{e}</p>)}
+  return <Page className="py-8" width="prose"><PageHeader title="Tutor" description="Save a session and your questions. Tutor replies aren't available yet." actions={<Link to={`/course/${id}`}>Course</Link>} />{[rows.error, outline.error, op.error].filter(Boolean).map(e => <p role="alert" key={e}>{e}</p>)}
     <Input aria-label="Search tutor sessions" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search this page" /><label><input type="checkbox" checked={archived} onChange={e => setArchived(e.target.checked)} /> Show archived sessions</label>
     {rows.value?.sessions.filter(s => s.archived === archived && s.title.toLowerCase().includes(query.toLowerCase())).map(s => <p className="py-3 border-b" key={s.id}><Link className="underline" to={`/tutor/${s.id}`}>{s.title}</Link> · {s.topicLabel}</p>)}{rows.value?.nextCursor && <Button variant="outline" onClick={() => setCursor(rows.value!.nextCursor!)}>Next page</Button>}
     <section className="space-y-4 border-t pt-6 mt-6"><h2 className="text-xl font-semibold">New session</h2><fieldset disabled={op.busy || !!pending.current} className="space-y-3"><label className="block">Title<Input value={title} onChange={e => setTitle(e.target.value)} maxLength={200} /></label><label className="block">Topic<Select value={topicId} onChange={e => setTopicId(e.target.value)}><option value="">Choose a topic</option>{params.get('attemptId') && topicId && !outline.value?.topics.some(t => t.id === topicId) && <option value={topicId}>Historical topic from your saved answer</option>}{outline.value?.topics.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</Select></label></fieldset>
@@ -26,8 +26,8 @@ export function OnlineTutorLibrary() {
       <Button disabled={op.busy || !title.trim() || !topicId} onClick={() => { pending.current ??= { id: crypto.randomUUID(), title, topicId, ...(params.get('plannedSessionId') ? { plannedSessionId: params.get('plannedSessionId') } : {}), ...(params.get('passageId') ? { source: { materialId: params.get('materialId'), versionId: params.get('versionId'), passageId: params.get('passageId') } } : {}), ...(params.get('attemptId') ? { review: { attemptId: params.get('attemptId'), questionId: params.get('questionId') } } : {}) }; void op.run<TutorDetail>(`/v1/courses/${id}/tutor`, pending.current, 'POST', d => { pending.current = null; setTitle(''); allowNavigation(); nav(`/tutor/${d.session.id}`); }); }}>{op.busy ? 'Saving…' : pending.current ? 'Retry creating session' : 'Create session'}</Button>
     </section></Page>;
 }
-export function OnlineTutor() {
-  const { id = '' } = useParams(); const data = useOnlineRecord<TutorDetail>(`/v1/tutor/${id}`); const op = useLearningWrite();
+export function Tutor() {
+  const { id = '' } = useParams(); const data = useRecord<TutorDetail>(`/v1/tutor/${id}`); const op = useLearningWrite();
   const [action, setAction] = useState('message');
   const [text, setText] = useState(''), [title, setTitle] = useState<string | null>(null), [review, setReview] = useState<TutorDetail | null>(null);
   const pending = useRef<{ path: string; body: unknown; method: string } | null>(null);

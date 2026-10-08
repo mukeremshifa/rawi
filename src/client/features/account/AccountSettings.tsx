@@ -1,15 +1,15 @@
 import { useRef, useState } from 'react';
-import type { Me, OnlinePreferences } from '@shared/contracts/workspace';
+import type { Me, Preferences } from '@shared/contracts/workspace';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useAccount } from '@/lib/account';
-import { request, errorMessage, OnlineError } from '@/lib/api';
+import { request, errorMessage, RequestError } from '@/lib/api';
 import { useUnsentGuard } from '@/lib/hooks';
 import { PreferencesEditor } from '@/features/courses/Courses';
 
-export function AccountSettings({ onProfile, onSaved }: { onProfile: (user: Me['user']) => void; onSaved: (value: OnlinePreferences) => void }) {
+export function AccountSettings({ onProfile, onSaved }: { onProfile: (user: Me['user']) => void; onSaved: (value: Preferences) => void }) {
   return <><ProfileEditor onSaved={onProfile} /><PreferencesEditor onSaved={onSaved} /></>;
 }
 function ProfileEditor({ onSaved }: { onSaved: (user: Me['user']) => void }) {
@@ -46,11 +46,11 @@ export function Onboarding({ onSaved }: { onSaved: (account: Me) => void }) {
     try {
       const user = await request<Me['user']>('/v1/profile', account.user.id, { name }, 'PATCH');
       pending.current ??= { operationId: crypto.randomUUID(), expectedRevision: baseRevision.current, questionCount: count, feedback, onboardingCompleted: true };
-      const preferences = await request<OnlinePreferences>('/v1/preferences', account.user.id, pending.current, 'PATCH');
+      const preferences = await request<Preferences>('/v1/preferences', account.user.id, pending.current, 'PATCH');
       pending.current = null; allowNavigation(); onSaved({ ...account, user, preferences });
     } catch (e) {
       setError(errorMessage(e));
-      if (e instanceof OnlineError && e.code === 'revision_conflict') {
+      if (e instanceof RequestError && e.code === 'revision_conflict') {
         try {
           const latest = await request<Me>('/v1/me', account.user.id);
           if (latest.preferences.values.onboardingCompleted) { allowNavigation(); onSaved(latest); }

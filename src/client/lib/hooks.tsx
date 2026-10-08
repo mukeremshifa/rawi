@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import { useBlocker } from 'react-router-dom';
-import { errorMessage, OnlineError, request } from '@/lib/api';
+import { errorMessage, RequestError, request } from '@/lib/api';
 import { useAccount } from '@/lib/account';
 
-export function useOnlineRecord<T>(path: string) {
+export function useRecord<T>(path: string) {
   const { user } = useAccount();
   const [epoch, setEpoch] = useState(0);
   const [value, setValue] = useState<T | null>(null), [error, setError] = useState('');
@@ -15,7 +15,7 @@ export function useOnlineRecord<T>(path: string) {
   return { value, setValue, error, refresh: () => setEpoch(v => v + 1) };
 }
 /** Load a complete, bounded selection pool. Never expose an incomplete pool as complete. */
-export function useOnlineCollection<T>(path: string, key: string) {
+export function useCollection<T>(path: string, key: string) {
   const { user } = useAccount();
   const [value, setValue] = useState<T[] | null>(null), [error, setError] = useState('');
   useEffect(() => {
@@ -42,7 +42,7 @@ export function useLearningWrite() {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError(''); setCode('');
     try { const saved = await request<T>(path, user.id, body, method, controller.current.signal); if (!controller.current.signal.aborted) accept(saved); }
-    catch (e) { if (!controller.current.signal.aborted) { setError(errorMessage(e)); setCode(e instanceof OnlineError ? e.code : ''); } }
+    catch (e) { if (!controller.current.signal.aborted) { setError(errorMessage(e)); setCode(e instanceof RequestError ? e.code : ''); } }
     finally { lock.current = false; if (!controller.current.signal.aborted) setBusy(false); }
   }
   return { busy, error, code, run };
@@ -50,7 +50,7 @@ export function useLearningWrite() {
 let unsavedEdits = false;
 export function confirmDiscard() { return !unsavedEdits || window.confirm('You have unsaved changes. Discard them and sign out?'); }
 const DraftGuard = createContext<(id: symbol, dirty: boolean) => void>(() => {});
-export function OnlineDraftBoundary({ children }: { children: ReactNode }) {
+export function DraftBoundary({ children }: { children: ReactNode }) {
   const entries = useRef(new Set<symbol>()); const [dirty, setDirty] = useState(false);
   const register = useCallback((id: symbol, value: boolean) => { if (value) entries.current.add(id); else entries.current.delete(id); unsavedEdits = entries.current.size > 0; setDirty(unsavedEdits); }, []);
   useEffect(() => () => { unsavedEdits = false; }, []);

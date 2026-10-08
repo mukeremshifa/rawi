@@ -8,12 +8,12 @@ import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { useLearningWrite, useOnlineRecord, useUnsentGuard } from '@/lib/hooks';
+import { useLearningWrite, useRecord, useUnsentGuard } from '@/lib/hooks';
 
-type Planner = PlannerView;
-type Progress = ProgressView;
-export function OnlinePlanner() {
-  const data = useOnlineRecord<Planner>('/v1/planner'); const op = useLearningWrite();
+type PlannerData = PlannerView;
+type ProgressData = ProgressView;
+export function Planner() {
+  const data = useRecord<PlannerData>('/v1/planner'); const op = useLearningWrite();
   const [availability, setAvailability] = useState<Availability | null>(null), [date, setDate] = useState(''), [view, setView] = useState('week');
   const [session, setSession] = useState({ courseId: '', title: '', date: '', startMinutes: 540, durationMinutes: 30, activity: 'practice' as PlannedSession['activity'], topicIds: [] as string[], status: 'planned' as const, locked: true, assessmentId: undefined as string | undefined });
   const [assessment, setAssessment] = useState<Omit<PlannedAssessment, 'id' | 'createdAt'>>({ courseId: '', title: '', date: '', type: 'quiz', topicIds: [] });
@@ -22,7 +22,7 @@ export function OnlinePlanner() {
   const pending = useRef<{ path: string; body: unknown; method: string; done?: (value: unknown) => void } | null>(null);
   const assessmentBase = useRef<number | null>(null), sessionBase = useRef<number | null>(null);
   const [message, setMessage] = useState('');
-  const [latest, setLatest] = useState<Planner | null>(null); const availabilityBase = useRef<number | null>(null);
+  const [latest, setLatest] = useState<PlannerData | null>(null); const availabilityBase = useRef<number | null>(null);
   useUnsentGuard(!!availability || !!pending.current || !!session.title || !!assessment.title);
   useEffect(() => { if (data.value && !date) { setDate(data.value.today); setSession(s => ({ ...s, date: data.value!.today })); } }, [data.value]);
   const row = data.value;
@@ -41,7 +41,7 @@ export function OnlinePlanner() {
   const dates = date ? view === 'week' ? weekDates(weekStart(date)) : [date] : [];
   return <Page className="py-8" width="wide"><PageHeader title="Planner" description={`Your study calendar${row ? ` in ${row.timezone}` : ''}. Review a proposal before applying it.`} />
     {[data.error, op.error].filter(Boolean).map(e => <p role="alert" key={e}>{e}</p>)}<p role="status">{op.busy ? 'Saving…' : message}</p>{pending.current && !op.busy && <Button onClick={() => save(pending.current!.path, pending.current!.body, pending.current!.method)}>Retry pending request</Button>}
-    {op.code === 'revision_conflict' && <Button variant="outline" onClick={() => void op.run<Planner>('/v1/planner', undefined, 'GET', setLatest)}>Review latest schedule</Button>}{latest && <section className="border p-4"><h2>Latest schedule, revision {latest.revision}</h2>{latest.sessions.map(s => <p key={s.id}>{s.date} · {s.title} · {s.status}</p>)}<p>Your drafts remain above. A stale proposal must be generated and reviewed again.</p><Button onClick={() => { pending.current = null; data.setValue(latest); availabilityBase.current = latest.revision; assessmentBase.current = latest.revision; sessionBase.current = latest.revision; setLatest(null); setProposal(null); }}>Keep drafts and use reviewed revision</Button></section>}
+    {op.code === 'revision_conflict' && <Button variant="outline" onClick={() => void op.run<PlannerData>('/v1/planner', undefined, 'GET', setLatest)}>Review latest schedule</Button>}{latest && <section className="border p-4"><h2>Latest schedule, revision {latest.revision}</h2>{latest.sessions.map(s => <p key={s.id}>{s.date} · {s.title} · {s.status}</p>)}<p>Your drafts remain above. A stale proposal must be generated and reviewed again.</p><Button onClick={() => { pending.current = null; data.setValue(latest); availabilityBase.current = latest.revision; assessmentBase.current = latest.revision; sessionBase.current = latest.revision; setLatest(null); setProposal(null); }}>Keep drafts and use reviewed revision</Button></section>}
     {row && <div className="space-y-8"><div className="flex gap-4"><label>Date<Input type="date" value={date} onChange={e => setDate(e.target.value)} /></label><label>View<Select value={view} onChange={e => setView(e.target.value)}><option value="week">Week</option><option value="day">Day</option></Select></label></div>
       <div className="grid gap-3 md:grid-cols-7">{dates.map(d => <section className="border rounded p-3" key={d}><h2 className="font-semibold">{d}</h2>{row.sessions.filter(s => s.date === d).sort((a, b) => a.startMinutes - b.startMinutes).map(s => <article className="border-t mt-3 pt-3" key={s.id}><p>{formatMinutes(s.startMinutes)} · {s.durationMinutes} min</p><p>{s.title}</p><p>{s.status}</p><p className="text-xs">{s.reason}</p><Link className="underline" to={`/course/${s.courseId}/${s.activity === 'exam' ? 'exams' : s.activity === 'read' ? 'materials' : s.activity === 'tutor' ? 'tutor' : 'practice'}?plannedSessionId=${s.id}`}>Open activity</Link>{s.status !== 'completed' && <Button variant="outline" disabled={op.busy || !!pending.current} onClick={() => { sessionBase.current = row.revision; setEditingSession(s.id); setSession({ courseId: s.courseId, title: s.title, date: s.date, startMinutes: s.startMinutes, durationMinutes: s.durationMinutes, activity: s.activity, topicIds: s.topicIds, status: 'planned', locked: s.locked ?? true, assessmentId: s.assessmentId }); }}>Edit session</Button>}{s.status === 'planned' && <Button variant="ghost" disabled={op.busy || !!pending.current} onClick={() => save('/v1/planner/sessions', { operationId: crypto.randomUUID(), expectedRevision: row.revision, id: s.id, session: { courseId: s.courseId, date: s.date, startMinutes: s.startMinutes, durationMinutes: s.durationMinutes, title: s.title, activity: s.activity, topicIds: s.topicIds, assessmentId: s.assessmentId, status: 'skipped', locked: true } })}>Skip</Button>}</article>)}</section>)}</div>
       <section className="space-y-3"><h2 className="text-xl font-semibold">Plan my week</h2>{row.savedProposal && !proposal && <Button variant="outline" onClick={() => setProposal(row.savedProposal)}>Open saved proposal</Button>}<Button disabled={op.busy || !!pending.current} onClick={() => save('/v1/planner/proposals', { operationId: crypto.randomUUID(), weekStart: weekStart(date) }, 'POST', v => setProposal(v as typeof proposal))}>Review a proposal</Button>{proposal && <div className="border p-4 space-y-3"><p>{proposal.proposal.minutesPlanned} of {proposal.proposal.minutesAvailable} available minutes</p>{[...proposal.proposal.sessions].sort((a, b) => a.date.localeCompare(b.date) || a.startMinutes - b.startMinutes).map(s => <p key={s.id}>{s.date} {formatMinutes(s.startMinutes)} · {s.title}. {s.reason}</p>)}{proposal.proposal.notes.map(n => <p key={n}>{n}</p>)}{proposal.proposal.unscheduled.map((s, i) => <p key={i}>Unscheduled: {s.title}. {s.reason}</p>)}<Button disabled={op.busy || !!pending.current} onClick={() => save(`/v1/planner/proposals/${proposal.id}/apply`, { operationId: crypto.randomUUID() }, 'POST', () => { setProposal(null); setMessage('Reviewed plan applied.'); data.refresh(); })}>Apply reviewed proposal</Button><Button variant="outline" onClick={() => setProposal(null)}>Discard proposal</Button></div>}</section>
@@ -52,11 +52,11 @@ export function OnlinePlanner() {
     </div>}
   </Page>;
 }
-export function OnlineProgress({ home = false }: { home?: boolean }) {
-  const { id, topicId } = useParams(); const [courseFilter, setCourseFilter] = useState(''), [mode, setMode] = useState(''); const data = useOnlineRecord<Progress>('/v1/progress'); const [query, setQuery] = useState('');
+export function Progress({ home = false }: { home?: boolean }) {
+  const { id, topicId } = useParams(); const [courseFilter, setCourseFilter] = useState(''), [mode, setMode] = useState(''); const data = useRecord<ProgressData>('/v1/progress'); const [query, setQuery] = useState('');
   const row = data.value;
   return <Page className="py-8" width="wide"><PageHeader title={home ? row?.courses.find(c => c.id === id)?.name ?? 'Your study workspace' : 'Progress and history'} actions={id && <Link className="underline" to={`/course/${id}/syllabus`}>Course settings and outline</Link>} description="Derived from saved account activity. Pending, assisted and self-rated work remain distinct." />{data.error && <p role="alert">{data.error}</p>}{row && <div className="space-y-6"><p>{row.streak} day streak · {row.pending} answers awaiting feedback · {row.timezone}</p>
-    {home && <><section className="space-y-3"><h2 className="text-xl font-semibold">Suggested next steps</h2>{row.suggestions.filter(s => !id || s.courseId === id).map(s => <article className="border p-4" key={s.id}><Link className="underline" to={s.to}>{s.title}</Link><p>{s.reason}</p><p>{s.minutes} minutes</p></article>)}</section><h2 className="text-xl font-semibold">Continue studying</h2>{row.runs.filter(r => !id || r.courseId === id).map(r => <p key={r.id}><Link className="underline" to={`/runs/${r.id}`}>{r.title}</Link></p>)}<h2>Today</h2>{row.sessions.map(s => <p key={s.id}>{formatMinutes(s.startMinutes)} · {s.title} · {s.status}</p>)}<Link className="underline" to="/planner">Open your planner</Link><OnlineCheckIn row={row} courseId={id} /></>}
+    {home && <><section className="space-y-3"><h2 className="text-xl font-semibold">Suggested next steps</h2>{row.suggestions.filter(s => !id || s.courseId === id).map(s => <article className="border p-4" key={s.id}><Link className="underline" to={s.to}>{s.title}</Link><p>{s.reason}</p><p>{s.minutes} minutes</p></article>)}</section><h2 className="text-xl font-semibold">Continue studying</h2>{row.runs.filter(r => !id || r.courseId === id).map(r => <p key={r.id}><Link className="underline" to={`/runs/${r.id}`}>{r.title}</Link></p>)}<h2>Today</h2>{row.sessions.map(s => <p key={s.id}>{formatMinutes(s.startMinutes)} · {s.title} · {s.status}</p>)}<Link className="underline" to="/planner">Open your planner</Link><CheckIn row={row} courseId={id} /></>}
     <section><h2 className="text-xl font-semibold">Topic evidence</h2>{row.topics.filter(t => (!id || t.courseId === id) && (!topicId || t.id === topicId)).map(t => <article className="border-t py-3" key={t.id}><h3><Link className="underline" to={`/course/${t.courseId}/progress/topic/${t.id}`}>{t.title}</Link></h3><p>{EVIDENCE_LABEL[row.evidence.find(e => e.topicId === t.id)?.level ?? 'not-checked']}</p><Link className="underline" to={`/course/${t.courseId}/practice?topicId=${t.id}`}>Practise this topic</Link></article>)}</section>
     <section><h2 className="text-xl font-semibold">Due reviews</h2>{row.due.filter(d => !id || d.courseId === id).map(d => <p key={d.topicId}>{row.topics.find(t => t.id === d.topicId)?.title} · {d.daysSince} days since study</p>)}</section>
     <section><h2 className="text-xl font-semibold">Recurring mistakes</h2>{row.mistakes.filter(m => !id || m.courseId === id).map(m => <p key={m.questionId}><Link className="underline" to={`/attempts/${m.lastAttemptId}`}>{m.prompt}</Link> · {m.times} attempts</p>)}</section>
@@ -66,7 +66,7 @@ export function OnlineProgress({ home = false }: { home?: boolean }) {
   </div>}</Page>;
 }
 
-function OnlineCheckIn({ row, courseId }: { row: Progress; courseId?: string }) {
+function CheckIn({ row, courseId }: { row: ProgressData; courseId?: string }) {
   const op = useLearningWrite();
   const [course, setCourse] = useState(courseId ?? ''), [topic, setTopic] = useState(''), [mood, setMood] = useState('on-track'), [minutes, setMinutes] = useState(''), [note, setNote] = useState(''), [saved, setSaved] = useState(false);
   const pending = useRef<unknown>(null);

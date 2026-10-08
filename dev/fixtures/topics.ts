@@ -1,4 +1,4 @@
-import type { Course, Topic } from '../../src/shared/domain/types';
+import type { StudyCourse, StudyTopic } from '../../src/shared/domain/types';
 
 /**
  * The seeded course.
@@ -36,7 +36,7 @@ export function seedDate(days: number, from: Date = new Date('2026-10-07T08:00:0
 
 export const ATLANTIC_COURSE_ID = 'course-atlantic';
 
-export const SEED_COURSE: Course = {
+export const SEED_COURSE: StudyCourse = {
   id: ATLANTIC_COURSE_ID,
   name: 'The Atlantic World, 1500–1800',
   description:
@@ -46,7 +46,7 @@ export const SEED_COURSE: Course = {
   createdAt: new Date('2026-10-07T08:00:00.000Z').toISOString(),
 };
 
-export const SEED_TOPICS: Topic[] = [
+export const SEED_TOPICS: StudyTopic[] = [
   {
     id: 'topic-columbian',
     courseId: ATLANTIC_COURSE_ID,

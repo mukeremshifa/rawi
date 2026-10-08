@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import { uuid } from './workspace';
 import { sourceInput, writeInput } from './learning';
-import type { AnswerReview, TutorMessage } from '../domain/types';
-export type TutorMessageProvenance = Pick<TutorMessage, 'model' | 'stage' | 'grounding' | 'droppedCitations'> & { citations: z.infer<typeof sourceInput>[]; imported: boolean; sampleDataset?: string };
+import type { AnswerReview, TutorTurn } from '../domain/types';
+export type TutorMessageProvenance = Pick<TutorTurn, 'model' | 'stage' | 'grounding' | 'droppedCitations'> & { citations: z.infer<typeof sourceInput>[]; imported: boolean; sampleDataset?: string };
 export const newTutorInput = z.strictObject({ id: uuid, title: z.string().trim().min(1).max(200), topicId: uuid, plannedSessionId: uuid.optional(), source: sourceInput.optional(), review: z.strictObject({ attemptId: uuid, questionId: uuid }).optional() });
 export const tutorMessageInput = writeInput.extend({ text: z.string().trim().min(1).max(4000), action: z.enum(['message', 'explain', 'example', 'hint', 'check', 'simpler']).default('message') });
 export const tutorMetadataInput = writeInput.extend({ title: z.string().trim().min(1).max(200), archived: z.boolean() });
-export type OnlineTutorSession = { sampleDataset?: string | null; plannedSessionId?: string | null; completedLearning?: boolean; imported?: boolean; endedAt?: string | null; id: string; courseId: string; topicId: string; topicLabel: string; title: string; archived: boolean; revision: number; source: z.infer<typeof sourceInput> | null; review: AnswerReview | null; stage: 'orient' | 'understand' | 'recall' | 'reason' | 'apply' | 'reflect'; createdAt: string; updatedAt: string };
-export type OnlineTutorMessage = { provenance?: TutorMessageProvenance | null; id: string; ordinal: number; text: string; role: 'student' | 'tutor'; state: 'complete' | 'blocked' | 'cancelled' | 'interrupted' | 'failed'; createdAt: string; operationId: string; failure: string | null };
-export type TutorDetail = { summary?: ReturnType<typeof import('../domain/tutor-summary').summariseTutorTurns> | null; session: OnlineTutorSession; messages: OnlineTutorMessage[]; nextCursor: number | null; execution: { available: boolean; reason: string } };
+export type TutorSession = { sampleDataset?: string | null; plannedSessionId?: string | null; completedLearning?: boolean; imported?: boolean; endedAt?: string | null; id: string; courseId: string; topicId: string; topicLabel: string; title: string; archived: boolean; revision: number; source: z.infer<typeof sourceInput> | null; review: AnswerReview | null; stage: 'orient' | 'understand' | 'recall' | 'reason' | 'apply' | 'reflect'; createdAt: string; updatedAt: string };
+export type TutorMessage = { provenance?: TutorMessageProvenance | null; id: string; ordinal: number; text: string; role: 'student' | 'tutor'; state: 'complete' | 'blocked' | 'cancelled' | 'interrupted' | 'failed'; createdAt: string; operationId: string; failure: string | null };
+export type TutorDetail = { summary?: ReturnType<typeof import('../domain/tutor-summary').summariseTutorTurns> | null; session: TutorSession; messages: TutorMessage[]; nextCursor: number | null; execution: { available: boolean; reason: string } };

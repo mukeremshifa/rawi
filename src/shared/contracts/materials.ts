@@ -19,7 +19,7 @@ export const uploadInput = materialFields.extend({
 }).strict().refine(v => !!v.materialId === !!v.expectedRevision);
 export const pageInput = z.strictObject({ limit: z.coerce.number().int().min(1).max(50).default(20), cursor: uuid.optional() });
 export const materialListInput = pageInput.extend({ archived: z.enum(['true', 'false', 'all']).default('false'), topicId: uuid.optional() });
-export interface OnlineMaterial {
+export interface Material {
   id: string; courseId: string; title: string; kind: z.infer<typeof materialFields>['kind']; attribution: string;
   archived: boolean; currentVersionId: string | null; revision: number; createdAt: string; updatedAt: string; topicIds: string[];
   noteSource?: { materialId: string; versionId: string; passageId: string } | null;
@@ -29,8 +29,8 @@ export interface MaterialVersion {
   id: string; materialId: string; number: number; origin: 'paste' | 'upload' | 'edit';
   sourceObjectId: string | null; contentStatus: 'readable' | 'not_extracted' | 'failed'; format: typeof fileTypes[number]; createdAt: string;
 }
-export interface OnlinePassage { id: string; heading: string; text: string; order: number }
-export interface VersionDetail { version: MaterialVersion; passages: OnlinePassage[]; nextCursor: number | null }
+export interface Passage { id: string; heading: string; text: string; order: number }
+export interface VersionDetail { version: MaterialVersion; passages: Passage[]; nextCursor: number | null }
 export interface UploadState {
   id: string; courseId: string; materialId: string; fileName: string; state: 'pending' | 'ready' | 'failed';
   expiresAt: string; resultVersionId: string | null; failure: string | null; inProgress: boolean;

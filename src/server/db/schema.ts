@@ -6,7 +6,7 @@ import type { AnswerValue } from '../../shared/domain/types';
 import type { ExamConfig } from '../../shared/domain/types';
 import type { ExamRuntime } from '../../shared/contracts/exams';
 import type { Availability, PlannedAssessment, PlannedSession, PlanProposal, CheckIn } from '../../shared/domain/types';
-import type { OnlineTutorSession, OnlineTutorMessage, TutorMessageProvenance } from '../../shared/contracts/tutor';
+import type { TutorSession, TutorMessage, TutorMessageProvenance } from '../../shared/contracts/tutor';
 /** Review summary kept with legacy workspace imports. */
 type ImportReview = { id: string; state: 'review' | 'complete'; courses: number; materials: number; questions: number; sets: number; attempts: number; unsupported: string[]; courseIds?: string[] };
 import type { WrittenGrading } from '../../shared/domain/types';
@@ -241,15 +241,15 @@ export const planProposals = pgTable('plan_proposals', {
 });
 export const tutorSessions = pgTable('tutor_sessions', {
   id: uuid('id').primaryKey(), ...materialScope(), topicId: uuid('topic_id').notNull(), topicLabel: text('topic_label').notNull(), title: text('title').notNull(),
-  archived: boolean('archived').notNull().default(false), revision: integer('revision').notNull().default(1), stage: text('stage').$type<OnlineTutorSession['stage']>().notNull().default('orient'),
-  source: jsonb('source').$type<OnlineTutorSession['source']>(), review: jsonb('review').$type<OnlineTutorSession['review']>(), ...timestamps(),
+  archived: boolean('archived').notNull().default(false), revision: integer('revision').notNull().default(1), stage: text('stage').$type<TutorSession['stage']>().notNull().default('orient'),
+  source: jsonb('source').$type<TutorSession['source']>(), review: jsonb('review').$type<TutorSession['review']>(), ...timestamps(),
   plannedSessionId: uuid('planned_session_id'), completedLearning: boolean('completed_learning').notNull().default(false),
   sampleDataset: text('sample_dataset'),
   imported: boolean('imported').notNull().default(false), endedAt: timestamp('ended_at', { withTimezone: true }),
 }, t => [unique('tutor_sessions_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ name: 'tutor_planner_scope_fk', columns: [t.workspaceId, t.courseId, t.plannedSessionId], foreignColumns: [plannedSessions.workspaceId, plannedSessions.courseId, plannedSessions.id] }), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('tutor_sessions_scope_idx').on(t.workspaceId, t.courseId, t.id), index('tutor_chronology_idx').on(t.workspaceId, t.courseId, t.createdAt, t.id)]);
 export const tutorMessages = pgTable('tutor_messages', {
   id: uuid('id').primaryKey(), ...materialScope(), sessionId: uuid('session_id').notNull(), ordinal: integer('ordinal').notNull(),
-  text: text('text').notNull(), role: text('role').$type<'student' | 'tutor'>().notNull(), state: text('state').$type<OnlineTutorMessage['state']>().notNull(),
+  text: text('text').notNull(), role: text('role').$type<'student' | 'tutor'>().notNull(), state: text('state').$type<TutorMessage['state']>().notNull(),
   operationId: uuid('operation_id').notNull().unique(), failure: text('failure'), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   provenance: jsonb('provenance').$type<TutorMessageProvenance>(),
 }, t => [unique('tutor_message_order_unique').on(t.sessionId, t.ordinal), foreignKey({ columns: [t.workspaceId, t.courseId, t.sessionId], foreignColumns: [tutorSessions.workspaceId, tutorSessions.courseId, tutorSessions.id] })]);

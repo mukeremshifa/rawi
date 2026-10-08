@@ -1,7 +1,7 @@
 import { transaction } from '../db/client';
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
-import type { Attempt, Material, Topic } from '../../shared/domain/types';
+import type { Attempt, StudyMaterial, StudyTopic } from '../../shared/domain/types';
 import { planWeek, replacedByPlan, addDays } from '../../shared/domain/planner';
 import { deriveAllEvidence, dueReviews, recurringMistakes, buildPlan } from '../../shared/domain/progress';
 import { zonedParts, type plannerWrite, type scheduleWrite, type assessmentWrite, type proposalInput, type checkInInput } from '../../shared/contracts/planner';
@@ -33,7 +33,7 @@ export async function planningData(tx: Transaction, workspaceId: string, options
   const [prefs] = await tx.select().from(preferences).where(eq(preferences.workspaceId, workspaceId));
   const courseRows = await tx.select().from(courses).where(eq(courses.workspaceId, workspaceId));
   const topicRows = await tx.select().from(topics).where(eq(topics.workspaceId, workspaceId)).orderBy(asc(topics.order));
-  const topicData: Topic[] = topicRows.map(t => ({ ...t, relatedTopicIds: [] }));
+  const topicData: StudyTopic[] = topicRows.map(t => ({ ...t, relatedTopicIds: [] }));
   const assessmentRows = await tx.select().from(assessments).where(eq(assessments.workspaceId, workspaceId));
   const sessionRows = await tx.select().from(plannedSessions).where(eq(plannedSessions.workspaceId, workspaceId));
   const activeLinks = await tx.select({ id: learningRuns.plannedSessionId }).from(learningRuns).where(and(eq(learningRuns.workspaceId, workspaceId), eq(learningRuns.state, 'active')));
@@ -44,7 +44,7 @@ export async function planningData(tx: Transaction, workspaceId: string, options
   const materialRows = options.calendarOnly ? [] : await tx.select().from(materials).where(eq(materials.workspaceId, workspaceId));
   const links = options.calendarOnly ? [] : await tx.select().from(materialTopicLinks).where(eq(materialTopicLinks.workspaceId, workspaceId));
   const readable = options.calendarOnly ? [] : await tx.select({ materialId: passages.materialId, id: passages.id, heading: passages.heading, text: options.passageCourseId ? passages.text : sql<string>`''` }).from(passages).innerJoin(materials, and(eq(materials.currentVersionId, passages.versionId), eq(materials.workspaceId, passages.workspaceId))).where(and(eq(passages.workspaceId, workspaceId), options.passageCourseId ? eq(passages.courseId, options.passageCourseId) : undefined));
-  const materialData: Material[] = materialRows.map(m => ({ id: m.id, courseId: m.courseId, title: m.title, kind: m.kind === 'notes' ? 'student-note' : m.kind === 'slides' ? 'lecture-notes' : 'reading', origin: 'pasted', archived: m.archived, addedAt: m.createdAt.toISOString(), topicIds: links.filter(l => l.materialId === m.id).map(l => l.topicId), passages: readable.filter(p => p.materialId === m.id).map(p => ({ ...p, topicIds: links.filter(l => l.materialId === m.id).map(l => l.topicId) })) }));
+  const materialData: StudyMaterial[] = materialRows.map(m => ({ id: m.id, courseId: m.courseId, title: m.title, kind: m.kind === 'notes' ? 'student-note' : m.kind === 'slides' ? 'lecture-notes' : 'reading', origin: 'pasted', archived: m.archived, addedAt: m.createdAt.toISOString(), topicIds: links.filter(l => l.materialId === m.id).map(l => l.topicId), passages: readable.filter(p => p.materialId === m.id).map(p => ({ ...p, topicIds: links.filter(l => l.materialId === m.id).map(l => l.topicId) })) }));
   const { attempts, snapshots } = options.calendarOnly ? { attempts: [], snapshots: [] } : await learningData(tx, workspaceId);
   return { revision: planner.revision, availability: planner.availability, timezone: prefs?.timezone ?? 'UTC', courses: courseRows.map(c => ({ ...c, createdAt: c.createdAt.toISOString() })), topics: topicData, assessments: assessmentRows.map(r => ({ ...r.content, revision: r.revision })), sessions: sessionRows.map(r => ({ ...r.content, revision: r.revision })), checkIns: checkInRows.map(r => r.content), questions: questionRows.map(r => r.content), materials: materialData, attempts, snapshots };
 }

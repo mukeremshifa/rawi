@@ -32,7 +32,7 @@ api.use('*', async (c, next) => {
 api.use('*', bodyLimit({ maxSize: 21 * 1024 * 1024, onError: () => { throw new ApiError(400, 'invalid_input', 'The request is too large.'); } }));
 api.get('/status', c => {
   const missing = configurationProblems(c.env);
-  return c.json({ mode: 'online', configured: missing.length === 0, missing });
+  return c.json({ configured: missing.length === 0, missing });
 });
 
 const configured = new Hono<BackendContext>();
@@ -67,7 +67,7 @@ app.use('*', async (c, next) => {
   // Reading the session over HTTP avoids opening a socket for requests that never use one.
   const { response: session, headers } = await createAuth(c.env, c.get('db'), false).api.getSession({ headers: c.req.raw.headers, returnHeaders: true });
   for (const cookie of headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true });
-  if (!session) throw new ApiError(401, 'unauthenticated', 'Sign in to open your online workspace.');
+  if (!session) throw new ApiError(401, 'unauthenticated', 'Sign in to open your workspace.');
   c.set('user', session.user);
   // This mismatch guard never substitutes for session authentication.
   const expectedUser = c.req.header('x-rawi-user');

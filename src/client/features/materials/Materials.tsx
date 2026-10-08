@@ -3,15 +3,15 @@ import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type 
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import type { z } from 'zod';
-import { createMaterialInput, fileTypes, materialFields, uploadInput, type OnlineMaterial, type MaterialVersion, type OnlinePassage, type VersionDetail, type UploadState, type UploadTicket } from '@shared/contracts/materials';
-import type { CourseDetail, OnlineTopic } from '@shared/contracts/workspace';
+import { createMaterialInput, fileTypes, materialFields, uploadInput, type Material, type MaterialVersion, type Passage, type VersionDetail, type UploadState, type UploadTicket } from '@shared/contracts/materials';
+import type { CourseDetail, Topic } from '@shared/contracts/workspace';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
 import { useAccount } from '@/lib/account';
-import { errorMessage, OnlineError, request } from '@/lib/api';
+import { errorMessage, RequestError, request } from '@/lib/api';
 
 type Fields = z.infer<typeof materialFields>;
 const empty: Fields = { title: '', kind: 'reading', attribution: '', topicIds: [] };
@@ -20,7 +20,7 @@ function Field({ title, children }: { title: string; children: ReactNode }) {
   const id = useId();
   return <div className="grid gap-2 text-sm"><label htmlFor={id}>{title}</label>{isValidElement<{ id?: string }>(children) ? cloneElement(children, { id }) : children}</div>;
 }
-function FieldsEditor({ value, onChange, topics }: { value: Fields; onChange: (v: Fields) => void; topics: OnlineTopic[] }) {
+function FieldsEditor({ value, onChange, topics }: { value: Fields; onChange: (v: Fields) => void; topics: Topic[] }) {
   return <div className="grid gap-4">
     <Field title="Title"><Input value={value.title} maxLength={200} required onChange={e => onChange({ ...value, title: e.target.value })} /></Field>
     <Field title="Kind"><Select value={value.kind} onChange={e => onChange({ ...value, kind: e.target.value as Fields['kind'] })}>{['reading', 'notes', 'slides', 'other'].map(kind => <option key={kind}>{kind}</option>)}</Select></Field>
@@ -37,23 +37,23 @@ function useOperation() {
     if (locked.current) return;
     locked.current = true; setBusy(true); setError(''); setErrorCode(''); setMessage('');
     try { await fn(controller.current.signal); }
-    catch (e) { if (!controller.current.signal.aborted) { setError(errorMessage(e)); setErrorCode(e instanceof OnlineError ? e.code : ''); } }
+    catch (e) { if (!controller.current.signal.aborted) { setError(errorMessage(e)); setErrorCode(e instanceof RequestError ? e.code : ''); } }
     finally { locked.current = false; if (!controller.current.signal.aborted) setBusy(false); }
   };
   return { busy, message, error, errorCode, setMessage, run };
 }
 function Status({ op }: { op: ReturnType<typeof useOperation> }) { return <div aria-live="polite">{op.busy && <p>Working…</p>}<p role="status">{op.message}</p>{op.error && <p role="alert" className="text-destructive">{op.error}</p>}</div>; }
 
-export function OnlineMaterials() {
+export function Materials() {
   const { id = '' } = useParams(); const { user } = useAccount(); const navigate = useNavigate(); const op = useOperation();
-  const [course, setCourse] = useState<CourseDetail | null>(null), [rows, setRows] = useState<OnlineMaterial[]>([]), [cursor, setCursor] = useState<string | null>(null);
+  const [course, setCourse] = useState<CourseDetail | null>(null), [rows, setRows] = useState<Material[]>([]), [cursor, setCursor] = useState<string | null>(null);
   const [filter, setFilter] = useState('false'), [topic, setTopic] = useState(''), [fields, setFields] = useState<Fields>(empty), [text, setText] = useState(''), [format, setFormat] = useState<'txt' | 'md'>('md');
   const [createId, setCreateId] = useState(() => crypto.randomUUID()); const [submitted, setSubmitted] = useState<z.infer<typeof createMaterialInput> | null>(null);
   const [pending, setPending] = useState<UploadState[]>([]);
   const [loadError, setLoadError] = useState('');
   const allowNavigation = useUnsentGuard(!!fields.title || !!fields.attribution || fields.kind !== empty.kind || fields.topicIds.length > 0 || !!text || !!submitted);
   async function load(signal: AbortSignal, after?: string) {
-    const page = await request<{ materials: OnlineMaterial[]; nextCursor: string | null }>(`/v1/courses/${id}/materials?archived=${filter}${topic ? `&topicId=${topic}` : ''}${after ? `&cursor=${after}` : ''}`, user.id, undefined, 'GET', signal);
+    const page = await request<{ materials: Material[]; nextCursor: string | null }>(`/v1/courses/${id}/materials?archived=${filter}${topic ? `&topicId=${topic}` : ''}${after ? `&cursor=${after}` : ''}`, user.id, undefined, 'GET', signal);
     setRows(old => after ? [...old, ...page.materials] : page.materials); setCursor(page.nextCursor);
   }
   useEffect(() => { const abort = new AbortController(); setLoadError(''); void (async () => {
@@ -72,7 +72,7 @@ export function OnlineMaterials() {
       <Button disabled={op.busy} onClick={() => void op.run(async signal => {
         const input = submitted ?? createMaterialInput.parse({ ...fields, id: createId, text, format }); setSubmitted(input);
 
-        const saved = await request<OnlineMaterial>(`/v1/courses/${id}/materials`, user.id, input, 'POST', signal); allowNavigation(); navigate(materialPath(saved.id));
+        const saved = await request<Material>(`/v1/courses/${id}/materials`, user.id, input, 'POST', signal); allowNavigation(); navigate(materialPath(saved.id));
       })}>{submitted ? 'Retry saving text' : 'Save text'}</Button>
       {submitted && <Button variant="outline" disabled={op.busy} onClick={() => { setSubmitted(null); setCreateId(crypto.randomUUID()); }}>Edit as a new request</Button>}
       <UploadControl courseId={id} fields={fields} onSaved={saved => navigate(materialPath(saved.materialId))} />
@@ -87,7 +87,7 @@ function PendingUpload({ initial, onSaved }: { initial: UploadState; onSaved: (v
     {value.state === 'pending' && <Button disabled={op.busy} onClick={() => void op.run(async signal => { const next = await request<UploadState>(`/v1/uploads/${value.id}/finalize`, user.id, {}, 'POST', signal); setValue(next); if (next.state === 'ready') onSaved(next); })}>Retry finalization</Button>}
   </div>;
 }
-function UploadControl({ courseId, fields, material, onSaved, onBusy }: { onBusy?: (busy: boolean) => void; courseId: string; fields: Fields; material?: OnlineMaterial; onSaved: (v: UploadState) => void }) {
+function UploadControl({ courseId, fields, material, onSaved, onBusy }: { onBusy?: (busy: boolean) => void; courseId: string; fields: Fields; material?: Material; onSaved: (v: UploadState) => void }) {
   const { user } = useAccount(); const op = useOperation(); const [file, setFile] = useState<File | null>(null), [progress, setProgress] = useState(0), [pending, setPending] = useState<UploadState | null>(null);
   const submitted = useRef<z.infer<typeof uploadInput> | null>(null);
   const allowNavigation = useUnsentGuard(!!file && pending?.state !== 'ready');
@@ -130,12 +130,12 @@ function UploadControl({ courseId, fields, material, onSaved, onBusy }: { onBusy
   </div>;
 }
 
-export function OnlineMaterialReader() {
+export function MaterialReader() {
   const { materialId = '', versionId, passageId } = useParams(); const { user } = useAccount(); const op = useOperation();
-  const [material, setMaterial] = useState<OnlineMaterial | null>(null), [detail, setDetail] = useState<VersionDetail | null>(null), [topics, setTopics] = useState<OnlineTopic[]>([]);
+  const [material, setMaterial] = useState<Material | null>(null), [detail, setDetail] = useState<VersionDetail | null>(null), [topics, setTopics] = useState<Topic[]>([]);
   const [versions, setVersions] = useState<MaterialVersion[]>([]), [historyCursor, setHistoryCursor] = useState<string | null>(null);
   const [fields, setFields] = useState<Fields>(empty), [text, setText] = useState(''), [format, setFormat] = useState<'txt' | 'md'>('md'), [editing, setEditing] = useState(false);
-  const [review, setReview] = useState<OnlineMaterial | null>(null), [reviewText, setReviewText] = useState(''); const textRequest = useRef<{ requestId: string; expectedRevision: number; text: string; format: 'txt' | 'md' } | null>(null);
+  const [review, setReview] = useState<Material | null>(null), [reviewText, setReviewText] = useState(''); const textRequest = useRef<{ requestId: string; expectedRevision: number; text: string; format: 'txt' | 'md' } | null>(null);
   const [note, setNote] = useState('');
   const noteRequest = useRef<z.infer<typeof createMaterialInput> | null>(null);
   const initialized = useRef(false);
@@ -156,13 +156,13 @@ export function OnlineMaterialReader() {
     return text;
   }
   async function reload(signal: AbortSignal) {
-    const row = await request<OnlineMaterial>(`/v1/materials/${materialId}`, user.id, undefined, 'GET', signal); setMaterial(row);
+    const row = await request<Material>(`/v1/materials/${materialId}`, user.id, undefined, 'GET', signal); setMaterial(row);
     if (!initialized.current) { setFields({ title: row.title, kind: row.kind, attribution: row.attribution, topicIds: row.topicIds }); initialized.current = true; }
     const course = await request<CourseDetail>(`/v1/courses/${row.courseId}/topics`, user.id, undefined, 'GET', signal); setTopics(course.topics);
     const selected = versionId ?? row.currentVersionId;
     if (selected) {
       const page = await request<VersionDetail>(`/v1/materials/${materialId}/versions/${selected}`, user.id, undefined, 'GET', signal);
-      if (passageId) { page.passages = [await request<OnlinePassage>(`/v1/materials/${materialId}/versions/${selected}/passages/${passageId}`, user.id, undefined, 'GET', signal)]; page.nextCursor = null; }
+      if (passageId) { page.passages = [await request<Passage>(`/v1/materials/${materialId}/versions/${selected}/passages/${passageId}`, user.id, undefined, 'GET', signal)]; page.nextCursor = null; }
       setDetail(page);
     }
     await history(signal);
@@ -177,18 +177,18 @@ export function OnlineMaterialReader() {
         if (!result.available || !result.url) { op.setMessage(result.message ?? 'No original file.'); return; }
         const link = document.createElement('a'); link.href = result.url; link.rel = 'noreferrer'; link.referrerPolicy = 'no-referrer'; link.click();
       })}>Download original</Button>}
-      <Button variant="outline" disabled={op.busy || replacing || editing || !!metadataRequest.current} onClick={() => void op.run(async signal => { const saved = await request<OnlineMaterial>(`/v1/materials/${materialId}`, user.id, { archived: !material.archived, expectedRevision: material.revision }, 'PATCH', signal); setMaterial(saved); op.setMessage(saved.archived ? 'Archived. Versions and originals remain available.' : 'Restored to the library.'); })}>{material.archived ? 'Restore' : 'Archive'}</Button></div>
+      <Button variant="outline" disabled={op.busy || replacing || editing || !!metadataRequest.current} onClick={() => void op.run(async signal => { const saved = await request<Material>(`/v1/materials/${materialId}`, user.id, { archived: !material.archived, expectedRevision: material.revision }, 'PATCH', signal); setMaterial(saved); op.setMessage(saved.archived ? 'Archived. Versions and originals remain available.' : 'Restored to the library.'); })}>{material.archived ? 'Restore' : 'Archive'}</Button></div>
       {detail.version.contentStatus !== 'readable' ? <p className="rounded border p-4">{detail.version.contentStatus === 'not_extracted' ? 'The original file is stored privately. Its text has not been extracted and is not available for studying.' : 'Text conversion failed. This content is not available for studying.'}</p> : detail.passages.map(p => <article key={p.id} className="space-y-3 border-t pt-5"><h2 className="text-lg font-semibold">{p.heading}</h2><Link className="text-sm underline" to={`${materialPath(materialId)}/versions/${detail.version.id}/passages/${p.id}`}>Link to this exact passage</Link><div className="rawi-prose whitespace-pre-wrap break-words leading-relaxed">{detail.version.format === 'md' ? <Markdown skipHtml components={{ img: () => null, a: ({ children, href }) => <a href={href && /^https?:\/\//i.test(href) ? href : undefined} rel="noreferrer noopener" target="_blank">{children}</a> }}>{p.text}</Markdown> : p.text}</div></article>)}
       {detail.nextCursor !== null && <Button variant="outline" disabled={op.busy} onClick={() => void op.run(async signal => { const page = await request<VersionDetail>(`/v1/materials/${materialId}/versions/${detail.version.id}?cursor=${detail.nextCursor}`, user.id, undefined, 'GET', signal); setDetail({ ...page, passages: [...detail.passages, ...page.passages] }); })}>Read more passages</Button>}
       <div className="flex gap-4"><Link className="underline" to={`/course/${material.courseId}/practice?materialId=${materialId}&versionId=${detail.version.id}`}>Practise from this version</Link>{detail.passages[0] && <Link className="underline" to={`/course/${material.courseId}/tutor?materialId=${materialId}&versionId=${detail.version.id}&passageId=${detail.passages[0].id}&topicId=${material.topicIds[0] ?? ''}`}>Start a tutor session from this passage</Link>}</div>
       {material.noteSource && <Link className="underline" to={`${materialPath(material.noteSource.materialId)}/versions/${material.noteSource.versionId}/passages/${material.noteSource.passageId}`}>Source of this note</Link>}
-      {detail.passages[0] && <section className="border-t pt-5 space-y-3"><h2 className="font-semibold">Save a note from this passage</h2><Field title="Your note"><Textarea value={note} disabled={op.busy || !!noteRequest.current} onChange={e => setNote(e.target.value)} /></Field><Button disabled={op.busy || !note.trim()} onClick={() => void op.run(async signal => { noteRequest.current ??= createMaterialInput.parse({ id: crypto.randomUUID(), title: `Note: ${material.title}`.slice(0, 200), kind: 'notes', attribution: '', topicIds: material.topicIds, text: note, format: 'md', noteSource: { materialId, versionId: detail.version.id, passageId: detail.passages[0]!.id } }); const saved = await request<OnlineMaterial>(`/v1/courses/${material.courseId}/materials`, user.id, noteRequest.current, 'POST', signal); noteRequest.current = null; setNote(''); op.setMessage(`Note saved: ${saved.title}. Open it from the material library.`); })}>{noteRequest.current ? 'Retry saving note' : 'Save note'}</Button></section>}
+      {detail.passages[0] && <section className="border-t pt-5 space-y-3"><h2 className="font-semibold">Save a note from this passage</h2><Field title="Your note"><Textarea value={note} disabled={op.busy || !!noteRequest.current} onChange={e => setNote(e.target.value)} /></Field><Button disabled={op.busy || !note.trim()} onClick={() => void op.run(async signal => { noteRequest.current ??= createMaterialInput.parse({ id: crypto.randomUUID(), title: `Note: ${material.title}`.slice(0, 200), kind: 'notes', attribution: '', topicIds: material.topicIds, text: note, format: 'md', noteSource: { materialId, versionId: detail.version.id, passageId: detail.passages[0]!.id } }); const saved = await request<Material>(`/v1/courses/${material.courseId}/materials`, user.id, noteRequest.current, 'POST', signal); noteRequest.current = null; setNote(''); op.setMessage(`Note saved: ${saved.title}. Open it from the material library.`); })}>{noteRequest.current ? 'Retry saving note' : 'Save note'}</Button></section>}
       <section className="border-t pt-6 space-y-4"><h2 className="text-xl font-semibold">Version history</h2><ul>{versions.map(v => <li key={v.id}><Link className="underline" to={`${materialPath(materialId)}/versions/${v.id}`}>Version {v.number}, {new Date(v.createdAt).toLocaleString()}, {v.origin}</Link></li>)}</ul>{historyCursor && <Button variant="outline" onClick={() => void op.run(signal => history(signal, historyCursor))}>More versions</Button>}</section>
       {!versionId && <section className="border-t pt-6 space-y-4"><h2 className="text-xl font-semibold">Edit material</h2><p>Save your changes before leaving this page. If saving fails, keep this page open and retry.</p><fieldset disabled={op.busy || replacing || !!metadataRequest.current}><FieldsEditor value={fields} onChange={setFields} topics={topics} /></fieldset>
-        <Button disabled={op.busy || replacing || !!textRequest.current} onClick={() => void op.run(async signal => { metadataRequest.current ??= { ...materialFields.parse(fields), expectedRevision: material.revision }; const saved = await request<OnlineMaterial>(`/v1/materials/${materialId}`, user.id, metadataRequest.current, 'PATCH', signal); if (editing && saved.currentVersionId === material.currentVersionId && textBase.current === material.revision) textBase.current = saved.revision; metadataRequest.current = null; setMaterial(saved); op.setMessage('Metadata saved.'); })}>{metadataRequest.current ? 'Retry metadata save' : 'Save metadata'}</Button>
+        <Button disabled={op.busy || replacing || !!textRequest.current} onClick={() => void op.run(async signal => { metadataRequest.current ??= { ...materialFields.parse(fields), expectedRevision: material.revision }; const saved = await request<Material>(`/v1/materials/${materialId}`, user.id, metadataRequest.current, 'PATCH', signal); if (editing && saved.currentVersionId === material.currentVersionId && textBase.current === material.revision) textBase.current = saved.revision; metadataRequest.current = null; setMaterial(saved); op.setMessage('Metadata saved.'); })}>{metadataRequest.current ? 'Retry metadata save' : 'Save metadata'}</Button>
         {!editing && <Button variant="outline" disabled={op.busy || replacing || !!metadataRequest.current} onClick={() => void op.run(async signal => { setText(await allText(detail.version.id, signal)); textBase.current = material.revision; setFormat(detail.version.format === 'md' ? 'md' : 'txt'); setEditing(true); })}>Edit readable text</Button>}
-        {editing && <><Field title="Text format"><Select value={format} disabled={!!textRequest.current} onChange={e => setFormat(e.target.value as 'txt' | 'md')}><option value="md">Markdown</option><option value="txt">Plain text</option></Select></Field><Field title="New version text"><Textarea className="min-h-64" disabled={op.busy || !!textRequest.current} value={text} onChange={e => setText(e.target.value)} /></Field><Button disabled={op.busy} onClick={() => void op.run(async signal => { textRequest.current ??= { requestId: crypto.randomUUID(), expectedRevision: textBase.current!, text, format }; try { await request(`/v1/materials/${materialId}/versions`, user.id, textRequest.current, 'POST', signal); } catch (e) { textConflict.current = e instanceof OnlineError && e.code === 'revision_conflict'; throw e; } textRequest.current = null; textConflict.current = false; setEditing(false); await reload(signal); op.setMessage('New version saved. Earlier passages remain available.'); })}>{textRequest.current ? 'Retry saving version' : 'Save new version'}</Button><Button variant="outline" disabled={op.busy || !!textRequest.current} onClick={() => { setEditing(false); textBase.current = null; }}>Close text editor</Button><p>Retry an uncertain save before changing its text. For a revision conflict, review the saved material below.</p></>}
-        <Button variant="outline" disabled={op.busy} onClick={() => void op.run(async signal => { const latest = await request<OnlineMaterial>(`/v1/materials/${materialId}`, user.id, undefined, 'GET', signal); const latestText = latest.currentVersionId ? await allText(latest.currentVersionId, signal) : ''; setReview(latest); setReviewText(latestText); })}>Review latest saved material</Button>
+        {editing && <><Field title="Text format"><Select value={format} disabled={!!textRequest.current} onChange={e => setFormat(e.target.value as 'txt' | 'md')}><option value="md">Markdown</option><option value="txt">Plain text</option></Select></Field><Field title="New version text"><Textarea className="min-h-64" disabled={op.busy || !!textRequest.current} value={text} onChange={e => setText(e.target.value)} /></Field><Button disabled={op.busy} onClick={() => void op.run(async signal => { textRequest.current ??= { requestId: crypto.randomUUID(), expectedRevision: textBase.current!, text, format }; try { await request(`/v1/materials/${materialId}/versions`, user.id, textRequest.current, 'POST', signal); } catch (e) { textConflict.current = e instanceof RequestError && e.code === 'revision_conflict'; throw e; } textRequest.current = null; textConflict.current = false; setEditing(false); await reload(signal); op.setMessage('New version saved. Earlier passages remain available.'); })}>{textRequest.current ? 'Retry saving version' : 'Save new version'}</Button><Button variant="outline" disabled={op.busy || !!textRequest.current} onClick={() => { setEditing(false); textBase.current = null; }}>Close text editor</Button><p>Retry an uncertain save before changing its text. For a revision conflict, review the saved material below.</p></>}
+        <Button variant="outline" disabled={op.busy} onClick={() => void op.run(async signal => { const latest = await request<Material>(`/v1/materials/${materialId}`, user.id, undefined, 'GET', signal); const latestText = latest.currentVersionId ? await allText(latest.currentVersionId, signal) : ''; setReview(latest); setReviewText(latestText); })}>Review latest saved material</Button>
         {review && <div className="rounded border p-4 space-y-3"><h3 className="font-semibold">Latest saved revision {review.revision}</h3><p>{review.title}</p><p>{review.attribution}</p><p>Kind: {review.kind}. {review.archived ? 'Archived' : 'Active'}. Topics: {review.topicIds.map(id => topics.find(t => t.id === id)?.title ?? id).join(', ') || 'None'}.</p><pre className="max-h-64 overflow-auto whitespace-pre-wrap">{reviewText}</pre><p>Your unsent fields remain above. Saving again will use this revision.</p><Button disabled={op.busy || replacing || (!!textRequest.current && !textConflict.current)} onClick={() => { setMaterial(review); textBase.current = review.revision; setReview(null); textRequest.current = null; textConflict.current = false; metadataRequest.current = null; }}>Keep my edits and use this revision</Button></div>}
         <p>Replacing a source changes its content only. Save title, attribution and topic edits separately.</p>
         {editing && <p>Close the text editor before replacing its source. Your metadata edits remain above.</p>}

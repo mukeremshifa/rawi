@@ -2,7 +2,7 @@ import { useUnsentGuard } from '@/lib/hooks';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { z } from 'zod';
-import { accents, courseFields, coursePatch, createCourseInput, replaceOutlineInput, preferencesPatch, type CourseDetail, type CoursePage, type CreateCourseInput, type OnlineCourse, type OnlinePreferences, type TopicInput } from '@shared/contracts/workspace';
+import { accents, courseFields, coursePatch, createCourseInput, replaceOutlineInput, preferencesPatch, type CourseDetail, type CoursePage, type CreateCourseInput, type Course, type Preferences, type TopicInput } from '@shared/contracts/workspace';
 import { readSyllabus } from '@shared/domain/syllabus';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
 import { useAccount } from '@/lib/account';
-import { errorMessage, OnlineError, request } from '@/lib/api';
+import { errorMessage, RequestError, request } from '@/lib/api';
 
 type Fields = z.infer<typeof courseFields>;
 function Field({ title, children }: { title: string; children: ReactNode }) {
@@ -42,10 +42,10 @@ function useSaveState() {
   return { saving, message, error, run, clear: () => { setMessage('Unsaved changes'); setError(null); } };
 }
 function SaveStatus({ state, onReview }: { state: ReturnType<typeof useSaveState>; onReview?: () => void }) {
-  const conflict = state.error instanceof OnlineError && state.error.code === 'revision_conflict';
+  const conflict = state.error instanceof RequestError && state.error.code === 'revision_conflict';
   return <div aria-live="polite" className="space-y-2">
     <p role="status">{state.saving ? 'Saving…' : state.message}</p>
-    {!!state.error && <p role="alert" className="text-destructive">{errorMessage(state.error)}{state.error instanceof OnlineError && state.error.requestId ? ` Reference: ${state.error.requestId}` : ''}</p>}
+    {!!state.error && <p role="alert" className="text-destructive">{errorMessage(state.error)}{state.error instanceof RequestError && state.error.requestId ? ` Reference: ${state.error.requestId}` : ''}</p>}
     {conflict && onReview && <Button variant="outline" onClick={onReview}>Load latest version for review</Button>}
   </div>;
 }
@@ -83,7 +83,7 @@ function CourseList({ filter }: { filter: string }) {
     {page?.nextCursor && <Button variant="outline" disabled={loading} onClick={() => void load(page.nextCursor!)}>Load more courses</Button>}
   </div>;
 }
-export function NewOnlineCourse() {
+export function NewCourse() {
   const { user } = useAccount(); const navigate = useNavigate();
   const [id] = useState(() => crypto.randomUUID());
   const [fields, setFields] = useState<Fields>({ name: '', description: '', goal: '', accent: 'indigo' });
@@ -128,12 +128,12 @@ function LoadedCourse({ initial }: { initial: CourseDetail }) {
   const [review, setReview] = useState<CourseDetail | null>(null);
   const [reviewError, setReviewError] = useState('');
   const save = useSaveState();
-  const conflicted = save.error instanceof OnlineError && save.error.code === 'revision_conflict';
+  const conflicted = save.error instanceof RequestError && save.error.code === 'revision_conflict';
   const update = (archived?: boolean) => save.run(async () => {
     const parsed = courseFields.safeParse(fields);
     if (!parsed.success) throw new Error('Enter a course name and check the field lengths.');
     metadata.current ??= { ...parsed.data, operationId: crypto.randomUUID(), ...(archived === undefined ? {} : { archived }), expectedRevision: base.course.revision };
-    const course = await request<OnlineCourse>(`/v1/courses/${base.course.id}`, user.id, metadata.current, 'PATCH'); metadata.current = null;
+    const course = await request<Course>(`/v1/courses/${base.course.id}`, user.id, metadata.current, 'PATCH'); metadata.current = null;
     setBase(previous => ({ ...previous, course })); setFields(courseValues(course));
   });
   const saveOutline = () => save.run(async () => {
@@ -201,26 +201,26 @@ function OutlineEditor({ topics, onChange }: { topics: TopicInput[]; onChange: (
     <Button type="button" variant="outline" disabled={topics.length >= 200} onClick={() => ordered([...topics, { id: crypto.randomUUID(), title: '', summary: '', module: '', priority: 'normal', order: topics.length, relatedTopicIds: [] }])}>Add topic</Button>
   </div>;
 }
-export function PreferencesEditor({ onSaved }: { onSaved: (value: OnlinePreferences) => void }) {
+export function PreferencesEditor({ onSaved }: { onSaved: (value: Preferences) => void }) {
   const account = useAccount();
   const pending = useRef<z.infer<typeof preferencesPatch> | null>(null);
   const [base, setBase] = useState(account.preferences);
   const [values, setValues] = useState(base.values); const [zone, setZone] = useState(base.timezone);
   useUnsentGuard(zone !== base.timezone || JSON.stringify(values) !== JSON.stringify(base.values));
-  const [review, setReview] = useState<OnlinePreferences | null>(null); const [reviewError, setReviewError] = useState('');
+  const [review, setReview] = useState<Preferences | null>(null); const [reviewError, setReviewError] = useState('');
   const save = useSaveState();
-  const conflicted = save.error instanceof OnlineError && save.error.code === 'revision_conflict';
+  const conflicted = save.error instanceof RequestError && save.error.code === 'revision_conflict';
   const patch = (next: Partial<typeof values>) => { setValues(v => ({ ...v, ...next })); if (!conflicted) save.clear(); };
   const submit = () => save.run(async () => {
     const parsed = preferencesPatch.safeParse(pending.current ?? { ...values, timezone: zone, expectedRevision: base.revision, operationId: crypto.randomUUID() });
     if (!parsed.success) throw new Error('Check the workspace name, question count and IANA timezone.');
     pending.current = parsed.data;
-    const saved = await request<OnlinePreferences>('/v1/preferences', account.user.id, parsed.data, 'PATCH');
+    const saved = await request<Preferences>('/v1/preferences', account.user.id, parsed.data, 'PATCH');
     pending.current = null; setBase(saved); setValues(saved.values); setZone(saved.timezone); onSaved(saved);
   });
   const loadReview = async () => {
     setReviewError('');
-    try { setReview(await request<OnlinePreferences>('/v1/preferences', account.user.id)); }
+    try { setReview(await request<Preferences>('/v1/preferences', account.user.id)); }
     catch (e) { setReviewError(errorMessage(e)); }
   };
   return <Page className="py-8" width="prose"><PageHeader title="Study preferences" description="Your study and appearance preferences are saved to your account." />

@@ -1,4 +1,4 @@
-import type { Material } from '../../src/shared/domain/types';
+import type { StudyMaterial } from '../../src/shared/domain/types';
 import { ATLANTIC_COURSE_ID } from './topics';
 
 /**
@@ -29,7 +29,7 @@ import { ATLANTIC_COURSE_ID } from './topics';
 
 const ADDED = new Date(Date.parse('2026-10-07T08:00:00.000Z') - 1000 * 60 * 60 * 24 * 12).toISOString();
 
-export const SEED_MATERIALS: Material[] = [
+export const SEED_MATERIALS: StudyMaterial[] = [
   {
     id: 'mat-exchange-reading',
     courseId: ATLANTIC_COURSE_ID,

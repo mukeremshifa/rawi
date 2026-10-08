@@ -1,11 +1,11 @@
-import type { TutorSession, TutorStage } from './types';
+import type { TutorTranscript, TutorStage } from './types';
 import { STAGE_ORDER } from './tutor';
 
 /**
  * The end-of-session summary, built from what actually happened: the stages
  * reached and the student's own turns.
  */
-export function summarise(session: TutorSession): {
+export function summarise(session: TutorTranscript): {
   covered: string[];
   stageReached: TutorStage;
   nextStep: { label: string; to: string } | null;

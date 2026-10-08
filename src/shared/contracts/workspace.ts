@@ -55,20 +55,20 @@ export const coursePatch = courseFields.partial().extend({ operationId: uuid.opt
 export const replaceOutlineInput = z.strictObject({ operationId: uuid.optional(), expectedRevision: revision, topics: outline });
 export type TopicInput = z.infer<typeof topicInput>;
 export type CreateCourseInput = z.infer<typeof createCourseInput>;
-export interface OnlineCourse extends z.infer<typeof courseFields> {
+export interface Course extends z.infer<typeof courseFields> {
   id: string; workspaceId: string; archived: boolean; revision: number; createdAt: string; updatedAt: string;
 }
-export interface OnlineTopic extends TopicInput {
+export interface Topic extends TopicInput {
   workspaceId: string; courseId: string; revision: number; createdAt: string; updatedAt: string;
 }
-export interface OnlinePreferences {
+export interface Preferences {
   workspaceId: string; values: PreferenceFields; timezone: string; revision: number; createdAt: string; updatedAt: string;
 }
 export interface Me {
   user: { id: string; name: string; email: string; image: string | null };
   workspace: { id: string; ownerUserId: string; createdAt: string; updatedAt: string };
-  preferences: OnlinePreferences;
+  preferences: Preferences;
 }
-export interface CourseDetail { course: OnlineCourse; topics: OnlineTopic[] }
-export interface CoursePage { courses: OnlineCourse[]; nextCursor: string | null }
+export interface CourseDetail { course: Course; topics: Topic[] }
+export interface CoursePage { courses: Course[]; nextCursor: string | null }
 export interface ApiErrorBody { error: { code: string; message: string; requestId: string } }

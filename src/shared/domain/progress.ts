@@ -4,15 +4,15 @@ import type {
   Attempt,
   CheckIn,
   EvidenceLevel,
-  Material,
+  StudyMaterial,
   PlannedAssessment,
   Question,
   RecurringMistake,
   ReviewDue,
   StreakSummary,
-  Topic,
+  StudyTopic,
   TopicEvidence,
-  TutorSession,
+  TutorTranscript,
 } from './types';
 import { localISO } from './planner';
 import {
@@ -179,7 +179,7 @@ export function deriveEvidence(topicId: string, attempts: Attempt[], timezone?: 
 }
 
 export function deriveAllEvidence(
-  topics: Topic[],
+  topics: StudyTopic[],
   attempts: Attempt[],
   timezone?: string,
 ): Map<string, TopicEvidence> {
@@ -198,7 +198,7 @@ export function deriveAllEvidence(
  * a stated heuristic the UI can explain in one sentence, which is honest.
  */
 export function dueReviews(
-  topics: Topic[],
+  topics: StudyTopic[],
   attempts: Attempt[],
   now: Date = new Date(),
   timezone?: string,
@@ -348,7 +348,7 @@ export function pastAssessments(
  */
 export function activityEvents(
   attempts: Attempt[],
-  tutorSessions: TutorSession[],
+  tutorSessions: TutorTranscript[],
 ): ActivityEvent[] {
   const events: ActivityEvent[] = [];
 
@@ -491,7 +491,7 @@ export interface PlannedSessionLike {
 export interface PlanInput {
   timezone?: string;
   courses: { id: string; name: string; archived?: boolean }[];
-  topics: Topic[];
+  topics: StudyTopic[];
   attempts: Attempt[];
   assessments: PlannedAssessment[];
   checkIns: CheckIn[];
@@ -504,7 +504,7 @@ export interface PlanInput {
    * direction: the plan offers setup rather than a broken link.
    */
   questions?: Question[];
-  materials?: Material[];
+  materials?: StudyMaterial[];
   /** Set when a tutor session or exam is part-finished and can be resumed. */
   resumable?: { courseId: string; title: string; to: string; kind: Suggestion['kind'] };
   now?: Date;
@@ -548,7 +548,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   const allMaterials = input.materials ?? [];
 
   /** What a topic supports, scoped to its own course. */
-  const capabilitiesOf = (topic: Topic) =>
+  const capabilitiesOf = (topic: StudyTopic) =>
     topicCapabilities(
       topic,
       allQuestions.filter((q) => q.courseId === topic.courseId),
@@ -743,7 +743,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   }
 
   /* 7 — Weak topics, weighted by assessment proximity and stated priority. */
-  const priorityWeight: Record<Topic['priority'], number> = {
+  const priorityWeight: Record<StudyTopic['priority'], number> = {
     high: 14,
     normal: 6,
     low: 0,

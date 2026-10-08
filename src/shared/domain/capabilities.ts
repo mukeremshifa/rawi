@@ -1,10 +1,10 @@
 import type {
   ActivityType,
-  Material,
+  StudyMaterial,
   Question,
   QuestionFormat,
   SessionActivity,
-  Topic,
+  StudyTopic,
 } from './types';
 import { isUsableMaterial, materialsForTopic } from './ai-context';
 
@@ -65,9 +65,9 @@ export interface TopicCapabilities {
  * exists to prevent.
  */
 export function topicCapabilities(
-  topic: Topic,
+  topic: StudyTopic,
   questions: Question[],
-  materials: Material[],
+  materials: StudyMaterial[],
 ): TopicCapabilities {
   const topicId = topic.id;
   const forTopic = questions.filter((q) => q.topicId === topicId);

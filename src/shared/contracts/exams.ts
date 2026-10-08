@@ -14,4 +14,4 @@ export const examFields = z.strictObject({
 export const createExamInput = z.strictObject({ operationId: uuid, id: uuid, config: examFields });
 export const examTransitionInput = writeInput.extend({ action: z.enum(['navigate', 'finish-section', 'flag']), position: z.number().int().min(0).max(49) });
 export type ExamRuntime = Omit<ExamRun, 'answers'> & { activatedSectionIds?: string[]; materialVersions: { materialId: string; versionId: string; title: string }[] };
-export type OnlineExamConfig = { id: string; courseId: string; config: ExamConfig; revision: number; archived: boolean };
+export type SavedExam = { id: string; courseId: string; config: ExamConfig; revision: number; archived: boolean };

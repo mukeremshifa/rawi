@@ -32,7 +32,7 @@
 
 /* ── Course and topics ────────────────────────────────────────────────── */
 
-export interface Course {
+export interface StudyCourse {
   id: string;
   name: string;
   /** One or two sentences about the course itself. */
@@ -59,7 +59,7 @@ export type CourseAccent = 'indigo' | 'amber' | 'teal' | 'rose' | 'violet';
 /** How much the student wants to weight a topic. Drives plan ordering. */
 export type TopicPriority = 'low' | 'normal' | 'high';
 
-export interface Topic {
+export interface StudyTopic {
   id: string;
   courseId: string;
   title: string;
@@ -107,7 +107,7 @@ export type MaterialOrigin =
   | 'text-file'
   | 'preview';
 
-export interface Passage {
+export interface StudyPassage {
   id: string;
   /** Usually a heading; falls back to "Passage 3" style numbering. */
   heading: string;
@@ -116,7 +116,7 @@ export interface Passage {
   topicIds: string[];
 }
 
-export interface Material {
+export interface StudyMaterial {
   archived?: boolean;
   id: string;
   courseId: string;
@@ -131,10 +131,10 @@ export interface Material {
   /** The original filename, when one exists. Shown for previews. */
   fileName?: string;
   topicIds: string[];
-  passages: Passage[];
+  passages: StudyPassage[];
   addedAt: string;
   updatedAt?: string;
-  priorPassages?: Passage[];
+  priorPassages?: StudyPassage[];
   noteSource?: SourceRef;
 }
 
@@ -353,7 +353,7 @@ export type TutorStage =
 
 export type TutorRole = 'tutor' | 'student';
 
-export interface TutorMessage {
+export interface TutorTurn {
   id: string;
   role: TutorRole;
   text: string;
@@ -397,7 +397,7 @@ export type TutorIntent =
   | 'continue'
   | 'summary';
 
-export interface TutorSession {
+export interface TutorTranscript {
   review?: AnswerReview;
   title?: string;
   archived?: boolean;
@@ -409,7 +409,7 @@ export interface TutorSession {
   /** Set when the session was opened to review a specific exam mistake. */
   fromAttemptId?: string;
   fromQuestionId?: string;
-  messages: TutorMessage[];
+  messages: TutorTurn[];
   stage: TutorStage;
   startedAt: string;
   updatedAt: string;
