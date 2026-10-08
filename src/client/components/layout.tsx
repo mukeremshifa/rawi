@@ -74,7 +74,7 @@ export function SectionHeader({ title, description, actions, className, as: Head
   as?: 'h2' | 'h3';
 }) {
   return (
-    <div data-slot="section-header" className={cn('flex flex-wrap items-end justify-between gap-snug', className)}>
+    <div data-slot="section-header" className={cn('flex min-h-8 flex-wrap items-center justify-between gap-snug', className)}>
       <div className="flex min-w-0 flex-col gap-0.5">
         <Heading className="text-md font-semibold tracking-tight">{title}</Heading>
         {description && <div className="text-muted-foreground text-sm">{description}</div>}
@@ -93,7 +93,7 @@ export function Section({ title, description, actions, className, children }: {
   children: ReactNode;
 }) {
   return (
-    <section data-slot="section" className={cn('flex flex-col gap-snug', className)}>
+    <section data-slot="section" className={cn('flex min-w-0 flex-col gap-snug', className)}>
       {title && <SectionHeader title={title} description={description} actions={actions} />}
       {children}
     </section>

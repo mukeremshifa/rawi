@@ -1,0 +1,140 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import type { ProgressView } from '../../../server/api-types';
+import type { CheckInMood } from '@shared/domain/types';
+import { formatMinutes as clock } from '@shared/domain/planner';
+
+import { MOOD_LABEL, formatMinutes, formatRelative } from '@/components/domain';
+import { EvidenceMeter } from '@/components/Meter';
+import { Button } from '@/components/ui/button';
+import { Field, FieldError } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { NumberField } from '@/components/ui/number-field';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useSave } from '@/lib/data';
+import { useUnsentGuard } from '@/lib/hooks';
+import { keys } from '@/lib/query';
+import { cn } from '@/lib/utils';
+
+export type ProgressData = ProgressView;
+
+/** "09:00", from minutes after midnight. */
+export const timeOfDay = (minutes: number) => clock(minutes);
+
+export function courseName(row: ProgressData, id: string) {
+  return row.courses.find(c => c.id === id)?.name ?? 'Course';
+}
+
+/**
+ * Topic readiness: each topic's evidence as a grey step meter, when it was
+ * last worked on, and a way to practise it. Used on the course overview and
+ * on Progress.
+ */
+export function TopicReadiness({ row, courseId, showCourse, emptyAction }: { row: ProgressData; courseId?: string; showCourse?: boolean; emptyAction?: React.ReactNode }) {
+  const archived = new Set(row.courses.filter(c => c.archived).map(c => c.id));
+  const topics = row.topics.filter(t => courseId ? t.courseId === courseId : !archived.has(t.courseId));
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Topic</TableHead>
+          <TableHead>Evidence</TableHead>
+          <TableHead className="hidden sm:table-cell">Last studied</TableHead>
+          <TableHead className="w-24"><span className="sr-only">Actions</span></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {topics.length === 0 && <TableEmpty colSpan={4}>{emptyAction ?? 'No topics yet.'}</TableEmpty>}
+        {topics.map(topic => {
+          const evidence = row.evidence.find(e => e.topicId === topic.id);
+          return (
+            <TableRow key={topic.id}>
+              <TableCell className="max-w-0 min-w-40">
+                <span className="block truncate font-medium">{topic.title}</span>
+                {showCourse && <span className="text-muted-foreground block truncate text-sm">{courseName(row, topic.courseId)}</span>}
+              </TableCell>
+              <TableCell><EvidenceMeter level={evidence?.level ?? 'not-checked'} /></TableCell>
+              <TableCell className="text-muted-foreground hidden text-sm sm:table-cell">{evidence?.lastWorkedAt ? formatRelative(evidence.lastWorkedAt) : 'Not yet'}</TableCell>
+              <TableCell className="text-right">
+                <Button asChild variant="ghost" size="sm"><Link to={`/course/${topic.courseId}/practice?topicId=${topic.id}`}>Practise</Link></Button>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
+}
+
+/** A short list inside a page section. Rows are links. */
+export function ShortList({ items, empty }: { items: { key: string; to?: string; title: React.ReactNode; meta?: React.ReactNode; trailing?: React.ReactNode }[]; empty: string }) {
+  if (!items.length) return <p className="text-muted-foreground py-2 text-base">{empty}</p>;
+  return (
+    <ul className="divide-y border-y">
+      {items.map(item => {
+        const body = <>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-base">{item.title}</span>
+            {item.meta && <span className="text-muted-foreground truncate text-sm">{item.meta}</span>}
+          </span>
+          {item.trailing && <span className="shrink-0">{item.trailing}</span>}
+        </>;
+        return (
+          <li key={item.key}>
+            {item.to
+              ? <Link to={item.to} className="hover:bg-surface focus-visible:bg-surface flex items-center gap-snug py-2 outline-none">{body}</Link>
+              : <div className="flex items-center gap-snug py-2">{body}</div>}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+const MOODS: CheckInMood[] = ['on-track', 'confident', 'struggling', 'less-time'];
+
+/**
+ * The daily check-in, as one quiet prompt. Picking a mood reveals optional
+ * minutes and a note. Saved only when the server acknowledges it.
+ */
+export function CheckInPrompt({ row, courseId }: { row: ProgressData; courseId?: string }) {
+  const save = useSave();
+  const [mood, setMood] = useState<CheckInMood | null>(null);
+  const [minutes, setMinutes] = useState<number | null>(null);
+  const [note, setNote] = useState('');
+  useUnsentGuard(!!mood && (minutes !== null || !!note) || save.pending);
+  const today = row.checkIns.filter(c => !courseId || c.courseId === courseId).at(-1);
+  if (today && !mood) {
+    return <p className="text-muted-foreground text-base">Checked in today: <span className="text-foreground">{MOOD_LABEL[today.mood]}</span>{today.minutesToday !== undefined ? `, ${formatMinutes(today.minutesToday)} available` : ''}.</p>;
+  }
+  const submit = () => {
+    if (!mood) return;
+    save.run({ path: '/v1/planner/check-ins', body: { operationId: crypto.randomUUID(), checkIn: { mood, ...(courseId ? { courseId } : {}), ...(minutes !== null ? { minutesToday: minutes } : {}), ...(note.trim() ? { note } : {}) } } },
+      { id: 'check-in', invalidate: [keys.progress, keys.planner], onSuccess: () => { setMood(null); setMinutes(null); setNote(''); } });
+  };
+  return (
+    <div className="flex flex-col gap-snug">
+      <div className="flex flex-wrap items-center gap-x-snug gap-y-tight">
+        <span id="check-in-label" className="text-base font-medium">How is study going?</span>
+        <div role="radiogroup" aria-labelledby="check-in-label" className="flex flex-wrap gap-1.5">
+          {MOODS.map(value => (
+            <button key={value} type="button" role="radio" aria-checked={mood === value} disabled={save.busy}
+              onClick={() => setMood(mood === value ? null : value)}
+              className={cn('h-7 rounded-full border px-3 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                mood === value ? 'border-primary bg-primary-subtle text-primary-text font-medium' : 'bg-card hover:bg-accent text-foreground')}>
+              {MOOD_LABEL[value]}
+            </button>
+          ))}
+        </div>
+      </div>
+      {mood && (
+        <form className="flex flex-wrap items-end gap-snug" onSubmit={e => { e.preventDefault(); submit(); }}>
+          <Field label="Minutes free today" optional><NumberField value={minutes} onValueChange={setMinutes} min={0} max={1440} step={15} suffix="min" /></Field>
+          <Field label="Note" optional className="min-w-48 flex-1"><Input maxLength={4000} value={note} onChange={e => setNote(e.target.value)} placeholder="Anything that would help plan" /></Field>
+          <Button type="submit" loading={save.busy}>{save.status === 'failed' ? 'Retry check-in' : 'Save check-in'}</Button>
+        </form>
+      )}
+      {save.error && <FieldError>{save.error}</FieldError>}
+    </div>
+  );
+}

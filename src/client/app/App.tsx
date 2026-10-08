@@ -1,10 +1,13 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import type { Me } from '@shared/contracts/workspace';
 import { authClient, RequestError, request, setActiveAccount } from '@/lib/api';
 import { CourseLibrary, CourseEditor, NewCourse } from '@/features/courses/Courses';
 import { Materials, MaterialReader } from '@/features/materials/Materials';
-import { Planner, Progress } from '@/features/planning/Planning';
+import { Planner } from '@/features/planning/Planning';
+import { Home } from '@/features/home/Home';
+import { CourseOverview } from '@/features/courses/CourseOverview';
+import { Progress } from '@/features/progress/Progress';
 import { AiOperation } from '@/features/ai/AiOperation';
 import { DraftBoundary, hasUnsavedEdits } from '@/lib/hooks';
 import { Shell } from '@/app/Shell';
@@ -133,19 +136,19 @@ export function App() {
         <Route path="/course/:id/settings" element={<CourseEditor key={location.pathname} />} />
         <Route path="/planner/availability" element={<Planner />} />
         <Route path="/settings/:section" element={<AccountSettings onProfile={user => setMe(previous => previous?.user.id === user.id ? { ...previous, user } : previous)} onSaved={preferences => setMe(previous => previous ? { ...previous, preferences } : previous)} />} />
-        <Route path="/course/:id/progress/topic/:topicId" element={<Progress key={location.pathname} />} />
-        <Route path="/" element={<Progress home />} />
+        <Route path="/course/:id/progress/topic/:topicId" element={<TopicRedirect />} />
+        <Route path="/" element={<Home />} />
         <Route path="/ai/:id" element={<AiOperation key={location.pathname} />} />
         <Route path="/search" element={<Search />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/data" element={<Navigate replace to="/settings" />} />
         <Route path="/planner" element={<Planner />} />
         <Route path="/progress" element={<Progress />} />
-        <Route path="/course/:id/progress" element={<Progress key={location.pathname} />} />
-        <Route path="/course/:id/overview" element={<Progress home key={location.pathname} />} />
+        <Route path="/course/:id/progress" element={<CourseRedirect />} />
+        <Route path="/course/:id/overview" element={<CourseRedirect />} />
         <Route path="/courses" element={<CourseLibrary />} />
         <Route path="/courses/new" element={<NewCourse />} />
-        <Route path="/course/:id" element={<Progress home key={location.pathname} />} />
+        <Route path="/course/:id" element={<CourseOverview key={location.pathname} />} />
         <Route path="/course/:id/materials" element={<Materials key={location.pathname} />} />
         <Route path="/materials/:materialId" element={<MaterialReader key={location.pathname} />} />
         <Route path="/materials/:materialId/versions/:versionId" element={<MaterialReader key={location.pathname} />} />
@@ -162,4 +165,14 @@ export function App() {
       </Routes>
     </Shell>}
   </DraftBoundary></AccountContext.Provider>;
+}
+
+/** Course progress lives in the course overview now. */
+function CourseRedirect() {
+  const { id } = useParams();
+  return <Navigate replace to={`/course/${id}`} />;
+}
+function TopicRedirect() {
+  const { id, topicId } = useParams();
+  return <Navigate replace to={`/progress?course=${id}&topic=${topicId}`} />;
 }

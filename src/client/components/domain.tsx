@@ -4,6 +4,13 @@ import { BookOpenIcon, FlaskConicalIcon, InfoIcon } from 'lucide-react';
 
 import type {
   AssessmentType,
+  AttemptMode,
+  BookMode,
+  CheckInMood,
+  NavigationMode,
+  SessionStatus,
+  TimingMode,
+  TopicPriority,
   Difficulty,
   MaterialKind,
   MaterialOrigin,
@@ -359,6 +366,67 @@ export function formatTimeOfDay(minutes: number): string {
 }
 
 /* ── Assessments and sessions ─────────────────────────────────────────── */
+
+/* ── Labels for values the learner sees ───────────────────────────────── */
+
+export const MODE_LABEL: Record<AttemptMode, string> = {
+  practice: 'Practice',
+  exam: 'Exam',
+  tutored: 'With the tutor',
+  'self-rated': 'Self-rated',
+};
+
+export const MOOD_LABEL: Record<CheckInMood, string> = {
+  'on-track': 'On track',
+  confident: 'Confident',
+  struggling: 'Struggling',
+  'less-time': 'Short on time',
+};
+
+export const SESSION_STATUS_LABEL: Record<SessionStatus, string> = {
+  planned: 'Planned',
+  completed: 'Done',
+  skipped: 'Skipped',
+};
+
+export const PRIORITY_LABEL: Record<TopicPriority, string> = { low: 'Low', normal: 'Normal', high: 'High' };
+
+export const MATERIAL_KIND_LABEL: Record<'reading' | 'notes' | 'slides' | 'other', string> = {
+  reading: 'Reading',
+  notes: 'Notes',
+  slides: 'Slides',
+  other: 'Other',
+};
+
+export const VERSION_ORIGIN_LABEL: Record<'paste' | 'upload' | 'edit', string> = {
+  paste: 'Pasted',
+  upload: 'Uploaded',
+  edit: 'Edited',
+};
+
+export const TIMING_LABEL: Record<TimingMode, string> = {
+  overall: 'Timed paper',
+  'per-section': 'Timed sections',
+  untimed: 'Untimed',
+};
+
+export const NAVIGATION_LABEL: Record<NavigationMode, string> = {
+  free: 'Move freely',
+  sequential: 'In order, no going back',
+};
+
+export const BOOK_LABEL: Record<BookMode, string> = { closed: 'Closed book', open: 'Open book' };
+
+export const RATING_LABEL: Record<'again' | 'hard' | 'good' | 'easy', string> = {
+  again: 'Again',
+  hard: 'Hard',
+  good: 'Good',
+  easy: 'Easy',
+};
+
+export const THEME_LABEL = { system: 'Match system', light: 'Light', dark: 'Dark' } as const;
+export const READING_SIZE_LABEL = { normal: 'Standard', large: 'Large', larger: 'Larger' } as const;
+export const MOTION_LABEL = { system: 'Match system', reduced: 'Reduced', full: 'Full' } as const;
 
 export const ASSESSMENT_LABEL: Record<AssessmentType, string> = {
   quiz: 'Quiz',

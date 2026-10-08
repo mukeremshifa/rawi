@@ -22,7 +22,7 @@ export async function search(db: ReadDb, workspaceId: string, query: string) {
   const attempts = await db.select({ id: learningAttempts.id, title: sql<string>`${learningAttempts.snapshot}->>'title'` }).from(learningAttempts).where(and(eq(learningAttempts.workspaceId, workspaceId), ilike(sql`${learningAttempts.snapshot}->>'title'`, pattern))).orderBy(asc(learningAttempts.id)).limit(10);
   found.push(...attempts.map(r => ({ title: r.title, category: 'Attempt', to: `/attempts/${r.id}` })));
   const topicRows = await db.select({ id: topics.id, courseId: topics.courseId, title: topics.title }).from(topics).where(and(eq(topics.workspaceId, workspaceId), ilike(topics.title, pattern))).orderBy(asc(topics.id)).limit(10);
-  found.push(...topicRows.map(r => ({ title: r.title, category: 'Topic', to: `/course/${r.courseId}/progress` })));
+  found.push(...topicRows.map(r => ({ title: r.title, category: 'Topic', to: `/progress?course=${r.courseId}&topic=${r.id}` })));
   return { results: found, limitPerCategory: 10 };
 }
 async function reminders(tx: Transaction, workspaceId: string) {

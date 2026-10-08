@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import type { PlannerView, ProgressView } from '../../../server/api-types';
+import { Link } from 'react-router-dom';
+import type { PlannerView } from '../../../server/api-types';
 import type { Availability, PlanProposal, PlannedSession, PlannedAssessment } from '@shared/domain/types';
 import { weekStart, weekDates, formatMinutes } from '@shared/domain/planner';
-import { EVIDENCE_LABEL } from '@shared/domain/progress';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +10,6 @@ import { NativeSelect as Select } from '@/components/ui/native-select';
 import { useLearningWrite, useRecord, useUnsentGuard } from '@/lib/hooks';
 
 type PlannerData = PlannerView;
-type ProgressData = ProgressView;
 export function Planner() {
   const data = useRecord<PlannerData>('/v1/planner'); const op = useLearningWrite();
   const [availability, setAvailability] = useState<Availability | null>(null), [date, setDate] = useState(''), [view, setView] = useState('week');
@@ -52,28 +50,6 @@ export function Planner() {
     </div>}
   </Page>;
 }
-export function Progress({ home = false }: { home?: boolean }) {
-  const { id, topicId } = useParams(); const [courseFilter, setCourseFilter] = useState(''), [mode, setMode] = useState(''); const data = useRecord<ProgressData>('/v1/progress'); const [query, setQuery] = useState('');
-  const row = data.value;
-  return <Page className="py-8" width="wide"><PageHeader title={home ? row?.courses.find(c => c.id === id)?.name ?? 'Your study workspace' : 'Progress and history'} actions={id && <Link className="underline" to={`/course/${id}/syllabus`}>Course settings and outline</Link>} description="Derived from saved account activity. Pending, assisted and self-rated work remain distinct." />{data.error && <p role="alert">{data.error}</p>}{row && <div className="space-y-6"><p>{row.streak} day streak · {row.pending} answers awaiting feedback · {row.timezone}</p>
-    {home && <><section className="space-y-3"><h2 className="text-xl font-semibold">Suggested next steps</h2>{row.suggestions.filter(s => !id || s.courseId === id).map(s => <article className="border p-4" key={s.id}><Link className="underline" to={s.to}>{s.title}</Link><p>{s.reason}</p><p>{s.minutes} minutes</p></article>)}</section><h2 className="text-xl font-semibold">Continue studying</h2>{row.runs.filter(r => !id || r.courseId === id).map(r => <p key={r.id}><Link className="underline" to={`/runs/${r.id}`}>{r.title}</Link></p>)}<h2>Today</h2>{row.sessions.map(s => <p key={s.id}>{formatMinutes(s.startMinutes)} · {s.title} · {s.status}</p>)}<Link className="underline" to="/planner">Open your planner</Link><CheckIn row={row} courseId={id} /></>}
-    <section><h2 className="text-xl font-semibold">Topic evidence</h2>{row.topics.filter(t => (!id || t.courseId === id) && (!topicId || t.id === topicId)).map(t => <article className="border-t py-3" key={t.id}><h3><Link className="underline" to={`/course/${t.courseId}/progress/topic/${t.id}`}>{t.title}</Link></h3><p>{EVIDENCE_LABEL[row.evidence.find(e => e.topicId === t.id)?.level ?? 'not-checked']}</p><Link className="underline" to={`/course/${t.courseId}/practice?topicId=${t.id}`}>Practise this topic</Link></article>)}</section>
-    <section><h2 className="text-xl font-semibold">Due reviews</h2>{row.due.filter(d => !id || d.courseId === id).map(d => <p key={d.topicId}>{row.topics.find(t => t.id === d.topicId)?.title} · {d.daysSince} days since study</p>)}</section>
-    <section><h2 className="text-xl font-semibold">Recurring mistakes</h2>{row.mistakes.filter(m => !id || m.courseId === id).map(m => <p key={m.questionId}><Link className="underline" to={`/attempts/${m.lastAttemptId}`}>{m.prompt}</Link> · {m.times} attempts</p>)}</section>
-    <section><h2 className="text-xl font-semibold">History</h2><div className="flex gap-3"><Select aria-label="History course" value={courseFilter} onChange={e => setCourseFilter(e.target.value)}><option value="">All courses</option>{row.courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</Select><Select aria-label="History evidence" value={mode} onChange={e => setMode(e.target.value)}><option value="">All evidence</option>{["practice", "exam", "tutored", "self-rated"].map(m => <option key={m} value={m}>{m}</option>)}</Select></div><Input aria-label="Search history" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search saved activity" />{row.attempts.filter(a => (!id || a.courseId === id) && (!courseFilter || a.courseId === courseFilter) && (!mode || a.mode === mode) && (!topicId || a.topicIds.includes(topicId)) && a.title.toLowerCase().includes(query.toLowerCase())).sort((a, b) => b.completedAt!.localeCompare(a.completedAt!)).map(a => <p className="py-3 border-b" key={a.id}><Link className="underline" to={`/attempts/${a.id}`}>{a.title}</Link> · {new Date(a.completedAt!).toLocaleString(undefined, { timeZone: row.timezone })} · {a.mode}{a.assistanceRecord === 'unknown' ? ' · Unverified legacy provenance' : ''} · {a.marksAvailable ? `${a.marksAwarded}/${a.marksAvailable}` : 'Not graded'}</p>)}</section>
-    <section><h2 className="text-xl font-semibold">Tutor activity</h2>{row.tutorActivity.filter(s => !id || s.courseId === id).map(s => <p key={s.id}><Link className="underline" to={`/tutor/${s.id}`}>{s.title}</Link> · {s.imported ? 'Imported tutor history' : 'Completed assisted activity'}</p>)}</section>
-    <section><h2>Upcoming assessments</h2>{row.assessments.map(a => <p key={a.id}>{a.date} · {a.title}</p>)}</section>
-  </div>}</Page>;
-}
-
-function CheckIn({ row, courseId }: { row: ProgressData; courseId?: string }) {
-  const op = useLearningWrite();
-  const [course, setCourse] = useState(courseId ?? ''), [topic, setTopic] = useState(''), [mood, setMood] = useState('on-track'), [minutes, setMinutes] = useState(''), [note, setNote] = useState(''), [saved, setSaved] = useState(false);
-  const pending = useRef<unknown>(null);
-  useUnsentGuard(!!note || !!minutes || !!pending.current);
-  return <section className="space-y-3"><h2>Check in</h2>{op.error && <p role="alert">{op.error}</p>}{saved ? <p role="status">Check-in saved.</p> : <><fieldset className="grid gap-3 md:grid-cols-2" disabled={op.busy || !!pending.current}><label>Check-in course<Select value={course} onChange={e => { setCourse(e.target.value); setTopic(''); }}><option value="">Whole workspace</option>{row.courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></label><label>Check-in topic<Select value={topic} disabled={!course} onChange={e => setTopic(e.target.value)}><option value="">All course topics</option>{row.topics.filter(t => t.courseId === course).map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</Select></label><label>How study is going<Select value={mood} onChange={e => setMood(e.target.value)}>{['less-time', 'on-track', 'struggling', 'confident'].map(m => <option key={m} value={m}>{m.replace('-', ' ')}</option>)}</Select></label><label>Minutes available today<Input type="number" min={0} max={1440} value={minutes} onChange={e => setMinutes(e.target.value)} /></label><label>Check-in note<Input maxLength={4000} value={note} onChange={e => setNote(e.target.value)} /></label></fieldset><Button disabled={op.busy} onClick={() => { pending.current ??= { operationId: crypto.randomUUID(), checkIn: { mood, ...(course ? { courseId: course } : {}), ...(topic ? { topicId: topic } : {}), ...(minutes !== '' ? { minutesToday: Number(minutes) } : {}), ...(note ? { note } : {}) } }; void op.run('/v1/planner/check-ins', pending.current, 'POST', () => { pending.current = null; setNote(''); setMinutes(''); setSaved(true); }); }}>{op.busy ? 'Saving…' : pending.current ? 'Retry check-in' : 'Save check-in'}</Button></>}</section>;
-}
-
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const clockTime = (minutes: number) => minutes === 1440 ? '24:00' : formatMinutes(minutes);
 function AvailabilitySummary({ availability }: { availability: { windows: { id: string; day: number; startMinutes: number; endMinutes: number }[]; exceptions: { id: string; date: string; windows: { startMinutes: number; endMinutes: number }[]; note?: string }[]; sessionMinutes: number } }) {
