@@ -60,7 +60,7 @@ export function PageHeader({ title, description, actions, display, className }: 
         <h1 className={cn('min-w-0 text-balance', display ? 'font-serif text-2xl leading-tight font-medium tracking-tight' : 'text-xl font-semibold tracking-tight')}>{title}</h1>
         {description && <div className="text-muted-foreground max-w-prose text-base">{description}</div>}
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-tight">{actions}</div>}
+      {actions && <div className="flex min-w-0 max-w-full flex-wrap items-center gap-tight">{actions}</div>}
     </div>
   );
 }
