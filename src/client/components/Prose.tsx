@@ -140,7 +140,7 @@ export function Prose({
             return (
               <blockquote
                 key={i}
-                className="border-primary/40 text-muted-foreground border-l-2 pl-gutter italic"
+                className="border-border-strong text-muted-foreground border-l-2 pl-gutter italic"
               >
                 {block.lines.map((line, j) => (
                   <Fragment key={j}>

@@ -1,94 +1,45 @@
+import type { EvidenceLevel } from '@shared/domain/types';
+import { EVIDENCE_LABEL } from '@shared/domain/progress';
 import { cn } from '@/lib/utils';
 
 /**
- * A horizontal proportion bar, and the only one in the app.
- *
- * ── What this may and may not draw ────────────────────────────────────────
- *
- * **It may never draw mastery.** Invariant 6: evidence is a described state,
- * never a number, and a filled bar labelled with a concept's name is a mastery
- * percentage wearing a different hat. The word "mastery" does not appear in
- * this app and neither does a number claiming to summarise what someone knows.
- *
- * What it may draw is a **count of discrete facts** the server actually holds:
- * "4 of 11 concepts have independent evidence" is four rows in an append-only
- * log, not an estimate, and a bar is a fair rendering of a fraction whose
- * numerator and denominator are both integers you could go and count. The
- * caller passes the count, not a score, and always renders the count in text
- * beside the bar — the bar is the quick read, the number is the truth.
- *
- * ── Colour, and the rule it obeys ─────────────────────────────────────────
- *
- * A meter's fill has nothing on top of it and sits directly on the page or a
- * card, which is the **mark** case — so the bands use `--evidence-*-mark`, not
- * the field ramp. The field ramp is for stops that carry a label. Under a
- * single ramp a light stop would be about 1.2:1 against the page: a bar you
- * cannot see, which rather defeats a bar.
- *
- * `neutral` is the default and is achromatic, because most proportions are
- * neither good nor bad and colouring one implies it is.
+ * Meter: a proportion of discrete, countable facts ("4 of 11 topics"), drawn
+ * in greys. Never a mastery score. Always render the count in text beside it.
  */
-
-export type MeterTone = 'neutral' | 'accent' | 'practicing' | 'independent' | 'retained';
-
-const TONE_FILL: Record<MeterTone, string> = {
-  neutral: 'bg-foreground/70',
-  accent: 'bg-primary',
-  practicing: 'bg-evidence-practicing-mark',
-  independent: 'bg-evidence-independent-mark',
-  retained: 'bg-evidence-retained-mark',
-};
-
-export function Meter({
-  value,
-  tone = 'neutral',
-  className,
-  label,
-}: {
-  /** 0–1. Clamped, so a caller's rounding error cannot overflow the track. */
+export function Meter({ value, className, label }: {
+  /** 0 to 1, clamped. */
   value: number;
-  tone?: MeterTone;
   className?: string;
-  /**
-   * Accessible name. Required in spirit: a bare bar announces nothing, and
-   * every caller has a name to hand because it is already rendering one.
-   */
+  /** Accessible name. A bare bar announces nothing. */
   label: string;
 }) {
-  const clamped = Math.min(1, Math.max(0, value));
-  const percent = Math.round(clamped * 100);
-
+  const percent = Math.round(Math.min(1, Math.max(0, value)) * 100);
   return (
-    <div
-      className={cn('bg-muted h-1.5 w-full overflow-hidden rounded-full', className)}
-      role="meter"
-      aria-valuenow={percent}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-label={label}
-    >
-      <div
-        className={cn('h-full rounded-full transition-[width] duration-300', TONE_FILL[tone])}
-        style={{ width: `${percent}%` }}
-      />
+    <div role="meter" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label={label}
+      className={cn('bg-meter-track h-1.5 w-full overflow-hidden rounded-full', className)}>
+      <div className="bg-meter-fill h-full rounded-full transition-[width] duration-300" style={{ width: `${percent}%` }} />
     </div>
   );
 }
 
+const STEPS: Record<EvidenceLevel, number> = { 'not-checked': 0, practising: 1, 'independent-once': 2, retained: 3 };
+
 /**
- * The unmeasured case, drawn as absence rather than as zero.
- *
- * "We have not asked you yet" and "you got none of them" are the distinction
- * users most resent getting wrong, and a 0%-filled bar says the second while
- * meaning the first. A dashed empty track says the first. Nothing on screen is
- * a lie: unknown renders as unknown.
+ * EvidenceMeter: three filled steps for an evidence level, with its label.
+ * Use wherever topic evidence appears. Not checked draws empty steps with a
+ * dashed outline, because "not asked yet" is not the same as "got none".
  */
-export function EmptyMeter({ className, label }: { className?: string; label: string }) {
+export function EvidenceMeter({ level, showLabel = true, className }: { level: EvidenceLevel; showLabel?: boolean; className?: string }) {
+  const filled = STEPS[level];
   return (
-    <div
-      className={cn('h-1.5 w-full rounded-full border border-dashed', className)}
-      role="img"
-      aria-label={label}
-    />
+    <span className={cn('inline-flex items-center gap-tight', className)}>
+      <span role="img" aria-label={`Evidence: ${EVIDENCE_LABEL[level]}`} className="flex gap-0.5">
+        {[1, 2, 3].map(step => (
+          <span key={step} className={cn('h-2 w-3.5 rounded-[2px]',
+            step <= filled ? 'bg-meter-fill' : filled === 0 ? 'border-border-strong border border-dashed' : 'bg-meter-track')} />
+        ))}
+      </span>
+      {showLabel && <span className="text-muted-foreground text-sm whitespace-nowrap">{EVIDENCE_LABEL[level]}</span>}
+    </span>
   );
 }

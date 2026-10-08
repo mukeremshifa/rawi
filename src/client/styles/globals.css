@@ -1,276 +1,268 @@
 @import 'tailwindcss';
 
-/* Brand faces, self-hosted. The page renders untrusted model output and
-   untrusted source text; it should not also be making a request to a font CDN
-   on every load. Three faces, one job each — see the typography note below. */
+/* Brand faces, self-hosted, so rendering untrusted text never also means a
+   request to a font CDN. One job each:
+     sans   (Inter)            all interface text
+     serif  (Source Serif 4)   long reading and large display headings only
+     mono   (JetBrains Mono)   numbers you compare, codes, timers */
 @import '@fontsource-variable/inter';
 @import '@fontsource-variable/source-serif-4';
 @import '@fontsource-variable/jetbrains-mono';
 
-/* Tailwind v4: design tokens live in CSS and reach utilities through @theme. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ── Neutrals ───────────────────────────────────────────────────────────────
+   One cool grey scale of twelve steps, in the Radix Colors pattern. Each step
+   has one job, so a component asks for a role rather than a lightness:
 
+     1  app background          7  border
+     2  subtle surface          8  strong border, control outline
+     3  control background      9  solid fill, disabled text on fill
+     4  hover                  10  hovered solid fill
+     5  active, selected        11  muted text (4.5:1 on steps 1 to 3)
+     6  hairline border        12  body text
 
+   Dark is designed as its own scale rather than an inversion: the steps climb
+   from a near-black page, and steps 11 and 12 are pulled back from pure white
+   so long reading is not glaring. A hue of 260 with very low chroma reads as
+   neutral but cool, which keeps the one accent from looking pasted on. */
 :root {
-  /* ── Radius ─────────────────────────────────────────────────────────── */
-  --radius: 0.5rem;
+  --gray-1: oklch(0.993 0.0015 260);
+  --gray-2: oklch(0.982 0.002 260);
+  --gray-3: oklch(0.963 0.003 260);
+  --gray-4: oklch(0.945 0.004 260);
+  --gray-5: oklch(0.926 0.005 260);
+  --gray-6: oklch(0.906 0.006 260);
+  --gray-7: oklch(0.872 0.007 260);
+  --gray-8: oklch(0.8 0.009 260);
+  --gray-9: oklch(0.64 0.012 260);
+  --gray-10: oklch(0.6 0.012 260);
+  --gray-11: oklch(0.49 0.012 260);
+  --gray-12: oklch(0.22 0.01 260);
 
-  /* ── Neutrals and surfaces ──────────────────────────────────────────── */
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.16 0 0);
+  /* ── Accent ───────────────────────────────────────────────────────────────
+     One restrained blue-indigo for the primary action, focus, selection,
+     links in prose and the current navigation item. Nothing else is coloured.
+     Chosen because blue reads as "interactive" without explanation, the
+     indigo lean keeps it from feeling like a default browser link, and its
+     chroma is held low enough that it sits quietly beside long reading. The
+     fill clears 4.5:1 with white text in both themes. */
+  --accent-9: oklch(0.51 0.15 266);
+  --accent-10: oklch(0.46 0.15 266);
+  --accent-text: oklch(0.48 0.15 266);
+  --accent-subtle: oklch(0.955 0.025 266);
+  --accent-subtle-border: oklch(0.87 0.06 266);
+
+  /* ── Meaning colours ──────────────────────────────────────────────────────
+     Only where a state carries meaning: answer feedback, errors, destructive
+     actions and urgent deadlines. Each has a text stop that clears 4.5:1 on
+     the page and a subtle fill for a quiet background. */
+  --success: oklch(0.55 0.13 155);
+  --success-text: oklch(0.45 0.11 155);
+  --success-subtle: oklch(0.96 0.03 155);
+  --warning: oklch(0.75 0.15 75);
+  --warning-text: oklch(0.47 0.1 70);
+  --warning-subtle: oklch(0.97 0.04 85);
+  --danger: oklch(0.55 0.2 27);
+  --danger-text: oklch(0.5 0.19 27);
+  --danger-subtle: oklch(0.965 0.02 27);
+
+  /* ── Roles ────────────────────────────────────────────────────────────────
+     The names the components use. `accent` here is the shadcn role for a
+     hovered surface, not the brand accent, which is `primary`. */
+  --background: var(--gray-1);
+  --foreground: var(--gray-12);
+  --surface: var(--gray-2);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.16 0 0);
+  --card-foreground: var(--gray-12);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.16 0 0);
+  --popover-foreground: var(--gray-12);
+  --secondary: var(--gray-3);
+  --secondary-foreground: var(--gray-12);
+  --muted: var(--gray-3);
+  --muted-foreground: var(--gray-11);
+  --accent: var(--gray-4);
+  --accent-foreground: var(--gray-12);
+  --selected: var(--gray-5);
+  --primary: var(--accent-9);
+  --primary-hover: var(--accent-10);
+  --primary-foreground: oklch(1 0 0);
+  --primary-text: var(--accent-text);
+  --primary-subtle: var(--accent-subtle);
+  --destructive: var(--danger);
+  --destructive-foreground: oklch(1 0 0);
+  --border: var(--gray-6);
+  --border-strong: var(--gray-8);
+  --input: var(--gray-8);
+  --ring: var(--accent-9);
 
-  --secondary: oklch(0.965 0 0);
-  --secondary-foreground: oklch(0.16 0 0);
-  --muted: oklch(0.965 0 0);
-  --muted-foreground: oklch(0.52 0 0);
-  --accent: oklch(0.965 0 0);
-  --accent-foreground: oklch(0.16 0 0);
+  /* Evidence is drawn in greys: a filled step indicator plus its label.
+     Colour would suggest a grade, and evidence is a described state. */
+  --meter-track: var(--gray-5);
+  --meter-fill: var(--gray-11);
 
-  /* ── Brand — see rules 2 and 3 ──────────────────────────────────────── */
-  --primary: oklch(0.45 0.095 255);
-  --primary-foreground: oklch(0.985 0 0);
-
-  /* ── Semantic ───────────────────────────────────────────────────────── */
-  --destructive: oklch(0.55 0.21 27);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.55 0.14 155);
-  --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.75 0.15 70);
-  --warning-foreground: oklch(0.16 0 0);
-  --warning-text: oklch(0.4 0.09 70);
-
-  /* ── Boundaries — see rule 5 ────────────────────────────────────────── */
-  --border: oklch(0.9 0 0);
-  --border-strong: oklch(0.655 0 0);
-  --input: oklch(0.655 0 0);
-  /* The accent doing the job it is best at. Unlike SynapseDeck, one ring
-     token CAN serve both themes here, because the accent is dark on light and
-     lifts on dark — the two definitions differ only in lightness. */
-  --ring: oklch(0.45 0.095 255);
-
-  /* ── The evidence ramp — see rule 4 ─────────────────────────────────────
-     FIELD stops. Ink sits on these, so all four clear 4.5:1 against
-     --evidence-ink and one rule can style the whole set. */
-  --evidence-none: oklch(0.93 0 0);
-  --evidence-practicing: oklch(0.945 0.02 255);
-  --evidence-independent: oklch(0.96 0.03 255);
-  --evidence-retained: oklch(0.975 0.04 255);
-
-  /* MARK stops. These sit on the page and clear 3:1 against --background.
-     Compressed into the readable band and still climbing, so the ramp reads as
-     one ramp in both roles. */
-  --evidence-none-mark: oklch(0.45 0 0);
-  --evidence-practicing-mark: oklch(0.52 0.045 255);
-  --evidence-independent-mark: oklch(0.59 0.085 255);
-  --evidence-retained-mark: oklch(0.66 0.12 255);
-
-  /* The one ink the ramp is checked against, named so the checker can compute
-     "ink on practicing" without hardcoding a value this file owns. */
-  --evidence-ink: oklch(0.16 0 0);
-
-  /* ── Course accents ─────────────────────────────────────────────────────
-     One hue per course, used to tell courses apart in the aggregated views —
-     the planner grid, the home page, the history list — where several courses'
-     records sit in one column and the heading that would have named them is
-     several rows away.
-
-     Two stops each. The MARK stop is a dot or a left border and clears 3:1
-     against --background, which is the non-text contrast floor. The SOFT stop
-     is a tinted surface that page ink sits on, so it stays close to the
-     background rather than becoming a second card colour.
-
-     **Colour is never the only signal.** Every accented row also carries the
-     course name in text, because a colour-blind student and a monochrome print
-     both have to be able to tell which course a row belongs to. */
-  --accent-indigo: oklch(0.55 0.15 265);
-  --accent-amber: oklch(0.58 0.13 75);
-  --accent-teal: oklch(0.54 0.1 195);
-  --accent-rose: oklch(0.56 0.16 15);
-  --accent-violet: oklch(0.55 0.16 305);
-
-  --accent-indigo-soft: oklch(0.96 0.025 265);
-  --accent-amber-soft: oklch(0.96 0.03 75);
-  --accent-teal-soft: oklch(0.96 0.025 195);
-  --accent-rose-soft: oklch(0.96 0.025 15);
-  --accent-violet-soft: oklch(0.96 0.025 305);
+  /* ── Radius ─────────────────────────────────────────────────────────────
+     6px for controls, 8px for containers. */
+  --radius: 0.375rem;
 
   /* ── Spacing ────────────────────────────────────────────────────────────
-     A 4px base, named by role rather than by size, because "gutter" survives a
-     redesign and "space-6" does not.
-
-     **Rawi sits at the generous end of these.** A teaching surface is a page
-     you read, so a screen reaches for `section` and `page` where SynapseDeck's
-     working shell reached for `gutter`. */
-  --space-hairline: 0.25rem; /*  4px — icon to its label */
-  --space-tight: 0.5rem; /*  8px — within a control */
-  --space-snug: 0.75rem; /* 12px — between related controls */
-  --space-base: 1rem; /* 16px — the default gap */
-  --space-gutter: 1.5rem; /* 24px — card padding, column gutters */
-  --space-section: 2.5rem; /* 40px — between sections of a page */
-  --space-page: 4rem; /* 64px — page top padding, empty-state breathing */
+     A 4px base, named by role rather than size, because "gutter" survives a
+     redesign and "space-6" does not. Tool surfaces use the tight end,
+     reading surfaces the generous end. */
+  --space-hairline: 0.25rem; /*  4px  icon to its label */
+  --space-tight: 0.5rem; /*  8px  within a control */
+  --space-snug: 0.75rem; /* 12px  between related controls */
+  --space-base: 1rem; /* 16px  the default gap */
+  --space-gutter: 1.5rem; /* 24px  panel padding, column gutters */
+  --space-section: 2.5rem; /* 40px  between sections of a page */
+  --space-page: 4rem; /* 64px  empty-state breathing room */
 
   /* ── Elevation ──────────────────────────────────────────────────────────
-     Elevation means *distance from the page*, not importance. A card is not
-     raised because it matters; it is raised because it floats. Achromatic,
-     per rule 1. */
+     Distance from the page, not importance. Surfaces prefer hairlines and
+     whitespace, so shadows belong to things that float: menus, dialogs. */
   --elevation-flat: 0 0 #0000;
-  --elevation-raised: 0 1px 2px 0 oklch(0 0 0 / 0.05);
-  --elevation-overlay: 0 4px 12px -2px oklch(0 0 0 / 0.1), 0 2px 4px -2px oklch(0 0 0 / 0.06);
-  --elevation-modal: 0 16px 40px -8px oklch(0 0 0 / 0.18), 0 4px 12px -4px oklch(0 0 0 / 0.1);
+  --elevation-raised: 0 1px 2px 0 oklch(0 0 0 / 0.04);
+  --elevation-overlay: 0 4px 16px -4px oklch(0 0 0 / 0.12), 0 1px 3px 0 oklch(0 0 0 / 0.06);
+  --elevation-modal: 0 16px 48px -12px oklch(0 0 0 / 0.22), 0 4px 12px -4px oklch(0 0 0 / 0.08);
 
   /* ── Motion ─────────────────────────────────────────────────────────────
-       instant  a state the user just caused — hover, press. Not perceptible as
-                motion, only as responsiveness.
-       quick    something appearing or leaving in place — a tooltip, a toast.
-       moving   something that travels — a sheet, a dialog.
-     Anything slower is a decision, not a default, and belongs in the component
-     with a comment saying why. Exits are faster than entrances: a UI that
-     lingers on the way out feels slow. */
+       instant  a state the user just caused: hover, press
+       quick    something appearing in place: a tooltip, a menu, a toast
+       moving   something that travels: a sheet, a dialog
+     Exits are faster than entrances. */
   --duration-instant: 120ms;
   --duration-quick: 180ms;
   --duration-moving: 260ms;
-
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --ease-spring: cubic-bezier(0.34, 1.32, 0.64, 1);
+
+  /* Reading size follows the learner's preference. */
+  --reading-size: 1rem;
+  --reading-leading: 1.7;
 }
 
 .dark {
-  /* Background 0.125 and card 0.205. The gap is what makes a card read as a
-     card without a border doing the work, which is how dark themes usually
-     fail — and the surface-separation section of check-contrast.mjs is what
-     keeps it from collapsing back to one flat sheet. */
-  --background: oklch(0.125 0 0);
-  --foreground: oklch(0.98 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.98 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.98 0 0);
+  --gray-1: oklch(0.165 0.004 260);
+  --gray-2: oklch(0.19 0.005 260);
+  --gray-3: oklch(0.215 0.006 260);
+  --gray-4: oklch(0.24 0.007 260);
+  --gray-5: oklch(0.265 0.008 260);
+  --gray-6: oklch(0.29 0.009 260);
+  --gray-7: oklch(0.335 0.01 260);
+  --gray-8: oklch(0.41 0.012 260);
+  --gray-9: oklch(0.53 0.012 260);
+  --gray-10: oklch(0.58 0.012 260);
+  --gray-11: oklch(0.74 0.01 260);
+  --gray-12: oklch(0.94 0.004 260);
 
-  --secondary: oklch(0.275 0 0);
-  --secondary-foreground: oklch(0.98 0 0);
-  --muted: oklch(0.275 0 0);
-  --muted-foreground: oklch(0.715 0 0);
-  --accent: oklch(0.275 0 0);
-  --accent-foreground: oklch(0.98 0 0);
+  /* The fill keeps white text at 4.5:1. Text and focus use a lighter stop,
+     because the fill stop would be too dark to read on a dark page. */
+  --accent-9: oklch(0.54 0.16 266);
+  --accent-10: oklch(0.59 0.16 266);
+  --accent-text: oklch(0.76 0.11 266);
+  --accent-subtle: oklch(0.26 0.05 266);
+  --accent-subtle-border: oklch(0.38 0.09 266);
 
-  /* The same accent, lifted for a dark ground. Still ink-side: it is a mark
-     and a ring here too, and it carries dark text when filled. */
-  --primary: oklch(0.72 0.11 255);
-  --primary-foreground: oklch(0.16 0 0);
+  --success: oklch(0.68 0.14 155);
+  --success-text: oklch(0.76 0.13 155);
+  --success-subtle: oklch(0.24 0.04 155);
+  --warning: oklch(0.8 0.14 75);
+  --warning-text: oklch(0.83 0.12 80);
+  --warning-subtle: oklch(0.26 0.04 75);
+  --danger: oklch(0.6 0.19 27);
+  --danger-text: oklch(0.74 0.14 25);
+  --danger-subtle: oklch(0.25 0.05 27);
 
-  --destructive: oklch(0.66 0.19 27);
-  --destructive-foreground: oklch(0.16 0 0);
-  --success: oklch(0.72 0.15 155);
-  --success-foreground: oklch(0.16 0 0);
-  --warning: oklch(0.8 0.15 70);
-  --warning-foreground: oklch(0.16 0 0);
-  --warning-text: oklch(0.8 0.15 70);
+  --card: var(--gray-2);
+  --popover: var(--gray-3);
+  --ring: var(--accent-text);
 
-  --border: oklch(0.3 0 0);
-  --border-strong: oklch(0.535 0 0);
-  --input: oklch(0.535 0 0);
-  --ring: oklch(0.72 0.11 255);
-
-  /* The field ramp, re-pitched for the dark ground: ink still sits on it, so
-     the stops stay light — they are a fill on a dark page, not a tint of it. */
-  --evidence-none: oklch(0.8 0 0);
-  --evidence-practicing: oklch(0.85 0.04 255);
-  --evidence-independent: oklch(0.9 0.07 255);
-  --evidence-retained: oklch(0.94 0.08 255);
-
-  /* The mark ramp lifts to clear 3:1 against a 0.125 page, and still climbs. */
-  --evidence-none-mark: oklch(0.6 0 0);
-  --evidence-practicing-mark: oklch(0.66 0.05 255);
-  --evidence-independent-mark: oklch(0.72 0.09 255);
-  --evidence-retained-mark: oklch(0.8 0.1 255);
-
-  --evidence-ink: oklch(0.16 0 0);
-
-  /* Course accents lift on the dark ground so the dots and borders keep their
-     3:1 against a 0.125 page, and the soft stops become dark tints rather than
-     light ones — a light surface here would read as a raised card and compete
-     with the real surface steps. */
-  --accent-indigo: oklch(0.72 0.14 265);
-  --accent-amber: oklch(0.76 0.12 75);
-  --accent-teal: oklch(0.72 0.1 195);
-  --accent-rose: oklch(0.72 0.14 15);
-  --accent-violet: oklch(0.72 0.14 305);
-
-  --accent-indigo-soft: oklch(0.26 0.04 265);
-  --accent-amber-soft: oklch(0.26 0.04 75);
-  --accent-teal-soft: oklch(0.26 0.035 195);
-  --accent-rose-soft: oklch(0.26 0.04 15);
-  --accent-violet-soft: oklch(0.26 0.04 305);
-
-  /* Shadows barely read on a dark ground; depth comes from the surface steps
-     above. Kept non-zero so a modal still separates from what is behind it. */
   --elevation-raised: 0 1px 2px 0 oklch(0 0 0 / 0.3);
-  --elevation-overlay: 0 4px 12px -2px oklch(0 0 0 / 0.45), 0 2px 4px -2px oklch(0 0 0 / 0.3);
-  --elevation-modal: 0 16px 40px -8px oklch(0 0 0 / 0.6), 0 4px 12px -4px oklch(0 0 0 / 0.4);
+  --elevation-overlay: 0 4px 16px -4px oklch(0 0 0 / 0.5), 0 0 0 1px oklch(1 0 0 / 0.04);
+  --elevation-modal: 0 16px 48px -12px oklch(0 0 0 / 0.7), 0 0 0 1px oklch(1 0 0 / 0.05);
 }
 
+html[data-reading-size='large'] { --reading-size: 1.0625rem; --reading-leading: 1.72; }
+html[data-reading-size='larger'] { --reading-size: 1.125rem; --reading-leading: 1.75; }
+
 @theme inline {
-  /* ── Typography ─────────────────────────────────────────────────────────
-       sans   (Inter) — everything. The default, and the answer unless one of
-              the two below applies.
-       serif  (Source Serif 4) — the name of the thing you are looking at, once
-              per screen, owned by PageHeader. Rawi is reading-heavy, so this
-              is a **text** serif with a real 400 weight, not a display face:
-              a paragraph set in it has to stay comfortable, which is the exact
-              thing a display serif fails at.
-       mono   (JetBrains Mono) — a value you might compare, count or type: a
-              date, a count, an id, an email. Always tabular-nums. */
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --font-serif: 'Source Serif 4 Variable', ui-serif, Georgia, serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
 
+  /* A small fixed type scale: 12, 13, 14, 16, 20, 24, 32. Interface text sits
+     at 13 to 14. Reading text uses --reading-size. */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-md: 1rem;
+  --text-md--line-height: 1.5rem;
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 2rem;
+  --text-2xl: 2rem;
+  --text-2xl--line-height: 2.5rem;
+
+  --color-gray-1: var(--gray-1);
+  --color-gray-2: var(--gray-2);
+  --color-gray-3: var(--gray-3);
+  --color-gray-4: var(--gray-4);
+  --color-gray-5: var(--gray-5);
+  --color-gray-6: var(--gray-6);
+  --color-gray-7: var(--gray-7);
+  --color-gray-8: var(--gray-8);
+  --color-gray-9: var(--gray-9);
+  --color-gray-10: var(--gray-10);
+  --color-gray-11: var(--gray-11);
+  --color-gray-12: var(--gray-12);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-text: var(--primary-text);
+  --color-primary-subtle: var(--primary-subtle);
+  --color-primary-subtle-border: var(--accent-subtle-border);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-selected: var(--selected);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
-  --color-success-foreground: var(--success-foreground);
+  --color-success-text: var(--success-text);
+  --color-success-subtle: var(--success-subtle);
   --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
   --color-warning-text: var(--warning-text);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-danger-subtle: var(--danger-subtle);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-meter-track: var(--meter-track);
+  --color-meter-fill: var(--meter-fill);
 
-  --color-evidence-none: var(--evidence-none);
-  --color-evidence-practicing: var(--evidence-practicing);
-  --color-evidence-independent: var(--evidence-independent);
-  --color-evidence-retained: var(--evidence-retained);
-
-  --color-evidence-none-mark: var(--evidence-none-mark);
-  --color-evidence-practicing-mark: var(--evidence-practicing-mark);
-  --color-evidence-independent-mark: var(--evidence-independent-mark);
-  --color-evidence-retained-mark: var(--evidence-retained-mark);
-
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-sm: 0.25rem;
+  --radius-md: var(--radius);
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
 
   --spacing-hairline: var(--space-hairline);
   --spacing-tight: var(--space-tight);
@@ -292,314 +284,115 @@
 @layer base {
   * {
     border-color: var(--color-border);
-    outline-color: color-mix(in oklab, var(--color-ring) 50%, transparent);
+    outline-color: var(--color-ring);
   }
 
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    font-feature-settings: 'cv11', 'ss01';
     -webkit-font-smoothing: antialiased;
   }
 
-  /*
-   * One scroll owner, and it is the shell.
-   *
-   * ── The bug this replaced ─────────────────────────────────────────────
-   *
-   * `html, body, #root { height: 100% }` plus `body { overflow: auto }` gave
-   * the document a scrollbar, while the shell's own `h-dvh` with a scrolling
-   * `<main>` inside gave a second one. On desktop both were visible at once
-   * and the outer one did nothing: dragging it moved nothing, because the
-   * content that overflowed was inside the inner scroller.
-   *
-   * The fix is to make the document exactly the viewport and refuse it any
-   * overflow at all. Everything in this app renders inside `AppShell`, which
-   * owns the single vertical scroll on its `<main>`. Panels that genuinely
-   * scroll separately — a reading pane, the tutor conversation, an exam's
-   * question map — opt in explicitly inside that, which is the one case where
-   * a second scrollbar is meaningful rather than accidental.
-   */
+  /* One scroll owner, and it is the shell's <main>. The document is exactly
+     the viewport so a second, useless outer scrollbar cannot appear. Panels
+     that genuinely scroll on their own opt in inside the shell. */
   html,
   body,
   #root {
     height: 100%;
     overflow: hidden;
   }
-
-  /* `#root` is the flex parent every shell stretches into. */
   #root {
     display: flex;
     flex-direction: column;
   }
 
   ::selection {
-    background-color: var(--color-primary);
-    color: var(--color-primary-foreground);
+    background-color: color-mix(in oklab, var(--color-primary) 22%, transparent);
   }
 
-  /* Matches `*` deliberately: an opted-out user gets every end state instantly,
-     which is correct, because all of the motion in this app is decoration on
-     top of a state change that happens either way. */
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-    }
-  }
+  main h1 { overflow-wrap: anywhere; }
+  main h1:focus { outline: none; }
+
+  /* Numbers that are compared line up. */
+  .tabular { font-variant-numeric: tabular-nums; }
 }
 
-/* ── Motion keyframes ───────────────────────────────────────────────────────
-   `shimmer` is the loading skeleton: a sweep, not a pulse. A pulsing block
-   reads as "broken"; a sweep reads as "arriving".
-   `breathe` is the generating state — slower, and deliberately unlike the
-   skeleton, because "we are working" and "this is loading" are different
-   promises and the job surface depends on the difference being visible. */
-@keyframes shimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
-
-@keyframes breathe {
-  0%,
-  100% {
-    opacity: 0.55;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-@keyframes overlay-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes overlay-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes panel-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-@keyframes panel-out {
-  from {
-    opacity: 1;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-}
-
-@keyframes pop-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-@keyframes pop-out {
-  from {
-    opacity: 1;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-}
-
-@layer components {
-  /* Written here rather than pulled in as `tailwindcss-animate`, so the
-     durations and easings are the tokens above rather than a plugin's own
-     scale. Everything below inherits the prefers-reduced-motion block. */
-  .ui-overlay[data-state='open'] {
-    animation: overlay-in var(--duration-quick) var(--ease-standard);
-  }
-  .ui-overlay[data-state='closed'] {
-    animation: overlay-out var(--duration-quick) var(--ease-exit);
-  }
-
-  .ui-panel[data-state='open'] {
-    animation: panel-in var(--duration-moving) var(--ease-standard);
-  }
-  .ui-panel[data-state='closed'] {
-    animation: panel-out var(--duration-quick) var(--ease-exit);
-  }
-
-  .ui-pop[data-state='open'] {
-    animation: pop-in var(--duration-quick) var(--ease-standard);
-    transform-origin: var(--radix-popper-transform-origin, center);
-  }
-  .ui-pop[data-state='closed'] {
-    animation: pop-out var(--duration-instant) var(--ease-exit);
-    transform-origin: var(--radix-popper-transform-origin, center);
-  }
-
-  .ui-sheet[data-state='open'] {
-    animation-duration: var(--duration-moving);
-    animation-timing-function: var(--ease-standard);
-  }
-  .ui-sheet[data-state='closed'] {
-    animation-duration: var(--duration-quick);
-    animation-timing-function: var(--ease-exit);
-  }
-  .ui-sheet[data-side='right'][data-state='open'] {
-    animation-name: sheet-in-right;
-  }
-  .ui-sheet[data-side='right'][data-state='closed'] {
-    animation-name: sheet-out-right;
-  }
-  .ui-sheet[data-side='left'][data-state='open'] {
-    animation-name: sheet-in-left;
-  }
-  .ui-sheet[data-side='left'][data-state='closed'] {
-    animation-name: sheet-out-left;
-  }
-  .ui-sheet[data-side='bottom'][data-state='open'] {
-    animation-name: sheet-in-bottom;
-  }
-  .ui-sheet[data-side='bottom'][data-state='closed'] {
-    animation-name: sheet-out-bottom;
-  }
-  .ui-sheet[data-side='top'][data-state='open'] {
-    animation-name: sheet-in-top;
-  }
-  .ui-sheet[data-side='top'][data-state='closed'] {
-    animation-name: sheet-out-top;
-  }
-
-  .ui-skeleton {
-    background-image: linear-gradient(
-      90deg,
-      var(--color-muted) 0%,
-      color-mix(in oklab, var(--color-muted) 55%, var(--color-background)) 50%,
-      var(--color-muted) 100%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 1.6s linear infinite;
-  }
-
-  .ui-generating {
-    animation: breathe 2s var(--ease-standard) infinite;
-  }
-
-  /* The reading column of a teaching session or a source. A measure, not a
-     width: the number is chosen so a line lands near 70 characters at the base
-     size, which is the whole reason the teaching surface is one column. */
-  .ui-reading {
-    max-width: 38rem;
-  }
-}
-
-@keyframes sheet-in-right {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: translateX(0);
-  }
-}
-@keyframes sheet-out-right {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(100%);
-  }
-}
-@keyframes sheet-in-left {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(0);
-  }
-}
-@keyframes sheet-out-left {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-100%);
-  }
-}
-@keyframes sheet-in-bottom {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-@keyframes sheet-out-bottom {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(100%);
-  }
-}
-@keyframes sheet-in-top {
-  from {
-    transform: translateY(-100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
-/* Preferences affect reading surfaces without scaling the application controls. */
-html[data-reading-size="large"] .rawi-prose { font-size: 1.125rem; line-height: 1.8; }
-html[data-reading-size="larger"] .rawi-prose { font-size: 1.25rem; line-height: 1.85; }
-.rawi-prose { overflow-wrap: anywhere; }
-html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-motion="reduced"] *::after {
+/* ── Motion preference ──────────────────────────────────────────────────────
+   The account preference wins, and "system" defers to the OS. All motion here
+   decorates a state change that happens either way. */
+html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-motion='reduced'] *::after {
   animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  html[data-motion="system"] *, html[data-motion="system"] *::before, html[data-motion="system"] *::after {
+  html:not([data-motion='full']) *, html:not([data-motion='full']) *::before, html:not([data-motion='full']) *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
 }
-main h1 { overflow-wrap: anywhere; }
-main h1:focus { outline: none; }
-select { max-width: 100%; }
-@keyframes sheet-out-top {
-  from {
-    transform: translateY(0);
+
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes overlay-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes panel-in { from { opacity: 0; transform: translateY(4px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes panel-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.98); } }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+@keyframes pop-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.97); } }
+@keyframes sheet-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes sheet-out-right { from { transform: translateX(0); } to { transform: translateX(100%); } }
+@keyframes sheet-in-left { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes sheet-out-left { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+@keyframes sheet-in-bottom { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes sheet-out-bottom { from { transform: translateY(0); } to { transform: translateY(100%); } }
+
+@layer components {
+  .ui-overlay[data-state='open'] { animation: overlay-in var(--duration-quick) var(--ease-standard); }
+  .ui-overlay[data-state='closed'] { animation: overlay-out var(--duration-quick) var(--ease-exit); }
+  .ui-panel[data-state='open'] { animation: panel-in var(--duration-moving) var(--ease-standard); }
+  .ui-panel[data-state='closed'] { animation: panel-out var(--duration-quick) var(--ease-exit); }
+  .ui-pop[data-state='open'] { animation: pop-in var(--duration-quick) var(--ease-standard); transform-origin: var(--radix-popper-transform-origin, center); }
+  .ui-pop[data-state='closed'] { animation: pop-out var(--duration-instant) var(--ease-exit); transform-origin: var(--radix-popper-transform-origin, center); }
+  .ui-sheet[data-state='open'] { animation-duration: var(--duration-moving); animation-timing-function: var(--ease-standard); }
+  .ui-sheet[data-state='closed'] { animation-duration: var(--duration-quick); animation-timing-function: var(--ease-exit); }
+  .ui-sheet[data-side='right'][data-state='open'] { animation-name: sheet-in-right; }
+  .ui-sheet[data-side='right'][data-state='closed'] { animation-name: sheet-out-right; }
+  .ui-sheet[data-side='left'][data-state='open'] { animation-name: sheet-in-left; }
+  .ui-sheet[data-side='left'][data-state='closed'] { animation-name: sheet-out-left; }
+  .ui-sheet[data-side='bottom'][data-state='open'] { animation-name: sheet-in-bottom; }
+  .ui-sheet[data-side='bottom'][data-state='closed'] { animation-name: sheet-out-bottom; }
+
+  .ui-skeleton {
+    background-image: linear-gradient(90deg, var(--color-muted) 0%, color-mix(in oklab, var(--color-muted) 50%, var(--color-background)) 50%, var(--color-muted) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s linear infinite;
   }
-  to {
-    transform: translateY(-100%);
+  .ui-generating { animation: breathe 2s var(--ease-standard) infinite; }
+
+  /* The reading measure: about 68 characters per line at any reading size. */
+  .ui-reading { max-width: 68ch; }
+
+  /* Long-form text: the reader, tutor turns, explanations. */
+  .rawi-prose {
+    font-size: var(--reading-size);
+    line-height: var(--reading-leading);
+    overflow-wrap: anywhere;
   }
+  .rawi-prose a { color: var(--color-primary-text); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  .rawi-prose :where(h1, h2, h3) { font-family: var(--font-serif); font-weight: 600; line-height: 1.3; margin-top: 1.6em; }
+  .rawi-prose :where(p, ul, ol, blockquote, pre) { margin-top: 0.9em; }
+  .rawi-prose :where(ul) { list-style: disc; padding-left: 1.25em; }
+  .rawi-prose :where(ol) { list-style: decimal; padding-left: 1.25em; }
+  .rawi-prose :where(blockquote) { border-left: 2px solid var(--color-border-strong); padding-left: 1em; color: var(--color-muted-foreground); }
+  .rawi-prose :where(code) { font-family: var(--font-mono); font-size: 0.875em; background: var(--color-muted); border-radius: var(--radius-sm); padding: 0.1em 0.3em; }
+  .rawi-prose > :first-child { margin-top: 0; }
 }

@@ -4,9 +4,7 @@ import { BookOpenIcon, FlaskConicalIcon, InfoIcon } from 'lucide-react';
 
 import type {
   AssessmentType,
-  CourseAccent,
   Difficulty,
-  EvidenceLevel,
   MaterialKind,
   MaterialOrigin,
   Outcome,
@@ -14,16 +12,9 @@ import type {
   SessionActivity,
   SourceRef,
 } from '@shared/domain/types';
-import { EVIDENCE_DETAIL, EVIDENCE_LABEL, EVIDENCE_TONE } from '@shared/domain/progress';
 import { localISO } from '@shared/domain/planner';
 
 import { Badge } from '@/components/ui/badge';
-import { Meter, EmptyMeter } from '@/components/Meter';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 /**
@@ -34,81 +25,6 @@ import { cn } from '@/lib/utils';
  * alternative is six features each deciding independently what "practising"
  * looks like, which is how an app stops reading as one product.
  */
-
-/* ── Evidence ─────────────────────────────────────────────────────────── */
-
-/**
- * An evidence level, as a chip.
- *
- * The colour comes from the field ramp — these carry a label, so they are the
- * field case, not the mark case. Levels are words, never percentages, per the
- * rule in `progress.ts`.
- */
-export function EvidenceChip({
-  level,
-  className,
-}: {
-  level: EvidenceLevel;
-  className?: string;
-}) {
-  const fill: Record<EvidenceLevel, string> = {
-    'not-checked': 'bg-evidence-none text-(--evidence-ink)',
-    practising: 'bg-evidence-practicing text-(--evidence-ink)',
-    'independent-once': 'bg-evidence-independent text-(--evidence-ink)',
-    retained: 'bg-evidence-retained text-(--evidence-ink)',
-  };
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className={cn(
-            'inline-flex w-fit shrink-0 items-center rounded-md border border-transparent px-1.5 py-0.5 text-xs font-medium whitespace-nowrap',
-            fill[level],
-            className,
-          )}
-        >
-          {EVIDENCE_LABEL[level]}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent className="max-w-xs">{EVIDENCE_DETAIL[level]}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-/**
- * The bar beside an evidence level.
- *
- * `not-checked` draws the dashed empty track rather than a 0% bar, because
- * "we have not asked you" and "you got none right" are different claims and
- * the prototype must not make the second while meaning the first.
- */
-export function EvidenceMeter({
-  level,
-  label,
-  className,
-}: {
-  level: EvidenceLevel;
-  label: string;
-  className?: string;
-}) {
-  if (level === 'not-checked') {
-    return <EmptyMeter label={`${label}: not checked yet`} className={className} />;
-  }
-  const value: Record<Exclude<EvidenceLevel, 'not-checked'>, number> = {
-    practising: 0.34,
-    'independent-once': 0.67,
-    retained: 1,
-  };
-  return (
-    <Meter
-      value={value[level]}
-      tone={EVIDENCE_TONE[level]}
-      label={`${label}: ${EVIDENCE_LABEL[level]}`}
-      className={className}
-    />
-  );
-}
 
 /* ── Labels ───────────────────────────────────────────────────────────── */
 
@@ -160,9 +76,9 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
 
 export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
   const style: Record<Outcome, string> = {
-    correct: 'bg-success/15 text-success border-success/30',
-    partial: 'bg-warning/20 text-warning-text border-warning/40',
-    incorrect: 'bg-destructive/12 text-destructive border-destructive/30',
+    correct: 'bg-success-subtle text-success-text border-transparent',
+    partial: 'bg-warning-subtle text-warning-text border-transparent',
+    incorrect: 'bg-danger-subtle text-danger-text border-transparent',
     skipped: 'bg-muted text-muted-foreground border-transparent',
     pending: 'bg-muted text-muted-foreground border-dashed border-border',
   };
@@ -445,87 +361,6 @@ export function formatTimeOfDay(minutes: number): string {
   const d = new Date();
   d.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
   return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-}
-
-/* ── Courses ──────────────────────────────────────────────────────────── */
-
-/**
- * The accent classes for a course.
- *
- * Courses are told apart by colour in every aggregated view — the planner, the
- * home page, the history list — so the mapping lives here rather than being
- * re-decided per screen. The tokens are defined in `globals.css`; this is the
- * lookup that turns a course's stored accent name into the classes a component
- * applies.
- */
-export const COURSE_ACCENT: Record<
-  CourseAccent,
-  { dot: string; border: string; soft: string; text: string }
-> = {
-  indigo: {
-    dot: 'bg-[var(--accent-indigo)]',
-    border: 'border-l-[var(--accent-indigo)]',
-    soft: 'bg-[var(--accent-indigo-soft)]',
-    text: 'text-[var(--accent-indigo)]',
-  },
-  amber: {
-    dot: 'bg-[var(--accent-amber)]',
-    border: 'border-l-[var(--accent-amber)]',
-    soft: 'bg-[var(--accent-amber-soft)]',
-    text: 'text-[var(--accent-amber)]',
-  },
-  teal: {
-    dot: 'bg-[var(--accent-teal)]',
-    border: 'border-l-[var(--accent-teal)]',
-    soft: 'bg-[var(--accent-teal-soft)]',
-    text: 'text-[var(--accent-teal)]',
-  },
-  rose: {
-    dot: 'bg-[var(--accent-rose)]',
-    border: 'border-l-[var(--accent-rose)]',
-    soft: 'bg-[var(--accent-rose-soft)]',
-    text: 'text-[var(--accent-rose)]',
-  },
-  violet: {
-    dot: 'bg-[var(--accent-violet)]',
-    border: 'border-l-[var(--accent-violet)]',
-    soft: 'bg-[var(--accent-violet-soft)]',
-    text: 'text-[var(--accent-violet)]',
-  },
-};
-
-/** The small coloured dot that labels a course in an aggregated list. */
-export function CourseDot({
-  accent,
-  className,
-}: {
-  accent: CourseAccent;
-  className?: string;
-}) {
-  return (
-    <span
-      aria-hidden
-      className={cn('size-2 shrink-0 rounded-full', COURSE_ACCENT[accent].dot, className)}
-    />
-  );
-}
-
-/** A course's name with its dot, for cross-course lists. */
-export function CourseTag({
-  name,
-  accent,
-  className,
-}: {
-  name: string;
-  accent: CourseAccent;
-  className?: string;
-}) {
-  return (
-    <span className={cn('flex min-w-0 items-center gap-1.5 text-xs', className)}>
-      <CourseDot accent={accent} />
-      <span className="truncate">{name}</span>
-    </span>
-  );
 }
 
 /* ── Assessments and sessions ─────────────────────────────────────────── */

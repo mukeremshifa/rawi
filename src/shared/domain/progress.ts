@@ -63,17 +63,6 @@ export const EVIDENCE_DETAIL: Record<EvidenceLevel, string> = {
     'You answered a different question on this topic correctly, unaided, on a later day. That is the strongest evidence this prototype records.',
 };
 
-/** Which meter tone each level uses. Keyed to the ramp in globals.css. */
-export const EVIDENCE_TONE: Record<
-  EvidenceLevel,
-  'neutral' | 'practicing' | 'independent' | 'retained'
-> = {
-  'not-checked': 'neutral',
-  practising: 'practicing',
-  'independent-once': 'independent',
-  retained: 'retained',
-};
-
 const DAY_MS = 1000 * 60 * 60 * 24;
 
 function daysBetween(a: string, b: string): number {

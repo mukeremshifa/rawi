@@ -2,7 +2,7 @@ import { useUnsentGuard } from '@/lib/hooks';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { z } from 'zod';
-import { accents, courseFields, coursePatch, createCourseInput, replaceOutlineInput, preferencesPatch, type CourseDetail, type CoursePage, type CreateCourseInput, type Course, type Preferences, type TopicInput } from '@shared/contracts/workspace';
+import { courseFields, coursePatch, createCourseInput, replaceOutlineInput, preferencesPatch, type CourseDetail, type CoursePage, type CreateCourseInput, type Course, type Preferences, type TopicInput } from '@shared/contracts/workspace';
 import { readSyllabus } from '@shared/domain/syllabus';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import { Select } from '@/components/ui/select';
 import { useAccount } from '@/lib/account';
 import { errorMessage, RequestError, request } from '@/lib/api';
 
-type Fields = z.infer<typeof courseFields>;
+type Fields = Omit<z.infer<typeof courseFields>, 'accent'>;
 function Field({ title, children }: { title: string; children: ReactNode }) {
   return <label className="flex flex-col gap-2 text-sm font-medium">{title}{children}</label>;
 }
@@ -21,10 +21,9 @@ function CourseFields({ value, onChange }: { value: Fields; onChange: (v: Fields
     <Field title="Course name"><Input required maxLength={200} value={value.name} onChange={e => onChange({ ...value, name: e.target.value })} /></Field>
     <Field title="Description"><Textarea maxLength={4000} value={value.description} onChange={e => onChange({ ...value, description: e.target.value })} /></Field>
     <Field title="Your goal"><Textarea maxLength={4000} value={value.goal} onChange={e => onChange({ ...value, goal: e.target.value })} /></Field>
-    <Field title="Colour"><Select value={value.accent} onChange={e => onChange({ ...value, accent: e.target.value as Fields['accent'] })}>{accents.map(a => <option key={a}>{a}</option>)}</Select></Field>
   </div>;
 }
-function courseValues(course: Fields): Fields { return { name: course.name, description: course.description, goal: course.goal, accent: course.accent }; }
+function courseValues(course: Fields): Fields { return { name: course.name, description: course.description, goal: course.goal }; }
 function useSaveState() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -86,7 +85,7 @@ function CourseList({ filter }: { filter: string }) {
 export function NewCourse() {
   const { user } = useAccount(); const navigate = useNavigate();
   const [id] = useState(() => crypto.randomUUID());
-  const [fields, setFields] = useState<Fields>({ name: '', description: '', goal: '', accent: 'indigo' });
+  const [fields, setFields] = useState<Fields>({ name: '', description: '', goal: '' });
   const [submitted, setSubmitted] = useState<CreateCourseInput | null>(null);
   const allowNavigation = useUnsentGuard(!!fields.name || !!fields.description || !!fields.goal || !!submitted);
   const save = useSaveState();
@@ -130,7 +129,7 @@ function LoadedCourse({ initial }: { initial: CourseDetail }) {
   const save = useSaveState();
   const conflicted = save.error instanceof RequestError && save.error.code === 'revision_conflict';
   const update = (archived?: boolean) => save.run(async () => {
-    const parsed = courseFields.safeParse(fields);
+    const parsed = courseFields.omit({ accent: true }).safeParse(fields);
     if (!parsed.success) throw new Error('Enter a course name and check the field lengths.');
     metadata.current ??= { ...parsed.data, operationId: crypto.randomUUID(), ...(archived === undefined ? {} : { archived }), expectedRevision: base.course.revision };
     const course = await request<Course>(`/v1/courses/${base.course.id}`, user.id, metadata.current, 'PATCH'); metadata.current = null;
@@ -167,7 +166,7 @@ function LoadedCourse({ initial }: { initial: CourseDetail }) {
 }
 function topicValues(t: TopicInput): TopicInput { return { id: t.id, title: t.title, summary: t.summary, priority: t.priority, module: t.module, order: t.order, relatedTopicIds: [...t.relatedTopicIds] }; }
 function CourseReview({ detail }: { detail: CourseDetail }) {
-  return <div className="space-y-2"><h3>{detail.course.name}</h3><p>{detail.course.description}</p><p>Goal: {detail.course.goal || 'None'}</p><p>Colour: {detail.course.accent}. {detail.course.archived ? 'Archived' : 'Active'}.</p>
+  return <div className="space-y-2"><h3>{detail.course.name}</h3><p>{detail.course.description}</p><p>Goal: {detail.course.goal || 'None'}</p><p>{detail.course.archived ? 'Archived' : 'Active'}.</p>
     <ol className="list-decimal pl-5">{detail.topics.map(t => <li key={t.id}>{t.title} ({t.module || 'No module'}, {t.priority})<p>{t.summary}</p><p>Related topics: {t.relatedTopicIds.map(id => detail.topics.find(other => other.id === id)?.title).join(', ') || 'None'}</p></li>)}</ol>
   </div>;
 }
@@ -227,7 +226,6 @@ export function PreferencesEditor({ onSaved }: { onSaved: (value: Preferences) =
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); void submit(); }}><fieldset disabled={save.saving || !!pending.current} className="space-y-4">
       <Field title="Workspace name"><Input maxLength={80} required value={values.workspaceName} onChange={e => patch({ workspaceName: e.target.value })} /></Field>
       <Field title="Timezone"><Input value={zone} placeholder="Asia/Dubai" onChange={e => { setZone(e.target.value); if (!conflicted) save.clear(); }} /></Field>
-      <Field title="Accent"><Select value={values.accent} onChange={e => patch({ accent: e.target.value as typeof values.accent })}>{accents.map(a => <option key={a}>{a}</option>)}</Select></Field>
       <Field title="Default question count"><Input type="number" min={1} max={30} value={values.questionCount} onChange={e => patch({ questionCount: Number(e.target.value) })} /></Field>
       <label className="flex gap-2"><input type="checkbox" checked={values.hints} onChange={e => patch({ hints: e.target.checked })} />Allow hints</label>
       <Field title="Feedback"><Select value={values.feedback} onChange={e => patch({ feedback: e.target.value as typeof values.feedback })}><option value="immediate">After each answer</option><option value="end">At the end</option></Select></Field>
@@ -239,7 +237,7 @@ export function PreferencesEditor({ onSaved }: { onSaved: (value: Preferences) =
       </fieldset><p className="text-sm text-muted-foreground">Study defaults and in-app reminders use these preferences. Appearance applies after saving.</p>
     </fieldset><Button disabled={save.saving || conflicted}>Save preferences</Button></form>
     <SaveStatus state={save} onReview={() => void loadReview()} />{reviewError && <p role="alert">{reviewError}</p>}
-    {review && <section className="rounded border p-4 space-y-4"><h2 className="font-semibold">Latest saved preferences</h2><p>Your unsent preferences remain above.</p><dl className="space-y-1">{Object.entries({ Workspace: review.values.workspaceName, Timezone: review.timezone, Accent: review.values.accent, Questions: review.values.questionCount, Hints: review.values.hints ? 'On' : 'Off', Feedback: review.values.feedback, Theme: review.values.theme, 'Reading size': review.values.readingSize, Motion: review.values.motion, 'Assessment reminders': review.values.reminders.assessments ? 'On' : 'Off', 'Study reminders': review.values.reminders.study ? 'On' : 'Off', 'Review reminders': review.values.reminders.review ? 'On' : 'Off', 'Days ahead': review.values.reminders.days }).map(([k, v]) => <div key={k}><dt className="inline font-medium">{k}: </dt><dd className="inline">{v || 'None'}</dd></div>)}</dl>
+    {review && <section className="rounded border p-4 space-y-4"><h2 className="font-semibold">Latest saved preferences</h2><p>Your unsent preferences remain above.</p><dl className="space-y-1">{Object.entries({ Workspace: review.values.workspaceName, Timezone: review.timezone, Questions: review.values.questionCount, Hints: review.values.hints ? 'On' : 'Off', Feedback: review.values.feedback, Theme: review.values.theme, 'Reading size': review.values.readingSize, Motion: review.values.motion, 'Assessment reminders': review.values.reminders.assessments ? 'On' : 'Off', 'Study reminders': review.values.reminders.study ? 'On' : 'Off', 'Review reminders': review.values.reminders.review ? 'On' : 'Off', 'Days ahead': review.values.reminders.days }).map(([k, v]) => <div key={k}><dt className="inline font-medium">{k}: </dt><dd className="inline">{v || 'None'}</dd></div>)}</dl>
       <div className="flex gap-3"><Button variant="outline" onClick={() => { pending.current = null; setBase(review); setValues(review.values); setZone(review.timezone); onSaved(review); setReview(null); save.clear(); }}>Use latest version</Button><Button onClick={() => { pending.current = null; setBase(review); setReview(null); save.clear(); }}>Keep my edits for another save</Button></div>
     </section>}
   </Page>;

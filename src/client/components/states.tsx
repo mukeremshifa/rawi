@@ -243,7 +243,7 @@ export function GeneratingState({
             card, and the ramp is where a state-coloured glyph
             belongs, and this one is the "arrived" stop. */}
         <SparklesIcon
-          className="ui-generating size-4 shrink-0 text-(--color-evidence-retained-mark)"
+          className="ui-generating size-4 shrink-0 text-muted-foreground"
           aria-hidden
         />
         <p className="text-sm font-medium">{stage}</p>

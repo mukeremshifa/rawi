@@ -33,7 +33,8 @@ export const timezone = z.string().max(100).refine(value => {
 export const preferencesPatch = preferenceFields.partial().extend({ operationId: uuid.optional(), timezone: timezone.optional(), expectedRevision: revision }).strict();
 export const courseFields = z.strictObject({
   name: z.string().trim().min(1).max(200), description: z.string().trim().max(4000),
-  goal: z.string().trim().max(4000), accent: z.enum(accents),
+  // Accent is no longer shown. The column stays until a follow-up drops it.
+  goal: z.string().trim().max(4000), accent: z.enum(accents).default('indigo'),
 });
 export const topicInput = z.strictObject({
   id: uuid, title: z.string().trim().min(1).max(200), summary: z.string().trim().max(4000),
