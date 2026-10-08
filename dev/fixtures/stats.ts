@@ -550,7 +550,7 @@ export const STATS_QUESTIONS: Question[] = [
     difficulty: 'stretch',
     marks: 8,
     prompt:
-      'Read the press summary below. Identify what the result supports, what it does not, and what you would need to see before accepting the headline claim.',
+      'Read the press summary above. Identify what the result supports, what it does not, and what you would need to see before accepting the headline claim.',
     extract: `PRESS SUMMARY. "Redesign boosts engagement", internal communications, fictional.
 
 "Our new interface significantly increases engagement (p < 0.001, n = 90,000). Mean session length rose from 4 minutes 12 seconds to 4 minutes 15 seconds. We recommend rolling the redesign out to all users."`,

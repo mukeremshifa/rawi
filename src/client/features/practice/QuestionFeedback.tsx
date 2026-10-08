@@ -62,7 +62,7 @@ export function QuestionFeedback({
       <div className="flex flex-wrap items-center gap-tight">
         <OutcomeBadge outcome={attempt.outcome} />
         <span className="text-muted-foreground font-mono text-xs tabular-nums">
-          {attempt.outcome === 'pending' ? 'Awaiting feedback' : `${attempt.marksAwarded}/${attempt.marksAvailable} marks`}
+          {attempt.outcome === 'pending' ? `${attempt.marksAvailable} marks available` : `${attempt.marksAwarded}/${attempt.marksAvailable} marks`}
         </span>
         <Separator orientation="vertical" className="h-3" />
         <span className="text-muted-foreground text-xs">
@@ -158,9 +158,9 @@ function AnswerReview({
                   )}
                 </span>
                 <span className="flex-1 leading-relaxed">{option}</span>
-                {picked && (
+                {(picked || isCorrect) && (
                   <span className="text-muted-foreground shrink-0 text-xs">
-                    your answer
+                    {picked && isCorrect ? 'your answer, correct' : picked ? 'your answer' : 'correct answer'}
                   </span>
                 )}
               </li>

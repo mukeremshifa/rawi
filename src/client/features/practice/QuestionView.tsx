@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { ArrowDownIcon, ArrowUpIcon, LightbulbIcon } from 'lucide-react';
 
 import type { AnswerValue, Question, SelfRating } from '@shared/types.ts';
@@ -369,6 +369,7 @@ function OrderingInput({
     return [...reversed.slice(1), reversed[0]!];
   }, [items, current]);
 
+  const list = useRef<HTMLOListElement>(null);
   const move = (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= sequence.length) return;
@@ -378,10 +379,15 @@ function OrderingInput({
     next[index] = b;
     next[target] = a;
     onChange(next);
+    // At either end the pressed button disables. Keep keyboard focus on the item.
+    if (target === 0 || target === sequence.length - 1) {
+      requestAnimationFrame(() => list.current?.children[target]
+        ?.querySelector<HTMLButtonElement>(`[data-direction="${direction === -1 ? 'down' : 'up'}"]`)?.focus());
+    }
   };
 
   return (
-    <ol className="flex flex-col gap-tight">
+    <ol ref={list} className="flex flex-col gap-tight">
       {sequence.map((item, index) => (
         <li
           key={item}
@@ -395,6 +401,7 @@ function OrderingInput({
             <Button
               variant="ghost"
               size="icon-xs"
+              data-direction="up"
               disabled={readOnly || index === 0}
               onClick={() => move(index, -1)}
               aria-label={`Move “${item}” up`}
@@ -404,6 +411,7 @@ function OrderingInput({
             <Button
               variant="ghost"
               size="icon-xs"
+              data-direction="down"
               disabled={readOnly || index === sequence.length - 1}
               onClick={() => move(index, 1)}
               aria-label={`Move “${item}” down`}
@@ -502,7 +510,9 @@ function WrittenInput({
         placeholder={
           question.format === 'essay'
             ? 'Write your answer. A plan with a clear thesis and named evidence earns more than unstructured prose.'
-            : 'Write from memory. Close the reading first, because that is the point of the exercise.'
+            : question.format === 'source-analysis'
+              ? 'Work from the extract. Point to the lines your answer relies on.'
+              : 'Write from memory. Close the reading first, because that is the point of the exercise.'
         }
         className="leading-relaxed"
       />
@@ -585,6 +595,7 @@ function FlashcardInput({
               <Button
                 key={option.value}
                 variant={rating === option.value ? 'default' : 'outline'}
+                aria-pressed={rating === option.value}
                 size="sm"
                 disabled={readOnly}
                 onClick={() => onChange(option.value)}
