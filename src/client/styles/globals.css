@@ -26,7 +26,8 @@
    from a near-black page, and steps 11 and 12 are pulled back from pure white
    so long reading is not glaring. A hue of 260 with very low chroma reads as
    neutral but cool, which keeps the one accent from looking pasted on. */
-:root {
+:root,
+.light {
   --gray-1: oklch(0.993 0.0015 260);
   --gray-2: oklch(0.982 0.002 260);
   --gray-3: oklch(0.963 0.003 260);
@@ -66,40 +67,6 @@
   --danger: oklch(0.55 0.2 27);
   --danger-text: oklch(0.5 0.19 27);
   --danger-subtle: oklch(0.965 0.02 27);
-
-  /* ── Roles ────────────────────────────────────────────────────────────────
-     The names the components use. `accent` here is the shadcn role for a
-     hovered surface, not the brand accent, which is `primary`. */
-  --background: var(--gray-1);
-  --foreground: var(--gray-12);
-  --surface: var(--gray-2);
-  --card: oklch(1 0 0);
-  --card-foreground: var(--gray-12);
-  --popover: oklch(1 0 0);
-  --popover-foreground: var(--gray-12);
-  --secondary: var(--gray-3);
-  --secondary-foreground: var(--gray-12);
-  --muted: var(--gray-3);
-  --muted-foreground: var(--gray-11);
-  --accent: var(--gray-4);
-  --accent-foreground: var(--gray-12);
-  --selected: var(--gray-5);
-  --primary: var(--accent-9);
-  --primary-hover: var(--accent-10);
-  --primary-foreground: oklch(1 0 0);
-  --primary-text: var(--accent-text);
-  --primary-subtle: var(--accent-subtle);
-  --destructive: var(--danger);
-  --destructive-foreground: oklch(1 0 0);
-  --border: var(--gray-6);
-  --border-strong: var(--gray-8);
-  --input: var(--gray-8);
-  --ring: var(--accent-9);
-
-  /* Evidence is drawn in greys: a filled step indicator plus its label.
-     Colour would suggest a grade, and evidence is a described state. */
-  --meter-track: var(--gray-5);
-  --meter-fill: var(--gray-11);
 
   /* ── Radius ─────────────────────────────────────────────────────────────
      6px for controls, 8px for containers. */
@@ -174,13 +141,55 @@
   --danger-text: oklch(0.74 0.14 25);
   --danger-subtle: oklch(0.25 0.05 27);
 
-  --card: var(--gray-2);
-  --popover: var(--gray-3);
-  --ring: var(--accent-text);
-
   --elevation-raised: 0 1px 2px 0 oklch(0 0 0 / 0.3);
   --elevation-overlay: 0 4px 16px -4px oklch(0 0 0 / 0.5), 0 0 0 1px oklch(1 0 0 / 0.04);
   --elevation-modal: 0 16px 48px -12px oklch(0 0 0 / 0.7), 0 0 0 1px oklch(1 0 0 / 0.05);
+}
+
+:root,
+.light,
+.dark {
+  /* ── Roles ────────────────────────────────────────────────────────────────
+     The names the components use. `accent` here is the shadcn role for a
+     hovered surface, not the brand accent, which is `primary`. */
+  --background: var(--gray-1);
+  --foreground: var(--gray-12);
+  --surface: var(--gray-2);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--gray-12);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--gray-12);
+  --secondary: var(--gray-3);
+  --secondary-foreground: var(--gray-12);
+  --muted: var(--gray-3);
+  --muted-foreground: var(--gray-11);
+  --accent: var(--gray-4);
+  --accent-foreground: var(--gray-12);
+  --selected: var(--gray-5);
+  --primary: var(--accent-9);
+  --primary-hover: var(--accent-10);
+  --primary-foreground: oklch(1 0 0);
+  --primary-text: var(--accent-text);
+  --primary-subtle: var(--accent-subtle);
+  --destructive: var(--danger);
+  --destructive-foreground: oklch(1 0 0);
+  --border: var(--gray-6);
+  --border-strong: var(--gray-8);
+  --input: var(--gray-8);
+  --ring: var(--accent-9);
+
+  /* Evidence is drawn in greys: a filled step indicator plus its label.
+     Colour would suggest a grade, and evidence is a described state. */
+  --meter-track: var(--gray-5);
+  --meter-fill: var(--gray-11);
+
+}
+
+/* Roles that differ in dark beyond what the grey scale already changes. */
+.dark {
+  --card: var(--gray-2);
+  --popover: var(--gray-3);
+  --ring: var(--accent-text);
 }
 
 html[data-reading-size='large'] { --reading-size: 1.0625rem; --reading-leading: 1.72; }
@@ -283,13 +292,13 @@ html[data-reading-size='larger'] { --reading-size: 1.125rem; --reading-leading: 
 
 @layer base {
   * {
-    border-color: var(--color-border);
-    outline-color: var(--color-ring);
+    border-color: var(--border);
+    outline-color: var(--ring);
   }
 
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
+    background-color: var(--background);
+    color: var(--foreground);
     font-family: var(--font-sans);
     font-size: var(--text-base);
     line-height: var(--text-base--line-height);
@@ -312,7 +321,7 @@ html[data-reading-size='larger'] { --reading-size: 1.125rem; --reading-leading: 
   }
 
   ::selection {
-    background-color: color-mix(in oklab, var(--color-primary) 22%, transparent);
+    background-color: color-mix(in oklab, var(--primary) 22%, transparent);
   }
 
   main h1 { overflow-wrap: anywhere; }
@@ -372,7 +381,7 @@ html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-
   .ui-sheet[data-side='bottom'][data-state='closed'] { animation-name: sheet-out-bottom; }
 
   .ui-skeleton {
-    background-image: linear-gradient(90deg, var(--color-muted) 0%, color-mix(in oklab, var(--color-muted) 50%, var(--color-background)) 50%, var(--color-muted) 100%);
+    background-image: linear-gradient(90deg, var(--muted) 0%, color-mix(in oklab, var(--muted) 50%, var(--background)) 50%, var(--muted) 100%);
     background-size: 200% 100%;
     animation: shimmer 1.6s linear infinite;
   }
@@ -387,12 +396,12 @@ html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-
     line-height: var(--reading-leading);
     overflow-wrap: anywhere;
   }
-  .rawi-prose a { color: var(--color-primary-text); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  .rawi-prose a { color: var(--primary-text); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
   .rawi-prose :where(h1, h2, h3) { font-family: var(--font-serif); font-weight: 600; line-height: 1.3; margin-top: 1.6em; }
   .rawi-prose :where(p, ul, ol, blockquote, pre) { margin-top: 0.9em; }
   .rawi-prose :where(ul) { list-style: disc; padding-left: 1.25em; }
   .rawi-prose :where(ol) { list-style: decimal; padding-left: 1.25em; }
-  .rawi-prose :where(blockquote) { border-left: 2px solid var(--color-border-strong); padding-left: 1em; color: var(--color-muted-foreground); }
-  .rawi-prose :where(code) { font-family: var(--font-mono); font-size: 0.875em; background: var(--color-muted); border-radius: var(--radius-sm); padding: 0.1em 0.3em; }
+  .rawi-prose :where(blockquote) { border-left: 2px solid var(--border-strong); padding-left: 1em; color: var(--muted-foreground); }
+  .rawi-prose :where(code) { font-family: var(--font-mono); font-size: 0.875em; background: var(--muted); border-radius: var(--radius-sm); padding: 0.1em 0.3em; }
   .rawi-prose > :first-child { margin-top: 0; }
 }

@@ -2,20 +2,17 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
+/** Shared look for text-like controls, so every field lines up at 32px. */
+export const controlClass = cn(
+  'border-input bg-card text-foreground placeholder:text-muted-foreground h-8 w-full min-w-0 rounded-md border px-2.5 text-base shadow-raised transition-[border-color,box-shadow] outline-none',
+  'focus-visible:border-ring focus-visible:ring-ring/25 focus-visible:ring-3',
+  'disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground',
+  'aria-invalid:border-danger aria-invalid:focus-visible:ring-danger/25',
+);
+
+/** Input: single-line text. Wrap in Field for a label and errors. */
 function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
-  return (
-    <input
-      type={type}
-      data-slot="input"
-      className={cn(
-        'border-input selection:bg-primary selection:text-primary-foreground file:text-foreground placeholder:text-muted-foreground dark:bg-input/30 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
-        'focus-visible:border-ring focus-visible:ring-ring focus-visible:ring-2',
-        'aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40',
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <input type={type} data-slot="input" className={cn(controlClass, 'file:text-foreground file:mr-2 file:border-0 file:bg-transparent file:text-sm file:font-medium', className)} {...props} />;
 }
 
 export { Input };

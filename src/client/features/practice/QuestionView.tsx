@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
+import { NativeSelect as Select } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -400,7 +400,7 @@ function OrderingInput({
           <div className="flex shrink-0 flex-col gap-hairline">
             <Button
               variant="ghost"
-              size="icon-xs"
+              size="icon-sm"
               data-direction="up"
               disabled={readOnly || index === 0}
               onClick={() => move(index, -1)}
@@ -410,7 +410,7 @@ function OrderingInput({
             </Button>
             <Button
               variant="ghost"
-              size="icon-xs"
+              size="icon-sm"
               data-direction="down"
               disabled={readOnly || index === sequence.length - 1}
               onClick={() => move(index, 1)}
@@ -572,7 +572,7 @@ function FlashcardInput({
         </Card>
       ) : (
         <Button
-          variant="outline"
+          variant="secondary"
           size="lg"
           onClick={() => setRevealed(true)}
           className="self-start"
@@ -594,7 +594,7 @@ function FlashcardInput({
             {RATINGS.map((option) => (
               <Button
                 key={option.value}
-                variant={rating === option.value ? 'default' : 'outline'}
+                variant={rating === option.value ? 'primary' : 'secondary'}
                 aria-pressed={rating === option.value}
                 size="sm"
                 disabled={readOnly}

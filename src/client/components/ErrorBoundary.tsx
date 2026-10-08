@@ -37,7 +37,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     if (!this.state.error) return this.props.children;
 
     return (
-      <Page width="prose" className="py-page">
+      <Page width="narrow" className="py-page">
         <ErrorState
           title="This screen stopped working"
           detail={this.state.error.message}

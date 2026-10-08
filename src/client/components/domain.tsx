@@ -270,26 +270,21 @@ export function SourceLink({
 
 export function TopicPill({ title }: { title: string }) {
   return (
-    <Badge variant="secondary" className="font-normal">
+    <Badge variant="neutral" className="font-normal">
       {title}
     </Badge>
   );
 }
 
-/** A count with its unit, set in the mono face. */
-export function Stat({
-  value,
-  label,
-  className,
-}: {
-  value: ReactNode;
-  label: string;
-  className?: string;
-}) {
+/**
+ * Stat: one number and what it counts, such as "12 day streak". Tabular
+ * figures. Use "—" for a value that does not exist yet.
+ */
+export function Stat({ value, label, className }: { value: ReactNode; label: string; className?: string }) {
   return (
-    <div className={cn('flex flex-col gap-hairline', className)}>
-      <span className="font-mono text-2xl tabular-nums">{value}</span>
-      <span className="text-muted-foreground text-xs">{label}</span>
+    <div className={cn('flex flex-col gap-0.5', className)}>
+      <span className="tabular text-xl font-semibold tracking-tight">{value}</span>
+      <span className="text-muted-foreground text-sm">{label}</span>
     </div>
   );
 }
@@ -384,47 +379,22 @@ export const ACTIVITY_LABEL: Record<SessionActivity, string> = {
   other: 'Study',
 };
 
-/**
- * How close an assessment is, as a tone.
- *
- * Used for the countdown chip. Deliberately three bands rather than a gradient:
- * a colour that changes every day reads as decoration, and the only distinction
- * a student acts on is "this week / this fortnight / later".
- */
-export function assessmentTone(days: number): 'urgent' | 'soon' | 'later' {
-  if (days <= 3) return 'urgent';
-  if (days <= 10) return 'soon';
-  return 'later';
+/** Whole days from today to an ISO date, in the learner's local calendar. */
+export function daysUntil(date: string, now: Date = new Date()): number {
+  return Math.round((new Date(`${date}T12:00:00`).getTime() - new Date(`${localISO(now)}T12:00:00`).getTime()) / 86_400_000);
 }
 
-/** A countdown chip for a planned assessment. */
-export function DueChip({ date, className }: { date: string; className?: string }) {
-  const days = Math.round(
-    (new Date(`${date}T12:00:00`).getTime() -
-      new Date(`${localISO(new Date())}T12:00:00`).getTime()) /
-      86_400_000,
-  );
-  const tone = assessmentTone(days);
-  const past = days < 0;
-
+/**
+ * DueLabel: a relative date for a deadline ("Tomorrow", "In 5 days"). Plain
+ * text, coloured only when urgent (three days or fewer), because colour that
+ * changes every day reads as decoration.
+ */
+export function DueLabel({ date, className }: { date: string; className?: string }) {
+  const days = daysUntil(date);
+  const urgent = days >= 0 && days <= 3;
   return (
-    <span
-      className={cn(
-        'rounded-md border px-1.5 py-0.5 font-mono text-xs tabular-nums',
-        past && 'text-muted-foreground',
-        !past && tone === 'urgent' && 'border-destructive/40 text-destructive',
-        !past && tone === 'soon' && 'border-warning/40 text-warning-text',
-        !past && tone === 'later' && 'text-muted-foreground',
-        className,
-      )}
-    >
-      {past
-        ? `${Math.abs(days)}d ago`
-        : days === 0
-          ? 'Today'
-          : days === 1
-            ? 'Tomorrow'
-            : `${days} days`}
+    <span className={cn('tabular text-sm whitespace-nowrap', urgent ? 'text-danger-text font-medium' : 'text-muted-foreground', className)} title={formatDate(`${date}T12:00:00`)}>
+      {formatDueDate(date)}
     </span>
   );
 }

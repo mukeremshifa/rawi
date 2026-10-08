@@ -1,270 +1,125 @@
 import type { ReactNode } from 'react';
-import { AlertTriangleIcon, SparklesIcon } from 'lucide-react';
+import { AlertTriangleIcon, CheckIcon, CircleDotIcon, Loader2Icon, RotateCwIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Progress } from '@/components/ui/progress';
+import { errorMessage, RequestError } from '@/lib/api';
+import type { SaveStatus } from '@/lib/data';
 import { cn } from '@/lib/utils';
 
 /**
- * The four states, in one file, so every screen shows them the same way.
- *
- * ── Why this exists ───────────────────────────────────────────────────────
- *
- * Four states on every screen is a standing rule, and a rule that lives in a
- * document is a rule nine screens each answer differently. Here it lives in a
- * module instead, so "what does this look like while it loads" has one answer.
- *
- * ── The four, and the distinctions that matter ────────────────────────────
- *
- *   LoadingState     We asked, and we are waiting. Skeleton, never a spinner:
- *                    a skeleton says what is coming and takes the space it
- *                    will need, so nothing jumps when the data lands.
- *
- *   EmptyState       We asked, we got an answer, and the answer is "none".
- *                    In Rawi this is often *success* — "nothing due" is the
- *                    healthy case, and it should read that way.
- *
- *   ErrorState       We asked and could not get an answer. Says what failed and
- *                    offers the retry, because a dead end with no action is a
- *                    screen the user has to reload the app to escape.
- *
- *   GeneratingState  A model is working. **This is the one the pre-FR1 app
- *                    lacked entirely**, and the job surface depends on it: generation takes
- *                    tens of seconds, which is far past what a loading skeleton
- *                    can honestly promise. A different animation, a stage, and
- *                    an elapsed sense — because "we are working" and "this is
- *                    loading" are different promises.
- *
- * The distinction that gets missed most: **loading and generating are not the
- * same state.** A skeleton implies the answer already exists and is in transit.
- * Generation implies it is being made and might fail partway. The sharpest
- * case is an ingestion job that fails before any stage reports, with the chunk
- * total still 0 — so "no progress yet" and "0% done" must not render
- * identically. `GeneratingState` takes `value={null}` for exactly that.
+ * LoadingState: a skeleton shaped like the content that is coming. Pages use
+ * this (or ListLoading and TableLoading) and never hand-write "Loading".
  */
-
-/* ── Loading ──────────────────────────────────────────────────────────── */
-
-/**
- * `lines` is a hint about the shape of what is coming, not a pixel spec. Give
- * it the number of rows the real content has, so the skeleton reserves roughly
- * the right space and the page does not jump.
- */
-export function LoadingState({
-  lines = 3,
-  className,
-  label = 'Loading',
-}: {
-  lines?: number;
-  className?: string;
-  /** Announced once for the whole region. Say what is loading. */
-  label?: string;
-}) {
+export function LoadingState({ lines = 3, className, label = 'Loading' }: { lines?: number; className?: string; label?: string }) {
   return (
-    <div
-      className={cn('flex flex-col gap-snug', className)}
-      // One announcement for the region, which is why the individual
-      // Skeletons are aria-hidden.
-      role="status"
-      aria-live="polite"
-      aria-busy
-    >
+    <div className={cn('flex flex-col gap-2.5', className)} role="status" aria-live="polite" aria-busy>
       <span className="sr-only">{label}</span>
-      {Array.from({ length: lines }, (_, i) => (
-        <Skeleton
-          key={i}
-          className="h-4"
-          // The last line is short, the way a paragraph's last line is. A
-          // stack of identical full-width bars reads as a table, not as text.
-          style={{ width: i === lines - 1 ? '60%' : '100%' }}
-        />
-      ))}
+      {Array.from({ length: lines }, (_, i) => <Skeleton key={i} className="h-3.5" style={{ width: i === lines - 1 ? '55%' : `${92 - i * 6}%` }} />)}
     </div>
   );
 }
 
-/** A skeleton shaped like a card, for grids of them. */
-export function LoadingCard({ className }: { className?: string }) {
+/** A whole page loading: a title bar and a few rows. */
+export function PageLoading({ label = 'Loading' }: { label?: string }) {
   return (
-    <div
-      className={cn('flex flex-col gap-snug rounded-lg border p-gutter', className)}
-      role="status"
-      aria-busy
-    >
-      <span className="sr-only">Loading</span>
-      <Skeleton className="h-5 w-1/2" />
-      <Skeleton className="h-4 w-full" />
-      <Skeleton className="h-4 w-2/3" />
+    <div className="flex flex-col gap-section" role="status" aria-busy>
+      <span className="sr-only">{label}</span>
+      <div className="flex flex-col gap-2"><Skeleton className="h-6 w-1/3" /><Skeleton className="h-3.5 w-1/2" /></div>
+      <div className="flex flex-col gap-2.5">{[80, 72, 64, 40].map(w => <Skeleton key={w} className="h-3.5" style={{ width: `${w}%` }} />)}</div>
     </div>
   );
 }
-
-/* ── Empty ────────────────────────────────────────────────────────────── */
 
 /**
- * The screen a healthy user sees most often.
- *
- * In a spaced-repetition app "nothing due" is not an error state or an empty
- * shell — it is success, and it should read that way. Every list gets one, and
- * each says what to do next rather than only what is absent.
- *
- * The icon sits in a filled disc so it reads as a deliberate mark instead of a
- * stray glyph, and the whole block is given room.
- *
- *
+ * EmptyState: typographic. One sentence that says what this place is for,
+ * and at most one action that fills it.
  */
-export function EmptyState({
-  icon,
-  title,
-  description,
-  action,
-  className,
-}: {
-  icon?: ReactNode;
+export function EmptyState({ title, description, action, className, compact }: {
   title: string;
   description?: ReactNode;
   action?: ReactNode;
   className?: string;
+  /** Inside a section rather than filling a page. */
+  compact?: boolean;
 }) {
   return (
-    <div
-      className={cn(
-        'flex flex-col items-center rounded-xl border border-dashed px-gutter text-center',
-        'py-page',
-        className,
-      )}
-    >
-      {icon && (
-        <div className="bg-muted text-muted-foreground mb-base flex size-12 items-center justify-center rounded-full [&>svg]:size-6">
-          {icon}
-        </div>
-      )}
-      <p className="text-base font-medium">{title}</p>
-      {description && (
-        <div className="text-muted-foreground mt-tight max-w-sm text-sm leading-relaxed">
-          {description}
-        </div>
-      )}
-      {action && <div className="mt-gutter">{action}</div>}
+    <div className={cn('flex flex-col items-start gap-1', compact ? 'py-4' : 'py-10', className)}>
+      <p className="text-md font-medium">{title}</p>
+      {description && <div className="text-muted-foreground max-w-prose text-base">{description}</div>}
+      {action && <div className="mt-3">{action}</div>}
     </div>
   );
 }
 
-/* ── Error ────────────────────────────────────────────────────────────── */
-
 /**
- * Something failed and the user needs a way out.
- *
- * `onRetry` is optional but nearly always right to pass. An error with no
- * action is a screen you can only leave by reloading, and most failures here
- * are transient — a fetch that lost the network, a job that hit a rate limit.
- *
- * `detail` is for the message from the API. Keep it: "Could not load your
- * cards" plus the actual reason is diagnosable; the sentence alone is not.
- * It is rendered as text, never as markup — the same rule the card content
- * follows, because an error string can carry provider output.
+ * ErrorState: something could not load. Says what failed, keeps the server's
+ * request reference for support, and offers the retry.
  */
-export function ErrorState({
-  title = 'Something went wrong',
-  detail,
-  onRetry,
-  retryLabel = 'Try again',
-  className,
-}: {
+export function ErrorState({ title = 'This could not be loaded', error, detail, onRetry, retryLabel = 'Try again', className }: {
   title?: string;
+  /** The thrown value. Its message and request reference are shown. */
+  error?: unknown;
   detail?: string;
   onRetry?: () => void;
   retryLabel?: string;
   className?: string;
 }) {
+  const message = detail ?? (error ? errorMessage(error) : undefined);
+  const reference = error instanceof RequestError ? error.requestId : '';
   return (
-    <div
-      role="alert"
-      className={cn(
-        'border-destructive/50 bg-destructive/8 flex flex-col items-start gap-snug',
-        'rounded-lg border p-gutter',
-        className,
-      )}
-    >
+    <div role="alert" className={cn('flex flex-col items-start gap-snug rounded-lg border p-4', className)}>
       <div className="flex items-start gap-tight">
-        <AlertTriangleIcon className="text-destructive mt-0.5 size-4 shrink-0" aria-hidden />
-        <div className="flex flex-col gap-hairline">
-          <p className="text-sm font-medium">{title}</p>
-          {detail && (
-            <p className="text-muted-foreground text-sm leading-relaxed">{detail}</p>
-          )}
+        <AlertTriangleIcon className="text-danger mt-0.5 size-4 shrink-0" aria-hidden />
+        <div className="flex flex-col gap-0.5">
+          <p className="text-base font-medium">{title}</p>
+          {message && <p className="text-muted-foreground text-base">{message}</p>}
+          {reference && <p className="text-muted-foreground text-xs">Reference <span className="font-mono">{reference}</span></p>}
         </div>
       </div>
-      {onRetry && (
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          {retryLabel}
-        </Button>
-      )}
+      {onRetry && <Button variant="secondary" size="sm" onClick={onRetry}><RotateCwIcon />{retryLabel}</Button>}
     </div>
   );
 }
 
-/* ── Generating ───────────────────────────────────────────────────────── */
-
 /**
- * A model is working. Distinct from loading, deliberately and visibly.
- *
- * `value` is the percentage complete, or **null when the total is not yet
- * known** — which is the case is the one to design for first: a job can fail before
- * any stage reports, with the chunk total still 0. Passing 0 there would draw an empty bar and claim we know the size; null
- * draws a breathing bar and claims only that we are working.
- *
- * `stage` is the human sentence for where the job is ("Reading your document").
- * It carries more than the bar does, because a percentage on a job with four
- * uneven stages is mostly fiction.
+ * SaveIndicator: the state of an editor's changes, in one quiet line:
+ * Saved, Saving, Unsaved changes, or Not saved with a retry. Use it where a
+ * form saves, instead of a status sentence.
  */
-export function GeneratingState({
-  stage,
-  value = null,
-  detail,
-  onCancel,
-  className,
-}: {
-  stage: string;
-  value?: number | null;
-  detail?: ReactNode;
-  onCancel?: () => void;
+export function SaveIndicator({ status, dirty, error, onRetry, className }: {
+  status: SaveStatus;
+  /** Local edits that have not been sent yet. */
+  dirty?: boolean;
+  error?: string;
+  onRetry?: () => void;
   className?: string;
 }) {
+  const state = status === 'saving' ? 'saving' : status === 'failed' ? 'failed' : dirty ? 'unsaved' : status === 'saved' ? 'saved' : 'idle';
+  if (state === 'idle') return <span className={className} aria-live="polite" />;
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className={cn('flex flex-col gap-snug rounded-lg border p-gutter', className)}
-    >
-      <div className="flex items-center gap-tight">
-        {/* The mark ramp's top stop, not `--primary`: this is a glyph on a
-            card, and the ramp is where a state-coloured glyph
-            belongs, and this one is the "arrived" stop. */}
-        <SparklesIcon
-          className="ui-generating size-4 shrink-0 text-muted-foreground"
-          aria-hidden
-        />
-        <p className="text-sm font-medium">{stage}</p>
-        {value !== null && (
-          <span className="text-muted-foreground ml-auto font-mono text-xs tabular-nums">
-            {Math.round(value)}%
-          </span>
-        )}
-      </div>
+    <span aria-live="polite" className={cn('inline-flex min-w-0 items-center gap-1.5 text-sm', state === 'failed' ? 'text-danger-text' : 'text-muted-foreground', className)}>
+      {state === 'saving' && <><Loader2Icon className="size-3.5 animate-spin" aria-hidden />Saving</>}
+      {state === 'saved' && <><CheckIcon className="size-3.5" aria-hidden />Saved</>}
+      {state === 'unsaved' && <><CircleDotIcon className="size-3.5" aria-hidden />Unsaved changes</>}
+      {state === 'failed' && <>
+        <AlertTriangleIcon className="size-3.5 shrink-0" aria-hidden />
+        <span className="truncate" title={error}>Not saved{error ? `. ${error}` : ''}</span>
+        {onRetry && <Button variant="link" size="sm" className="text-danger-text! underline" onClick={onRetry}>Retry</Button>}
+      </>}
+    </span>
+  );
+}
 
-      <Progress value={value} />
-
-      {detail && (
-        <div className="text-muted-foreground text-xs leading-relaxed">{detail}</div>
-      )}
-
-      {onCancel && (
-        <Button variant="ghost" size="sm" className="self-start" onClick={onCancel}>
-          Cancel
-        </Button>
-      )}
+/**
+ * Notice: a single calm line about the state of the system, such as AI not
+ * being available. Say it once, where it matters.
+ */
+export function Notice({ children, action, className }: { children: ReactNode; action?: ReactNode; className?: string }) {
+  return (
+    <div className={cn('bg-surface text-muted-foreground flex flex-wrap items-center gap-x-snug gap-y-1 rounded-md border px-3 py-2 text-sm', className)}>
+      <span className="min-w-0 flex-1">{children}</span>
+      {action}
     </div>
   );
 }

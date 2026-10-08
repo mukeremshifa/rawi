@@ -51,7 +51,7 @@ export function NavGroup({
             <Icon className="size-4 shrink-0" aria-hidden />
             <span className="flex-1 truncate">{item.label}</span>
             {badge !== undefined && badge > 0 && (
-              <Badge variant="secondary" className="font-mono tabular-nums">
+              <Badge variant="neutral" className="font-mono tabular-nums">
                 {badge}
               </Badge>
             )}

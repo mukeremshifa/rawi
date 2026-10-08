@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import type { Me } from '@shared/contracts/workspace';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,9 @@ import { AccountSettings, Onboarding } from '@/features/account/AccountSettings'
 import { safeReturnTo } from '@/app/return-to';
 import { AccountContext } from '@/lib/account';
 import { queryClient } from '@/lib/query';
+// The component gallery never ships: the import is dropped from production builds.
+const Kit = import.meta.env.DEV ? lazy(() => import('@/features/dev/Kit')) : null;
+
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [state, setState] = useState<'checking' | 'authenticated' | 'unauthenticated' | 'unavailable'>('checking');
@@ -112,22 +115,23 @@ export function App() {
   return <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
     <header className="border-b px-gutter h-14 shrink-0 flex items-center gap-4">
       <Link to="/" className="font-semibold mr-auto"><Logo /></Link>
-      {me && <details className="relative"><summary className="cursor-pointer rounded-md border px-3 py-2 text-sm">{me.user.name || 'Your account'}</summary><div className="absolute right-0 z-50 mt-2 w-72 rounded-lg border bg-background p-4 shadow-lg space-y-3"><p className="font-medium">{me.user.name}</p><p className="break-words text-sm text-muted-foreground">{me.user.email}</p><Link className="block underline" to="/settings/profile">Account and profile</Link><Link className="block underline" to="/settings/preferences">Study preferences</Link><Button variant="outline" disabled={busy} onClick={() => void signOut()}>{busy ? 'Signing out…' : 'Sign out'}</Button></div></details>}
+      {me && <details className="relative"><summary className="cursor-pointer rounded-md border px-3 py-2 text-sm">{me.user.name || 'Your account'}</summary><div className="absolute right-0 z-50 mt-2 w-72 rounded-lg border bg-background p-4 shadow-lg space-y-3"><p className="font-medium">{me.user.name}</p><p className="break-words text-sm text-muted-foreground">{me.user.email}</p><Link className="block underline" to="/settings/profile">Account and profile</Link><Link className="block underline" to="/settings/preferences">Study preferences</Link><Button variant="secondary" disabled={busy} onClick={() => void signOut()}>{busy ? 'Signing out…' : 'Sign out'}</Button></div></details>}
     </header>
     <div className="flex min-h-0 flex-1">
       {me && me.preferences.values.onboardingCompleted && <aside className="hidden lg:flex w-60 shrink-0 flex-col overflow-y-auto border-r"><Navigation /></aside>}
       <main className="min-w-0 flex-1 overflow-y-auto">
         {state === 'checking' && <p role="status" className="p-6">Opening your workspace…</p>}
-        {!me && state !== 'checking' && <Page className="py-16" width="prose"><div className="rounded-xl border p-8 space-y-6"><PageHeader title={state === 'unavailable' ? 'We could not open your account' : 'Welcome to Rawi'} description="Your courses, practice and study plans, together in your personal workspace." />
+        {!me && state !== 'checking' && <Page className="py-16" width="narrow"><div className="rounded-xl border p-8 space-y-6"><PageHeader title={state === 'unavailable' ? 'We could not open your account' : 'Welcome to Rawi'} description="Your courses, practice and study plans, together in your personal workspace." />
           <p className="text-muted-foreground">Sign in to pick up where you left off, or start with an empty workspace and make it yours.</p>
           {(error || new URLSearchParams(location.search).has('error')) && <p role="alert">{error || 'Google sign-in was cancelled or did not finish. Please try again.'}</p>}
-          <div className="flex flex-wrap gap-3">{state !== 'unavailable' && <Button disabled={busy} onClick={() => void signIn()}>{busy ? 'Connecting…' : 'Continue with Google'}</Button>}{state === 'unavailable' && <Button variant="outline" disabled={busy} onClick={() => void refresh()}>Try again</Button>}</div>
+          <div className="flex flex-wrap gap-3">{state !== 'unavailable' && <Button disabled={busy} onClick={() => void signIn()}>{busy ? 'Connecting…' : 'Continue with Google'}</Button>}{state === 'unavailable' && <Button variant="secondary" disabled={busy} onClick={() => void refresh()}>Try again</Button>}</div>
         </div></Page>}
         {me && <AccountContext.Provider value={me}><DraftBoundary key={me.user.id}>
-          {error && <div role="alert" className="border-b p-4">{error} <Button variant="outline" disabled={busy} onClick={() => void refresh()}>Retry connection</Button></div>}
+          {error && <div role="alert" className="border-b p-4">{error} <Button variant="secondary" disabled={busy} onClick={() => void refresh()}>Retry connection</Button></div>}
           {!me.preferences.values.onboardingCompleted ? <Onboarding onSaved={account => { currentAccount.current = account; setMe(account); }} /> : <>
           <details className="lg:hidden border-b"><summary className="p-3">Navigation</summary><Navigation /></details>
       <Routes>
+        {Kit && <Route path="/dev/kit" element={<Suspense><Kit /></Suspense>} />}
         <Route path="/sign-in" element={<Navigate replace to={returnTo} />} />
         <Route path="/storage" element={<Navigate replace to="/settings" />} />
         <Route path="/history" element={<Progress />} />

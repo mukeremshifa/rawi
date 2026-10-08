@@ -1,170 +1,91 @@
-import { useCallback, useSyncExternalStore, type ReactNode } from 'react';
+import { Fragment, useCallback, useSyncExternalStore, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
+import { ChevronRightIcon } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from '@/components/ui/resizable';
 
 /**
- * The layout vocabulary — six components, so no screen hand-rolls padding again.
- *
- * ── The problem this solves ───────────────────────────────────────────────
- *
- * A screen that opens with its own wrapper — `max-w-xl space-y-6` here,
- * something else there — is not wrong, it just does not agree with the next
- * screen, and disagreement at that scale is what makes an app read as several
- * products. So a screen *chooses* a shape here rather than describing one.
- *
- * Spacing here comes from the `--space-*` tokens, so "the gap between sections"
- * is a decision made once in `globals.css` rather than a `space-y-6` typed into
- * forty files.
- *
- * `PaneGroup` / `Pane` are a resizable shell's substrate, `Rail` is the
- * fixed-width column beside it, `Toolbar` is the strip at the top of a pane.
- * Rawi uses far fewer of these than SynapseDeck did — its teaching surface is
- * one generous reading column — but sources and evidence are still panes when
- * a screen genuinely needs two things side by side.
+ * Page: a screen's frame. `width` is about content, not pixels:
+ *   narrow  one column to read or fill in: settings, a form, a set
+ *   wide    lists, tables and dashboards
+ *   full    edge to edge, for bespoke surfaces that manage their own layout
  */
-
-/* ── Page ─────────────────────────────────────────────────────────────── */
-
-/**
- * A whole screen's frame: the max width, the page padding, the vertical rhythm.
- *
- * `width` is the one decision a screen makes here, and the names are about
- * content rather than pixels:
- *
- *   prose   a single column meant to be read or filled in. Settings, a form.
- *   wide    a dashboard or a grid. Multiple columns of cards.
- *   full    edge to edge, no max width. The three-pane shell, a runner.
- *
- * `full` also drops the page padding, because a pane group manages its own.
- */
-export function Page({
-  width = 'wide',
-  className,
-  children,
-}: {
-  width?: 'prose' | 'wide' | 'full';
-  className?: string;
-  children: ReactNode;
-}) {
+export function Page({ width = 'wide', className, children }: { width?: 'narrow' | 'wide' | 'full'; className?: string; children: ReactNode }) {
   return (
-    <div
-      data-slot="page"
-      className={cn(
-        'flex flex-col gap-section',
-        width === 'prose' && 'mx-auto w-full max-w-xl px-gutter py-gutter',
-        width === 'wide' && 'mx-auto w-full max-w-6xl px-gutter py-gutter',
-        width === 'full' && 'h-full w-full',
-        className,
-      )}
-    >
+    <div data-slot="page" className={cn('flex flex-col',
+      width === 'narrow' && 'mx-auto w-full max-w-2xl gap-section px-4 py-6 sm:px-gutter sm:py-8',
+      width === 'wide' && 'mx-auto w-full max-w-5xl gap-section px-4 py-6 sm:px-gutter sm:py-8',
+      width === 'full' && 'min-h-full w-full', className)}>
       {children}
     </div>
   );
 }
 
+export type Crumb = { label: ReactNode; to?: string };
+
+/** Breadcrumbs: where this page sits. The last crumb is the current page. */
+export function Breadcrumbs({ items, className }: { items: Crumb[]; className?: string }) {
+  if (!items.length) return null;
+  return (
+    <nav aria-label="Breadcrumb" className={cn('text-muted-foreground flex min-w-0 items-center text-sm', className)}>
+      <ol className="flex min-w-0 items-center gap-1">
+        {items.map((item, i) => (
+          <Fragment key={i}>
+            {i > 0 && <ChevronRightIcon className="size-3 shrink-0 opacity-60" aria-hidden />}
+            <li className={cn('min-w-0 truncate', i === items.length - 1 && 'text-foreground')} aria-current={i === items.length - 1 ? 'page' : undefined}>
+              {item.to && i < items.length - 1 ? <Link to={item.to} className="hover:text-foreground">{item.label}</Link> : item.label}
+            </li>
+          </Fragment>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
 /**
- * A page's own heading block: the title, an optional sentence under it, and
- * the actions that belong to the whole screen.
- *
- * The title is the one place per screen the serif face is allowed — that is
- * the typography rule, and putting it in a component is how the rule gets
- * enforced rather than merely written down.
+ * PageHeader: the page title, one optional line under it, and the page's
+ * primary action. `display` sets the title in the serif face, for reading
+ * and study surfaces. Tool pages keep the sans title.
  */
-export function PageHeader({
-  title,
-  description,
-  actions,
-  className,
-}: {
+export function PageHeader({ title, description, actions, display, className }: {
   title: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
+  display?: boolean;
   className?: string;
 }) {
   return (
-    <div
-      data-slot="page-header"
-      className={cn('flex flex-wrap items-start justify-between gap-base', className)}
-    >
-      <div className="flex min-w-0 flex-col gap-hairline">
-        <h1 className="font-serif text-3xl tracking-tight">{title}</h1>
-        {description && (
-          /*
-           * A `div`, not a `p`.
-           *
-           * Callers pass rich descriptions — a row of separated facts, a
-           * countdown next to a course name — and a `div` or a block-level
-           * element inside a `p` is invalid HTML. The browser silently closes
-           * the paragraph early, React warns about it, and the layout breaks
-           * in ways that look like a styling bug rather than a nesting one.
-           * Since this slot genuinely accepts arbitrary nodes, the container
-           * has to be one that can hold them.
-           */
-          <div className="text-muted-foreground text-sm leading-relaxed">
-            {description}
-          </div>
-        )}
+    <div data-slot="page-header" className={cn('flex flex-wrap items-start justify-between gap-x-base gap-y-snug', className)}>
+      <div className="flex min-w-0 flex-col gap-1">
+        <h1 className={cn('min-w-0 text-balance', display ? 'font-serif text-2xl leading-tight font-medium tracking-tight' : 'text-xl font-semibold tracking-tight')}>{title}</h1>
+        {description && <div className="text-muted-foreground max-w-prose text-base">{description}</div>}
       </div>
-      {actions && <div className="flex min-w-0 max-w-full flex-wrap items-center gap-tight">{actions}</div>}
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-tight">{actions}</div>}
     </div>
   );
 }
 
-/* ── SectionHeader ────────────────────────────────────────────────────── */
-
-/**
- * The heading for a section *within* a screen.
- *
- * Sans, not serif, and deliberately quieter than `PageHeader` — a screen has
- * one subject, and a second serif heading competes with it rather than
- * subdividing it. The `<h2>` is the real hierarchy; the styling follows it.
- */
-export function SectionHeader({
-  title,
-  description,
-  actions,
-  className,
-}: {
+/** SectionHeader: a section heading inside a page, with an optional action. */
+export function SectionHeader({ title, description, actions, className, as: Heading = 'h2' }: {
   title: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
   className?: string;
+  as?: 'h2' | 'h3';
 }) {
   return (
-    <div
-      data-slot="section-header"
-      className={cn('flex flex-wrap items-center justify-between gap-snug', className)}
-    >
-      <div className="flex min-w-0 flex-col gap-hairline">
-        <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-        {/* A `div` for the same reason as `PageHeader`'s description. */}
-        {description && (
-          <div className="text-muted-foreground text-xs leading-relaxed">
-            {description}
-          </div>
-        )}
+    <div data-slot="section-header" className={cn('flex flex-wrap items-end justify-between gap-snug', className)}>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <Heading className="text-md font-semibold tracking-tight">{title}</Heading>
+        {description && <div className="text-muted-foreground text-sm">{description}</div>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-tight">{actions}</div>}
     </div>
   );
 }
 
-/**
- * A titled block within a page. `SectionHeader` plus its content, with the
- * gap between them decided once.
- */
-export function Section({
-  title,
-  description,
-  actions,
-  className,
-  children,
-}: {
+/** Section: a SectionHeader and its content, with the gap decided once. */
+export function Section({ title, description, actions, className, children }: {
   title?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
@@ -172,158 +93,35 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <section data-slot="section" className={cn('flex flex-col gap-base', className)}>
+    <section data-slot="section" className={cn('flex flex-col gap-snug', className)}>
       {title && <SectionHeader title={title} description={description} actions={actions} />}
       {children}
     </section>
   );
 }
 
-/* ── Toolbar ──────────────────────────────────────────────────────────── */
-
 /**
- * The strip of controls at the top of a pane or a list.
- *
- * Fixed height, so panes line up across a three-pane shell — a toolbar that
- * grows with its content makes the whole layout ragged. Anything that would
- * make it taller belongs below it.
- *
- * `role="toolbar"` is deliberately *not* set: that role brings arrow-key
- * roving focus, which is right for a group of icon buttons and wrong for the
- * mixed bag of a search field and two dropdowns that these usually hold. A
- * caller with a genuine button group should set it on that group.
+ * Toolbar: the row above a list or table. Search and filters on the left,
+ * the primary action on the right. Wraps on narrow screens.
  */
-export function Toolbar({
-  className,
-  children,
-}: {
-  className?: string;
-  children: ReactNode;
-}) {
+export function Toolbar({ className, children, actions }: { className?: string; children?: ReactNode; actions?: ReactNode }) {
   return (
-    <div
-      data-slot="toolbar"
-      className={cn(
-        'flex h-11 shrink-0 items-center gap-tight border-b px-snug',
-        className,
-      )}
-    >
-      {children}
+    <div data-slot="toolbar" className={cn('flex flex-wrap items-center gap-tight', className)}>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-tight">{children}</div>
+      {actions && <div className="flex shrink-0 items-center gap-tight">{actions}</div>}
     </div>
   );
 }
 
-/** Pushes everything after it to the far end of a Toolbar. */
-export function ToolbarSpacer() {
-  return <div data-slot="toolbar-spacer" className="flex-1" />;
-}
-
-/* ── Rail ─────────────────────────────────────────────────────────────── */
-
-/**
- * A fixed-width column beside the main content — navigation, a source list.
- *
- * Distinct from a `Pane`: a rail does not resize. That is the whole difference,
- * and it is a real one — a user dragging a nav column wider is a user who has
- * been given a decision they did not want. If it should resize, it is a Pane.
- */
-export function Rail({
-  side = 'left',
-  className,
-  children,
-}: {
-  side?: 'left' | 'right';
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <aside
-      data-slot="rail"
-      className={cn(
-        'flex w-60 shrink-0 flex-col overflow-y-auto',
-        side === 'left' ? 'border-r' : 'border-l',
-        className,
-      )}
-    >
-      {children}
-    </aside>
-  );
-}
-
-/* ── PaneGroup ────────────────────────────────────────────────────────── */
-
-/** Resizable panes keep their layout in memory for the current screen. */
-export function PaneGroup({
-  orientation = 'horizontal', children, ...props
-}: React.ComponentProps<typeof ResizablePanelGroup>) {
-  return <ResizablePanelGroup orientation={orientation} {...props}>{children}</ResizablePanelGroup>;
-}
-
-/** One pane. `minSize`/`defaultSize` are percentages of the group. */
-export function Pane({
-  className,
-  children,
-  ...props
-}: React.ComponentProps<typeof ResizablePanel>) {
-  return (
-    <ResizablePanel className={cn('flex flex-col', className)} {...props}>
-      {children}
-    </ResizablePanel>
-  );
-}
-
-/** The draggable divider between two panes. */
-export function PaneHandle(props: React.ComponentProps<typeof ResizableHandle>) {
-  return <ResizableHandle {...props} />;
-}
-
-/* ── Breakpoints ──────────────────────────────────────────────────────── */
-
-/**
- * Whether a CSS media query currently matches, as React state.
- *
- * ── When to reach for this, and when not to ──────────────────────────────
- *
- * **Almost never.** A responsive class (`md:flex-row`) is the right tool for a
- * layout that *changes shape*, because CSS applies it before the first paint
- * and costs no JavaScript at all. This hook is for the narrower case where the
- * two layouts must not both **exist**: a component mounted and then hidden with
- * `display:none` still runs its effects, still subscribes its queries, and
- * still appears to anything reading the DOM.
- *
- * A shell whose panes are the same components at every width is exactly that
- * case: CSS hiding means two mounted copies of each, two subscriptions to
- * every query, and every list rendering twice in the accessibility tree.
- *
- * ── Why `useSyncExternalStore` and not an effect ─────────────────────────
- *
- * An effect-based version starts at a guessed value and corrects after mount,
- * which paints the phone layout for one frame on a desktop. This reads the
- * real value during render, so the first paint is already right. The server
- * snapshot returns `false` — no DOM means no viewport to measure, and the
- * mobile branch is the safer thing to render into an unknown width.
- */
+/** Whether a media query matches, read during render so the first paint is right. */
 export function useMediaQuery(query: string): boolean {
-  const subscribe = useCallback(
-    (onChange: () => void) => {
-      const list = window.matchMedia(query);
-      list.addEventListener('change', onChange);
-      return () => {
-        list.removeEventListener('change', onChange);
-      };
-    },
-    [query],
-  );
-
-  return useSyncExternalStore(
-    subscribe,
-    () => window.matchMedia(query).matches,
-    () => false,
-  );
+  const subscribe = useCallback((onChange: () => void) => {
+    const list = window.matchMedia(query);
+    list.addEventListener('change', onChange);
+    return () => list.removeEventListener('change', onChange);
+  }, [query]);
+  return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches, () => false);
 }
 
-/**
- * The `md` breakpoint — Tailwind's 768px, and the one Rawi's shells switch at. Named rather than repeated, so a screen asks "am I wide?" instead of
- * restating a number that lives in the Tailwind config.
- */
-export const MEDIA_WIDE = '(min-width: 48rem)';
+/** Tailwind's `lg`, where the sidebar becomes a sheet. */
+export const MEDIA_DESKTOP = '(min-width: 64rem)';

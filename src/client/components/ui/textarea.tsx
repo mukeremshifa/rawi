@@ -1,18 +1,11 @@
 import * as React from 'react';
 
+import { controlClass } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
+/** Textarea: multi-line text that grows with its content. Wrap in Field. */
 function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
-  return (
-    <textarea
-      data-slot="textarea"
-      className={cn(
-        'border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:bg-input/30 dark:aria-invalid:ring-destructive/40 flex field-sizing-content min-h-16 w-full rounded-md border bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <textarea data-slot="textarea" className={cn(controlClass, 'field-sizing-content h-auto min-h-20 py-1.5 leading-relaxed', className)} {...props} />;
 }
 
 export { Textarea };

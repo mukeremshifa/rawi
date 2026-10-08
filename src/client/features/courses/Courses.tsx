@@ -8,7 +8,7 @@ import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select } from '@/components/ui/select';
+import { NativeSelect as Select } from '@/components/ui/native-select';
 import { useAccount } from '@/lib/account';
 import { errorMessage, RequestError, request } from '@/lib/api';
 
@@ -45,7 +45,7 @@ function SaveStatus({ state, onReview }: { state: ReturnType<typeof useSaveState
   return <div aria-live="polite" className="space-y-2">
     <p role="status">{state.saving ? 'Saving…' : state.message}</p>
     {!!state.error && <p role="alert" className="text-destructive">{errorMessage(state.error)}{state.error instanceof RequestError && state.error.requestId ? ` Reference: ${state.error.requestId}` : ''}</p>}
-    {conflict && onReview && <Button variant="outline" onClick={onReview}>Load latest version for review</Button>}
+    {conflict && onReview && <Button variant="secondary" onClick={onReview}>Load latest version for review</Button>}
   </div>;
 }
 export function CourseLibrary() {
@@ -76,10 +76,10 @@ function CourseList({ filter }: { filter: string }) {
   }, [filter, user.id]);
   return <div className="grid gap-4">
     {loading && <p role="status">Loading courses…</p>}
-    {error && <div role="alert"><p>{error}</p><Button variant="outline" onClick={() => void load(page?.nextCursor ?? undefined)}>Retry loading</Button></div>}
+    {error && <div role="alert"><p>{error}</p><Button variant="secondary" onClick={() => void load(page?.nextCursor ?? undefined)}>Retry loading</Button></div>}
     {page?.courses.map(course => <article className="rounded-lg border p-5 space-y-2" key={course.id}><h2 className="font-semibold text-lg"><Link className="underline" to={`/course/${course.id}`}>{course.name}</Link></h2><p>{course.description}</p><p className="text-muted-foreground text-sm">{course.archived ? 'Archived' : 'Active'}</p></article>)}
     {page?.courses.length === 0 && <p>No courses match this view. Add a course to begin.</p>}
-    {page?.nextCursor && <Button variant="outline" disabled={loading} onClick={() => void load(page.nextCursor!)}>Load more courses</Button>}
+    {page?.nextCursor && <Button variant="secondary" disabled={loading} onClick={() => void load(page.nextCursor!)}>Load more courses</Button>}
   </div>;
 }
 export function NewCourse() {
@@ -96,7 +96,7 @@ export function NewCourse() {
     const result = await request<CourseDetail>('/v1/courses', user.id, parsed.data, 'POST');
     allowNavigation(); navigate(`/course/${result.course.id}/syllabus`, { replace: true });
   });
-  return <Page className="py-8" width="prose"><PageHeader title="Add a course" description="After saving, build its topic outline." />
+  return <Page className="py-8" width="narrow"><PageHeader title="Add a course" description="After saving, build its topic outline." />
     <form className="space-y-5" onSubmit={e => { e.preventDefault(); void create(); }}><fieldset disabled={save.saving || !!submitted}><CourseFields value={fields} onChange={v => { setFields(v); save.clear(); }} /></fieldset>
       <Button disabled={save.saving}>{submitted ? 'Retry the same creation' : 'Create course'}</Button>
     </form>
@@ -148,9 +148,9 @@ function LoadedCourse({ initial }: { initial: CourseDetail }) {
     catch (e) { setReviewError(errorMessage(e)); }
   };
   const dirty = () => { if (!conflicted) save.clear(); };
-  return <Page className="py-8" width="prose"><PageHeader title={base.course.name} description={base.course.archived ? 'Archived course. Restore it to your active library.' : 'Course settings and topic outline'} actions={<Button variant="outline" asChild><Link to="/courses">All courses</Link></Button>} />
+  return <Page className="py-8" width="narrow"><PageHeader title={base.course.name} description={base.course.archived ? 'Archived course. Restore it to your active library.' : 'Course settings and topic outline'} actions={<Button variant="secondary" asChild><Link to="/courses">All courses</Link></Button>} />
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); void update(); }}><fieldset disabled={save.saving || !!metadata.current}><CourseFields value={fields} onChange={v => { setFields(v); dirty(); }} /></fieldset>
-      <div className="flex flex-wrap gap-3"><Button disabled={save.saving || conflicted}>Save course details</Button><Button type="button" variant="outline" disabled={save.saving || conflicted} onClick={() => void update(!base.course.archived)}>{base.course.archived ? 'Restore course' : 'Archive course'}</Button></div>
+      <div className="flex flex-wrap gap-3"><Button disabled={save.saving || conflicted}>Save course details</Button><Button type="button" variant="secondary" disabled={save.saving || conflicted} onClick={() => void update(!base.course.archived)}>{base.course.archived ? 'Restore course' : 'Archive course'}</Button></div>
     </form>
     <section className="space-y-4 border-t pt-6"><h2 className="text-xl font-semibold">Topic outline</h2><p className="text-muted-foreground text-sm">Edit and reorder topics, then save the outline. Removing a topic removes its links. Course deletion is not available.</p>
       <fieldset disabled={save.saving || !!outlineRequest.current}><OutlineEditor topics={topics} onChange={value => { setTopics(value); dirty(); }} /></fieldset>
@@ -159,7 +159,7 @@ function LoadedCourse({ initial }: { initial: CourseDetail }) {
     <SaveStatus state={save} onReview={() => void loadReview()} />
     {reviewError && <p role="alert">{reviewError}</p>}
     {review && <section className="rounded border p-4 space-y-4"><h2 className="font-semibold">Review the latest saved version</h2><p>Your unsent edits remain in the fields above. Compare them with this saved version before choosing.</p><CourseReview detail={review} />
-      <div className="flex flex-wrap gap-3"><Button variant="outline" onClick={() => { metadata.current = null; outlineRequest.current = null; setBase(review); setFields(courseValues(review.course)); setTopics(review.topics.map(topicValues)); setReview(null); save.clear(); }}>Use latest version</Button><Button onClick={() => { metadata.current = null; outlineRequest.current = null; setBase(review); setReview(null); save.clear(); }}>Keep my edits for another save</Button></div>
+      <div className="flex flex-wrap gap-3"><Button variant="secondary" onClick={() => { metadata.current = null; outlineRequest.current = null; setBase(review); setFields(courseValues(review.course)); setTopics(review.topics.map(topicValues)); setReview(null); save.clear(); }}>Use latest version</Button><Button onClick={() => { metadata.current = null; outlineRequest.current = null; setBase(review); setReview(null); save.clear(); }}>Keep my edits for another save</Button></div>
     </section>}
     <nav className="flex flex-wrap gap-4 border-t pt-6">{['materials', 'tutor', 'practice', 'exams', 'progress'].map(area => <Link className="underline" key={area} to={`/course/${base.course.id}/${area}`}>{area[0]!.toUpperCase() + area.slice(1)}</Link>)}</nav>
   </Page>;
@@ -188,16 +188,16 @@ function OutlineEditor({ topics, onChange }: { topics: TopicInput[]; onChange: (
         const file = e.target.files?.[0]; if (!file) return;
         if (!/\.(txt|md)$/i.test(file.name) || file.size > 100000) { setNotice('Choose a text or Markdown file smaller than 100 KB.'); return; }
         try { setPasted(await file.text()); setNotice('File read. Review the text, then add proposed topics.'); } catch { setNotice('This file could not be read.'); }
-      }} /></Field><Button type="button" variant="outline" onClick={append}>Add proposed topics for review</Button><p role="status">{notice}</p></div></details>
+      }} /></Field><Button type="button" variant="secondary" onClick={append}>Add proposed topics for review</Button><p role="status">{notice}</p></div></details>
     {topics.map((topic, index) => <fieldset key={topic.id} className="rounded-lg border p-4 space-y-3"><legend className="px-2">Topic {index + 1}</legend>
       <Field title="Topic title"><Input maxLength={200} value={topic.title} onChange={e => edit(topic.id, { title: e.target.value })} /></Field>
       <Field title="Summary"><Textarea maxLength={4000} value={topic.summary} onChange={e => edit(topic.id, { summary: e.target.value })} /></Field>
       <Field title="Module or week"><Input maxLength={200} value={topic.module} onChange={e => edit(topic.id, { module: e.target.value })} /></Field>
       <Field title="Priority"><Select value={topic.priority} onChange={e => edit(topic.id, { priority: e.target.value as TopicInput['priority'] })}>{['low', 'normal', 'high'].map(p => <option key={p}>{p}</option>)}</Select></Field>
       {topics.length > 1 && <fieldset><legend className="text-sm font-medium">Related topics</legend>{topics.filter(t => t.id !== topic.id).map(other => <label className="flex gap-2 py-1 text-sm" key={other.id}><input type="checkbox" checked={topic.relatedTopicIds.includes(other.id)} onChange={e => edit(topic.id, { relatedTopicIds: e.target.checked ? [...topic.relatedTopicIds, other.id] : topic.relatedTopicIds.filter(id => id !== other.id) })} />{other.title || 'Untitled topic'}</label>)}</fieldset>}
-      <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={index === 0} onClick={() => move(index, -1)}>Move up</Button><Button type="button" variant="outline" disabled={index === topics.length - 1} onClick={() => move(index, 1)}>Move down</Button><Button type="button" variant="outline" onClick={() => ordered(topics.filter(t => t.id !== topic.id).map(t => ({ ...t, relatedTopicIds: t.relatedTopicIds.filter(id => id !== topic.id) })))}>Remove topic</Button></div>
+      <div className="flex flex-wrap gap-2"><Button type="button" variant="secondary" disabled={index === 0} onClick={() => move(index, -1)}>Move up</Button><Button type="button" variant="secondary" disabled={index === topics.length - 1} onClick={() => move(index, 1)}>Move down</Button><Button type="button" variant="secondary" onClick={() => ordered(topics.filter(t => t.id !== topic.id).map(t => ({ ...t, relatedTopicIds: t.relatedTopicIds.filter(id => id !== topic.id) })))}>Remove topic</Button></div>
     </fieldset>)}
-    <Button type="button" variant="outline" disabled={topics.length >= 200} onClick={() => ordered([...topics, { id: crypto.randomUUID(), title: '', summary: '', module: '', priority: 'normal', order: topics.length, relatedTopicIds: [] }])}>Add topic</Button>
+    <Button type="button" variant="secondary" disabled={topics.length >= 200} onClick={() => ordered([...topics, { id: crypto.randomUUID(), title: '', summary: '', module: '', priority: 'normal', order: topics.length, relatedTopicIds: [] }])}>Add topic</Button>
   </div>;
 }
 export function PreferencesEditor({ onSaved }: { onSaved: (value: Preferences) => void }) {
@@ -222,7 +222,7 @@ export function PreferencesEditor({ onSaved }: { onSaved: (value: Preferences) =
     try { setReview(await request<Preferences>('/v1/preferences', account.user.id)); }
     catch (e) { setReviewError(errorMessage(e)); }
   };
-  return <Page className="py-8" width="prose"><PageHeader title="Study preferences" description="Your study and appearance preferences are saved to your account." />
+  return <Page className="py-8" width="narrow"><PageHeader title="Study preferences" description="Your study and appearance preferences are saved to your account." />
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); void submit(); }}><fieldset disabled={save.saving || !!pending.current} className="space-y-4">
       <Field title="Workspace name"><Input maxLength={80} required value={values.workspaceName} onChange={e => patch({ workspaceName: e.target.value })} /></Field>
       <Field title="Timezone"><Input value={zone} placeholder="Asia/Dubai" onChange={e => { setZone(e.target.value); if (!conflicted) save.clear(); }} /></Field>
@@ -238,7 +238,7 @@ export function PreferencesEditor({ onSaved }: { onSaved: (value: Preferences) =
     </fieldset><Button disabled={save.saving || conflicted}>Save preferences</Button></form>
     <SaveStatus state={save} onReview={() => void loadReview()} />{reviewError && <p role="alert">{reviewError}</p>}
     {review && <section className="rounded border p-4 space-y-4"><h2 className="font-semibold">Latest saved preferences</h2><p>Your unsent preferences remain above.</p><dl className="space-y-1">{Object.entries({ Workspace: review.values.workspaceName, Timezone: review.timezone, Questions: review.values.questionCount, Hints: review.values.hints ? 'On' : 'Off', Feedback: review.values.feedback, Theme: review.values.theme, 'Reading size': review.values.readingSize, Motion: review.values.motion, 'Assessment reminders': review.values.reminders.assessments ? 'On' : 'Off', 'Study reminders': review.values.reminders.study ? 'On' : 'Off', 'Review reminders': review.values.reminders.review ? 'On' : 'Off', 'Days ahead': review.values.reminders.days }).map(([k, v]) => <div key={k}><dt className="inline font-medium">{k}: </dt><dd className="inline">{v || 'None'}</dd></div>)}</dl>
-      <div className="flex gap-3"><Button variant="outline" onClick={() => { pending.current = null; setBase(review); setValues(review.values); setZone(review.timezone); onSaved(review); setReview(null); save.clear(); }}>Use latest version</Button><Button onClick={() => { pending.current = null; setBase(review); setReview(null); save.clear(); }}>Keep my edits for another save</Button></div>
+      <div className="flex gap-3"><Button variant="secondary" onClick={() => { pending.current = null; setBase(review); setValues(review.values); setZone(review.timezone); onSaved(review); setReview(null); save.clear(); }}>Use latest version</Button><Button onClick={() => { pending.current = null; setBase(review); setReview(null); save.clear(); }}>Keep my edits for another save</Button></div>
     </section>}
   </Page>;
 }

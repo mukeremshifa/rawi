@@ -3,7 +3,7 @@ import type { Me, Preferences } from '@shared/contracts/workspace';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
+import { NativeSelect as Select } from '@/components/ui/native-select';
 import { useAccount } from '@/lib/account';
 import { request, errorMessage, RequestError } from '@/lib/api';
 import { useUnsentGuard } from '@/lib/hooks';
@@ -25,7 +25,7 @@ function ProfileEditor({ onSaved }: { onSaved: (user: Me['user']) => void }) {
     } catch (e) { setMessage(errorMessage(e)); }
     finally { setBusy(false); }
   }
-  return <Page className="pt-8" width="prose"><PageHeader title="Your account" description="Manage your profile and study preferences." />
+  return <Page className="pt-8" width="narrow"><PageHeader title="Your account" description="Manage your profile and study preferences." />
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); void save(); }}>
       <label className="block">Display name<Input required maxLength={80} value={name} disabled={busy} onChange={e => setName(e.target.value)} /></label>
       <p>{user.email}</p><p className="text-sm text-muted-foreground">You sign in with Google. Your email is managed by your Google account.</p>
@@ -60,7 +60,7 @@ export function Onboarding({ onSaved }: { onSaved: (account: Me) => void }) {
     }
     finally { setBusy(false); }
   }
-  return <Page className="py-12" width="prose"><PageHeader title="Make room for learning" description="Choose how you would like to start. You can change these preferences later." />
+  return <Page className="py-12" width="narrow"><PageHeader title="Make room for learning" description="Choose how you would like to start. You can change these preferences later." />
     <form className="space-y-5" onSubmit={e => { e.preventDefault(); void finish(); }}><fieldset className="space-y-5" disabled={busy || !!pending.current}>
       <label className="block">Your display name<Input required maxLength={80} value={name} onChange={e => setName(e.target.value)} /></label>
       <label className="block">Questions per practice<Input type="number" min={1} max={30} value={count} onChange={e => setCount(Number(e.target.value))} /></label>

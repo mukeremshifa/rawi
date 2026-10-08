@@ -109,7 +109,7 @@ export function QuestionFeedback({
       )}
 
       {discussTo && attempt.outcome !== 'correct' && attempt.outcome !== 'pending' && (
-        <Button variant="outline" size="sm" asChild className="self-start">
+        <Button variant="secondary" size="sm" asChild className="self-start">
           <Link to={discussTo}>
             <MessageSquareIcon />
             Work through this with the tutor
@@ -486,7 +486,7 @@ export function PendingFeedbackPanel({
       {error && <span className="text-destructive text-xs">{error}</span>}
       <div>
         {running ? (
-          <Button variant="outline" size="sm" onClick={onCancel}>
+          <Button variant="secondary" size="sm" onClick={onCancel}>
             <SquareIcon />
             Stop
           </Button>

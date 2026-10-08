@@ -6,17 +6,17 @@ import type { Material } from '@shared/contracts/materials';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
+import { NativeSelect as Select } from '@/components/ui/native-select';
 import { useRecord, useCollection, useLearningWrite, useUnsentGuard } from '@/lib/hooks';
 type Operation = AiOperationView;
 export function AiOperation() {
   const op = useLearningWrite(); const stopId = useRef(crypto.randomUUID());
   const { id = '' } = useParams(); const data = useRecord<Operation>(`/v1/ai/operations/${id}`);
-  return <Page className="py-8" width="prose"><PageHeader title="Saved AI request" description="Reload reads the saved operation. It does not send another provider request." />{data.error && <p role="alert">{data.error}</p>}{data.value && <div className="space-y-4">{op.error && <p role="alert">{op.error}</p>}<p>{data.value.task} · {data.value.state}</p><p role="status">{data.value.reason}</p>{data.value.executions.map(e => <article key={e.id}><p>{e.state}</p><p className="whitespace-pre-wrap">{e.partial}</p></article>)}{!['complete', 'cancelled'].includes(data.value.state) && <Button disabled={op.busy} onClick={() => void op.run<Operation>(`/v1/ai/operations/${id}/cancel`, { operationId: stopId.current }, 'POST', data.setValue)}>Stop this request</Button>}<Button variant="outline" onClick={data.refresh}>Refresh saved status</Button></div>}</Page>;
+  return <Page className="py-8" width="narrow"><PageHeader title="Saved AI request" description="Reload reads the saved operation. It does not send another provider request." />{data.error && <p role="alert">{data.error}</p>}{data.value && <div className="space-y-4">{op.error && <p role="alert">{op.error}</p>}<p>{data.value.task} · {data.value.state}</p><p role="status">{data.value.reason}</p>{data.value.executions.map(e => <article key={e.id}><p>{e.state}</p><p className="whitespace-pre-wrap">{e.partial}</p></article>)}{!['complete', 'cancelled'].includes(data.value.state) && <Button disabled={op.busy} onClick={() => void op.run<Operation>(`/v1/ai/operations/${id}/cancel`, { operationId: stopId.current }, 'POST', data.setValue)}>Stop this request</Button>}<Button variant="secondary" onClick={data.refresh}>Refresh saved status</Button></div>}</Page>;
 }
 export function RequestFeedback({ attemptId, questionId }: { attemptId: string; questionId: string }) {
   const op = useLearningWrite(); const id = useRef(crypto.randomUUID()); const [saved, setSaved] = useState<Operation | null>(null);
-  return <div>{op.error && <p role="alert">{op.error}</p>}{saved ? <><p>{saved.reason}</p><Link className="underline" to={`/ai/${saved.id}`}>Open saved feedback request</Link></> : <Button variant="outline" disabled={op.busy} onClick={() => void op.run<Operation>(`/v1/attempts/${attemptId}/feedback`, { operationId: id.current, questionId }, 'POST', setSaved)}>Request written feedback</Button>}</div>;
+  return <div>{op.error && <p role="alert">{op.error}</p>}{saved ? <><p>{saved.reason}</p><Link className="underline" to={`/ai/${saved.id}`}>Open saved feedback request</Link></> : <Button variant="secondary" disabled={op.busy} onClick={() => void op.run<Operation>(`/v1/attempts/${attemptId}/feedback`, { operationId: id.current, questionId }, 'POST', setSaved)}>Request written feedback</Button>}</div>;
 }
 export function QuestionGeneration({ courseId }: { courseId: string }) {
   const outline = useRecord<CourseDetail>(`/v1/courses/${courseId}/topics`);

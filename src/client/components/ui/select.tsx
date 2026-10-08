@@ -1,35 +1,62 @@
 import * as React from 'react';
-import { ChevronDownIcon } from 'lucide-react';
+import { Select as SelectPrimitive } from 'radix-ui';
+import { CheckIcon, ChevronDownIcon } from 'lucide-react';
 
+import { controlClass } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
+export type SelectOption = { value: string; label: React.ReactNode; description?: React.ReactNode; disabled?: boolean };
+
+/** Radix forbids an empty value, so "none" travels as this sentinel. */
+const EMPTY = '__empty__';
+
 /**
- * A native `<select>`, styled to match the other inputs.
- *
- * Deliberately not the Radix listbox: the timezone picker holds several hundred
- * options, and a native select gets typeahead, scrolling and the platform's own
- * mobile picker for free. Nothing in P1 needs a custom option renderer.
+ * Select: choose one of a short, fixed list (under about fifteen). For long
+ * or searchable lists, such as topics, materials or timezones, use Combobox.
+ * For two to four options seen at once, use SegmentedControl. An option with
+ * value `''` is allowed and means "none" or "all".
  */
-function Select({ className, children, ...props }: React.ComponentProps<'select'>) {
+function Select({ value, onValueChange, options, placeholder = 'Choose', disabled, className, size = 'md', id, ...aria }: {
+  value: string;
+  onValueChange: (value: string) => void;
+  options: SelectOption[];
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+  size?: 'sm' | 'md';
+  id?: string;
+  'aria-label'?: string;
+  'aria-describedby'?: string;
+  'aria-invalid'?: boolean;
+}) {
+  const selected = options.find(o => o.value === value);
   return (
-    <div className="relative">
-      <select
-        data-slot="select"
-        className={cn(
-          'border-input dark:bg-input/30 h-9 w-full appearance-none rounded-md border bg-transparent px-3 py-1 pr-8 text-base shadow-xs transition-[color,box-shadow] outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
-          'focus-visible:border-ring focus-visible:ring-ring focus-visible:ring-2',
-          'aria-invalid:border-destructive aria-invalid:ring-destructive/20',
-          className,
-        )}
-        {...props}
-      >
-        {children}
-      </select>
-      <ChevronDownIcon
-        aria-hidden
-        className="text-muted-foreground pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2"
-      />
-    </div>
+    <SelectPrimitive.Root value={value === '' ? EMPTY : value} onValueChange={v => onValueChange(v === EMPTY ? '' : v)} disabled={disabled}>
+      <SelectPrimitive.Trigger id={id} {...aria}
+        className={cn(controlClass, 'flex items-center justify-between gap-2 text-left data-[placeholder]:text-muted-foreground', size === 'sm' && 'h-7 text-sm', className)}>
+        <span className="truncate">{selected ? selected.label : <span className="text-muted-foreground">{placeholder}</span>}</span>
+        <SelectPrimitive.Icon asChild><ChevronDownIcon className="text-muted-foreground size-4 shrink-0" aria-hidden /></SelectPrimitive.Icon>
+      </SelectPrimitive.Trigger>
+      <SelectPrimitive.Portal>
+        <SelectPrimitive.Content position="popper" sideOffset={4}
+          className="ui-pop bg-popover text-popover-foreground z-50 max-h-(--radix-select-content-available-height) min-w-(--radix-select-trigger-width) overflow-hidden rounded-lg border shadow-overlay">
+          <SelectPrimitive.Viewport className="p-1">
+            {options.map(option => (
+              <SelectPrimitive.Item key={option.value || EMPTY} value={option.value || EMPTY} disabled={option.disabled}
+                className="data-[highlighted]:bg-accent relative flex cursor-default items-start gap-2 rounded-md py-1.5 pr-2 pl-7 text-base outline-none select-none data-[disabled]:opacity-50">
+                <span className="absolute top-2 left-2 flex size-3.5 items-center justify-center">
+                  <SelectPrimitive.ItemIndicator><CheckIcon className="size-3.5" aria-hidden /></SelectPrimitive.ItemIndicator>
+                </span>
+                <span className="flex flex-col">
+                  <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
+                  {option.description && <span className="text-muted-foreground text-sm">{option.description}</span>}
+                </span>
+              </SelectPrimitive.Item>
+            ))}
+          </SelectPrimitive.Viewport>
+        </SelectPrimitive.Content>
+      </SelectPrimitive.Portal>
+    </SelectPrimitive.Root>
   );
 }
 
