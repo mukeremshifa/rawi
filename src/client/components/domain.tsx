@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpenIcon, FlaskConicalIcon, InfoIcon } from 'lucide-react';
+import { BookOpenIcon } from 'lucide-react';
 
 import type {
   AssessmentType,
@@ -12,8 +12,6 @@ import type {
   TimingMode,
   TopicPriority,
   Difficulty,
-  MaterialKind,
-  MaterialOrigin,
   Outcome,
   QuestionFormat,
   SessionActivity,
@@ -21,7 +19,6 @@ import type {
 } from '@shared/domain/types';
 import { localISO } from '@shared/domain/planner';
 
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 /**
@@ -53,26 +50,6 @@ export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
   stretch: 'Stretch',
 };
 
-export const DIFFICULTY_BLURB: Record<Difficulty, string> = {
-  recall: 'Definitions, dates and content you should be able to state.',
-  reasoning: 'Why and how: causal chains, comparisons, the use of evidence.',
-  stretch: 'The harder end: historiography, limitations, extended argument.',
-};
-
-export const KIND_LABEL: Record<MaterialKind, string> = {
-  reading: 'Reading',
-  'lecture-notes': 'Lecture notes',
-  'student-note': 'My note',
-};
-
-export const ORIGIN_LABEL: Record<MaterialOrigin, string> = {
-  authored: 'Sample course material',
-  imported: 'Converted from your own file',
-  pasted: 'Pasted by you',
-  'text-file': 'Text file you added',
-  preview: 'Sample preview, file not read',
-};
-
 export const OUTCOME_LABEL: Record<Outcome, string> = {
   correct: 'Correct',
   partial: 'Partly right',
@@ -98,117 +75,6 @@ export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
     >
       {OUTCOME_LABEL[outcome]}
     </span>
-  );
-}
-
-/* ── Honesty notices ──────────────────────────────────────────────────── */
-
-/**
- * The label on anything simulated.
- *
- * ── Why this is a component and not a sentence in the README ──────────────
- *
- * The brief requires simulated tutoring and marking to be clearly identified
- * wherever it appears, and a note in a document is not "wherever it appears".
- * Making it a component means the disclosure travels with the thing being
- * disclosed, and a new surface that renders scripted output has an obvious
- * thing to reach for.
- *
- * `tone="inline"` is the quiet version for a panel that already sits inside a
- * labelled context; `tone="block"` is the first-time, unmissable version.
- */
-export function SimulatedNotice({
-  children,
-  tone = 'inline',
-  className,
-}: {
-  children: ReactNode;
-  tone?: 'inline' | 'block';
-  className?: string;
-}) {
-  if (tone === 'inline') {
-    return (
-      <p
-        className={cn(
-          'text-muted-foreground flex items-start gap-tight text-xs leading-relaxed',
-          className,
-        )}
-      >
-        <FlaskConicalIcon className="mt-0.5 size-3 shrink-0" aria-hidden />
-        <span>{children}</span>
-      </p>
-    );
-  }
-  return (
-    <div
-      className={cn(
-        'bg-muted/60 text-muted-foreground flex items-start gap-snug rounded-lg border border-dashed p-snug text-xs leading-relaxed',
-        className,
-      )}
-    >
-      <FlaskConicalIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-      <span>{children}</span>
-    </div>
-  );
-}
-
-/** The standing label on the fictional course content. */
-export function FictionalNotice({ className }: { className?: string }) {
-  return (
-    <OriginNotice className={className}>
-      Fictional course material written for this prototype. The historians,
-      books and documents quoted here do not exist.
-    </OriginNotice>
-  );
-}
-
-/**
- * The standing label on material converted from a real file.
- *
- * The opposite warning to `FictionalNotice`, and needed for the same reason.
- * This text is genuinely the lecturer's, so calling it fictional would be a
- * lie. What a reader does need to know is that Rawi still has no PDF parser:
- * the conversion happened outside the app, and a conversion can drop a
- * subscript or interleave a column, so the original is where a disagreement
- * gets settled.
- */
-export function ImportedNotice({
-  source,
-  className,
-}: {
-  /** What was converted, named exactly. */
-  source?: string;
-  className?: string;
-}) {
-  return (
-    <OriginNotice className={className}>
-      {source ? `${source} was ` : 'This was '}
-      converted to text outside Rawi and seeded in, so these are the original
-      words rather than anything written for the prototype. Rawi still has no
-      PDF reader of its own. Conversion can flatten a subscript or interleave a
-      column, so check the original slide if something looks wrong.
-    </OriginNotice>
-  );
-}
-
-/** Shared frame for the two standing notices above a material's text. */
-function OriginNotice({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <p
-      className={cn(
-        'text-muted-foreground flex items-start gap-tight text-xs leading-relaxed',
-        className,
-      )}
-    >
-      <InfoIcon className="mt-0.5 size-3 shrink-0" aria-hidden />
-      <span>{children}</span>
-    </p>
   );
 }
 
@@ -275,18 +141,6 @@ export function SourceLink({
 
 /* ── Small shared bits ────────────────────────────────────────────────── */
 
-export function TopicPill({ title }: { title: string }) {
-  return (
-    <Badge variant="neutral" className="font-normal">
-      {title}
-    </Badge>
-  );
-}
-
-/**
- * Stat: one number and what it counts, such as "12 day streak". Tabular
- * figures. Use "—" for a value that does not exist yet.
- */
 export function Stat({ value, label, className }: { value: ReactNode; label: string; className?: string }) {
   return (
     <div className={cn('flex flex-col gap-0.5', className)}>
@@ -332,17 +186,6 @@ export function formatMinutes(minutes: number): string {
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
 }
 
-/** Alias kept because several screens read better with the shorter name. */
-export const relativeDay = formatRelative;
-
-/** A day label for a calendar column: "Mon 14". */
-export function formatDayShort(iso: string): string {
-  return new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, {
-    weekday: 'short',
-    day: 'numeric',
-  });
-}
-
 /** A date label that leads with today/tomorrow, for deadlines. */
 export function formatDueDate(iso: string, now: Date = new Date()): string {
   const days = Math.round(
@@ -357,15 +200,6 @@ export function formatDueDate(iso: string, now: Date = new Date()): string {
   if (days < -1 && days >= -13) return `${Math.abs(days)} days ago`;
   return formatDate(`${iso}T12:00:00`);
 }
-
-/** `570` → `"09:30"`, in the student's own clock convention. */
-export function formatTimeOfDay(minutes: number): string {
-  const d = new Date();
-  d.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
-  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-}
-
-/* ── Assessments and sessions ─────────────────────────────────────────── */
 
 /* ── Labels for values the learner sees ───────────────────────────────── */
 

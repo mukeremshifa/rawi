@@ -1,18 +1,54 @@
-import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import type { NotificationsView, SearchResults } from '../../../server/api-types';
+import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { SearchIcon } from 'lucide-react';
+import type { SearchResults } from '../../../server/api-types';
+
+import { ReminderList } from '@/app/Reminders';
 import { Page, PageHeader } from '@/components/layout';
-import { Input } from '@/components/ui/input';
+import { ErrorState } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { useLearningWrite, useRecord } from '@/lib/hooks';
+import { Input } from '@/components/ui/input';
+import { ListLoading } from '@/components/ui/list';
+import { useApi } from '@/lib/data';
+
+/** Search: titles across courses, materials, topics, sets, sessions and attempts. */
 export function Search() {
-  const [query, setQuery] = useState(''), [submitted, setSubmitted] = useState('');
-  const data = useRecord<SearchResults>(`/v1/search?q=${encodeURIComponent(submitted)}`);
-  return <Page className="py-8" width="narrow"><PageHeader title="Search your workspace" description="Titles across your courses, materials, topics and saved learning. Up to 10 results per category." /><form className="flex gap-3" onSubmit={e => { e.preventDefault(); setSubmitted(query); }}><Input aria-label="Search workspace" value={query} maxLength={100} onChange={e => setQuery(e.target.value)} /><Button>Search</Button></form>{data.error && <p role="alert">{data.error}</p>}{data.value?.results.map(r => <p className="border-b py-3" key={r.to}><span>{r.category} · </span><Link className="underline" to={r.to}>{r.title}</Link></p>)}</Page>;
+  const [params, setParams] = useSearchParams();
+  const submitted = params.get('q') ?? '';
+  const [query, setQuery] = useState(submitted);
+  useEffect(() => { const t = setTimeout(() => { if (query.trim() !== submitted) setParams(query.trim() ? { q: query.trim() } : {}, { replace: true }); }, 300); return () => clearTimeout(t); }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
+  const data = useApi<SearchResults>(submitted.length >= 2 ? `/v1/search?q=${encodeURIComponent(submitted)}` : null);
+  const groups = [...new Set(data.data?.results.map(r => r.category) ?? [])];
+  return (
+    <Page width="narrow">
+      <PageHeader title="Search" />
+      <div className="relative">
+        <SearchIcon className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" aria-hidden />
+        <Input aria-label="Search your workspace" autoFocus className="h-10 pl-9 text-md" maxLength={100} placeholder="Search titles in your workspace" value={query} onChange={e => setQuery(e.target.value)} />
+      </div>
+      {submitted.length < 2 ? <p className="text-muted-foreground">Type at least two letters.</p>
+        : data.isPending ? <ListLoading rows={4} label="Searching" />
+          : data.error ? <ErrorState error={data.error} onRetry={() => void data.refetch()} />
+            : !data.data.results.length ? <p className="text-muted-foreground">Nothing matches "{submitted}".</p>
+              : groups.map(group => (
+                <section key={group} className="flex flex-col gap-1">
+                  <h2 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">{group}</h2>
+                  <ul className="divide-y border-y">
+                    {data.data.results.filter(r => r.category === group).map(r => <li key={r.to + r.title}><Link to={r.to} className="hover:bg-surface block truncate py-2.5 text-base outline-none focus-visible:bg-surface">{r.title}</Link></li>)}
+                  </ul>
+                </section>
+              ))}
+      {data.data && data.data.results.length > 0 && <p className="text-muted-foreground text-sm">Up to {data.data.limitPerCategory} results per kind. Try a longer phrase to narrow it down.</p>}
+    </Page>
+  );
 }
+
+/** Reminders: everything the header bell shows, in full. */
 export function Notifications() {
-  const data = useRecord<NotificationsView>('/v1/notifications'); const op = useLearningWrite();
-  const pending = useRef<{ operationId: string; key: string; status: 'read' | 'dismissed' } | null>(null);
-  useEffect(() => { const timer = setInterval(data.refresh, 60000); return () => clearInterval(timer); }, []);
-  return <Page className="py-8" width="narrow"><PageHeader title="In-app reminders" description="Saved account preferences control upcoming work and due review. No email or closed-browser delivery." actions={<Link to="/settings">Reminder preferences</Link>} />{[data.error, op.error].filter(Boolean).map(e => <p role="alert" key={e}>{e}</p>)}{pending.current && !op.busy && <Button onClick={() => void op.run('/v1/notifications', pending.current, 'PATCH', v => { pending.current = null; data.setValue(v as NotificationsView); })}>Retry reminder update</Button>}{data.value?.reminders.length === 0 && <p>No reminders right now.</p>}{data.value?.reminders.map(r => <article className="border p-4 space-y-3" key={r.key}><p>{r.category} · {r.date} · {r.status ?? 'Unread'}</p><Link className="underline" to={r.to}>{r.title}</Link><div className="flex gap-3">{(['read', 'dismissed'] as const).map(status => <Button variant="secondary" key={status} disabled={op.busy || !!pending.current} onClick={() => { pending.current = { operationId: crypto.randomUUID(), key: r.key, status }; void op.run<NotificationsView>('/v1/notifications', pending.current, 'PATCH', value => { pending.current = null; data.setValue(value); }); }}>{status === 'read' ? 'Mark read' : 'Dismiss'}</Button>)}</div></article>)}</Page>;
+  return (
+    <Page width="narrow">
+      <PageHeader title="Reminders" description="Shown in the app only. Nothing is sent by email." actions={<Button asChild variant="secondary"><Link to="/settings/study">Reminder settings</Link></Button>} />
+      <ReminderList />
+    </Page>
+  );
 }

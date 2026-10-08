@@ -1,29 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import { useBlocker } from 'react-router-dom';
-import { errorMessage } from '@/lib/api';
-import { useApi, useApiAll, useSave } from '@/lib/data';
 import { useConfirm } from '@/components/ui/alert-dialog';
 
-/* Transitional adapters over lib/data.ts. Pages move to useApi and useSave as they are redesigned. */
-export function useRecord<T>(path: string) {
-  const query = useApi<T>(path);
-  return { value: query.data ?? null, setValue: query.setData, error: query.error ? errorMessage(query.error) : '', refresh: () => void query.refetch() };
-}
-/** Load a complete, bounded selection pool. Never expose an incomplete pool as complete. */
-export function useCollection<T>(path: string, key: string) {
-  const query = useApiAll<T>(path, key);
-  return { value: query.data ?? null, error: query.error ? errorMessage(query.error) : '' };
-}
-export function useLearningWrite() {
-  const save = useSave();
-  function run<T>(path: string, body: unknown, method: string, accept: (value: T) => void) {
-    // Callers keep their own retry body, so each call is its own request here.
-    if (save.busy) return;
-    save.discard();
-    save.run<T>({ path, body, method }, { id: crypto.randomUUID(), onSuccess: accept });
-  }
-  return { busy: save.busy, error: save.error, code: save.code, run };
-}
 let unsavedEdits = false;
 /** Whether any open editor holds unsent work. Read before signing out. */
 export function hasUnsavedEdits() { return unsavedEdits; }

@@ -85,7 +85,7 @@ export function Materials() {
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground hidden sm:table-cell">{MATERIAL_KIND_LABEL[m.kind]}</TableCell>
-                      <TableCell className="text-muted-foreground hidden max-w-0 truncate text-sm md:table-cell">{topicName(m.topicIds) || '—'}</TableCell>
+                      <TableCell className="text-muted-foreground hidden max-w-0 truncate text-sm md:table-cell">{topicName(m.topicIds) || 'None'}</TableCell>
                       <TableCell className="text-muted-foreground hidden text-sm sm:table-cell">{formatRelative(m.updatedAt)}</TableCell>
                       <TableCell>
                         <RowActions label={`Actions for ${m.title}`}>
