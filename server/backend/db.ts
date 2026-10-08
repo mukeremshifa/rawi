@@ -17,9 +17,8 @@ export type Transaction = Parameters<Parameters<SocketDb['transaction']>[0]>[0];
 /** Bound locks after a disconnected request without changing database settings. */
 export async function transaction<T>(db: SocketDb, run: (tx: Transaction) => Promise<T>, config?: Parameters<SocketDb['transaction']>[1]): Promise<T> {
   return db.transaction(async tx => {
-    await tx.execute(sql`SET LOCAL idle_in_transaction_session_timeout = '15s'`);
-    await tx.execute(sql`SET LOCAL statement_timeout = '30s'`);
-    await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
+    // One round trip. set_config(..., true) is SET LOCAL.
+    await tx.execute(sql`SELECT set_config('idle_in_transaction_session_timeout', '15s', true), set_config('statement_timeout', '30s', true), set_config('lock_timeout', '10s', true)`);
     return run(tx);
   }, config);
 }

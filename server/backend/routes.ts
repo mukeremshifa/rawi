@@ -85,7 +85,8 @@ app.use('*', async (c, next) => {
   if (!['GET', 'HEAD'].includes(c.req.method) && c.req.header('origin') !== c.env.BETTER_AUTH_URL) {
     throw new ApiError(400, 'invalid_origin', 'Use the configured Rawi application to save changes.');
   }
-  const { response: session, headers } = await c.get('auth').api.getSession({ headers: c.req.raw.headers, returnHeaders: true });
+  // Reading the session over HTTP avoids opening a socket for requests that never use one.
+  const { response: session, headers } = await createAuth(c.env, c.get('db'), false).api.getSession({ headers: c.req.raw.headers, returnHeaders: true });
   for (const cookie of headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true });
   if (!session) throw new ApiError(401, 'unauthenticated', 'Sign in to open your online workspace.');
   c.set('user', session.user);
@@ -101,7 +102,7 @@ app.use('*', async (c, next) => {
 });
 app.get('/me', async c => {
   const user = c.get('user');
-  return c.json({ user: { id: user.id, name: user.name, email: user.email, image: user.image ?? null }, ...await service.bootstrap(c.get('socket'), user.id) });
+  return c.json({ user: { id: user.id, name: user.name, email: user.email, image: user.image ?? null }, ...await service.findAccount(c.get('db'), user.id) ?? await service.bootstrap(c.get('socket'), user.id) });
 });
 app.patch('/profile', async c => {
   const body = await jsonInput(c, z.strictObject({ name: z.string().trim().min(1).max(80) }));

@@ -123,7 +123,7 @@ export function OnlineApp() {
         {!me && state !== 'checking' && <Page className="py-16" width="prose"><div className="rounded-xl border p-8 space-y-6"><PageHeader title={state === 'unavailable' ? 'We could not open your account' : 'Welcome to Rawi'} description="Your courses, practice and study plans, together in your personal workspace." />
           <p className="text-muted-foreground">Sign in to pick up where you left off, or start with an empty workspace and make it yours.</p>
           {(error || new URLSearchParams(location.search).has('error')) && <p role="alert">{error || 'Google sign-in was cancelled or did not finish. Please try again.'}</p>}
-          <div className="flex flex-wrap gap-3">{state !== 'unavailable' && <Button disabled={busy} onClick={() => void signIn()}>{busy ? 'Connecting…' : 'Continue with Google'}</Button>}<Button variant="outline" disabled={busy} onClick={() => void refresh()}>Try again</Button></div>
+          <div className="flex flex-wrap gap-3">{state !== 'unavailable' && <Button disabled={busy} onClick={() => void signIn()}>{busy ? 'Connecting…' : 'Continue with Google'}</Button>}{state === 'unavailable' && <Button variant="outline" disabled={busy} onClick={() => void refresh()}>Try again</Button>}</div>
         </div></Page>}
         {me && <Account.Provider value={me}><OnlineDraftBoundary key={me.user.id}>
           {error && <div role="alert" className="border-b p-4">{error} <Button variant="outline" disabled={busy} onClick={() => void refresh()}>Retry connection</Button></div>}

@@ -23,6 +23,13 @@ export async function bootstrap(db: SocketDb, userId: string) {
     return { workspace, preferences: { ...saved, values: preferenceFields.parse(saved.values) } };
   });
 }
+/** One read for the usual case. Callers bootstrap only when this returns null. */
+export async function findAccount(db: ReadDb, userId: string) {
+  const [row] = await db.select({ workspace: workspaces, preferences }).from(workspaces)
+    .innerJoin(preferences, eq(preferences.workspaceId, workspaces.id))
+    .where(eq(workspaces.ownerUserId, userId));
+  return row ? { workspace: row.workspace, preferences: { ...row.preferences, values: preferenceFields.parse(row.preferences.values) } } : null;
+}
 export async function getCourse(db: ReadDb | Transaction, workspaceId: string, id: string) {
   const [course] = await db.select().from(courses).where(scope(workspaceId, id));
   if (!course) throw notFound();
