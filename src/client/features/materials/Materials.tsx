@@ -1,6 +1,6 @@
 import { useUnsentGuard } from '@/lib/hooks';
 import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import type { z } from 'zod';
 import { createMaterialInput, fileTypes, materialFields, uploadInput, type Material, type MaterialVersion, type Passage, type VersionDetail, type UploadState, type UploadTicket } from '@shared/contracts/materials';
@@ -44,42 +44,6 @@ function useOperation() {
 }
 function Status({ op }: { op: ReturnType<typeof useOperation> }) { return <div aria-live="polite">{op.busy && <p>Working…</p>}<p role="status">{op.message}</p>{op.error && <p role="alert" className="text-destructive">{op.error}</p>}</div>; }
 
-export function Materials() {
-  const { id = '' } = useParams(); const { user } = useAccount(); const navigate = useNavigate(); const op = useOperation();
-  const [course, setCourse] = useState<CourseDetail | null>(null), [rows, setRows] = useState<Material[]>([]), [cursor, setCursor] = useState<string | null>(null);
-  const [filter, setFilter] = useState('false'), [topic, setTopic] = useState(''), [fields, setFields] = useState<Fields>(empty), [text, setText] = useState(''), [format, setFormat] = useState<'txt' | 'md'>('md');
-  const [createId, setCreateId] = useState(() => crypto.randomUUID()); const [submitted, setSubmitted] = useState<z.infer<typeof createMaterialInput> | null>(null);
-  const [pending, setPending] = useState<UploadState[]>([]);
-  const [loadError, setLoadError] = useState('');
-  const allowNavigation = useUnsentGuard(!!fields.title || !!fields.attribution || fields.kind !== empty.kind || fields.topicIds.length > 0 || !!text || !!submitted);
-  async function load(signal: AbortSignal, after?: string) {
-    const page = await request<{ materials: Material[]; nextCursor: string | null }>(`/v1/courses/${id}/materials?archived=${filter}${topic ? `&topicId=${topic}` : ''}${after ? `&cursor=${after}` : ''}`, user.id, undefined, 'GET', signal);
-    setRows(old => after ? [...old, ...page.materials] : page.materials); setCursor(page.nextCursor);
-  }
-  useEffect(() => { const abort = new AbortController(); setLoadError(''); void (async () => {
-    setCourse(await request<CourseDetail>(`/v1/courses/${id}/topics`, user.id, undefined, 'GET', abort.signal));
-    await load(abort.signal);
-    const page = await request<{ uploads: UploadState[] }>(`/v1/courses/${id}/uploads`, user.id, undefined, 'GET', abort.signal); setPending(page.uploads);
-  })().catch(e => { if (!abort.signal.aborted) setLoadError(errorMessage(e)); }); return () => abort.abort(); }, [id, user.id, filter, topic]);
-  return <Page className="py-8" width="narrow"><PageHeader title={course ? `${course.course.name}: Materials` : 'Materials'} description="Private readings and originals, with preserved version history." actions={<Link className="underline" to={`/course/${id}`}>Course and topics</Link>} />
-    <Status op={op} />
-    {loadError && <p role="alert">{loadError}</p>}
-    <div className="flex gap-4"><Field title="Status"><Select value={filter} onChange={e => setFilter(e.target.value)}><option value="false">Active</option><option value="true">Archived</option><option value="all">All</option></Select></Field><Field title="Topic"><Select value={topic} onChange={e => setTopic(e.target.value)}><option value="">All topics</option>{course?.topics.map(t => <option value={t.id} key={t.id}>{t.title}</option>)}</Select></Field></div>
-    <ul className="space-y-3">{rows.map(row => <li className="rounded border p-4" key={row.id}><Link className="font-semibold underline" to={materialPath(row.id)}>{row.title}</Link><p>{row.archived ? 'Archived · ' : ''}{row.contentStatus === 'readable' ? 'Readable text' : 'File stored. Text has not been extracted.'}</p></li>)}</ul>
-    {!rows.length && !op.busy && <p>No materials in this view.</p>}{cursor && <Button variant="secondary" disabled={op.busy} onClick={() => void op.run(signal => load(signal, cursor))}>Load more</Button>}
-    <section className="border-t pt-6 space-y-4"><h2 className="text-xl font-semibold">Add material</h2>
-      <fieldset disabled={op.busy || !!submitted} className="space-y-4"><FieldsEditor value={fields} onChange={setFields} topics={course?.topics ?? []} /><Field title="Text format"><Select value={format} onChange={e => setFormat(e.target.value as 'txt' | 'md')}><option value="md">Markdown</option><option value="txt">Plain text</option></Select></Field><Field title="Paste text"><Textarea className="min-h-48" value={text} onChange={e => setText(e.target.value)} /></Field></fieldset>
-      <Button disabled={op.busy} onClick={() => void op.run(async signal => {
-        const input = submitted ?? createMaterialInput.parse({ ...fields, id: createId, text, format }); setSubmitted(input);
-
-        const saved = await request<Material>(`/v1/courses/${id}/materials`, user.id, input, 'POST', signal); allowNavigation(); navigate(materialPath(saved.id));
-      })}>{submitted ? 'Retry saving text' : 'Save text'}</Button>
-      {submitted && <Button variant="secondary" disabled={op.busy} onClick={() => { setSubmitted(null); setCreateId(crypto.randomUUID()); }}>Edit as a new request</Button>}
-      <UploadControl courseId={id} fields={fields} onSaved={saved => navigate(materialPath(saved.materialId))} />
-    </section>
-    {!!pending.length && <section className="border-t pt-6 space-y-4"><h2 className="text-xl font-semibold">Pending uploads</h2><p>Refresh keeps upload metadata, but not the selected file. Check status or retry finalization first. If the bytes never arrived, start a new upload by selecting the file again. Byte-level resume is not available.</p>{pending.map(upload => <PendingUpload key={upload.id} initial={upload} onSaved={saved => navigate(materialPath(saved.materialId))} />)}</section>}
-  </Page>;
-}
 function PendingUpload({ initial, onSaved }: { initial: UploadState; onSaved: (v: UploadState) => void }) {
   const { user } = useAccount(); const [value, setValue] = useState(initial); const op = useOperation();
   return <div className="rounded border p-4 space-y-2"><p>{value.fileName}: {value.state}{value.inProgress ? ', finalization in progress' : ''}</p><p>{value.failure}</p><p>Expires {new Date(value.expiresAt).toLocaleString()}</p><Status op={op} />
