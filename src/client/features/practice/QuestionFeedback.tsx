@@ -1,134 +1,61 @@
-import {
-  CheckIcon,
-  HourglassIcon,
-  MessageSquareIcon,
-  RotateCcwIcon,
-  SquareIcon,
-  XIcon,
-} from 'lucide-react';
+import { CheckIcon, HourglassIcon, MessageSquareIcon, XIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import type { AnswerValue, Question, QuestionAttempt, WrittenGrading } from '@shared/domain/types';
 import { AI_MARKING_NOTICE, LEGACY_MARKING_NOTICE, rubricFor } from '@shared/domain/marking';
 
+import { FORMAT_LABEL, OutcomeBadge, RATING_LABEL, SourceLink } from '@/components/domain';
 import { Prose } from '@/components/Prose';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import {
-  FORMAT_LABEL,
-  OutcomeBadge,
-  SimulatedNotice,
-  SourceLink,
-} from '@/components/domain';
 import { cn } from '@/lib/utils';
 
+const WRITTEN = new Set(['essay', 'written-recall', 'source-analysis']);
+
 /**
- * What the student sees after a question is marked.
- *
- * ── The three parts, in this order ────────────────────────────────────────
- *
- *   1. What you answered, and what was correct. Objective formats show the key
- *      inline against the options, because "you picked B, the answer was C" is
- *      far easier to read on the options themselves than as a sentence.
- *   2. The rubric, for written formats. New answers show AI feedback per
- *      point. Answers from earlier builds keep their simulated keyword grade
- *      and say so.
- *   3. The explanation, and a way back to the passage it came from.
- *
- * ── Labels ───────────────────────────────────────────────────────────────
- *
- * AI feedback carries `AI_MARKING_NOTICE` and names its model. A historical
- * keyword grade carries `LEGACY_MARKING_NOTICE`. Objective feedback carries
- * neither, because comparing an answer with a key is exact.
+ * What the learner sees once a question is marked: the outcome, their answer
+ * against the key, rubric feedback for written work, then the explanation
+ * and its source. Colour appears only on outcomes.
  */
-
-export function QuestionFeedback({
-  question,
-  attempt,
-  /** A link to discuss this with the tutor, when the topic has a script. */
-  discussTo,
-}: {
-  question: Question;
-  attempt: QuestionAttempt;
-  discussTo?: string;
-}) {
-  const written =
-    question.format === 'essay' ||
-    question.format === 'written-recall' ||
-    question.format === 'source-analysis';
-
+export function QuestionFeedback({ question, attempt, discussTo }: { question: Question; attempt: QuestionAttempt; discussTo?: string }) {
+  const written = WRITTEN.has(question.format);
   return (
-    <div className="flex flex-col gap-base">
-      <div className="flex flex-wrap items-center gap-tight">
+    <div className="flex flex-col gap-gutter">
+      <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
         <OutcomeBadge outcome={attempt.outcome} />
-        <span className="text-muted-foreground font-mono text-xs tabular-nums">
-          {attempt.outcome === 'pending' ? `${attempt.marksAvailable} marks available` : `${attempt.marksAwarded}/${attempt.marksAvailable} marks`}
-        </span>
-        <Separator orientation="vertical" className="h-3" />
-        <span className="text-muted-foreground text-xs">
-          {FORMAT_LABEL[question.format]}
-        </span>
-        {attempt.usedHint && (
-          <>
-            <Separator orientation="vertical" className="h-3" />
-            <span className="text-muted-foreground text-xs">Hint used</span>
-          </>
-        )}
+        <span className="tabular">{attempt.outcome === 'pending' ? `${attempt.marksAvailable} marks available` : `${attempt.marksAwarded} of ${attempt.marksAvailable} marks`}</span>
+        <span aria-hidden>·</span><span>{FORMAT_LABEL[question.format]}</span>
+        {attempt.usedHint && <><span aria-hidden>·</span><span>Hint used</span></>}
       </div>
-
       <AnswerReview question={question} response={attempt.response} />
-
+      {written && attempt.grading?.status === 'graded' && <AiRubricReview question={question} grading={attempt.grading} />}
+      {written && attempt.outcome === 'pending' && <AwaitingFeedback grading={attempt.grading} />}
+      {written && !attempt.grading && attempt.outcome !== 'skipped' && question.rubric && <RubricReview question={question} creditedIds={attempt.creditedRubricIds ?? []} />}
+      <section className="flex flex-col gap-1.5 border-t pt-gutter">
+        <h3 className="text-base font-semibold">Explanation</h3>
+        <Prose text={question.explanation} className="font-serif" />
+        {question.source && <SourceLink source={question.source} className="mt-1" />}
+      </section>
       {written && attempt.grading?.status === 'graded' && (
-        <AiRubricReview question={question} grading={attempt.grading} />
+        <p className="text-muted-foreground text-sm">{attempt.grading.method === 'sample' ? 'Sample feedback, written to illustrate rubric review.' : `${AI_MARKING_NOTICE} Marked by ${attempt.grading.model ?? 'an AI model'}.`}</p>
       )}
-
-      {written && attempt.outcome === 'pending' && (
-        <AwaitingFeedback grading={attempt.grading} />
-      )}
-
-      {written && !attempt.grading && attempt.outcome !== 'skipped' && question.rubric && (
-        <RubricReview
-          question={question}
-          creditedIds={attempt.creditedRubricIds ?? []}
-        />
-      )}
-
-      <div className="bg-muted/40 flex flex-col gap-tight rounded-lg border p-gutter">
-        <span className="text-xs font-medium">Explanation</span>
-        <Prose text={question.explanation} size="compact" />
-        {question.source && <SourceLink source={question.source} className="mt-tight" />}
-      </div>
-
-      {written && attempt.grading?.status === 'graded' && (
-        <SimulatedNotice>
-          {attempt.grading.method === 'sample' ? 'Sample feedback. Authored to illustrate rubric review, with no model call or charge.' : `${AI_MARKING_NOTICE} Marked by ${attempt.grading.model ?? 'an AI model'}.`}
-        </SimulatedNotice>
-      )}
-      {written && !attempt.grading && attempt.outcome !== 'skipped' && (
-        <SimulatedNotice>{LEGACY_MARKING_NOTICE}</SimulatedNotice>
-      )}
-
+      {written && !attempt.grading && attempt.outcome !== 'skipped' && <p className="text-muted-foreground text-sm">{LEGACY_MARKING_NOTICE}</p>}
       {discussTo && attempt.outcome !== 'correct' && attempt.outcome !== 'pending' && (
-        <Button variant="secondary" size="sm" asChild className="self-start">
-          <Link to={discussTo}>
-            <MessageSquareIcon />
-            Work through this with the tutor
-          </Link>
-        </Button>
+        <Button variant="secondary" size="sm" asChild className="self-start"><Link to={discussTo}><MessageSquareIcon />Work through this with the tutor</Link></Button>
       )}
     </div>
   );
 }
 
-/* ── Per-format answer review ─────────────────────────────────────────── */
+function Mark({ ok }: { ok: boolean | null }) {
+  if (ok === null) return <span className="block size-4 shrink-0" />;
+  return ok ? <CheckIcon className="text-success mt-0.5 size-4 shrink-0" aria-label="Correct" /> : <XIcon className="text-danger mt-0.5 size-4 shrink-0" aria-label="Incorrect" />;
+}
 
-function AnswerReview({
-  question,
-  response,
-}: {
-  question: Question;
-  response: AnswerValue;
-}) {
+function Row({ tone, children }: { tone: 'right' | 'wrong' | 'plain'; children: React.ReactNode }) {
+  return <li className={cn('flex items-start gap-snug rounded-md border px-3 py-2 text-base', tone === 'right' && 'border-success/40 bg-success-subtle', tone === 'wrong' && 'border-danger/30')}>{children}</li>;
+}
+
+function AnswerReview({ question, response }: { question: Question; response: AnswerValue }) {
   switch (question.format) {
     case 'multiple-choice':
     case 'multiple-select': {
@@ -137,231 +64,107 @@ function AnswerReview({
       return (
         <ul className="flex flex-col gap-tight">
           {(question.options ?? []).map((option, index) => {
-            const picked = given.includes(index);
-            const isCorrect = correct.includes(index);
+            const picked = given.includes(index), isCorrect = correct.includes(index);
             return (
-              <li
-                key={index}
-                className={cn(
-                  'flex items-start gap-snug rounded-lg border p-snug text-sm',
-                  isCorrect && 'border-success/40 bg-success/8',
-                  picked && !isCorrect && 'border-destructive/40 bg-destructive/8',
-                )}
-              >
-                <span className="mt-0.5 shrink-0">
-                  {isCorrect ? (
-                    <CheckIcon className="text-success size-4" aria-hidden />
-                  ) : picked ? (
-                    <XIcon className="text-destructive size-4" aria-hidden />
-                  ) : (
-                    <span className="block size-4" />
-                  )}
-                </span>
+              <Row key={index} tone={isCorrect ? 'right' : picked ? 'wrong' : 'plain'}>
+                <Mark ok={isCorrect ? true : picked ? false : null} />
                 <span className="flex-1 leading-relaxed">{option}</span>
-                {(picked || isCorrect) && (
-                  <span className="text-muted-foreground shrink-0 text-xs">
-                    {picked && isCorrect ? 'your answer, correct' : picked ? 'your answer' : 'correct answer'}
-                  </span>
-                )}
-              </li>
+                {(picked || isCorrect) && <span className="text-muted-foreground shrink-0 text-sm">{picked && isCorrect ? 'Your answer' : picked ? 'Your answer' : 'Correct answer'}</span>}
+              </Row>
             );
           })}
         </ul>
       );
     }
-
     case 'fill-blank': {
       const given = response.kind === 'blanks' ? response.values : [];
       return (
         <ul className="flex flex-col gap-tight">
           {(question.blanks ?? []).map((accepted, index) => {
             const value = (given[index] ?? '').trim();
-            const ok =
-              value && accepted.some((a) => a.toLowerCase() === value.toLowerCase());
+            const ok = !!value && accepted.some(a => a.toLowerCase() === value.toLowerCase());
             return (
-              <li
-                key={index}
-                className={cn(
-                  'flex flex-wrap items-center gap-snug rounded-lg border p-snug text-sm',
-                  ok ? 'border-success/40 bg-success/8' : 'border-destructive/30',
-                )}
-              >
-                <span className="text-muted-foreground font-mono text-xs tabular-nums">
-                  {index + 1}
-                </span>
-                <span className={cn('font-medium', !value && 'text-muted-foreground')}>
-                  {value || '(blank)'}
-                </span>
-                {!ok && (
-                  <span className="text-muted-foreground text-xs">
-                    expected: {accepted[0]}
-                  </span>
-                )}
-              </li>
+              <Row key={index} tone={ok ? 'right' : 'wrong'}>
+                <span className="text-muted-foreground tabular w-4 text-sm">{index + 1}</span>
+                <span className={cn('font-medium', !value && 'text-muted-foreground')}>{value || 'Left blank'}</span>
+                {!ok && <span className="text-muted-foreground text-sm">Expected {accepted[0]}</span>}
+              </Row>
             );
           })}
         </ul>
       );
     }
-
     case 'ordering': {
       const given = response.kind === 'ordering' ? response.sequence : [];
-      const correct = question.sequence ?? [];
       return (
         <ol className="flex flex-col gap-tight">
-          {correct.map((item, index) => {
+          {(question.sequence ?? []).map((item, index) => {
             const inPlace = given[index] === item;
             return (
-              <li
-                key={item}
-                className={cn(
-                  'flex items-start gap-snug rounded-lg border p-snug text-sm',
-                  inPlace ? 'border-success/40 bg-success/8' : 'border-destructive/30',
-                )}
-              >
-                <span className="text-muted-foreground w-5 shrink-0 text-center font-mono text-xs tabular-nums">
-                  {index + 1}
-                </span>
-                <div className="flex flex-1 flex-col gap-hairline">
-                  <span className="leading-relaxed">{item}</span>
-                  {!inPlace && given[index] && (
-                    <span className="text-muted-foreground text-xs">
-                      you put: {given[index]}
-                    </span>
-                  )}
-                </div>
-              </li>
+              <Row key={item} tone={inPlace ? 'right' : 'wrong'}>
+                <span className="text-muted-foreground tabular w-4 text-sm">{index + 1}</span>
+                <span className="flex flex-1 flex-col"><span>{item}</span>{!inPlace && given[index] && <span className="text-muted-foreground text-sm">You put: {given[index]}</span>}</span>
+              </Row>
             );
           })}
         </ol>
       );
     }
-
     case 'matching': {
-      const assignments =
-        response.kind === 'matching' ? response.assignments : {};
+      const assignments = response.kind === 'matching' ? response.assignments : {};
       return (
         <ul className="flex flex-col gap-tight">
-          {(question.pairs ?? []).map((pair) => {
-            const given = assignments[pair.left];
-            const ok = given === pair.right;
+          {(question.pairs ?? []).map(pair => {
+            const given = assignments[pair.left], ok = given === pair.right;
             return (
-              <li
-                key={pair.left}
-                className={cn(
-                  'flex flex-col gap-hairline rounded-lg border p-snug text-sm',
-                  ok ? 'border-success/40 bg-success/8' : 'border-destructive/30',
-                )}
-              >
-                <span className="font-medium">{pair.left}</span>
-                <span className="text-muted-foreground text-xs">
-                  {ok ? (
-                    pair.right
-                  ) : (
-                    <>
-                      you said: {given || '(nothing)'} · correct: {pair.right}
-                    </>
-                  )}
-                </span>
-              </li>
+              <Row key={pair.left} tone={ok ? 'right' : 'wrong'}>
+                <Mark ok={ok} />
+                <span className="flex flex-1 flex-col"><span className="font-medium">{pair.left}</span>
+                  <span className="text-muted-foreground text-sm">{ok ? pair.right : `You chose ${given || 'nothing'}. Correct: ${pair.right}`}</span></span>
+              </Row>
             );
           })}
         </ul>
       );
     }
-
     case 'flashcard': {
       const rating = response.kind === 'self-rating' ? response.rating : null;
       return (
         <div className="flex flex-col gap-tight">
-          <div className="bg-muted/40 rounded-lg border p-snug">
-            <span className="text-muted-foreground mb-hairline block text-xs font-medium">
-              The answer
-            </span>
-            <Prose text={question.answer ?? ''} size="compact" />
-          </div>
-          <p className="text-muted-foreground text-xs">
-            You rated your recall: <strong>{rating ?? 'not rated'}</strong>. Recorded
-            as self-rated, which counts differently from an unaided exam answer.
-          </p>
+          <div className="bg-surface rounded-md border px-4 py-3 font-serif"><Prose text={question.answer ?? ''} /></div>
+          <p className="text-muted-foreground text-sm">You rated your recall <span className="text-foreground font-medium">{rating ? RATING_LABEL[rating] : 'not at all'}</span>. Self-rated, so it counts separately from marked answers.</p>
         </div>
       );
     }
-
     case 'written-recall':
     case 'source-analysis':
     case 'essay': {
       const text = response.kind === 'text' ? response.text : '';
       return (
-        <div className="flex flex-col gap-tight">
-          <span className="text-xs font-medium">Your answer</span>
-          <div className="bg-muted/30 rounded-lg border p-gutter">
-            {text.trim() ? (
-              <Prose text={text} size="compact" />
-            ) : (
-              <p className="text-muted-foreground text-sm italic">
-                Nothing was written.
-              </p>
-            )}
-          </div>
+        <div className="flex flex-col gap-1.5">
+          <h3 className="text-base font-semibold">Your answer</h3>
+          <div className="bg-surface rounded-md border px-4 py-3 font-serif">{text.trim() ? <Prose text={text} /> : <p className="text-muted-foreground italic">Nothing was written.</p>}</div>
         </div>
       );
     }
   }
 }
 
-/* ── Rubric ───────────────────────────────────────────────────────────── */
-
-function RubricReview({
-  question,
-  creditedIds,
-}: {
-  question: Question;
-  creditedIds: string[];
-}) {
+function RubricReview({ question, creditedIds }: { question: Question; creditedIds: string[] }) {
   const rubric = question.rubric ?? [];
-  const earned = rubric
-    .filter((p) => creditedIds.includes(p.id))
-    .reduce((sum, p) => sum + p.marks, 0);
-  const total = rubric.reduce((sum, p) => sum + p.marks, 0);
-
+  const earned = rubric.filter(p => creditedIds.includes(p.id)).reduce((n, p) => n + p.marks, 0);
+  const total = rubric.reduce((n, p) => n + p.marks, 0);
   return (
-    <div className="flex flex-col gap-snug">
-      <div className="flex items-baseline justify-between gap-tight">
-        <span className="text-xs font-medium">Rubric</span>
-        <span className="text-muted-foreground font-mono text-xs tabular-nums">
-          {earned}/{total}
-        </span>
-      </div>
-      <ul className="flex flex-col gap-tight">
-        {rubric.map((point) => {
+    <div className="flex flex-col gap-tight">
+      <div className="flex items-baseline justify-between"><h3 className="text-base font-semibold">Rubric</h3><span className="text-muted-foreground tabular text-sm">{earned} of {total}</span></div>
+      <ul className="divide-y border-y">
+        {rubric.map(point => {
           const credited = creditedIds.includes(point.id);
           return (
-            <li
-              key={point.id}
-              className={cn(
-                'flex items-start gap-snug rounded-lg border p-snug text-sm',
-                credited ? 'border-success/40 bg-success/8' : 'border-border',
-              )}
-            >
-              <span className="mt-0.5 shrink-0">
-                {credited ? (
-                  <CheckIcon className="text-success size-4" aria-hidden />
-                ) : (
-                  <XIcon className="text-muted-foreground size-4" aria-hidden />
-                )}
-              </span>
-              <div className="flex flex-1 flex-col gap-hairline">
-                <span className="leading-relaxed">{point.label}</span>
-                {!credited && (
-                  <span className="text-muted-foreground text-xs leading-relaxed">
-                    {point.missedAdvice}
-                  </span>
-                )}
-              </div>
-              <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
-                {credited ? point.marks : 0}/{point.marks}
-              </span>
+            <li key={point.id} className="flex items-start gap-snug py-2 text-base">
+              <Mark ok={credited} />
+              <span className="flex flex-1 flex-col"><span>{point.label}</span>{!credited && <span className="text-muted-foreground text-sm">{point.missedAdvice}</span>}</span>
+              <span className="text-muted-foreground tabular shrink-0 text-sm">{credited ? point.marks : 0}/{point.marks}</span>
             </li>
           );
         })}
@@ -370,133 +173,34 @@ function RubricReview({
   );
 }
 
-/* ── AI feedback ──────────────────────────────────────────────────────── */
-
-function AiRubricReview({
-  question,
-  grading,
-}: {
-  question: Question;
-  grading: WrittenGrading;
-}) {
+function AiRubricReview({ question, grading }: { question: Question; grading: WrittenGrading }) {
   const rubric = rubricFor(question);
   const points = grading.points ?? [];
-  const earned = points.reduce((sum, p) => sum + p.awarded, 0);
-  const total = points.reduce((sum, p) => sum + p.max, 0);
-
+  const earned = points.reduce((n, p) => n + p.awarded, 0), total = points.reduce((n, p) => n + p.max, 0);
   return (
-    <div className="flex flex-col gap-snug">
-      <div className="flex items-baseline justify-between gap-tight">
-        <span className="text-xs font-medium">Rubric feedback</span>
-        <span className="text-muted-foreground font-mono text-xs tabular-nums">
-          {earned}/{total}
-        </span>
-      </div>
-      <ul className="flex flex-col gap-tight">
-        {points.map((point) => {
-          const label = rubric.find((r) => r.id === point.rubricId)?.label ?? point.rubricId;
-          const full = point.awarded === point.max;
-          return (
-            <li
-              key={point.rubricId}
-              className={cn(
-                'flex items-start gap-snug rounded-lg border p-snug text-sm',
-                full
-                  ? 'border-success/40 bg-success/8'
-                  : point.awarded > 0
-                    ? 'border-warning/40'
-                    : 'border-border',
-              )}
-            >
-              <span className="mt-0.5 shrink-0">
-                {full ? (
-                  <CheckIcon className="text-success size-4" aria-hidden />
-                ) : (
-                  <XIcon className="text-muted-foreground size-4" aria-hidden />
-                )}
-              </span>
-              <div className="flex flex-1 flex-col gap-hairline">
-                <span className="leading-relaxed">{label}</span>
-                <span className="text-muted-foreground text-xs leading-relaxed">
-                  {point.feedback}
-                </span>
-              </div>
-              <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
-                {point.awarded}/{point.max}
-              </span>
-            </li>
-          );
-        })}
+    <div className="flex flex-col gap-tight">
+      <div className="flex items-baseline justify-between"><h3 className="text-base font-semibold">Feedback by rubric point</h3><span className="text-muted-foreground tabular text-sm">{earned} of {total}</span></div>
+      <ul className="divide-y border-y">
+        {points.map(point => (
+          <li key={point.rubricId} className="flex items-start gap-snug py-2 text-base">
+            <Mark ok={point.awarded === point.max ? true : point.awarded > 0 ? null : false} />
+            <span className="flex flex-1 flex-col"><span>{rubric.find(r => r.id === point.rubricId)?.label ?? point.rubricId}</span><span className="text-muted-foreground text-sm">{point.feedback}</span></span>
+            <span className="text-muted-foreground tabular shrink-0 text-sm">{point.awarded}/{point.max}</span>
+          </li>
+        ))}
       </ul>
-      {grading.summary && (
-        <p className="text-sm leading-relaxed">
-          <span className="font-medium">Next step: </span>
-          {grading.summary}
-        </p>
-      )}
+      {grading.summary && <p className="text-base"><span className="font-medium">Next step: </span>{grading.summary}</p>}
     </div>
   );
 }
 
 function AwaitingFeedback({ grading }: { grading: WrittenGrading | undefined }) {
   return (
-    <div className="text-muted-foreground flex items-start gap-tight rounded-lg border border-dashed p-snug text-sm">
+    <div className="text-muted-foreground flex items-start gap-tight rounded-md border border-dashed px-3 py-2.5 text-base">
       <HourglassIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
-      <span>
-        {grading?.status === 'failed'
-          ? `Feedback could not be fetched. ${grading.error ?? ''} Your answer is saved and has not been marked yet.`
-          : 'Your answer is saved and waiting for feedback. It does not count for or against your progress until it is marked.'}
-      </span>
-    </div>
-  );
-}
-
-/**
- * The control for an attempt's waiting written answers: how many, whether
- * feedback is being fetched, and a way to start, stop or retry it.
- */
-export function PendingFeedbackPanel({
-  waiting,
-  running,
-  error,
-  onGrade,
-  onCancel,
-}: {
-  waiting: number;
-  running: boolean;
-  error: string | null;
-  onGrade: () => void;
-  onCancel: () => void;
-}) {
-  if (waiting === 0 && !running) return null;
-  return (
-    <div
-      className="bg-muted/40 flex flex-col gap-snug rounded-lg border p-gutter"
-      aria-live="polite"
-    >
-      <span className="text-sm font-medium">
-        {running
-          ? 'Getting feedback on your written answers…'
-          : `${waiting} written ${waiting === 1 ? 'answer is' : 'answers are'} waiting for feedback`}
-      </span>
-      <span className="text-muted-foreground text-xs leading-relaxed">
-        Your answers are saved. Until feedback arrives, the marks shown leave these answers
-        out, and they count neither for nor against your progress.
-      </span>
-      {error && <span className="text-destructive text-xs">{error}</span>}
-      <div>
-        {running ? (
-          <Button variant="secondary" size="sm" onClick={onCancel}>
-            <SquareIcon />
-            Stop
-          </Button>
-        ) : (
-          <Button size="sm" onClick={onGrade}>
-            <RotateCcwIcon />
-            {error ? 'Try again' : 'Get feedback'}
-          </Button>
-        )}
-      </div>
+      <span>{grading?.status === 'failed'
+        ? `Feedback could not be fetched. ${grading.error ?? ''} Your answer is saved and not marked yet.`
+        : 'Awaiting feedback. Your answer is saved, and it counts neither for nor against you until it is marked.'}</span>
     </div>
   );
 }

@@ -4,152 +4,43 @@ import { InlineText } from '@/components/InlineText';
 import { cn } from '@/lib/utils';
 
 /**
- * Block-level rendering for the authored prose in this prototype.
+ * Prose: block structure (paragraphs, lists, quotes) for authored and model
+ * text, with InlineText for emphasis inside a line. It builds elements from a
+ * split and never parses HTML, so model output can only ever be text.
  *
- * ── Why this exists next to `InlineText` ──────────────────────────────────
+ *   blank line   paragraph break      `- ` / `* `   list item
+ *   `1. `        ordered item         `> `          quote
  *
- * `InlineText` handles emphasis *within* a line and deliberately refuses to
- * grow into a markdown engine — its own note says so. But every long-form
- * string in this app (a reading passage, a tutor turn, an explanation) has
- * block structure too: paragraphs, the occasional numbered list, the occasional
- * blockquote for an extract.
- *
- * So the split is: this file decides where the paragraphs are, `InlineText`
- * decides what is bold inside them. It inherits the same safety property for
- * the same reason — it produces elements from a split, and never a string that
- * anything parses as markup. There is no HTML path to get wrong.
- *
- * ── What it understands ───────────────────────────────────────────────────
- *
- *   blank line      paragraph break
- *   `- ` / `* `     unordered list item
- *   `1. `           ordered list item
- *   `> `            blockquote
- *
- * Anything else is a paragraph. That is the whole grammar. It also renders
- * model output from the tutor and from feedback, which is why the no-HTML
- * property matters: whatever a model writes is only ever text in elements.
+ * `reading` follows the reading-size preference. `compact` is for panels.
  */
-
-type Block =
-  | { kind: 'p'; lines: string[] }
-  | { kind: 'ul'; items: string[] }
-  | { kind: 'ol'; items: string[] }
-  | { kind: 'quote'; lines: string[] };
+type Block = { kind: 'p' | 'quote'; lines: string[] } | { kind: 'ul' | 'ol'; items: string[] };
 
 function parse(text: string): Block[] {
   const blocks: Block[] = [];
-  const lines = text.replace(/\r\n/g, '\n').split('\n');
-
-  for (const raw of lines) {
+  for (const raw of text.replace(/\r\n/g, '\n').split('\n')) {
     const line = raw.trimEnd();
     const last = blocks[blocks.length - 1];
-
-    if (!line.trim()) {
-      // A blank line closes whatever was open; the next line starts fresh.
-      if (last) blocks.push({ kind: 'p', lines: [] });
-      continue;
-    }
-
-    const ulMatch = /^\s*[-*]\s+(.*)$/.exec(line);
-    if (ulMatch) {
-      if (last?.kind === 'ul') last.items.push(ulMatch[1]!);
-      else blocks.push({ kind: 'ul', items: [ulMatch[1]!] });
-      continue;
-    }
-
-    const olMatch = /^\s*\d+[.)]\s+(.*)$/.exec(line);
-    if (olMatch) {
-      if (last?.kind === 'ol') last.items.push(olMatch[1]!);
-      else blocks.push({ kind: 'ol', items: [olMatch[1]!] });
-      continue;
-    }
-
-    const quoteMatch = /^\s*>\s?(.*)$/.exec(line);
-    if (quoteMatch) {
-      if (last?.kind === 'quote') last.lines.push(quoteMatch[1]!);
-      else blocks.push({ kind: 'quote', lines: [quoteMatch[1]!] });
-      continue;
-    }
-
-    if (last?.kind === 'p' && last.lines.length > 0) last.lines.push(line);
-    else if (last?.kind === 'p') last.lines.push(line);
-    else blocks.push({ kind: 'p', lines: [line] });
+    if (!line.trim()) { if (last) blocks.push({ kind: 'p', lines: [] }); continue; }
+    const ul = /^\s*[-*]\s+(.*)$/.exec(line), ol = /^\s*\d+[.)]\s+(.*)$/.exec(line), quote = /^\s*>\s?(.*)$/.exec(line);
+    if (ul) { if (last?.kind === 'ul') last.items.push(ul[1]!); else blocks.push({ kind: 'ul', items: [ul[1]!] }); continue; }
+    if (ol) { if (last?.kind === 'ol') last.items.push(ol[1]!); else blocks.push({ kind: 'ol', items: [ol[1]!] }); continue; }
+    if (quote) { if (last?.kind === 'quote') last.lines.push(quote[1]!); else blocks.push({ kind: 'quote', lines: [quote[1]!] }); continue; }
+    if (last?.kind === 'p') last.lines.push(line); else blocks.push({ kind: 'p', lines: [line] });
   }
-
-  return blocks.filter(
-    (b) =>
-      (b.kind === 'p' && b.lines.length > 0) ||
-      (b.kind === 'quote' && b.lines.length > 0) ||
-      ((b.kind === 'ul' || b.kind === 'ol') && b.items.length > 0),
-  );
+  return blocks.filter(b => 'lines' in b ? b.lines.length > 0 : b.items.length > 0);
 }
 
-export function Prose({
-  text,
-  className,
-  /** `reading` is the long-form measure; `compact` is for cards and panels. */
-  size = 'reading',
-}: {
-  text: string;
-  className?: string;
-  size?: 'reading' | 'compact';
-}) {
-  const blocks = parse(text);
-  const body =
-    size === 'reading'
-      ? 'text-[0.975rem] leading-[1.75]'
-      : 'text-sm leading-relaxed';
+const Lines = ({ lines }: { lines: string[] }) => <>{lines.map((line, j) => <Fragment key={j}>{j > 0 && ' '}<InlineText text={line} /></Fragment>)}</>;
 
+export function Prose({ text, className, size = 'reading' }: { text: string; className?: string; size?: 'reading' | 'compact' }) {
   return (
-    <div className={cn('rawi-prose flex flex-col gap-base', body, className)}>
-      {blocks.map((block, i) => {
+    <div className={cn('rawi-prose', size === 'compact' && 'text-base! leading-relaxed!', className)}>
+      {parse(text).map((block, i) => {
         switch (block.kind) {
-          case 'p':
-            return (
-              <p key={i}>
-                {block.lines.map((line, j) => (
-                  <Fragment key={j}>
-                    {j > 0 && ' '}
-                    <InlineText text={line} />
-                  </Fragment>
-                ))}
-              </p>
-            );
-          case 'ul':
-            return (
-              <ul key={i} className="flex list-disc flex-col gap-tight pl-5">
-                {block.items.map((item, j) => (
-                  <li key={j}>
-                    <InlineText text={item} />
-                  </li>
-                ))}
-              </ul>
-            );
-          case 'ol':
-            return (
-              <ol key={i} className="flex list-decimal flex-col gap-tight pl-5">
-                {block.items.map((item, j) => (
-                  <li key={j}>
-                    <InlineText text={item} />
-                  </li>
-                ))}
-              </ol>
-            );
-          case 'quote':
-            return (
-              <blockquote
-                key={i}
-                className="border-border-strong text-muted-foreground border-l-2 pl-gutter italic"
-              >
-                {block.lines.map((line, j) => (
-                  <Fragment key={j}>
-                    {j > 0 && ' '}
-                    <InlineText text={line} />
-                  </Fragment>
-                ))}
-              </blockquote>
-            );
+          case 'p': return <p key={i}><Lines lines={block.lines} /></p>;
+          case 'quote': return <blockquote key={i}><Lines lines={block.lines} /></blockquote>;
+          case 'ul': return <ul key={i}>{block.items.map((item, j) => <li key={j}><InlineText text={item} /></li>)}</ul>;
+          case 'ol': return <ol key={i}>{block.items.map((item, j) => <li key={j}><InlineText text={item} /></li>)}</ol>;
         }
       })}
     </div>

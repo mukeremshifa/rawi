@@ -1,333 +1,104 @@
 import { useMemo, useRef, useState } from 'react';
-import { ArrowDownIcon, ArrowUpIcon, LightbulbIcon } from 'lucide-react';
+import { ArrowDownIcon, ArrowUpIcon, CheckIcon } from 'lucide-react';
 
 import type { AnswerValue, Question, SelfRating } from '@shared/domain/types';
 
 import { Prose } from '@/components/Prose';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { NativeSelect as Select } from '@/components/ui/native-select';
+import { Kbd } from '@/components/ui/kbd';
+import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 /**
- * The answer interaction for every question format.
- *
- * ── Why one component and not nine ────────────────────────────────────────
- *
- * Practice and exams both need all of these, and both need them to behave
- * identically — an exam answer and a practice answer are the same `AnswerValue`
- * and are marked by the same code, so they had better be *entered* the same
- * way too. Splitting per format would have meant two copies of each interaction
- * drifting apart.
- *
- * The component is controlled: it never holds the answer, it reports changes
- * upward. That is what makes answer preservation across exam navigation free
- * — the run holds every answer and this just draws the current one.
- *
- * ── `readOnly` ────────────────────────────────────────────────────────────
- *
- * Set after submission, and after a section is locked by released feedback.
- * The inputs are disabled rather than replaced with text, so the student sees
- * their answer in the shape they gave it.
+ * The answer interaction for every question format, shared by practice and
+ * exams so an answer is entered the same way in both. Controlled: the run
+ * holds every answer and this draws the current one. `readOnly` keeps the
+ * answer in the shape it was given, after checking or when a section locks.
  */
-
-export function QuestionView({
-  question,
-  answer,
-  onChange,
-  readOnly = false,
-  hintsAllowed = false,
-  onHintUsed,
-  revealed = false,
-}: {
+export function QuestionView({ question, answer, onChange, readOnly = false, revealed = false }: {
   question: Question;
   answer: AnswerValue | undefined;
   onChange: (answer: AnswerValue) => void;
   readOnly?: boolean;
-  hintsAllowed?: boolean;
-  onHintUsed?: () => void;
   revealed?: boolean;
 }) {
-  const [hintShown, setHintShown] = useState(false);
-
   return (
-    <div className="flex flex-col gap-base">
+    <div className="flex flex-col gap-gutter">
       {question.extract && (
-        <Card className="bg-muted/40">
-          <CardContent>
-            <Prose text={question.extract} size="compact" />
-          </CardContent>
-        </Card>
+        <blockquote className="bg-surface rounded-md border-l-2 border-border-strong px-4 py-3 font-serif">
+          <Prose text={question.extract} />
+        </blockquote>
       )}
-
-      <div className="text-[0.975rem] leading-relaxed">
+      <div className="font-serif text-lg leading-snug [&_.rawi-prose]:text-[length:inherit] [&_.rawi-prose]:leading-[inherit]">
         <Prose text={question.prompt} />
       </div>
-
-      <AnswerInput
-        question={question}
-        answer={answer}
-        onChange={onChange}
-        readOnly={readOnly}
-        revealed={revealed}
-      />
-
-      {/* No hint on a flashcard: "reveal the answer" already is the hint, and
-          offering both makes the reveal look like a penalty. */}
-      {hintsAllowed && !readOnly && question.format !== 'flashcard' && question.explanation && (
-        <div className="flex flex-col gap-tight">
-          {hintShown ? (
-            <div className="bg-warning/10 border-warning/30 flex items-start gap-tight rounded-lg border p-snug text-sm">
-              <LightbulbIcon className="text-warning-text mt-0.5 size-4 shrink-0" aria-hidden />
-              <div>
-                <p className="mb-hairline font-medium">Hint</p>
-                <p className="text-muted-foreground leading-relaxed">
-                  {hintFor(question)}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="self-start"
-              onClick={() => {
-                setHintShown(true);
-                onHintUsed?.();
-              }}
-            >
-              <LightbulbIcon />
-              Show a hint
-            </Button>
-          )}
-        </div>
-      )}
+      <AnswerInput question={question} answer={answer} onChange={onChange} readOnly={readOnly} revealed={revealed} />
     </div>
   );
 }
 
-/**
- * A hint, derived from the authored explanation.
- *
- * The first sentence of the explanation, which in this question bank is
- * consistently the "what to notice" line rather than the answer itself. Deriving
- * rather than authoring a separate hint field keeps the bank smaller and, more
- * importantly, keeps a hint from drifting out of step with the explanation it
- * is meant to lead towards.
- */
-function hintFor(question: Question): string {
-  const first = question.explanation.split(/(?<=\.)\s+/)[0];
-  return first ?? question.explanation;
-}
-
-function AnswerInput({
-  question,
-  answer,
-  onChange,
-  readOnly,
-  revealed,
-}: {
-  question: Question;
-  answer: AnswerValue | undefined;
-  onChange: (answer: AnswerValue) => void;
-  readOnly: boolean;
-  revealed: boolean;
-}) {
+function AnswerInput({ question, answer, onChange, readOnly, revealed }: { question: Question; answer: AnswerValue | undefined; onChange: (answer: AnswerValue) => void; readOnly: boolean; revealed: boolean }) {
   switch (question.format) {
     case 'multiple-choice':
-      return (
-        <ChoiceInput
-          options={question.options ?? []}
-          selected={answer?.kind === 'choice' ? answer.indices : []}
-          multiple={false}
-          readOnly={readOnly}
-          name={question.id}
-          onChange={(indices) => onChange({ kind: 'choice', indices })}
-        />
-      );
-
     case 'multiple-select':
-      return (
-        <ChoiceInput
-          options={question.options ?? []}
-          selected={answer?.kind === 'choice' ? answer.indices : []}
-          multiple
-          readOnly={readOnly}
-          name={question.id}
-          onChange={(indices) => onChange({ kind: 'choice', indices })}
-        />
-      );
-
+      return <ChoiceInput options={question.options ?? []} selected={answer?.kind === 'choice' ? answer.indices : []} multiple={question.format === 'multiple-select'} readOnly={readOnly} onChange={indices => onChange({ kind: 'choice', indices })} />;
     case 'fill-blank':
-      return (
-        <BlanksInput
-          template={question.template ?? question.prompt}
-          values={answer?.kind === 'blanks' ? answer.values : []}
-          readOnly={readOnly}
-          onChange={(values) => onChange({ kind: 'blanks', values })}
-        />
-      );
-
+      return <BlanksInput template={question.template ?? question.prompt} values={answer?.kind === 'blanks' ? answer.values : []} readOnly={readOnly} onChange={values => onChange({ kind: 'blanks', values })} />;
     case 'ordering':
-      return (
-        <OrderingInput
-          items={question.sequence ?? []}
-          current={answer?.kind === 'ordering' ? answer.sequence : []}
-          readOnly={readOnly}
-          onChange={(sequence) => onChange({ kind: 'ordering', sequence })}
-        />
-      );
-
+      return <OrderingInput items={question.sequence ?? []} current={answer?.kind === 'ordering' ? answer.sequence : []} readOnly={readOnly} onChange={sequence => onChange({ kind: 'ordering', sequence })} />;
     case 'matching':
-      return (
-        <MatchingInput
-          pairs={question.pairs ?? []}
-          assignments={answer?.kind === 'matching' ? answer.assignments : {}}
-          readOnly={readOnly}
-          onChange={(assignments) => onChange({ kind: 'matching', assignments })}
-        />
-      );
-
+      return <MatchingInput pairs={question.pairs ?? []} assignments={answer?.kind === 'matching' ? answer.assignments : {}} readOnly={readOnly} onChange={assignments => onChange({ kind: 'matching', assignments })} />;
     case 'written-recall':
     case 'source-analysis':
     case 'essay':
-      return (
-        <WrittenInput
-          question={question}
-          text={answer?.kind === 'text' ? answer.text : ''}
-          readOnly={readOnly}
-          onChange={(text) => onChange({ kind: 'text', text })}
-        />
-      );
-
+      return <WrittenInput question={question} text={answer?.kind === 'text' ? answer.text : ''} readOnly={readOnly} onChange={text => onChange({ kind: 'text', text })} />;
     case 'flashcard':
-      return (
-        <FlashcardInput
-          initiallyRevealed={revealed}
-          question={question}
-          rating={answer?.kind === 'self-rating' ? answer.rating : undefined}
-          readOnly={readOnly}
-          onChange={(rating) => onChange({ kind: 'self-rating', rating })}
-        />
-      );
+      return <FlashcardInput initiallyRevealed={revealed} question={question} rating={answer?.kind === 'self-rating' ? answer.rating : undefined} readOnly={readOnly} onChange={rating => onChange({ kind: 'self-rating', rating })} />;
   }
 }
 
-/* ── Choice ───────────────────────────────────────────────────────────── */
-
-function ChoiceInput({
-  options,
-  selected,
-  multiple,
-  readOnly,
-  name,
-  onChange,
-}: {
-  options: string[];
-  selected: number[];
-  multiple: boolean;
-  readOnly: boolean;
-  name: string;
-  onChange: (indices: number[]) => void;
-}) {
+/** Choices as cards. The runner maps keys 1 to 9 onto them. */
+function ChoiceInput({ options, selected, multiple, readOnly, onChange }: { options: string[]; selected: number[]; multiple: boolean; readOnly: boolean; onChange: (indices: number[]) => void }) {
+  const toggle = (index: number) => {
+    if (readOnly) return;
+    if (!multiple) onChange([index]);
+    else onChange(selected.includes(index) ? selected.filter(i => i !== index) : [...selected, index].sort((a, b) => a - b));
+  };
   return (
-    <fieldset className="flex flex-col gap-tight" disabled={readOnly}>
-      <legend className="sr-only">
-        {multiple ? 'Select all that apply' : 'Select one answer'}
-      </legend>
-      {multiple && (
-        <p className="text-muted-foreground mb-tight text-xs">
-          Select every option that applies. Wrong selections reduce the mark.
-        </p>
-      )}
+    <div role={multiple ? 'group' : 'radiogroup'} aria-label={multiple ? 'Select every answer that applies' : 'Select one answer'} className="flex flex-col gap-tight" data-choices>
+      {multiple && <p className="text-muted-foreground text-sm">Select every answer that applies. Wrong selections reduce the mark.</p>}
       {options.map((option, index) => {
         const checked = selected.includes(index);
         return (
-          <label
-            key={index}
-            className={cn(
-              'flex cursor-pointer items-start gap-snug rounded-lg border p-snug transition-colors',
-              checked ? 'border-primary bg-primary/5' : 'hover:bg-accent/50',
-              readOnly && 'cursor-default',
-            )}
-          >
-            {multiple ? (
-              <Checkbox
-                checked={checked}
-                disabled={readOnly}
-                onCheckedChange={(next) =>
-                  onChange(
-                    next
-                      ? [...selected, index].sort((a, b) => a - b)
-                      : selected.filter((i) => i !== index),
-                  )
-                }
-                className="mt-0.5"
-              />
-            ) : (
-              <input
-                type="radio"
-                name={name}
-                checked={checked}
-                disabled={readOnly}
-                onChange={() => onChange([index])}
-                className="accent-primary mt-1 size-4 shrink-0"
-              />
-            )}
-            <span className="text-sm leading-relaxed">{option}</span>
-          </label>
+          <button key={index} type="button" role={multiple ? 'checkbox' : 'radio'} aria-checked={checked} disabled={readOnly} onClick={() => toggle(index)}
+            className={cn('bg-card flex w-full items-start gap-snug rounded-lg border px-3.5 py-3 text-left text-md shadow-raised outline-none transition-colors',
+              'focus-visible:ring-ring/30 focus-visible:border-ring focus-visible:ring-3 disabled:cursor-default',
+              checked ? 'border-primary bg-primary-subtle ring-1 ring-primary' : !readOnly && 'hover:bg-accent')}>
+            <span className={cn('mt-0.5 flex size-5 shrink-0 items-center justify-center border text-xs font-medium',
+              multiple ? 'rounded-[5px]' : 'rounded-full', checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border-strong text-muted-foreground')}>
+              {checked ? <CheckIcon className="size-3" strokeWidth={3} aria-hidden /> : index < 9 ? index + 1 : ''}
+            </span>
+            <span className="min-w-0 flex-1 leading-relaxed">{option}</span>
+          </button>
         );
       })}
-    </fieldset>
+    </div>
   );
 }
 
-/* ── Fill in the blank ────────────────────────────────────────────────── */
-
-function BlanksInput({
-  template,
-  values,
-  readOnly,
-  onChange,
-}: {
-  template: string;
-  values: string[];
-  readOnly: boolean;
-  onChange: (values: string[]) => void;
-}) {
+function BlanksInput({ template, values, readOnly, onChange }: { template: string; values: string[]; readOnly: boolean; onChange: (values: string[]) => void }) {
   const parts = useMemo(() => template.split('___'), [template]);
-  const blankCount = parts.length - 1;
-
+  const count = parts.length - 1;
   return (
-    <p className="text-[0.975rem] leading-loose">
+    <p className="font-serif text-md leading-[2.4]">
       {parts.map((part, index) => (
         <span key={index}>
           {part}
-          {index < blankCount && (
-            <>
-              <Label htmlFor={`blank-${index}`} className="sr-only">
-                Blank {index + 1}
-              </Label>
-              <Input
-                id={`blank-${index}`}
-                value={values[index] ?? ''}
-                disabled={readOnly}
-                onChange={(e) => {
-                  const next = Array.from(
-                    { length: blankCount },
-                    (_, i) => values[i] ?? '',
-                  );
-                  next[index] = e.target.value;
-                  onChange(next);
-                }}
-                className="mx-1 inline-block h-8 w-36 align-baseline"
-                autoComplete="off"
-              />
-            </>
+          {index < count && (
+            <input aria-label={`Blank ${index + 1}`} value={values[index] ?? ''} disabled={readOnly} autoComplete="off" spellCheck={false}
+              onChange={e => { const next = Array.from({ length: count }, (_, i) => values[i] ?? ''); next[index] = e.target.value; onChange(next); }}
+              className="border-border-strong focus:border-primary mx-1 inline-block w-40 border-0 border-b-2 bg-transparent px-1 text-center font-sans text-base outline-none disabled:opacity-70" />
           )}
         </span>
       ))}
@@ -335,279 +106,107 @@ function BlanksInput({
   );
 }
 
-/* ── Ordering ─────────────────────────────────────────────────────────── */
-
 /**
- * Ordering, with buttons rather than drag and drop.
- *
- * Drag and drop is the expected interaction and it is the wrong one for an
- * exam: it needs a pointer, it is awkward on a phone, and making it keyboard
- * accessible means building a parallel button interface anyway. So the buttons
- * are the only interface, which is smaller, works everywhere, and is what a
- * keyboard user would have got regardless.
- *
- * The initial order is the authored sequence rotated, so the student is never
- * handed the correct answer as the starting state.
+ * Ordering with move buttons, which work by keyboard, by touch and in an
+ * exam. The start order is the sequence reversed and rotated, so it is never
+ * the answer and never reshuffles on reload.
  */
-function OrderingInput({
-  items,
-  current,
-  readOnly,
-  onChange,
-}: {
-  items: string[];
-  current: string[];
-  readOnly: boolean;
-  onChange: (sequence: string[]) => void;
-}) {
+function OrderingInput({ items, current, readOnly, onChange }: { items: string[]; current: string[]; readOnly: boolean; onChange: (sequence: string[]) => void }) {
   const sequence = useMemo(() => {
     if (current.length === items.length) return current;
     if (items.length < 2) return items;
-    // A deterministic shuffle: reverse, then rotate by one. Stable across
-    // reloads (so an exam paper does not reshuffle) and never the answer.
     const reversed = [...items].reverse();
     return [...reversed.slice(1), reversed[0]!];
   }, [items, current]);
-
   const list = useRef<HTMLOListElement>(null);
   const move = (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= sequence.length) return;
     const next = [...sequence];
-    const a = next[index]!;
-    const b = next[target]!;
-    next[index] = b;
-    next[target] = a;
+    [next[index], next[target]] = [next[target]!, next[index]!];
     onChange(next);
-    // At either end the pressed button disables. Keep keyboard focus on the item.
-    if (target === 0 || target === sequence.length - 1) {
-      requestAnimationFrame(() => list.current?.children[target]
-        ?.querySelector<HTMLButtonElement>(`[data-direction="${direction === -1 ? 'down' : 'up'}"]`)?.focus());
-    }
+    requestAnimationFrame(() => list.current?.children[target]?.querySelector<HTMLButtonElement>(`[data-direction="${direction === -1 ? 'up' : 'down'}"]:not(:disabled), button:not(:disabled)`)?.focus());
   };
-
   return (
     <ol ref={list} className="flex flex-col gap-tight">
       {sequence.map((item, index) => (
-        <li
-          key={item}
-          className="flex items-center gap-snug rounded-lg border p-snug"
-        >
-          <span className="text-muted-foreground w-5 shrink-0 text-center font-mono text-xs tabular-nums">
-            {index + 1}
+        <li key={item} className="bg-card flex items-center gap-snug rounded-lg border px-3 py-2 shadow-raised">
+          <span className="text-muted-foreground tabular w-5 shrink-0 text-center text-sm">{index + 1}</span>
+          <span className="flex-1 text-md leading-relaxed">{item}</span>
+          <span className="flex shrink-0 gap-0.5">
+            <Button variant="ghost" size="icon-sm" data-direction="up" disabled={readOnly || index === 0} onClick={() => move(index, -1)} aria-label={`Move ${item} up`}><ArrowUpIcon /></Button>
+            <Button variant="ghost" size="icon-sm" data-direction="down" disabled={readOnly || index === sequence.length - 1} onClick={() => move(index, 1)} aria-label={`Move ${item} down`}><ArrowDownIcon /></Button>
           </span>
-          <span className="flex-1 text-sm leading-relaxed">{item}</span>
-          <div className="flex shrink-0 flex-col gap-hairline">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              data-direction="up"
-              disabled={readOnly || index === 0}
-              onClick={() => move(index, -1)}
-              aria-label={`Move “${item}” up`}
-            >
-              <ArrowUpIcon />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              data-direction="down"
-              disabled={readOnly || index === sequence.length - 1}
-              onClick={() => move(index, 1)}
-              aria-label={`Move “${item}” down`}
-            >
-              <ArrowDownIcon />
-            </Button>
-          </div>
         </li>
       ))}
     </ol>
   );
 }
 
-/* ── Matching ─────────────────────────────────────────────────────────── */
-
-function MatchingInput({
-  pairs,
-  assignments,
-  readOnly,
-  onChange,
-}: {
-  pairs: { left: string; right: string }[];
-  assignments: Record<string, string>;
-  readOnly: boolean;
-  onChange: (assignments: Record<string, string>) => void;
-}) {
-  // Options are sorted alphabetically rather than left in authored order, so
-  // the nth dropdown does not default to the nth correct answer.
-  const options = useMemo(
-    () => [...pairs.map((p) => p.right)].sort((a, b) => a.localeCompare(b)),
-    [pairs],
-  );
-
+/** Matching. Options are sorted, so the nth list never defaults to the nth answer. */
+function MatchingInput({ pairs, assignments, readOnly, onChange }: { pairs: { left: string; right: string }[]; assignments: Record<string, string>; readOnly: boolean; onChange: (assignments: Record<string, string>) => void }) {
+  const options = useMemo(() => [...pairs.map(p => p.right)].sort((a, b) => a.localeCompare(b)).map(value => ({ value, label: value })), [pairs]);
   return (
-    <div className="flex flex-col gap-snug">
-      {pairs.map((pair) => (
-        <div
-          key={pair.left}
-          className="flex flex-wrap items-center gap-snug rounded-lg border p-snug"
-        >
-          <Label
-            htmlFor={`match-${pair.left}`}
-            className="min-w-32 flex-1 text-sm font-medium"
-          >
-            {pair.left}
-          </Label>
-          <Select
-            id={`match-${pair.left}`}
-            className="min-w-52 flex-[2]"
-            value={assignments[pair.left] ?? ''}
-            disabled={readOnly}
-            onChange={(e) =>
-              onChange({ ...assignments, [pair.left]: e.target.value })
-            }
-          >
-            <option value="">Choose…</option>
-            {options.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </Select>
+    <div className="divide-y border-y">
+      {pairs.map(pair => (
+        <div key={pair.left} className="grid gap-tight py-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] sm:items-center">
+          <span className="text-md font-medium">{pair.left}</span>
+          <Select aria-label={`Match for ${pair.left}`} value={assignments[pair.left] ?? ''} disabled={readOnly} placeholder="Choose a match"
+            onValueChange={value => onChange({ ...assignments, [pair.left]: value })} options={options} />
         </div>
       ))}
     </div>
   );
 }
 
-/* ── Written ──────────────────────────────────────────────────────────── */
-
-function WrittenInput({
-  question,
-  text,
-  readOnly,
-  onChange,
-}: {
-  question: Question;
-  text: string;
-  readOnly: boolean;
-  onChange: (text: string) => void;
-}) {
+function WrittenInput({ question, text, readOnly, onChange }: { question: Question; text: string; readOnly: boolean; onChange: (text: string) => void }) {
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
   const target = question.format === 'essay' ? 300 : 90;
-
   return (
     <div className="flex flex-col gap-tight">
-      <Label htmlFor={`written-${question.id}`} className="sr-only">
-        Your answer
-      </Label>
-      <Textarea
-        id={`written-${question.id}`}
-        value={text}
-        disabled={readOnly}
-        onChange={(e) => onChange(e.target.value)}
-        rows={question.format === 'essay' ? 16 : 8}
-        placeholder={
-          question.format === 'essay'
-            ? 'Write your answer. A plan with a clear thesis and named evidence earns more than unstructured prose.'
-            : question.format === 'source-analysis'
-              ? 'Work from the extract. Point to the lines your answer relies on.'
-              : 'Write from memory. Close the reading first, because that is the point of the exercise.'
-        }
-        className="leading-relaxed"
-      />
-      <p className="text-muted-foreground flex items-center justify-between gap-tight text-xs">
-        <span className="font-mono tabular-nums">
-          {words} {words === 1 ? 'word' : 'words'}
-        </span>
-        <span>
-          {words < target * 0.4
-            ? `A full answer here is usually around ${target} words.`
-            : 'Length looks reasonable for this question.'}
-        </span>
+      <Textarea aria-label="Your answer" value={text} disabled={readOnly} onChange={e => onChange(e.target.value)}
+        rows={question.format === 'essay' ? 14 : 7}
+        placeholder={question.format === 'essay' ? 'Start with your argument, then the evidence for it.' : question.format === 'source-analysis' ? 'Work from the extract and point to the lines you rely on.' : 'Write it from memory.'}
+        className="min-h-40 font-serif text-md leading-relaxed" />
+      <p className="text-muted-foreground flex flex-wrap justify-between gap-tight text-sm">
+        <span className="tabular">{words} {words === 1 ? 'word' : 'words'}</span>
+        <span>A full answer is usually around {target} words.</span>
       </p>
     </div>
   );
 }
 
-/* ── Flashcard ────────────────────────────────────────────────────────── */
-
 const RATINGS: { value: SelfRating; label: string; blurb: string }[] = [
-  { value: 'again', label: 'Again', blurb: 'No recall' },
+  { value: 'again', label: 'Again', blurb: "Didn't recall it" },
   { value: 'hard', label: 'Hard', blurb: 'Got there slowly' },
   { value: 'good', label: 'Good', blurb: 'Recalled it' },
-  { value: 'easy', label: 'Easy', blurb: 'Instant' },
+  { value: 'easy', label: 'Easy', blurb: 'Instantly' },
 ];
 
-/**
- * A flashcard: reveal, then rate your own recall.
- *
- * The rating buttons appear only after the reveal, which is the whole
- * discipline of the format — rating before seeing the answer is rating your
- * confidence, not your recall.
- */
-function FlashcardInput({
-  question,
-  initiallyRevealed = false,
-  rating,
-  readOnly,
-  onChange,
-}: {
-  question: Question;
-  initiallyRevealed?: boolean;
-  rating: SelfRating | undefined;
-  readOnly: boolean;
-  onChange: (rating: SelfRating) => void;
-}) {
+/** A flashcard: reveal, then rate recall. Rating comes after the reveal, or it rates confidence. */
+function FlashcardInput({ question, initiallyRevealed, rating, readOnly, onChange }: { question: Question; initiallyRevealed: boolean; rating: SelfRating | undefined; readOnly: boolean; onChange: (rating: SelfRating) => void }) {
   const [revealed, setRevealed] = useState(initiallyRevealed || readOnly || rating !== undefined);
-
+  if (!revealed) return <Button variant="secondary" size="lg" className="self-start" onClick={() => setRevealed(true)}>Reveal the answer</Button>;
   return (
-    <div className="flex flex-col gap-base">
-      {revealed ? (
-        <Card className="border-primary/30 bg-primary/[0.03]">
-          <CardContent className="flex flex-col gap-tight">
-            <span className="text-muted-foreground text-xs font-medium">Answer</span>
-            <Prose text={question.answer ?? question.explanation} size="compact" />
-          </CardContent>
-        </Card>
-      ) : (
-        <Button
-          variant="secondary"
-          size="lg"
-          onClick={() => setRevealed(true)}
-          className="self-start"
-        >
-          Reveal the answer
-        </Button>
-      )}
-
-      {revealed && (
-        <fieldset className="flex flex-col gap-tight" disabled={readOnly}>
-          <legend className="mb-tight text-sm font-medium">
-            How did that go?
-          </legend>
-          <p className="text-muted-foreground mb-tight text-xs">
-            Your own judgement, recorded as self-rated rather than as an
-            assessment.
-          </p>
-          <div className="flex flex-wrap gap-tight">
-            {RATINGS.map((option) => (
-              <Button
-                key={option.value}
-                variant={rating === option.value ? 'primary' : 'secondary'}
-                aria-pressed={rating === option.value}
-                size="sm"
-                disabled={readOnly}
-                onClick={() => onChange(option.value)}
-                className="flex-col items-start gap-0 h-auto py-1.5"
-              >
-                <span>{option.label}</span>
-                <span className="text-[0.65rem] opacity-70">{option.blurb}</span>
-              </Button>
-            ))}
-          </div>
-        </fieldset>
-      )}
+    <div className="flex flex-col gap-gutter">
+      <div className="border-t pt-gutter font-serif">
+        <p className="text-muted-foreground mb-1 font-sans text-sm font-medium">Answer</p>
+        <Prose text={question.answer ?? question.explanation} />
+      </div>
+      <fieldset disabled={readOnly} className="flex flex-col gap-tight">
+        <legend className="mb-1 text-base font-medium">How well did you recall it?</legend>
+        <div className="grid grid-cols-2 gap-tight sm:grid-cols-4" data-choices>
+          {RATINGS.map((option, i) => (
+            <button key={option.value} type="button" aria-pressed={rating === option.value} onClick={() => onChange(option.value)}
+              className={cn('bg-card flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left shadow-raised outline-none transition-colors focus-visible:ring-ring/30 focus-visible:ring-3 disabled:cursor-default',
+                rating === option.value ? 'border-primary bg-primary-subtle ring-1 ring-primary' : 'hover:bg-accent')}>
+              <span className="flex w-full items-center justify-between text-base font-medium">{option.label}<Kbd className="hidden sm:inline-flex">{i + 1}</Kbd></span>
+              <span className="text-muted-foreground text-sm">{option.blurb}</span>
+            </button>
+          ))}
+        </div>
+        <p className="text-muted-foreground text-sm">Self-rated, so it counts separately from answers that are marked.</p>
+      </fieldset>
     </div>
   );
 }
