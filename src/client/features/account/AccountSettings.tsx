@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import type { Me, Preferences } from '@shared/contracts/workspace';
-import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAccount } from '@/lib/account';
@@ -10,31 +9,7 @@ import { Logo } from '@/components/Logo';
 import { Field, FieldError } from '@/components/ui/field';
 import { NumberField } from '@/components/ui/number-field';
 import { RadioCards } from '@/components/ui/radio-group';
-import { PreferencesEditor } from '@/features/courses/Courses';
 
-export function AccountSettings({ onProfile, onSaved }: { onProfile: (user: Me['user']) => void; onSaved: (value: Preferences) => void }) {
-  return <><ProfileEditor onSaved={onProfile} /><PreferencesEditor onSaved={onSaved} /></>;
-}
-function ProfileEditor({ onSaved }: { onSaved: (user: Me['user']) => void }) {
-  const { user } = useAccount();
-  const [name, setName] = useState(user.name), [savedName, setSavedName] = useState(user.name);
-  const [busy, setBusy] = useState(false), [message, setMessage] = useState('');
-  useUnsentGuard(name !== savedName);
-  async function save() {
-    setBusy(true); setMessage('');
-    try {
-      const saved = await request<Me['user']>('/v1/profile', user.id, { name }, 'PATCH');
-      setSavedName(saved.name); setName(saved.name); onSaved(saved); setMessage('Profile saved.');
-    } catch (e) { setMessage(errorMessage(e)); }
-    finally { setBusy(false); }
-  }
-  return <Page className="pt-8" width="narrow"><PageHeader title="Your account" description="Manage your profile and study preferences." />
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); void save(); }}>
-      <label className="block">Display name<Input required maxLength={80} value={name} disabled={busy} onChange={e => setName(e.target.value)} /></label>
-      <p>{user.email}</p><p className="text-sm text-muted-foreground">You sign in with Google. Your email is managed by your Google account.</p>
-      <Button disabled={busy || !name.trim()}>{busy ? 'Saving…' : 'Save profile'}</Button><p role="status">{message}</p>
-    </form></Page>;
-}
 export function Onboarding({ onSaved }: { onSaved: (account: Me) => void }) {
   const account = useAccount();
   const [name, setName] = useState(account.user.name);

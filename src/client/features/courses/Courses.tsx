@@ -2,7 +2,7 @@ import { useUnsentGuard } from '@/lib/hooks';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { z } from 'zod';
-import { courseFields, coursePatch, createCourseInput, replaceOutlineInput, preferencesPatch, type CourseDetail, type CoursePage, type CreateCourseInput, type Course, type Preferences, type TopicInput } from '@shared/contracts/workspace';
+import { courseFields, coursePatch, createCourseInput, replaceOutlineInput, type CourseDetail, type CoursePage, type CreateCourseInput, type Course, type TopicInput } from '@shared/contracts/workspace';
 import { readSyllabus } from '@shared/domain/syllabus';
 import { Page, PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
@@ -199,46 +199,4 @@ function OutlineEditor({ topics, onChange }: { topics: TopicInput[]; onChange: (
     </fieldset>)}
     <Button type="button" variant="secondary" disabled={topics.length >= 200} onClick={() => ordered([...topics, { id: crypto.randomUUID(), title: '', summary: '', module: '', priority: 'normal', order: topics.length, relatedTopicIds: [] }])}>Add topic</Button>
   </div>;
-}
-export function PreferencesEditor({ onSaved }: { onSaved: (value: Preferences) => void }) {
-  const account = useAccount();
-  const pending = useRef<z.infer<typeof preferencesPatch> | null>(null);
-  const [base, setBase] = useState(account.preferences);
-  const [values, setValues] = useState(base.values); const [zone, setZone] = useState(base.timezone);
-  useUnsentGuard(zone !== base.timezone || JSON.stringify(values) !== JSON.stringify(base.values));
-  const [review, setReview] = useState<Preferences | null>(null); const [reviewError, setReviewError] = useState('');
-  const save = useSaveState();
-  const conflicted = save.error instanceof RequestError && save.error.code === 'revision_conflict';
-  const patch = (next: Partial<typeof values>) => { setValues(v => ({ ...v, ...next })); if (!conflicted) save.clear(); };
-  const submit = () => save.run(async () => {
-    const parsed = preferencesPatch.safeParse(pending.current ?? { ...values, timezone: zone, expectedRevision: base.revision, operationId: crypto.randomUUID() });
-    if (!parsed.success) throw new Error('Check the workspace name, question count and IANA timezone.');
-    pending.current = parsed.data;
-    const saved = await request<Preferences>('/v1/preferences', account.user.id, parsed.data, 'PATCH');
-    pending.current = null; setBase(saved); setValues(saved.values); setZone(saved.timezone); onSaved(saved);
-  });
-  const loadReview = async () => {
-    setReviewError('');
-    try { setReview(await request<Preferences>('/v1/preferences', account.user.id)); }
-    catch (e) { setReviewError(errorMessage(e)); }
-  };
-  return <Page className="py-8" width="narrow"><PageHeader title="Study preferences" description="Your study and appearance preferences are saved to your account." />
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); void submit(); }}><fieldset disabled={save.saving || !!pending.current} className="space-y-4">
-      <Field title="Workspace name"><Input maxLength={80} required value={values.workspaceName} onChange={e => patch({ workspaceName: e.target.value })} /></Field>
-      <Field title="Timezone"><Input value={zone} placeholder="Asia/Dubai" onChange={e => { setZone(e.target.value); if (!conflicted) save.clear(); }} /></Field>
-      <Field title="Default question count"><Input type="number" min={1} max={30} value={values.questionCount} onChange={e => patch({ questionCount: Number(e.target.value) })} /></Field>
-      <label className="flex gap-2"><input type="checkbox" checked={values.hints} onChange={e => patch({ hints: e.target.checked })} />Allow hints</label>
-      <Field title="Feedback"><Select value={values.feedback} onChange={e => patch({ feedback: e.target.value as typeof values.feedback })}><option value="immediate">After each answer</option><option value="end">At the end</option></Select></Field>
-      <Field title="Theme"><Select value={values.theme} onChange={e => patch({ theme: e.target.value as typeof values.theme })}>{['system', 'light', 'dark'].map(v => <option key={v}>{v}</option>)}</Select></Field>
-      <Field title="Reading size"><Select value={values.readingSize} onChange={e => patch({ readingSize: e.target.value as typeof values.readingSize })}>{['normal', 'large', 'larger'].map(v => <option key={v}>{v}</option>)}</Select></Field>
-      <Field title="Motion"><Select value={values.motion} onChange={e => patch({ motion: e.target.value as typeof values.motion })}>{['system', 'reduced', 'full'].map(v => <option key={v}>{v}</option>)}</Select></Field>
-      <fieldset className="space-y-2"><legend>Reminder preferences</legend>{(['assessments', 'study', 'review'] as const).map(key => <label className="flex gap-2" key={key}><input type="checkbox" checked={values.reminders[key]} onChange={e => patch({ reminders: { ...values.reminders, [key]: e.target.checked } })} />{key}</label>)}
-        <Field title="Days ahead"><Select value={values.reminders.days} onChange={e => patch({ reminders: { ...values.reminders, days: Number(e.target.value) as 0 | 1 | 3 | 7 } })}>{[0, 1, 3, 7].map(v => <option key={v}>{v}</option>)}</Select></Field>
-      </fieldset><p className="text-sm text-muted-foreground">Study defaults and in-app reminders use these preferences. Appearance applies after saving.</p>
-    </fieldset><Button disabled={save.saving || conflicted}>Save preferences</Button></form>
-    <SaveStatus state={save} onReview={() => void loadReview()} />{reviewError && <p role="alert">{reviewError}</p>}
-    {review && <section className="rounded border p-4 space-y-4"><h2 className="font-semibold">Latest saved preferences</h2><p>Your unsent preferences remain above.</p><dl className="space-y-1">{Object.entries({ Workspace: review.values.workspaceName, Timezone: review.timezone, Questions: review.values.questionCount, Hints: review.values.hints ? 'On' : 'Off', Feedback: review.values.feedback, Theme: review.values.theme, 'Reading size': review.values.readingSize, Motion: review.values.motion, 'Assessment reminders': review.values.reminders.assessments ? 'On' : 'Off', 'Study reminders': review.values.reminders.study ? 'On' : 'Off', 'Review reminders': review.values.reminders.review ? 'On' : 'Off', 'Days ahead': review.values.reminders.days }).map(([k, v]) => <div key={k}><dt className="inline font-medium">{k}: </dt><dd className="inline">{v || 'None'}</dd></div>)}</dl>
-      <div className="flex gap-3"><Button variant="secondary" onClick={() => { pending.current = null; setBase(review); setValues(review.values); setZone(review.timezone); onSaved(review); setReview(null); save.clear(); }}>Use latest version</Button><Button onClick={() => { pending.current = null; setBase(review); setReview(null); save.clear(); }}>Keep my edits for another save</Button></div>
-    </section>}
-  </Page>;
 }

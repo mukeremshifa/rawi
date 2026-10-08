@@ -19,7 +19,8 @@ import { TutorLibrary, Tutor } from '@/features/tutor/Tutor';
 import { Exams } from '@/features/exams/Exams';
 import { Practice, PracticeSet, Run, AttemptReview } from '@/features/practice/Practice';
 
-import { AccountSettings, Onboarding } from '@/features/account/AccountSettings';
+import { Onboarding } from '@/features/account/AccountSettings';
+import { Settings } from '@/features/account/Settings';
 import { safeReturnTo } from '@/app/return-to';
 import { AccountContext } from '@/lib/account';
 import { queryClient } from '@/lib/query';
@@ -118,6 +119,7 @@ export function App() {
   };
   if (location.pathname === '/online' || location.pathname.startsWith('/online/')) return <Navigate replace to={`${/^\/online\/course\/[^/]+$/.test(location.pathname) ? location.pathname.slice(7) + '/syllabus' : location.pathname.slice(7) || '/'}${location.search}${location.hash}`} />;
   if (state === 'unauthenticated' && location.pathname !== '/sign-in') return <Navigate replace to={`/sign-in?returnTo=${encodeURIComponent(destination)}`} />;
+  const settings = <Settings onProfile={user => setMe(previous => previous?.user.id === user.id ? { ...previous, user } : previous)} onPreferences={preferences => setMe(previous => previous?.workspace.id === preferences.workspaceId ? { ...previous, preferences } : previous)} />;
   const signInError = error || (new URLSearchParams(location.search).has('error') ? 'Google sign-in was cancelled or did not finish. Please try again.' : '');
   if (state === 'checking' && !me) return <CheckingScreen />;
   if (!me) return state === 'unavailable'
@@ -135,7 +137,7 @@ export function App() {
         <Route path="/course/:id/syllabus" element={<CourseEditor key={location.pathname} />} />
         <Route path="/course/:id/settings" element={<CourseEditor key={location.pathname} />} />
         <Route path="/planner/availability" element={<Planner />} />
-        <Route path="/settings/:section" element={<AccountSettings onProfile={user => setMe(previous => previous?.user.id === user.id ? { ...previous, user } : previous)} onSaved={preferences => setMe(previous => previous ? { ...previous, preferences } : previous)} />} />
+        <Route path="/settings/:section" element={settings} />
         <Route path="/course/:id/progress/topic/:topicId" element={<TopicRedirect />} />
         <Route path="/" element={<Home />} />
         <Route path="/ai/:id" element={<AiOperation key={location.pathname} />} />
@@ -160,7 +162,7 @@ export function App() {
         <Route path="/sets/:id" element={<PracticeSet key={location.pathname} />} />
         <Route path="/runs/:id" element={<Run key={location.pathname} />} />
         <Route path="/attempts/:id" element={<AttemptReview key={location.pathname} />} />
-        <Route path="/settings" element={<AccountSettings onProfile={user => setMe(previous => previous?.user.id === user.id ? { ...previous, user } : previous)} onSaved={preferences => setMe(previous => previous?.workspace.id === preferences.workspaceId ? { ...previous, preferences } : previous)} />} />
+        <Route path="/settings" element={settings} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Shell>}
