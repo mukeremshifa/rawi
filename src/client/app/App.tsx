@@ -4,7 +4,7 @@ import type { Me } from '@shared/contracts/workspace';
 import { authClient, RequestError, request, setActiveAccount } from '@/lib/api';
 import { CourseLibrary } from '@/features/courses/Courses';
 import { CourseEditor } from '@/features/courses/Syllabus';
-import { MaterialReader } from '@/features/materials/Materials';
+import { MaterialReader } from '@/features/materials/Reader';
 import { Materials } from '@/features/materials/Library';
 import { Planner } from '@/features/planning/Planning';
 import { Home } from '@/features/home/Home';
