@@ -37,9 +37,14 @@ remain unchanged.
 
 ## Layout
 
-- `src/client`: the React app. `app/` holds the shell, routing and sign-in,
-  `features/` holds one folder per area of the product, `components/` holds
-  shared UI and `lib/` holds the API client, account context and data hooks.
+- `src/client`: the React app. `app/` holds the shell (sidebar, header,
+  command menu, reminders), routing and sign-in, `features/` holds one folder
+  per area of the product, `components/` holds the layout, states and the
+  `ui/` kit, and `lib/` holds the API client, account context and data layer.
+  Server state goes through TanStack Query: `lib/query.ts` has the client and
+  path-shaped keys, `lib/data.ts` has `useApi`, `useApiPages`, `useApiAll`
+  and `useSave`. Design tokens live in `styles/globals.css`. In development,
+  `/dev/kit` shows every kit component in both themes.
 - `src/server`: the Hono Worker. `worker.ts` is the entry point, `app.ts`
   applies middleware and mounts `routes/`, which call `services/`. The
   database client, schema and migration runner live in `db/`.
@@ -120,6 +125,8 @@ bundles. Nothing seeds during startup, migration, onboarding or sign-in.
 - Text extraction from PDF, DOCX and PPTX originals.
 - Drop the unused `courses.accent` column and the `accent` preference value.
   The interface no longer shows course or workspace colours.
+- Deferred from the redesign: illustrations and brand art, a canvas or topic
+  map, and native mobile patterns beyond the responsive layout.
 - Latency: planner and progress reads run their queries one after another
   inside a socket transaction. Batching them would cut seconds per load.
 - Browser check of the failed sign-out message. Sign-in, protected routes,
