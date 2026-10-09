@@ -87,8 +87,10 @@ The server enforces ownership, revisions, answer eligibility, section activation
 deadlines and submission. Exams show no feedback before whole-paper submission.
 Pending written feedback does not lower graded totals.
 
-Hosted AI execution and streaming remain unfinished. Blocked requests do not
-mean questions were generated, a tutor replied or written work was graded.
+The tutor streams grounded, cited replies. Practice can generate checked
+question sets from a topic or material. Written answers in an attempt are
+marked together against their rubrics, and every other format is marked by
+rules. See AI below.
 
 ## Materials
 
@@ -116,8 +118,8 @@ Put `DATALAB_API_KEY` in `.dev.vars`. Without it those uploads keep their
 original and show a conversion failure that can be retried once the key is
 set. Questions, tutor sessions and tutor replies cite
 `{ materialId, versionId, blockIds }`, and the Reader opens
-`/materials/:m/versions/:v#block-:id`. AI context groups blocks into
-passages for each request.
+`/materials/:m/versions/:v#block-:id`. Every ready version is also read into
+the knowledge layer described under AI.
 
 ## Course outline
 
@@ -139,11 +141,44 @@ topic the student changed or has work on. Corrections apply in place with
 Undo. Questions and tutor sessions take their topic from their section, and
 work with no topic shows under its material as Not in the outline.
 
-Put `ANTHROPIC_API_KEY` in `.dev.vars` to read syllabi with
-`claude-sonnet-5-5` and map or draft with `claude-haiku-5-5`, through
-structured output, reserved and settled in the `ai_executions` ledger.
-Without a key, or when the budget refuses, a rules pass reads tables,
-headings and lists instead and the outline says so.
+Outline jobs run as engine tasks. When no vendor is configured, the
+allowance is spent or the models fail their checks, a rules pass reads
+tables, headings and lists instead and the outline says so.
+
+## AI
+
+One engine in `src/server/ai/` serves every AI task. Features call a task and
+never name a model. A task declares its context builder, output schema and
+check, output cap, cache policy, service tier and the route lists it escalates
+through. The router picks the first healthy route allowed by the plan, and a
+failed check moves to the next list. Routes, prices and the lists themselves
+live in `catalog.ts`, chosen from `dev/compare.ts` measurements.
+
+- Vendors: AWS Bedrock and Google Vertex, through small `fetch` adapters that
+  run on Workers. Put the credentials described in `.dev.vars.example` in
+  `.dev.vars`. Anthropic and OpenAI models on Bedrock refused calls from the
+  development machine as an unsupported country, so none is routed.
+- Meter and trace: every provider call is a row in `ai_calls`, reserved from
+  the task's output cap before sending and settled from usage by class after.
+  An uncertain outcome stays charged and is never retried automatically.
+- Plans: limits and allowed vendors are rows in `ai_plans`. The `default` plan
+  allows $2 a day and $20 a month per workspace, and `platform` caps all
+  workspaces together. `/ai/status` reports whether a request would be refused.
+- Knowledge layer: each ready version is read once by an ingest job into
+  chunks with full-text search and pgvector embeddings, section summaries and
+  key terms, atomic facts and figure descriptions, all citing its blocks. A
+  newer version supersedes the job. Background work uses the vendors'
+  discounted flex lane where a route offers it.
+- Tutor: replies stream from `/tutor/:id/reply`, built from the focus section
+  and a few retrieved passages. Vector search runs only when text search is
+  weak, and when nothing relevant is found the tutor says so without a model
+  call. Older turns are summarised.
+- Questions: checked pool questions keyed by version, section, format,
+  difficulty and prompt version are reused first. The shortfall is written,
+  checked by rules and a second cheap reader, and stored with its verdict.
+
+Run `npx tsx dev/compare.ts` to compare routes on the fictional fixtures. A full
+run costs about five cents.
 
 ## Development seed
 
@@ -178,11 +213,12 @@ bundles. Nothing seeds during startup, migration, onboarding or sign-in.
 
 ## Remaining work
 
-- Hosted AI: tutor replies, question generation, written feedback grading and
-  streaming. Blocked operation records are not completed AI output.
-- Chunks and search: a chunk index, content search and embeddings. AI
-  context is grouped from blocks on the fly for now.
-- Generated descriptions for figures. Figures contribute their caption only.
+- AI hardening: pedagogy and edge cases in tutor, generation and grading,
+  stopping a reply partway, and the latency of the reply path, which makes
+  about two dozen database round trips before the model starts.
+- Deferred AI: Arabic prompts and search, voice, chart specs, shared question
+  pools and organisation policy. Language, audio units and cache keys are
+  already carried for them.
 - Deferred from the redesign: illustrations and brand art, a canvas or topic
   map, and native mobile patterns beyond the responsive layout.
 - Latency: planner and progress reads run their queries one after another
