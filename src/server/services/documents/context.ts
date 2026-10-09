@@ -7,6 +7,8 @@ import type { ContextMaterial } from '../../../shared/domain/ai-context';
 import { blockMarkdown, groupPassages, spansText } from '../../../shared/domain/document-text';
 import type { StudyMaterial } from '../../../shared/domain/types';
 import { citationBlocks } from '../materials';
+import { blockTopics as linkedBlocks } from '../outline/links';
+import { sections, type SectionBlock } from '../outline/sections';
 
 /**
  * Block text for model context. Only this module reads block content for AI,
@@ -21,13 +23,14 @@ export async function contextMaterials(tx: ReadDb | Transaction, workspaceId: st
     .where(and(eq(materials.workspaceId, workspaceId), eq(materials.courseId, courseId), inArray(materials.id, usable.map(m => m.id))));
   const current = versions.filter(v => usableStatus(v.status));
   if (!current.length) return [];
-  const rows = await tx.select({ id: blocks.id, versionId: blocks.versionId, type: blocks.type, content: blocks.content }).from(blocks)
+  const rows = await tx.select({ id: blocks.id, versionId: blocks.versionId, ordinal: blocks.ordinal, parentId: blocks.parentId, type: blocks.type, content: blocks.content }).from(blocks)
     .where(and(eq(blocks.workspaceId, workspaceId), eq(blocks.courseId, courseId), inArray(blocks.versionId, current.map(v => v.versionId)))).orderBy(asc(blocks.versionId), asc(blocks.ordinal));
-  return current.map(v => {
+  return Promise.all(current.map(async v => {
     const material = usable.find(m => m.id === v.materialId)!;
-    const own = rows.filter(r => r.versionId === v.versionId) as Parameters<typeof groupPassages>[1];
-    return { ...material, versionId: v.versionId, passages: groupPassages(v.versionId, own, AI_LIMITS.maxPassageChars) };
-  });
+    const own = rows.filter(r => r.versionId === v.versionId) as SectionBlock[];
+    const blockTopics = await linkedBlocks(tx, { workspaceId, courseId }, v.versionId, sections(own));
+    return { ...material, versionId: v.versionId, passages: groupPassages(v.versionId, own, AI_LIMITS.maxPassageChars), blockTopics };
+  }));
 }
 
 /** One passage built from exactly the cited blocks, for a session focus or a grading source. */

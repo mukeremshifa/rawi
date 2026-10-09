@@ -159,3 +159,20 @@ export function substitutionNote(
 /** Why nothing could be suggested for a topic, as a sentence. */
 export const NO_CONTENT_REASON =
   'There is no readable material or question behind this topic yet, so there is nothing to study it with. Add a reading or link this topic to material first.';
+
+/**
+ * What is possible for one material, for work that is not in the outline.
+ * The tutor and reading need its current version to be readable, and
+ * practice needs questions whose source is this material.
+ */
+export function materialCapabilities(material: StudyMaterial, questions: Question[]): TopicCapabilities {
+  const own = questions.filter((q) => q.source?.materialId === material.id);
+  const formats = new Set(own.map((q) => q.format));
+  const usable = isUsableMaterial(material);
+  return {
+    tutor: usable,
+    read: usable,
+    activities: (Object.keys(ACTIVITY_QUESTION_FORMATS) as ActivityType[]).filter((activity) => ACTIVITY_QUESTION_FORMATS[activity].some((format) => formats.has(format))),
+    anyQuestion: own.length > 0,
+  };
+}

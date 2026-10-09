@@ -101,7 +101,10 @@ export interface TutorRequest {
   review?: AnswerReview;
   courseId: string;
   courseName: string;
-  topic: AiTopic;
+  /** Null when the session is about a section that is not in the outline. */
+  topic: AiTopic | null;
+  /** The section or material the session is about, for a session with no topic. */
+  focusLabel?: string;
   stage: TutorStage;
   action: TutorAction;
   /** The student's newest message. */
@@ -160,7 +163,7 @@ export interface GeneratedRubricPoint {
 
 /** One question as the server returns it, after validation. */
 export interface GeneratedQuestion {
-  topicId: string;
+  topicId?: string;
   difficulty: Difficulty;
   prompt: string;
   answer: string;

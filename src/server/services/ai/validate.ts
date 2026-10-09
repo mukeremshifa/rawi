@@ -119,16 +119,17 @@ export function tutorRequest(body: unknown): TutorRequest {
     ...(b.review === undefined ? {} : { review: (() => {
       const r = obj(b.review, 'answer review');
       const reviewCourse = id(r.courseId, 'review course');
-      const reviewTopic = id(r.topicId, 'review topic');
-      if (reviewCourse !== courseId || reviewTopic !== topic(b.topic).id) throw new InvalidBody('The answer review must belong to this course and topic.');
+      const reviewTopic = r.topicId === undefined ? undefined : id(r.topicId, 'review topic');
+      if (reviewCourse !== courseId || (reviewTopic && b.topic && reviewTopic !== topic(b.topic).id)) throw new InvalidBody('The answer review must belong to this course and topic.');
       if (typeof r.marksAwarded !== 'number' || typeof r.marksAvailable !== 'number' || !Number.isFinite(r.marksAwarded) || !Number.isFinite(r.marksAvailable) || r.marksAwarded < 0 || r.marksAvailable < r.marksAwarded) throw new InvalidBody('Invalid review marks.');
       if (typeof r.usedHint !== 'boolean' || typeof r.pending !== 'boolean') throw new InvalidBody('Invalid review assistance or feedback state.');
-      return { attemptId: id(r.attemptId, 'review attempt'), questionId: id(r.questionId, 'review question'), courseId: reviewCourse, topicId: reviewTopic,
+      return { attemptId: id(r.attemptId, 'review attempt'), questionId: id(r.questionId, 'review question'), courseId: reviewCourse, ...(reviewTopic ? { topicId: reviewTopic } : {}),
         prompt: text(r.prompt, 'review prompt', 6000), response: text(r.response, 'review response', 6000, { allowEmpty: true }),
         answerKey: text(r.answerKey, 'review key', 6000, { allowEmpty: true }), feedback: text(r.feedback, 'review feedback', 6000, { allowEmpty: true }),
         marksAwarded: r.marksAwarded, marksAvailable: r.marksAvailable, usedHint: r.usedHint, pending: r.pending };
     })() }),
-    topic: topic(b.topic),
+    topic: b.topic === null || b.topic === undefined ? null : topic(b.topic),
+    ...(b.focusLabel === undefined ? {} : { focusLabel: text(b.focusLabel, 'focus label', 600, { allowEmpty: true }) }),
     stage: oneOf(b.stage, STAGES, 'stage'),
     action: oneOf(b.action, ['message', 'explain', 'example', 'hint', 'check', 'simpler'] as const, 'action'),
     message: text(b.message, 'message', AI_LIMITS.maxMessageChars),
@@ -146,8 +147,8 @@ export function generateRequest(body: unknown): GenerateRequest {
   if (typeof count !== 'number' || !Number.isInteger(count) || count < 1 || count > AI_LIMITS.maxQuestionsPerRequest) {
     throw new InvalidBody(`count must be a whole number from 1 to ${AI_LIMITS.maxQuestionsPerRequest}.`);
   }
-  const topics = list(b.topics, 'topics', 40).map(topic);
-  if (topics.length === 0) throw new InvalidBody('Select at least one topic.');
+  // Topics are optional: a request may name materials or sections instead.
+  const topics = list(b.topics ?? [], 'topics', 40).map(topic);
   const ps = passages(b.passages, courseId);
   if (ps.length === 0) throw new InvalidBody('There is no readable material to generate from.');
   const difficulties = list(b.difficulties, 'difficulties', 3).map((d) => oneOf(d, DIFFICULTIES, 'difficulty'));
@@ -207,7 +208,8 @@ export function generatedQuestion(raw: unknown, request: GenerateRequest): Gener
   const topicIds = new Set(request.topics.map((t) => t.id));
   const passageIds = new Set(request.passages.map((p) => p.id));
 
-  const topicId = typeof q.topicId === 'string' && topicIds.has(q.topicId) ? q.topicId : null;
+  // The topic is optional. The server takes it from the source section when it can.
+  const topicId = typeof q.topicId === 'string' && topicIds.has(q.topicId) ? q.topicId : undefined;
   const sourcePassageId =
     typeof q.sourcePassageId === 'string' && passageIds.has(q.sourcePassageId) ? q.sourcePassageId : null;
   const difficulty =
@@ -216,7 +218,7 @@ export function generatedQuestion(raw: unknown, request: GenerateRequest): Gener
       : null;
   const prompt = clean(q.prompt, 1200);
   const explanation = clean(q.explanation, 2000);
-  if (!topicId || !sourcePassageId || !difficulty || !prompt || !explanation) return null;
+  if (!sourcePassageId || !difficulty || !prompt || !explanation) return null;
 
   const base = { topicId, sourcePassageId, difficulty, prompt, explanation };
 

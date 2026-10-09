@@ -38,7 +38,6 @@ export const STATS_COURSE: StudyCourse = {
   name: 'Statistical Inference for Social Research',
   description:
     'A problem-based second-year methods course. Weekly problem sets, two in-term quizzes and a practical exam. The emphasis is on interpreting estimates rather than deriving them.',
-  goal: 'Read a result and say honestly what it does and does not support.',
   createdAt: new Date('2026-10-07T08:00:00.000Z').toISOString(),
 };
 
@@ -51,8 +50,6 @@ export const STATS_TOPICS: StudyTopic[] = [
     title: 'Sampling and the target population',
     summary:
       'What a sample can stand for, how sampling frames fail, and why a large biased sample is worse than a small fair one.',
-    priority: 'normal',
-    relatedTopicIds: ['stat-intervals', 'stat-causal'],
   },
   {
     id: 'stat-describing',
@@ -62,8 +59,6 @@ export const STATS_TOPICS: StudyTopic[] = [
     title: 'Describing distributions',
     summary:
       'Centre, spread and shape, when a mean misleads, and what a standard deviation does and does not tell you.',
-    priority: 'low',
-    relatedTopicIds: ['stat-sampling', 'stat-intervals'],
   },
   {
     id: 'stat-intervals',
@@ -73,8 +68,6 @@ export const STATS_TOPICS: StudyTopic[] = [
     title: 'Standard errors and confidence intervals',
     summary:
       'What the interval is an interval of, how sample size moves it, and the interpretations that are commonly given and are wrong.',
-    priority: 'high',
-    relatedTopicIds: ['stat-testing', 'stat-sampling'],
   },
   {
     id: 'stat-testing',
@@ -84,8 +77,6 @@ export const STATS_TOPICS: StudyTopic[] = [
     title: 'Hypothesis tests and p-values',
     summary:
       'The logic of the null, what a p-value is conditional on, and why significance is not importance.',
-    priority: 'high',
-    relatedTopicIds: ['stat-intervals', 'stat-multiple'],
   },
   {
     id: 'stat-multiple',
@@ -95,8 +86,6 @@ export const STATS_TOPICS: StudyTopic[] = [
     title: 'Multiple comparisons and researcher degrees of freedom',
     summary:
       'What happens to error rates when many tests are run, and the analytic choices that inflate them without anyone lying.',
-    priority: 'normal',
-    relatedTopicIds: ['stat-testing', 'stat-causal'],
   },
   {
     id: 'stat-causal',
@@ -106,8 +95,6 @@ export const STATS_TOPICS: StudyTopic[] = [
     title: 'From association to cause',
     summary:
       'Confounding, selection and the conditions under which an observational estimate can carry a causal reading.',
-    priority: 'high',
-    relatedTopicIds: ['stat-sampling', 'stat-multiple'],
   },
 ];
 

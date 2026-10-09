@@ -5,6 +5,7 @@ import type {
   CheckIn,
   EvidenceLevel,
   StudyMaterial,
+  DatedAssessment,
   PlannedAssessment,
   Question,
   RecurringMistake,
@@ -14,7 +15,8 @@ import type {
   TopicEvidence,
   TutorTranscript,
 } from './types';
-import { localISO } from './planner';
+import { gradeWeight, localISO } from './planner';
+import { isDated } from './types';
 import {
   NO_CONTENT_REASON,
   bestActivity,
@@ -229,7 +231,7 @@ export function recurringMistakes(
     string,
     {
       courseId: string;
-      topicId: string;
+      topicId?: string;
       times: number;
       lastAttemptId: string;
       lastAt: string;
@@ -291,9 +293,9 @@ export function daysUntil(date: string, now: Date = new Date(), timezone?: strin
 export function nextAssessment(
   assessments: PlannedAssessment[],
   now: Date = new Date(), timezone?: string,
-): PlannedAssessment | undefined {
+): DatedAssessment | undefined {
   const today = localISO(now, timezone);
-  return [...assessments]
+  return assessments.filter(isDated)
     .filter((a) => a.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date))[0];
 }
@@ -301,9 +303,9 @@ export function nextAssessment(
 export function upcomingAssessments(
   assessments: PlannedAssessment[],
   now: Date = new Date(), timezone?: string,
-): PlannedAssessment[] {
+): DatedAssessment[] {
   const today = localISO(now, timezone);
-  return [...assessments]
+  return assessments.filter(isDated)
     .filter((a) => a.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -311,9 +313,9 @@ export function upcomingAssessments(
 export function pastAssessments(
   assessments: PlannedAssessment[],
   now: Date = new Date(),
-): PlannedAssessment[] {
+): DatedAssessment[] {
   const today = localISO(now);
-  return [...assessments]
+  return assessments.filter(isDated)
     .filter((a) => a.date < today)
     .sort((a, b) => b.date.localeCompare(a.date));
 }
@@ -371,7 +373,7 @@ export function activityEvents(
       at: session.endedAt ?? session.updatedAt,
       kind: 'tutor',
       title: 'Tutor session',
-      topicIds: [session.topicId],
+      topicIds: session.topicId ? [session.topicId] : [],
       to: `/course/${session.courseId}/tutor/${session.id}`,
       minutes: durationMinutes(session.startedAt, session.endedAt ?? session.updatedAt),
     });
@@ -516,7 +518,8 @@ export interface PlanInput {
  * Weights, summed from a few local rules, then sorted. In descending force:
  * unfinished work, then today's planned sessions, then the check-in, then
  * repeated mistakes, then reviews that have come due, then topics with weak
- * evidence weighted by assessment proximity and the student's own priority.
+ * evidence weighted by assessment proximity and the assessment's share of the
+ * grade.
  */
 export function buildPlan(input: PlanInput): Suggestion[] {
   const {
@@ -731,12 +734,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
     });
   }
 
-  /* 7 — Weak topics, weighted by assessment proximity and stated priority. */
-  const priorityWeight: Record<StudyTopic['priority'], number> = {
-    high: 14,
-    normal: 6,
-    low: 0,
-  };
+  /* 7 — Weak topics, weighted by assessment proximity and the share of the grade. */
   const levelWeight: Record<EvidenceLevel, number> = {
     'not-checked': 30,
     practising: 22,
@@ -763,7 +761,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
     const proximity = daysAway <= 7 ? 20 : daysAway <= 14 ? 12 : daysAway <= 28 ? 6 : 0;
 
     const weight =
-      levelWeight[evidence.level] + priorityWeight[topic.priority] + proximity;
+      levelWeight[evidence.level] + gradeWeight(covering) + proximity;
 
     const assessmentClause = covering
       ? ` ${covering.title} is in ${daysAway} day${daysAway === 1 ? '' : 's'} and covers it.`
@@ -771,9 +769,9 @@ export function buildPlan(input: PlanInput): Suggestion[] {
 
     const reason =
       evidence.level === 'not-checked'
-        ? `Nothing recorded on this topic yet${
-            topic.priority === 'high' ? ', and you have marked it high priority' : ''
-          }.${assessmentClause}`
+        ? `Nothing recorded on this topic yet.${assessmentClause}${
+            covering?.weightPercent !== undefined && covering.weightPercent >= 25 ? ` It is worth ${covering.weightPercent}% of the grade.` : ''
+          }`
         : `Evidence here is “${EVIDENCE_LABEL[evidence.level].toLowerCase()}”. ${
             evidence.level === 'practising'
               ? 'You have worked on it but not yet answered unaided.'

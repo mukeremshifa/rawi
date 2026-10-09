@@ -73,7 +73,7 @@ export function TutorLibrary() {
           <EmptyState compact title={query ? 'No sessions match your search' : status === 'archived' ? 'No archived sessions' : 'No sessions yet'} description={!query && status === 'active' ? 'Start a session on a topic, a section of a material or an answer you want to understand.' : undefined} />
         ) : (
           <List>
-            {rows.map(s => <ListRow key={s.id} to={`/tutor/${s.id}`} title={s.title} meta={`${s.topicLabel} · ${STAGE_LABEL[s.stage]}${s.endedAt ? ' · Ended' : ''}`} trailing={formatRelative(s.updatedAt)} />)}
+            {rows.map(s => <ListRow key={s.id} to={`/tutor/${s.id}`} title={s.title} meta={`${s.topicLabel ?? 'Not in the outline'} · ${STAGE_LABEL[s.stage]}${s.endedAt ? ' · Ended' : ''}`} trailing={formatRelative(s.updatedAt)} />)}
           </List>
         )}
         {sessions.hasNextPage && <Button variant="secondary" className="self-start" loading={sessions.isFetchingNextPage} onClick={() => void sessions.fetchNextPage()}>Load more</Button>}
@@ -94,9 +94,11 @@ function NewSessionDialog({ courseId, open, onOpenChange }: { courseId: string; 
   const allow = useUnsentGuard(open && !!title || save.pending);
   const historical = params.get('attemptId') && topicId && outline.data && !outline.data.topics.some(t => t.id === topicId);
   const options = [...(historical ? [{ value: topicId, label: 'Topic from your saved answer' }] : []), ...(outline.data?.topics.map(t => ({ value: t.id, label: t.title })) ?? [])];
+  // A session from a section or a saved answer needs no topic: it takes the section's, if there is one.
+  const fromSource = !!(params.get('blockIds') || params.get('attemptId'));
   const create = () => {
     body.current ??= {
-      id: crypto.randomUUID(), title, topicId,
+      id: crypto.randomUUID(), title, ...(topicId ? { topicId } : {}),
       ...(params.get('plannedSessionId') ? { plannedSessionId: params.get('plannedSessionId') } : {}),
       ...(params.get('blockIds') ? { source: { materialId: params.get('materialId'), versionId: params.get('versionId'), blockIds: params.get('blockIds')!.split(',') } } : {}),
       ...(params.get('attemptId') ? { review: { attemptId: params.get('attemptId'), questionId: params.get('questionId') } } : {}),
@@ -115,13 +117,13 @@ function NewSessionDialog({ courseId, open, onOpenChange }: { courseId: string; 
             <DialogDescription>{params.get('blockIds') ? 'The session keeps the exact text you came from.' : params.get('attemptId') ? 'The session keeps your saved answer and its feedback.' : 'Pick the topic you want to work on.'}</DialogDescription>
           </DialogHeader>
           <DialogBody>
-            <Field label="Title" required><Input autoFocus maxLength={200} value={title} disabled={!!body.current} onChange={e => setTitle(e.target.value)} placeholder="Why the encomienda was not a land grant" /></Field>
-            <Field label="Topic" required><Combobox value={topicId} onValueChange={setTopicId} disabled={!!body.current} placeholder="Choose a topic" options={options} /></Field>
+            <Field label="Title" required={!fromSource} optional={fromSource} description={fromSource ? 'Leave it empty to name the session after the section.' : undefined}><Input autoFocus maxLength={200} value={title} disabled={!!body.current} onChange={e => setTitle(e.target.value)} placeholder="Why the encomienda was not a land grant" /></Field>
+            <Field label="Topic" required={!fromSource} optional={fromSource} description={fromSource ? 'Taken from the section when it is in the outline.' : undefined}><Combobox value={topicId} onValueChange={setTopicId} disabled={!!body.current} placeholder={fromSource ? 'From the section' : 'Choose a topic'} options={options} /></Field>
             {save.error && <FieldError>{save.error}</FieldError>}
           </DialogBody>
           <DialogFooter>
             <Button type="button" variant="secondary" disabled={save.busy} onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" loading={save.busy} disabled={!title.trim() || !topicId}>{save.status === 'failed' ? 'Retry' : 'Start session'}</Button>
+            <Button type="submit" loading={save.busy} disabled={!fromSource && (!title.trim() || !topicId)}>{save.status === 'failed' ? 'Retry' : 'Start session'}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -169,7 +171,7 @@ export function Tutor() {
         <header className="flex items-start justify-between gap-snug">
           <div className="flex min-w-0 flex-col gap-1">
             <h1 className="font-serif text-2xl leading-tight font-medium tracking-tight">{s.title}</h1>
-            <p className="text-muted-foreground text-sm">{s.topicLabel} · {STAGE_LABEL[s.stage]}{s.endedAt ? ` · Ended ${formatRelative(s.endedAt)}` : ''}{s.archived ? ' · Archived' : ''}</p>
+            <p className="text-muted-foreground text-sm">{s.topicLabel ?? 'Not in the outline'} · {STAGE_LABEL[s.stage]}{s.endedAt ? ` · Ended ${formatRelative(s.endedAt)}` : ''}{s.archived ? ' · Archived' : ''}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {d.summary && <Button variant="secondary" size="sm" onClick={() => setPanel({ kind: 'summary' })}>Summary</Button>}
@@ -259,7 +261,9 @@ export function Tutor() {
                 <p className="text-muted-foreground text-sm">Reached: {STAGE_LABEL[d.summary.stageReached]}</p>
                 <ul className="flex list-disc flex-col gap-1.5 pl-5 font-serif text-md">{d.summary.covered.map(line => <li key={line}>{line}</li>)}</ul>
                 <p className="text-muted-foreground text-sm">{s.completedLearning ? 'Counts as tutored study, which is assisted work.' : 'This session does not count as completed study.'}</p>
-                <Button asChild className="self-start"><Link to={`/course/${s.courseId}/practice?topicId=${s.topicId}`}>Practise this topic</Link></Button>
+                {s.topicId
+                  ? <Button asChild className="self-start"><Link to={`/course/${s.courseId}/practice?topicId=${s.topicId}`}>Practise this topic</Link></Button>
+                  : s.source && <Button asChild className="self-start"><Link to={`/course/${s.courseId}/practice?materialId=${s.source.materialId}&versionId=${s.source.versionId}`}>Practise this material</Link></Button>}
               </SheetBody>
             </>
           )}

@@ -422,7 +422,7 @@ export function finishRun(
     examConfigId: config.id,
     examConfigSnapshot: config,
     assistanceRecord: 'tracked',
-    topicIds: [...new Set(questions.map((q) => q.topicId))],
+    topicIds: [...new Set(questions.flatMap((q) => q.topicId ?? []))],
     startedAt: run.startedAt,
     completedAt: new Date().toISOString(),
     questions,

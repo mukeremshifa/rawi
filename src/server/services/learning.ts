@@ -10,6 +10,7 @@ import { hash, lockCourse, validateCitation } from './materials';
 import { bumpPlanner } from './planning';
 import { withFeedback } from './feedback';
 import { getCourse } from './workspace';
+import { sectionTopic } from './outline/links';
 import { ApiError, conflict, notFound } from '../errors';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
 
@@ -37,11 +38,13 @@ export async function importBank(db: SocketDb, workspaceId: string, courseId: st
     const ownTopics = await tx.select().from(topics).where(and(eq(topics.workspaceId, workspaceId), eq(topics.courseId, courseId)));
     const records: { id: string; workspaceId: string; courseId: string; content: VersionedQuestion }[] = [];
     for (const q of input.questions) {
-      const topic = ownTopics.find(t => t.id === q.topicId);
-      if (!topic) throw notFound();
       if (q.source) await validateCitation(tx, workspaceId, courseId, q.source);
+      // Without a topic, a question takes the one its source section is linked to, if any.
+      const topicId = q.topicId ?? (q.source ? (await sectionTopic(tx, { workspaceId, courseId }, q.source)).topicId ?? undefined : undefined);
+      const topic = topicId ? ownTopics.find(t => t.id === topicId) : undefined;
+      if (topicId && !topic) throw notFound();
       const id = crypto.randomUUID();
-      records.push({ id, workspaceId, courseId, content: { ...q, id, courseId, topicLabel: topic.title, origin: 'imported' } });
+      records.push({ id, workspaceId, courseId, content: { ...q, id, courseId, topicId, ...(topic ? { topicLabel: topic.title } : {}), origin: 'imported' } });
     }
     await tx.insert(questionVersions).values(records);
     const sources = records.flatMap(r => r.content.source ? [{ workspaceId, courseId, questionId: r.id, ...r.content.source }] : []);
@@ -248,7 +251,7 @@ export async function finalizeRun(tx: Transaction, run: typeof learningRuns.$inf
   // Only the restored run has uncertain earlier assistance. New runs start clean.
   if (provenance?.fingerprint.startsWith(`legacy-recovery:${run.id}:`)) {
     snapshot.markingVersion = 'recovered-objective-v1';
-    snapshot.imported = { id: snapshot.id, courseId: run.courseId, kind: 'practice', mode: 'practice', title: run.title, startedAt: snapshot.startedAt, completedAt: snapshot.completedAt, topicIds: [...new Set(questions.map(q => q.question.topicId))], questions: questions.map(q => q.result), marksAwarded: snapshot.marksAwarded, marksAvailable: snapshot.marksAvailable, assistanceRecord: 'unknown', practiceSetId: set.id };
+    snapshot.imported = { id: snapshot.id, courseId: run.courseId, kind: 'practice', mode: 'practice', title: run.title, startedAt: snapshot.startedAt, completedAt: snapshot.completedAt, topicIds: [...new Set(questions.flatMap(q => q.question.topicId ?? []))], questions: questions.map(q => q.result), marksAwarded: snapshot.marksAwarded, marksAvailable: snapshot.marksAvailable, assistanceRecord: 'unknown', practiceSetId: set.id };
   }
   await tx.insert(learningAttempts).values({ id: snapshot.id, workspaceId: run.workspaceId, courseId: run.courseId, runId: run.id, setId: run.setId, snapshot });
   await tx.update(learningRuns).set({ revision: run.revision + 1, state: 'submitted', completedAt }).where(eq(learningRuns.id, run.id));

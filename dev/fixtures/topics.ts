@@ -41,7 +41,6 @@ export const SEED_COURSE: StudyCourse = {
   name: 'The Atlantic World, 1500–1800',
   description:
     'A reading-heavy introductory survey of the Atlantic basin from first contact to the age of revolutions, taught through primary extracts and competing historiography.',
-  goal: 'Explain causes and compare historians’ interpretations without notes.',
   createdAt: new Date('2026-10-07T08:00:00.000Z').toISOString(),
 };
 
@@ -54,8 +53,6 @@ export const SEED_TOPICS: StudyTopic[] = [
     title: 'The Columbian Exchange',
     summary:
       'The transfer of crops, animals, people and disease across the Atlantic after 1492, and its demographic consequences.',
-    priority: 'normal',
-    relatedTopicIds: ['topic-encomienda', 'topic-plantation'],
   },
   {
     id: 'topic-encomienda',
@@ -65,8 +62,6 @@ export const SEED_TOPICS: StudyTopic[] = [
     title: 'Conquest and the encomienda system',
     summary:
       'How Spanish colonial labour obligations were justified, administered, and contested in the sixteenth century.',
-    priority: 'high',
-    relatedTopicIds: ['topic-columbian', 'topic-debate'],
   },
   {
     id: 'topic-plantation',
@@ -76,8 +71,6 @@ export const SEED_TOPICS: StudyTopic[] = [
     title: 'The plantation complex',
     summary:
       'Sugar, enslaved labour and the commercial system that linked West Africa, the Caribbean and Europe.',
-    priority: 'high',
-    relatedTopicIds: ['topic-columbian', 'topic-mercantilism'],
   },
   {
     id: 'topic-mercantilism',
@@ -87,8 +80,6 @@ export const SEED_TOPICS: StudyTopic[] = [
     title: 'Mercantilism and imperial trade',
     summary:
       'Navigation acts, monopoly companies, and the argument that colonies existed to enrich the metropole.',
-    priority: 'normal',
-    relatedTopicIds: ['topic-plantation', 'topic-revolt'],
   },
   {
     id: 'topic-revolt',
@@ -98,8 +89,6 @@ export const SEED_TOPICS: StudyTopic[] = [
     title: 'Resistance and revolt',
     summary:
       'Maroon communities, shipboard rebellion and colonial uprisings, and how historians weigh their significance.',
-    priority: 'normal',
-    relatedTopicIds: ['topic-plantation', 'topic-debate'],
   },
   {
     id: 'topic-debate',
@@ -109,8 +98,6 @@ export const SEED_TOPICS: StudyTopic[] = [
     title: 'Interpreting the Atlantic world',
     summary:
       'The historiographical argument between economic, cultural and imperial readings of Atlantic history.',
-    priority: 'high',
-    relatedTopicIds: ['topic-encomienda', 'topic-revolt', 'topic-mercantilism'],
   },
 ];
 

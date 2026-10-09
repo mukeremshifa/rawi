@@ -37,7 +37,7 @@ export function selectQuestions(
 
   const matches = pool.filter((q) => {
     if (excluded.has(q.id)) return false;
-    if (topics && !topics.has(q.topicId)) return false;
+    if (topics && (!q.topicId || !topics.has(q.topicId))) return false;
     if (formats && !formats.has(q.format)) return false;
     if (difficulties && !difficulties.has(q.difficulty)) return false;
     if (materials && !(q.source && materials.has(q.source.materialId))) return false;
@@ -76,7 +76,8 @@ export function selectQuestions(
   const spreadTopics = (questions: Question[]): Question[] => {
     const byTopic = new Map<string, Question[]>();
     for (const q of questions) {
-      byTopic.set(q.topicId, [...(byTopic.get(q.topicId) ?? []), q]);
+      const key = q.topicId ?? '';
+      byTopic.set(key, [...(byTopic.get(key) ?? []), q]);
     }
     const lists = [...byTopic.values()];
     const out: Question[] = [];

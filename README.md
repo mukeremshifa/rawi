@@ -78,7 +78,7 @@ returning-browser retirement has been checked and old installations are gone.
 
 ## Learning
 
-Courses include syllabus outlines, versioned materials, nine-format practice, resumable runs, immutable attempts, exam rehearsals and
+Courses include an outline worked out from their documents, versioned materials, nine-format practice, resumable runs, immutable attempts, exam rehearsals and
 tutor records. Planning, availability, check-ins, history, search and reminders
 use the same authenticated workspace. Old `/online` links redirect to canonical
 routes with their references intact.
@@ -119,6 +119,32 @@ set. Questions, tutor sessions and tutor replies cite
 `/materials/:m/versions/:v#block-:id`. AI context groups blocks into
 passages for each request.
 
+## Course outline
+
+A course starts with a name. Its page has two drop targets: the syllabus,
+one per course, and materials. Everything hangs off block, section and
+topic. A section is a heading and the blocks under it, or the lead before
+the first heading. A topic has a title, order, week or unit label, a short
+summary and the blocks it came from.
+
+Outline jobs (`src/server/services/outline/`) run like conversions: from
+`waitUntil`, from the outline status read and from the cron sweep, under a
+lease, one outline job per course at a time. A ready syllabus is read into
+8 to 20 topics and its assessments. Every other ready material is mapped
+section by section to topics, which gives Covers in the Reader and Where to
+read on the course page. Without a syllabus, two ready materials draft an
+outline from titles and headings. Every item a job keeps cites blocks of
+that version. A re-read reuses topic ids and never renames or removes a
+topic the student changed or has work on. Corrections apply in place with
+Undo. Questions and tutor sessions take their topic from their section, and
+work with no topic shows under its material as Not in the outline.
+
+Put `ANTHROPIC_API_KEY` in `.dev.vars` to read syllabi with
+`claude-sonnet-5-5` and map or draft with `claude-haiku-5-5`, through
+structured output, reserved and settled in the `ai_executions` ledger.
+Without a key, or when the budget refuses, a rules pass reads tables,
+headings and lists instead and the outline says so.
+
 ## Development seed
 
 Fictional source fixtures live in `dev/fixtures`. Seed an explicit existing
@@ -143,7 +169,9 @@ The seed uses domain services and atomic validated historical writes. Fixture
 text goes through the Markdown adapter, and question sources and authored
 tutor citations resolve to block ids by section heading. Four small
 originals use the designated R2 binding through the normal upload lifecycle
-and convert through Datalab when the key is set.
+and convert through Datalab when the key is set. A fourth sample course
+has the syllabus in `dev/fixtures/syllabus.md` as its syllabus material,
+and the seed runs its outline jobs.
 Authored tutor replies and written feedback carry Sample labels with no provider
 operations or charges. No fixtures or seed entry points ship in client or Worker
 bundles. Nothing seeds during startup, migration, onboarding or sign-in.

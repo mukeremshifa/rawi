@@ -8,7 +8,7 @@ import type { BlockPassage } from './document-text';
  * Passages are groups of consecutive blocks, built on the fly from a
  * version's blocks by `groupPassages`. Relevance is deliberately simple: the
  * passage the session was opened from comes first, then passages from
- * materials linked to the topic, then passages that share words with the
+ * sections linked to the topic, then passages that share words with the
  * topic and the student's question. At the size of one
  * student's course that is enough, and it is easy to explain. Every function
  * here takes records that the caller has already scoped to one course, and
@@ -20,8 +20,11 @@ export function isUsableMaterial(material: StudyMaterial): boolean {
   return !material.archived && material.readable;
 }
 
-/** A usable material with the passages built from its current version. */
-export type ContextMaterial = StudyMaterial & { versionId: string; passages: BlockPassage[] };
+/**
+ * A usable material with the passages built from its current version, and
+ * the topics each block's section is linked to.
+ */
+export type ContextMaterial = StudyMaterial & { versionId: string; passages: BlockPassage[]; blockTopics: Record<string, string[]> };
 
 const STOP = new Set(
   'about above after again against because been before being below between both could does doing down during each from further have having here into itself just more most other over same should some such than that their theirs them then there these they this those through under until very what when where which while with would your yours what how why the and for are was were not but can its you'.split(
@@ -45,15 +48,9 @@ function overlap(a: Set<string>, text: string): number {
   return hits;
 }
 
-/** Usable materials in this course that relate to the topic at all. */
+/** Usable materials in this course with a section linked to the topic. */
 export function materialsForTopic(topic: StudyTopic, materials: StudyMaterial[]): StudyMaterial[] {
-  const topicTerms = terms(`${topic.title} ${topic.summary}`);
-  return materials.filter(
-    (m) =>
-      m.courseId === topic.courseId &&
-      isUsableMaterial(m) &&
-      (m.topicIds.includes(topic.id) || overlap(topicTerms, m.title) >= 2),
-  );
+  return materials.filter((m) => m.courseId === topic.courseId && isUsableMaterial(m) && m.topicIds.includes(topic.id));
 }
 
 export function toAiTopic(topic: StudyTopic): AiTopic {
@@ -70,7 +67,7 @@ export function toAiPassage(material: ContextMaterial, passage: BlockPassage): A
     materialTitle: material.title,
     heading: passage.heading,
     text: passage.text.slice(0, AI_LIMITS.maxPassageChars),
-    topicIds: material.topicIds,
+    topicIds: [...new Set(passage.blockIds.flatMap((id) => material.blockTopics[id] ?? []))],
   };
 }
 
@@ -96,12 +93,12 @@ export function selectPassages(params: {
 
   for (const material of params.materials) {
     if (material.courseId !== params.courseId || !isUsableMaterial(material)) continue;
-    const materialLinked = material.topicIds.some((t) => topics.has(t));
     for (const passage of material.passages) {
       if (!passage.text.trim()) continue;
       let score = 0;
       if (passage.id === params.focusPassageId) score += 100;
-      if (materialLinked) score += 6;
+      // Sections linked to the topic first, then shared words as a fallback.
+      if (passage.blockIds.some((id) => material.blockTopics[id]?.some((t) => topics.has(t)))) score += 12;
       score += Math.min(8, overlap(queryTerms, `${passage.heading} ${passage.text}`));
       if (score > 0) scored.push({ score, passage: toAiPassage(material, passage) });
     }

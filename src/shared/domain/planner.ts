@@ -4,7 +4,7 @@ import type {
   StudyCourse,
   StudyMaterial,
   PlanProposal,
-  PlannedAssessment,
+  DatedAssessment,
   PlannedSession,
   Question,
   SessionActivity,
@@ -40,7 +40,8 @@ import {
  *      already gone.
  *   2. Work out what needs doing, and how urgently. Assessment proximity is
  *      the dominant term: a quiz in five days outranks a final in six weeks,
- *      weighted by topic priority and by how thin the evidence is.
+ *      weighted by the assessment's share of the grade and by how thin the
+ *      evidence is.
  *   3. Place the highest-priority work into the earliest slot that fits it and
  *      that falls *before its deadline*, respecting the student's preferred
  *      session length.
@@ -233,7 +234,7 @@ export interface TimeRange {
  * the day before is the conservative reading that cannot be wrong in the
  * direction that matters.
  */
-export function preparationCutoff(assessment: PlannedAssessment): {
+export function preparationCutoff(assessment: DatedAssessment): {
   date: string;
   minutes: number;
 } {
@@ -256,7 +257,7 @@ export function minutesFromClock(time: string): number {
  * them there is nothing to place on the clock, and guessing would put a
  * phantom two-hour hole in a day the student may well be free.
  */
-export function assessmentBlocks(assessments: PlannedAssessment[]): TimeRange[] {
+export function assessmentBlocks(assessments: DatedAssessment[]): TimeRange[] {
   const out: TimeRange[] = [];
   for (const a of assessments) {
     if (!a.time || !a.durationMinutes) continue;
@@ -296,7 +297,7 @@ export interface PlanInputs {
   courses: StudyCourse[];
   topics: StudyTopic[];
   attempts: Attempt[];
-  assessments: PlannedAssessment[];
+  assessments: DatedAssessment[];
   availability: Availability;
   /** Every session already on the calendar, in any week. */
   sessions: PlannedSession[];
@@ -326,7 +327,15 @@ function urgency(daysAway: number): number {
   return 6;
 }
 
-const PRIORITY_WEIGHT = { high: 12, normal: 5, low: 0 } as const;
+/**
+ * How much an assessment's share of the grade adds to its topics. A topic
+ * that counts toward 40% of the grade outranks one that counts toward 5%.
+ * Coverage with no recorded weight gets a small default.
+ */
+export function gradeWeight(assessment: { weightPercent?: number } | undefined): number {
+  if (!assessment) return 0;
+  return assessment.weightPercent === undefined ? 4 : Math.min(12, Math.round(assessment.weightPercent / 4));
+}
 
 function candidates(input: PlanInputs): Candidate[] {
   const {
@@ -349,7 +358,7 @@ function candidates(input: PlanInputs): Candidate[] {
    */
   const firstPlannable = weekDates(input.weekStart).find((d) => d >= today);
 
-  const stillAhead = (a: PlannedAssessment) => {
+  const stillAhead = (a: DatedAssessment) => {
     if (!firstPlannable) return false;
     const cutoff = preparationCutoff(a);
     return cutoff.date >= firstPlannable;
@@ -388,7 +397,7 @@ function candidates(input: PlanInputs): Candidate[] {
       if (evidenceWeight === 0 && daysAway > 14) continue;
 
       const weight =
-        evidenceWeight + PRIORITY_WEIGHT[topic.priority] + urgency(daysAway);
+        evidenceWeight + gradeWeight(covering) + urgency(daysAway);
 
       /*
        * What this topic can actually support.
@@ -895,7 +904,7 @@ export function sessionConflicts(
   },
   context: {
     sessions: PlannedSession[];
-    assessments: PlannedAssessment[];
+    assessments: DatedAssessment[];
     availability: Availability;
     today: string;
     nowMinutes?: number;
@@ -967,7 +976,7 @@ export function proposalIsStale(
   proposal: PlanProposal,
   context: {
     sessions: PlannedSession[];
-    assessments: PlannedAssessment[];
+    assessments: DatedAssessment[];
     availability: Availability;
     today: string;
     nowMinutes?: number;

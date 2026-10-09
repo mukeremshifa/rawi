@@ -7,7 +7,8 @@ import { getPlatformProxy } from 'wrangler';
 import { socketDb, transaction } from '../src/server/db/client';
 import * as s from '../src/server/db/schema';
 import { bootstrap, createCourse } from '../src/server/services/workspace';
-import { createMaterial, readBlocks } from '../src/server/services/materials';
+import { createMaterial, publishVersion, readBlocks } from '../src/server/services/materials';
+import { runCourseJobs } from '../src/server/services/outline/jobs';
 import type { Citation } from '../src/shared/contracts/document';
 import { spansText } from '../src/shared/domain/document-text';
 import { importBank, createSet, setQuestions } from '../src/server/services/learning';
@@ -96,9 +97,11 @@ try {
   // never another replay of the legacy import envelope.
   const legacy=await db.select({id:s.workspaceImports.id}).from(s.workspaceImports).where(and(eq(s.workspaceImports.workspaceId,wid),sql`${s.workspaceImports.original}->>'seedProvenance'='rawi-fictional-v1'`));
   for(const c of fixtureCourses){
-    const topics=fixtureTopics.filter(t=>t.courseId===c.id).map(({courseId:_c,...t})=>({...t,id:id(`topic:${t.id}`),module:t.module??'',relatedTopicIds:t.relatedTopicIds.map(t=>id(`topic:${t}`))}));
+    // These sample outlines were built by hand, so they arrive as the student's own topics.
+    const topics=fixtureTopics.filter(t=>t.courseId===c.id).map(({courseId:_c,...t})=>({...t,id:id(`topic:${t.id}`),module:t.module??'',workspaceId:wid,courseId:id(c.id),origin:'student' as const}));
     await step(`course:${c.id}`,'courses',id(c.id),async()=>{
-      await createCourse(db,wid,createCourseInput.parse({id:id(c.id),name:`Sample lab: ${c.name}`,description:`Fictional sample course. ${c.description}`,goal:c.goal,topics}));
+      await createCourse(db,wid,createCourseInput.parse({id:id(c.id),name:`Sample lab: ${c.name}`,description:`Fictional sample course. ${c.description}`}));
+      if(topics.length) await db.insert(s.topics).values(topics).onConflictDoNothing();
       if(c.archived) await db.update(s.courses).set({archived:true}).where(and(eq(s.courses.workspaceId,wid),eq(s.courses.id,id(c.id)),eq(s.courses.revision,1)));
       return {id:id(c.id)};
     });
@@ -108,7 +111,7 @@ try {
   for(const m of fixtureMaterials){
     const result=await step(`material:${m.id}`,'materials',id(m.id),async()=>{
       const text=m.sections.map(p=>`# ${p.heading}\n\n${p.text}`).join('\n\n');
-      const material=await createMaterial(db,wid,id(m.courseId),createMaterialInput.parse({id:id(m.id),title:`Sample: ${m.title}`,kind:'reading',attribution:`Fictional sample material. ${m.attribution??''}`,topicIds:m.topicIds.map(t=>id(`topic:${t}`)),text,format:'md'}),1048576);
+      const material=await createMaterial(db,wid,id(m.courseId),createMaterialInput.parse({id:id(m.id),title:`Sample: ${m.title}`,kind:'reading',attribution:`Fictional sample material. ${m.attribution??''}`,text,format:'md'}),1048576);
       const versionId=material.currentVersionId!;
       const {blocks}=await readBlocks(db,wid,material.id,versionId,{cursor:-1,limit:10000});
       const tops=blocks.filter(b=>b.type==='heading'&&b.content.level===1);
@@ -118,6 +121,9 @@ try {
         const start=blocks.indexOf(heading),end=blocks.findIndex((b,j)=>j>start&&b.type==='heading'&&b.content.level===1);
         return {oldId:p.id,materialId:material.id,versionId,blockIds:blocks.slice(start,end<0?undefined:end).slice(0,200).map(b=>b.id)};
       });
+      // The authored sections name their topics, so they are linked as the student would link them.
+      const links=m.sections.flatMap((p,i)=>p.topicIds.map(t=>({workspaceId:wid,courseId:id(m.courseId),materialId:material.id,versionId,topicId:id(`topic:${t}`),headingBlockId:refs[i]!.blockIds[0]!,headingText:p.heading,origin:'student' as const})));
+      if(links.length) await db.insert(s.sectionLinks).values(links).onConflictDoNothing();
       return {id:material.id,refs};
     });
     for(const {oldId,...r} of result.refs) sources.set(`${m.id}:${oldId}`,r);
@@ -230,7 +236,7 @@ try {
   const linkedPlan=planned.find(p=>p.date===date(-1)&&p.activity==='practice');
   if(linkedPlan) await history(`linked-history:${linkedPlan.id}`,id(`set:${fixtureCourses.find(c=>id(c.id)===linkedPlan.courseId)!.id}:mixed`),-1,0);
   await step('archived-checklist','materials',id('archived-checklist'),async()=>{
-    const c=fixtureCourses[0]!;const saved=await createMaterial(db,wid,id(c.id),{id:id('archived-checklist'),title:'Sample: archived reading checklist',kind:'reading',attribution:'Superseded sample checklist.',topicIds:[],format:'md',text:'# Earlier checklist\n\nIdentify the main claim and one supporting detail. A later version adds a limitation and a comparison.'},1048576);
+    const c=fixtureCourses[0]!;const saved=await createMaterial(db,wid,id(c.id),{id:id('archived-checklist'),title:'Sample: archived reading checklist',kind:'reading',attribution:'Superseded sample checklist.',format:'md',text:'# Earlier checklist\n\nIdentify the main claim and one supporting detail. A later version adds a limitation and a comparison.'},1048576);
     await db.update(s.materials).set({archived:true}).where(and(eq(s.materials.workspaceId,wid),eq(s.materials.id,saved.id),eq(s.materials.revision,1)));return {id:saved.id};
   });
   const reviewed=histories.find(a=>a.questions.some(q=>q.question.format==='essay'&&q.result.response.kind==='text'))!;
@@ -272,7 +278,7 @@ try {
       const [previous]=await db.select().from(s.uploads).where(and(eq(s.uploads.workspaceId,wid),eq(s.uploads.id,requestId)));
       if(previous?.state==='failed') continue;
       if(previous?.state==='pending'&&previous.expiresAt<=new Date()){await finalize(db,env,wid,requestId);continue;}
-      const prepared=await initiate(db,env,wid,id(fixtureCourses[0]!.id),{requestId,fileName:`sample-source-guide.${type}`,type,size:bytes.length,checksum,title:`Sample original: source guide (${type.toUpperCase()})`,kind:type==='pptx'?'slides':'reading',attribution:'Authored development fixture.',topicIds:[id(`topic:${fixtureTopics[0]!.id}`)]});
+      const prepared=await initiate(db,env,wid,id(fixtureCourses[0]!.id),{requestId,fileName:`sample-source-guide.${type}`,type,size:bytes.length,checksum,title:`Sample original: source guide (${type.toUpperCase()})`,kind:type==='pptx'?'slides':'reading',attribution:'Authored development fixture.'});
       if(prepared.url){const response=await fetch(prepared.url,{method:'PUT',headers:prepared.headers,body:bytes});if(!response.ok)throw new Error(`Original upload failed with HTTP ${response.status}.`);}
       const saved=await finalize(db,env,wid,requestId);if(saved.state!=='ready')throw new Error(`Original did not finalize: ${saved.state}.`);return saved;
       }
@@ -293,6 +299,18 @@ try {
     const rows=await notifications(db,wid);const reminder=rows.reminders.find(r=>r.title.startsWith('Sample'));if(!reminder)return {skipped:true};
     await markReminder(db,wid,id('read-sample-reminder'),reminder.key,'read');return {key:reminder.key};
   });
+  // A course outlined from its syllabus. The syllabus is a real material, so the seed exercises the read job.
+  await step('course:minds','courses',id('minds'),async()=>{
+    await createCourse(db,wid,createCourseInput.parse({id:id('minds'),name:'Sample lab: Minds, machines and meaning',description:'Fictional sample course, outlined from its syllabus.'}));
+    await transaction(db,async tx=>{
+      const [material]=await tx.insert(s.materials).values({id:id('minds-syllabus'),workspaceId:wid,courseId:id('minds'),title:'Sample: PHIL 214 syllabus',kind:'syllabus',attribution:'Fictional sample syllabus.',createFingerprint:dataset}).returning();
+      await tx.update(s.courses).set({syllabusMaterialId:material!.id}).where(and(eq(s.courses.workspaceId,wid),eq(s.courses.id,id('minds'))));
+      await publishVersion(tx,material!,{requestId:id('minds-syllabus:v1'),fingerprint:dataset,origin:'paste',sourceObjectId:null,format:'md',conversion:{adapter:'markdown',text:readFileSync('dev/fixtures/syllabus.md','utf8'),format:'md'}});
+    });
+    return {id:id('minds')};
+  });
+  // Outline jobs run here as they would after an upload: read the syllabus, then map materials to topics.
+  for(const courseId of [...fixtureCourses.map(c=>id(c.id)),id('minds')]) await runCourseJobs(config as unknown as BackendBindings,{workspaceId:wid,courseId});
   const proposal=await step('complete-proposal','plan_proposals',id('complete-proposal'),()=>propose(db,wid,{operationId:id('complete-proposal'),weekStart:weekStart(seed!.anchorDate)}));
   const records=await db.select({kind:s.developmentSeedRecords.entityType}).from(s.developmentSeedRecords).where(and(eq(s.developmentSeedRecords.workspaceId,wid),eq(s.developmentSeedRecords.version,dataset)));
   console.log(JSON.stringify({version:dataset,userId:owner.id,workspaceId:wid,email:owner.email,anchor:seed!.anchorDate,timezone:seed!.timezone,legacyImportsPreserved:legacy.length,records:records.reduce<Record<string,number>>((n,r)=>({...n,[r.kind]:(n[r.kind]??0)+1}),{}),conflicts:[...conflicts],courses:fixtureCourses.map(c=>id(c.id)),resume:id(`resume:${fixtureCourses[0]!.id}`),result:reviewed.id,tutor:id('tutor:answer-review'),proposal:proposal.id,originals:await Promise.all(fileRows.map(async r=>({materialId:r.materialId,versionId:r.resultVersionId,status:r.resultVersionId?(await db.select({status:s.materialVersions.status}).from(s.materialVersions).where(eq(s.materialVersions.id,r.resultVersionId)))[0]?.status:null})))}));

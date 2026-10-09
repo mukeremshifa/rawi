@@ -84,6 +84,13 @@ export function Progress() {
         </div>
       </div>
       <Section title="Topic readiness"><TopicReadiness row={r} courseId={course || undefined} showCourse={!course} /></Section>
+      {r.unlinked.some(u => !course || u.courseId === course) && (
+        <Section title="Not in the outline" description="Work from sections that are not linked to a topic, by material.">
+          <ShortList empty="Nothing here."
+            items={r.unlinked.filter(u => !course || u.courseId === course).map(u => ({ key: u.materialId, to: `/materials/${u.materialId}`, title: u.title, meta: courseName(r, u.courseId),
+              trailing: <span className="text-muted-foreground tabular text-sm">{[u.answered ? `${u.correct} of ${u.answered} correct` : '', u.tutorSessions ? `${u.tutorSessions} tutor ${u.tutorSessions === 1 ? 'session' : 'sessions'}` : ''].filter(Boolean).join(', ')}</span> }))} />
+        </Section>
+      )}
       <Section title="Recurring mistakes" description="Questions you have missed more than once.">
         <ShortList empty="No repeated mistakes."
           items={r.mistakes.filter(m => !course || m.courseId === course).slice(0, 8).map(m => ({ key: m.questionId, to: `/attempts/${m.lastAttemptId}`, title: m.prompt, meta: courseName(r, m.courseId), trailing: <span className="text-muted-foreground tabular text-sm">{m.times} times</span> }))} />

@@ -1,3 +1,4 @@
+import { isDated } from '../../shared/domain/types';
 import { transaction } from '../db/client';
 import { and, asc, eq, ilike, sql } from 'drizzle-orm';
 import { courses, materials, learningSets, tutorSessions, learningAttempts, topics, preferences, reminderStates } from '../db/schema';
@@ -31,7 +32,7 @@ async function reminders(tx: Transaction, workspaceId: string) {
   const settings = prefs!.values.reminders, last = addDays(today, settings.days);
   const active = new Set(data.courses.filter(c => !c.archived).map(c => c.id));
   const rows = [] as { key: string; title: string; date: string; category: string; to: string; status?: 'read' | 'dismissed' }[];
-  if (settings.assessments) for (const a of data.assessments.filter(a => active.has(a.courseId) && a.date >= today && a.date <= last)) rows.push({ key: `assessment:${a.id}:${a.date}:${a.time ?? ''}`, title: a.title, date: a.date, category: 'Assessment', to: '/planner' });
+  if (settings.assessments) for (const a of data.assessments.filter(isDated).filter(a => active.has(a.courseId) && a.date >= today && a.date <= last)) rows.push({ key: `assessment:${a.id}:${a.date}:${a.time ?? ''}`, title: a.title, date: a.date, category: 'Assessment', to: '/planner' });
   if (settings.study) for (const s of data.sessions.filter(s => active.has(s.courseId) && s.status === 'planned' && s.date >= today && s.date <= last)) rows.push({ key: `study:${s.id}:${s.date}:${s.startMinutes}`, title: s.title, date: s.date, category: 'Planned study', to: '/planner' });
   if (settings.review) for (const d of dueReviews(data.topics, data.attempts, new Date(), data.timezone).filter(d => active.has(d.courseId))) rows.push({ key: `review:${d.topicId}:${d.lastAttemptId ?? 'first-review'}`, title: data.topics.find(t => t.id === d.topicId)?.title ?? 'Topic review', date: today, category: 'Due review', to: `/course/${d.courseId}/practice` });
   const states = await tx.select().from(reminderStates).where(eq(reminderStates.workspaceId, workspaceId));

@@ -15,6 +15,7 @@ import { AI_LIMITS } from '../../shared/domain/ai';
 import { tutorPrompts } from './ai/prompts';
 import { tutorRequest } from './ai/validate';
 import { getCourse } from './workspace';
+import { sectionTopic } from './outline/links';
 import { conflict, notFound, ApiError } from '../errors';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
 
@@ -40,23 +41,34 @@ export async function detail(db: Db, workspaceId: string, id: string, cursor = -
 export async function createSession(db: SocketDb, workspaceId: string, courseId: string, input: z.infer<typeof newTutorInput>) {
   return operation(db, workspaceId, input.id, { action: 'tutor-session', courseId, input }, async tx => {
     await getCourse(tx, workspaceId, courseId);
-    const [topic] = await tx.select().from(topics).where(and(eq(topics.workspaceId, workspaceId), eq(topics.courseId, courseId), eq(topics.id, input.topicId)));
-    let topicLabel = topic?.title;
+    // A session is about a topic, or about a source that may sit in no topic.
+    let topicId = input.topicId ?? null, topicLabel: string | null = null;
+    if (input.topicId) {
+      const [topic] = await tx.select().from(topics).where(and(eq(topics.workspaceId, workspaceId), eq(topics.courseId, courseId), eq(topics.id, input.topicId)));
+      topicLabel = topic?.title ?? null;
+    }
     if (input.plannedSessionId) {
       const [planned] = await tx.select().from(plannedSessions).where(and(eq(plannedSessions.workspaceId, workspaceId), eq(plannedSessions.courseId, courseId), eq(plannedSessions.id, input.plannedSessionId)));
       if (!planned || planned.content.activity !== 'tutor') throw notFound();
     }
-    if (input.source) await validateCitation(tx, workspaceId, courseId, input.source);
+    if (input.source) {
+      await validateCitation(tx, workspaceId, courseId, input.source);
+      if (!topicId) { const section = await sectionTopic(tx, { workspaceId, courseId }, input.source); topicId = section.topicId; topicLabel = section.title; }
+    }
     let review = null;
     if (input.review) {
       const a = await attempt(tx, workspaceId, input.review.attemptId); if (a.courseId !== courseId) throw notFound();
-      const q = a.questions.find(q => q.question.id === input.review!.questionId); if (!q || q.question.topicId !== input.topicId) throw notFound();
+      const q = a.questions.find(q => q.question.id === input.review!.questionId); if (!q || (input.topicId && q.question.topicId !== input.topicId)) throw notFound();
       const question = q.question; const result = q.result;
-      topicLabel ??= question.topicLabel;
-      review = { attemptId: a.id, questionId: question.id, courseId, topicId: input.topicId, prompt: question.prompt, response: responseText(result.response, question), answerKey: question.correctIndices?.map(i => question.options?.[i]).join('\n') ?? question.answer ?? question.sequence?.join('\n') ?? question.blanks?.map(b => b.join(' or ')).join('\n') ?? question.pairs?.map(p => `${p.left}: ${p.right}`).join('\n') ?? '', feedback: question.explanation, marksAwarded: result.marksAwarded, marksAvailable: result.marksAvailable, usedHint: result.usedHint, pending: result.outcome === 'pending' };
+      topicId ??= question.topicId ?? null;
+      topicLabel ??= question.topicLabel ?? null;
+      review = { attemptId: a.id, questionId: question.id, courseId, ...(topicId ? { topicId } : {}), prompt: question.prompt, response: responseText(result.response, question), answerKey: question.correctIndices?.map(i => question.options?.[i]).join('\n') ?? question.answer ?? question.sequence?.join('\n') ?? question.blanks?.map(b => b.join(' or ')).join('\n') ?? question.pairs?.map(p => `${p.left}: ${p.right}`).join('\n') ?? '', feedback: question.explanation, marksAwarded: result.marksAwarded, marksAvailable: result.marksAvailable, usedHint: result.usedHint, pending: result.outcome === 'pending' };
     }
-    if (!topicLabel) throw notFound();
-    const [saved] = await tx.insert(tutorSessions).values({ id: input.id, workspaceId, courseId, plannedSessionId: input.plannedSessionId, topicId: input.topicId, topicLabel, title: input.title, source: input.source ?? null, review }).onConflictDoNothing().returning(); if (!saved) throw notFound(); return detail(tx, workspaceId, saved.id);
+    if (input.topicId && !topicLabel) throw notFound();
+    const focus = input.source ? await citedPassage(tx, workspaceId, courseId, input.source, []) : null;
+    const title = (input.title || topicLabel || focus?.heading || focus?.materialTitle || 'Tutor session').slice(0, 200);
+    if (!topicId && !input.source && !review) throw new ApiError(400, 'invalid_input', 'Choose a topic, or start the session from a section of a material.');
+    const [saved] = await tx.insert(tutorSessions).values({ id: input.id, workspaceId, courseId, plannedSessionId: input.plannedSessionId, topicId, topicLabel, title, source: input.source ?? null, review }).onConflictDoNothing().returning(); if (!saved) throw notFound(); return detail(tx, workspaceId, saved.id);
   });
 }
 /** Snapshot only owned, bounded context. The cited focus blocks come first, from their own version. */
@@ -64,10 +76,10 @@ async function prepareTurn(tx: Transaction, workspaceId: string, session: Awaite
   const data = await planningData(tx, workspaceId);
   const course = data.courses.find(c => c.id === session.courseId); if (!course) throw notFound();
   const topic = data.topics.find(t => t.id === session.topicId);
-  const focus = session.source ? await citedPassage(tx, workspaceId, session.courseId, session.source, [session.topicId]) : null;
+  const focus = session.source ? await citedPassage(tx, workspaceId, session.courseId, session.source, session.topicId ? [session.topicId] : []) : null;
   if (session.source && !focus) throw notFound();
   const materials = await contextMaterials(tx, workspaceId, session.courseId, data.materials);
-  const picked = selectPassages({ courseId: session.courseId, materials, topicIds: [session.topicId], query: `${session.topicLabel} ${input.text}`, maxChars: 18000 - (focus?.text.length ?? 0) });
+  const picked = selectPassages({ courseId: session.courseId, materials, topicIds: session.topicId ? [session.topicId] : [], query: `${session.topicLabel ?? focus?.heading ?? ''} ${input.text}`, maxChars: 18000 - (focus?.text.length ?? 0) });
   const context = focus ? [focus, ...picked.filter(p => !p.blockIds.some(id => focus.blockIds.includes(id))).slice(0, 9)] : picked;
   const recent = await tx.select().from(tutorMessages).where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.sessionId, session.id))).orderBy(desc(tutorMessages.ordinal)).limit(AI_LIMITS.maxHistoryTurns);
   // History has its own total bound, in addition to the per-turn shared validator.
@@ -77,7 +89,7 @@ async function prepareTurn(tx: Transaction, workspaceId: string, session: Awaite
     return text ? [{ role: m.role, text, ...(m.state === 'interrupted' || m.state === 'cancelled' ? { interrupted: true } : {}) }] : [];
   }).reverse();
   const review = session.review ? { ...session.review, prompt: session.review.prompt.slice(0, 6000), response: session.review.response.slice(0, 6000), answerKey: session.review.answerKey.slice(0, 6000), feedback: session.review.feedback.slice(0, 6000) } : undefined;
-  const request = tutorRequest({ courseId: session.courseId, courseName: course.name, topic: { id: session.topicId, title: session.topicLabel, summary: topic?.summary ?? '' }, stage: session.stage, action: input.action, message: input.text, focusPassageId: focus?.id, passages: context, history, review, priorWork: priorWorkLines(session.topicId, data.attempts, new Map(data.questions.map(q => [q.id, q]))).map(line => line.slice(0, 400)) });
+  const request = tutorRequest({ courseId: session.courseId, courseName: course.name, topic: session.topicId ? { id: session.topicId, title: session.topicLabel ?? topic?.title ?? '', summary: topic?.summary ?? '' } : null, focusLabel: focus ? [focus.heading, focus.materialTitle].filter(Boolean).join(', in ') : session.title, stage: session.stage, action: input.action, message: input.text, focusPassageId: focus?.id, passages: context, history, review, priorWork: !session.topicId ? [] : priorWorkLines(session.topicId, data.attempts, new Map(data.questions.map(q => [q.id, q]))).map(line => line.slice(0, 400)) });
   const prompts = tutorPrompts(request);
   if (prompts.system.length + prompts.prompt.length > 64000) throw new ApiError(413, 'context_limit', 'This session exceeds the reply context limit. Start a new focused session.');
   return { sessionRevision: session.revision, request, prompts };

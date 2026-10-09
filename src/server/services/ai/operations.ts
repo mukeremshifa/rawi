@@ -8,17 +8,22 @@ import { uuid } from '../../../shared/contracts/workspace';
 import { selectPassages } from '../../../shared/domain/ai-context';
 import { generatePrompts, gradePrompts } from './prompts';
 import { generateRequest, gradeRequest, generatedQuestion, gradeOutput, tutorRequest } from './validate';
-import { aiOperations, aiExecutions, feedbackRevisions, questionVersions, questionSources, learningSets, setItems, tutorSessions, tutorMessages } from '../../db/schema';
+import { aiOperations, aiExecutions, feedbackRevisions, questionVersions, questionSources, learningSets, setItems, tutorSessions, tutorMessages, topics } from '../../db/schema';
 import { planningData, bumpPlanner } from '../planning';
 import { questionInput, type VersionedQuestion } from '../../../shared/contracts/learning';
 import { operation, attempt } from '../learning';
 import { hash, validateCitation } from '../materials';
 import { citedPassage, contextMaterials } from '../documents/context';
+import { sectionTopic } from '../outline/links';
+import { citationInput } from '../../../shared/contracts/document';
+import type { AiPassage } from '../../../shared/domain/ai';
 import { ApiError, notFound } from '../../errors';
 import type { ReadDb, SocketDb, Transaction } from '../../db/client';
 
 export const unavailable = 'Hosted AI replies are not connected. This request is saved, but no provider request or charge was made.';
-export const generateInput = z.strictObject({ operationId: uuid, name: z.string().trim().min(1).max(200), format: z.enum(['flashcard', 'multiple-choice', 'written-recall']), count: z.number().int().min(1).max(10), topicIds: z.array(uuid).min(1).max(20), materialIds: z.array(uuid).min(1).max(20), difficulties: z.array(z.enum(['recall', 'reasoning', 'stretch'])).min(1).max(3) });
+// Generation works from topics, materials or sections, in any combination.
+export const generateInput = z.strictObject({ operationId: uuid, name: z.string().trim().min(1).max(200), format: z.enum(['flashcard', 'multiple-choice', 'written-recall']), count: z.number().int().min(1).max(10), topicIds: z.array(uuid).max(20).default([]), materialIds: z.array(uuid).max(20).default([]), sections: z.array(citationInput).max(10).default([]), difficulties: z.array(z.enum(['recall', 'reasoning', 'stretch'])).min(1).max(3) })
+  .refine(v => v.topicIds.length + v.materialIds.length + v.sections.length > 0, 'Choose topics, materials or sections to generate from.');
 export const gradeInput = z.strictObject({ operationId: uuid, questionId: uuid });
 // Retains the chosen model and engineering budget defaults. No
 // workstation credentials, SDK client, filesystem ledger or paid call lives here.
@@ -40,9 +45,15 @@ export async function prepareGeneration(db: SocketDb, workspaceId: string, cours
   return operation(db, workspaceId, input.operationId, { action: 'generate', courseId, input }, async tx => {
     const data = await planningData(tx, workspaceId); const course = data.courses.find(c => c.id === courseId); if (!course) throw notFound();
     const topics = input.topicIds.map(id => { const t = data.topics.find(t => t.id === id && t.courseId === courseId); if (!t) throw notFound(); return { id: t.id, title: t.title, summary: t.summary }; });
-    const selected = input.materialIds.map(id => { const m = data.materials.find(m => m.id === id && m.courseId === courseId); if (!m) throw notFound(); return m; });
-    const context = selectPassages({ courseId, materials: await contextMaterials(tx, workspaceId, courseId, selected), topicIds: input.topicIds, query: topics.map(t => t.title).join(' ') });
-    if (!context.length) throw new ApiError(400, 'no_content', 'Choose readable material linked to these topics.');
+    // Named materials, or else every material covering the named topics.
+    const selected = input.materialIds.length
+      ? input.materialIds.map(id => { const m = data.materials.find(m => m.id === id && m.courseId === courseId); if (!m) throw notFound(); return m; })
+      : data.materials.filter(m => m.courseId === courseId && m.topicIds.some(t => input.topicIds.includes(t)));
+    const cited: AiPassage[] = [];
+    for (const section of input.sections) { await validateCitation(tx, workspaceId, courseId, section); const p = await citedPassage(tx, workspaceId, courseId, section, []); if (p) cited.push({ ...p, id: `${p.id}:${cited.length}` }); }
+    const picked = selectPassages({ courseId, materials: await contextMaterials(tx, workspaceId, courseId, selected), topicIds: input.topicIds, query: topics.map(t => t.title).join(' '), maxChars: 18000 - cited.reduce((n, p) => n + p.text.length, 0) });
+    const context = [...cited, ...picked.filter(p => !cited.some(c => c.blockIds.some(id => p.blockIds.includes(id))))];
+    if (!context.length) throw new ApiError(400, 'no_content', 'Choose readable material to generate from.');
     const request = generateRequest({ courseId, courseName: course.name, format: input.format, count: input.count, difficulties: input.difficulties, topics, passages: context });
     const prompts = generatePrompts(request);
     if (prompts.system.length + prompts.prompt.length > 48000) throw new ApiError(413, 'context_limit', 'Choose fewer passages for this request.');
@@ -55,7 +66,7 @@ export async function prepareGrade(db: SocketDb, workspaceId: string, attemptId:
     const saved = await attempt(tx, workspaceId, attemptId); const item = saved.questions.find(q => q.question.id === input.questionId); if (!item) throw notFound();
     const q = item.question;
     if (!q.rubric?.length || item.result.response.kind !== 'text' || !item.result.response.text.trim()) throw new ApiError(400, 'no_written_response', 'This answer has no written response and rubric to grade.');
-    const source = q.source ? await citedPassage(tx, workspaceId, saved.courseId, q.source, [q.topicId]) : null;
+    const source = q.source ? await citedPassage(tx, workspaceId, saved.courseId, q.source, q.topicId ? [q.topicId] : []) : null;
     const request = gradeRequest({ courseId: saved.courseId, prompt: q.prompt, modelAnswer: q.answer ?? '', rubric: q.rubric, passages: source ? [source] : [], response: item.result.response.text });
     await recordBlocked(tx, workspaceId, saved.courseId, input.operationId, attemptId, 'grade', { questionId: q.id, markingVersion: saved.markingVersion, request, prompts: gradePrompts(request) });
     return viewOperation(tx, workspaceId, input.operationId);
@@ -150,9 +161,12 @@ export async function publishStructured(db: SocketDb, workspaceId: string, execu
         const passage = req.passages.find(p => p.id === q.sourcePassageId)!;
         const source = { materialId: passage.materialId, versionId: passage.versionId, blockIds: passage.blockIds };
         await validateCitation(tx, workspaceId, op.courseId, source);
+        // The topic comes from the source section's link, then from the model's choice, or stays empty.
+        const topicId = (await sectionTopic(tx, { workspaceId, courseId: op.courseId }, source)).topicId ?? q.topicId;
+        const topicLabel = topicId ? (await tx.select({ title: topics.title }).from(topics).where(eq(topics.id, topicId)))[0]?.title : undefined;
         const id = crypto.randomUUID(); const rubric = q.rubric?.map((r, i) => ({ ...r, id: `${id}:${i}`, keywords: [] }));
-        const content = questionInput.parse({ format: req.format, topicId: q.topicId, difficulty: q.difficulty, marks: rubric?.reduce((n, p) => n + p.marks, 0) ?? 1, prompt: q.prompt, explanation: q.explanation, answer: q.answer, options: q.options, correctIndices: q.correctIndex === undefined ? undefined : [q.correctIndex], rubric, source });
-        questions.push({ ...content, id, courseId: op.courseId, topicLabel: req.topics.find(t => t.id === q.topicId)!.title, origin: 'generated', provenance: { kind: 'generated', model: op.model, generatedAt: new Date().toISOString(), materialIds: [source.materialId] } });
+        const content = questionInput.parse({ format: req.format, topicId, difficulty: q.difficulty, marks: rubric?.reduce((n, p) => n + p.marks, 0) ?? 1, prompt: q.prompt, explanation: q.explanation, answer: q.answer, options: q.options, correctIndices: q.correctIndex === undefined ? undefined : [q.correctIndex], rubric, source });
+        questions.push({ ...content, id, courseId: op.courseId, ...(topicLabel ? { topicLabel } : {}), origin: 'generated', provenance: { kind: 'generated', model: op.model, generatedAt: new Date().toISOString(), materialIds: [source.materialId] } });
         if (questions.length === req.count) break;
       }
       if (!questions.length) throw new ApiError(502, 'invalid_output', 'None of the generated questions passed validation. No set was saved.');

@@ -53,7 +53,7 @@ export function Practice() {
   const [building, setBuilding] = useState(!!params.get('materialId'));
   const [starting, setStarting] = useState(false), [startError, setStartError] = useState('');
   const fromMaterial = params.get('materialId') ?? '';
-  const topics = useMemo(() => [...new Map(bank.data?.map(q => [q.topicId, q.topicLabel]) ?? []).entries()].map(([value, label]) => ({ value, label })), [bank.data]);
+  const topics = useMemo(() => [...new Map(bank.data?.flatMap(q => q.topicId ? [[q.topicId, q.topicLabel ?? 'Topic'] as const] : []) ?? []).entries()].map(([value, label]) => ({ value, label })), [bank.data]);
   const pool = bank.data?.filter(q => !topic || q.topicId === topic) ?? [];
   const count = Math.min(preferences.values.questionCount, pool.length);
   // Two steps: save a set from the bank, then start it. Both keep their ids
@@ -167,7 +167,7 @@ function BuildSheet({ courseId, bank, open, onOpenChange, initial, planned }: { 
   const save = useSave();
   const allow = useUnsentGuard(open && !!name || save.pending);
   const pool = bank?.filter(q => matches(q, filters)) ?? [];
-  const topics = [...new Map(bank?.map(q => [q.topicId, q.topicLabel]) ?? []).entries()].map(([value, label]) => ({ value, label }));
+  const topics = [...new Map(bank?.flatMap(q => q.topicId ? [[q.topicId, q.topicLabel ?? 'Topic'] as const] : []) ?? []).entries()].map(([value, label]) => ({ value, label }));
   const sources = [...new Set(bank?.flatMap(q => q.source ? [q.source.materialId] : []) ?? [])].map(value => ({ value, label: materials.data?.find(m => m.id === value)?.title ?? 'Saved material' }));
   const set = (patch: Partial<Filters>) => { setFilters(f => ({ ...f, ...patch })); setBody(null); save.discard(); };
   const submit = () => {

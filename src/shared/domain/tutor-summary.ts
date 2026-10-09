@@ -13,7 +13,7 @@ export function summarise(session: TutorTranscript): {
   return summariseTutorTurns({ ...session, stages: session.messages.filter(m => !m.meta).map(m => m.stage), studentTurns: session.messages.filter(m => m.role === 'student').length });
 }
 
-export function summariseTutorTurns(session: { id: string; topicId: string; stage: TutorStage; stages: TutorStage[]; studentTurns: number }) {
+export function summariseTutorTurns(session: { id: string; topicId?: string | null; stage: TutorStage; stages: TutorStage[]; studentTurns: number }) {
   const stages = new Set(session.stages);
   stages.add(session.stage);
   const reached = STAGE_ORDER.filter((s) => stages.has(s));
@@ -28,7 +28,7 @@ export function summariseTutorTurns(session: { id: string; topicId: string; stag
   if (turns > 0) covered.push(`${turns} of your own ${turns === 1 ? 'turn' : 'turns'}`);
 
   const nextStep =
-    stageReached === 'reflect' || stageReached === 'apply' || stageReached === 'reason'
+    session.topicId && (stageReached === 'reflect' || stageReached === 'apply' || stageReached === 'reason')
       ? { label: 'Practise this now', to: `/practice/new?topic=${session.topicId}` }
       : { label: 'Keep going in this session', to: `/tutor/${session.id}` };
 
