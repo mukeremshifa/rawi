@@ -36,28 +36,3 @@ export function blockMarkdown(block: BlockBody): string {
   }
 }
 
-export interface BlockPassage { id: string; heading: string; text: string; blockIds: string[] }
-
-/**
- * Consecutive blocks grouped under their heading up to a character budget.
- * Computed on the fly for each request. Each passage keeps the exact block
- * ids it was built from, so a cited passage resolves to blocks.
- */
-export function groupPassages(versionId: string, blocks: (BlockBody & { id: string })[], maxChars: number): BlockPassage[] {
-  const out: BlockPassage[] = [];
-  let heading = '';
-  let current: BlockPassage | null = null;
-  const close = () => { if (current && current.text.trim()) out.push(current); current = null; };
-  for (const block of blocks) {
-    let text = blockMarkdown(block);
-    if (block.type === 'heading') { close(); heading = spansText(block.content.spans).slice(0, 200); }
-    if (!text.trim()) continue;
-    if (text.length > maxChars) text = text.slice(0, maxChars);
-    if (current && (current.text.length + text.length + 2 > maxChars || current.blockIds.length >= 200)) close();
-    current ??= { id: `${versionId}:${out.length}`, heading, text: '', blockIds: [] };
-    current.text = current.text ? `${current.text}\n\n${text}` : text;
-    current.blockIds.push(block.id);
-  }
-  close();
-  return out.map((p, i) => ({ ...p, id: `${versionId}:${i}` }));
-}

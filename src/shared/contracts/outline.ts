@@ -15,8 +15,10 @@ export type TopicOrigin = 'syllabus' | 'materials' | 'student';
 export type OutlineJobKind = 'read_syllabus' | 'map_material' | 'draft_outline';
 /** What a finished job did, for the quiet line under the outline. */
 export interface OutlineJobResult {
-  provider: 'anthropic' | 'rules';
-  /** Why the rules pass ran instead of the model. */
+  provider: 'model' | 'rules';
+  /** The model that did the work, when one did. */
+  model?: string;
+  /** Why the rules pass ran instead of a model. */
   fallback?: 'unconfigured' | 'budget' | 'failed';
   topics?: number; assessments?: number; links?: number;
 }

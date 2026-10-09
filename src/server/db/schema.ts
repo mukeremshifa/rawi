@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, date, text, boolean, timestamp, uuid, integer, bigint, jsonb, unique, index, foreignKey, primaryKey, check, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, date, text, boolean, timestamp, uuid, integer, bigint, jsonb, unique, index, foreignKey, primaryKey, check, vector, customType, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import type { AiPolicy, CallState, Language, ServiceTier, Usage, Validation, Vendor } from '../ai/types';
+import type { PoolQuestion, PoolVerification } from '../services/knowledge/types';
 import type { PreferenceFields } from '../../shared/contracts/workspace';
 import type { VersionedQuestion, LearningAttempt, FlashcardReview } from '../../shared/contracts/learning';
 import type { AnswerValue } from '../../shared/domain/types';
@@ -43,6 +45,8 @@ export const verification = pgTable('verification', {
 export const workspaces = pgTable('workspaces', {
   id: uuid('id').primaryKey().defaultRandom(),
   ownerUserId: text('owner_user_id').notNull().unique().references(() => user.id, { onDelete: 'cascade' }),
+  // Null means the default plan. Organisation policy will override plans when tenancy exists.
+  aiPlanId: text('ai_plan_id').references((): AnyPgColumn => aiPlans.id),
   ...timestamps(),
 });
 export const preferences = pgTable('workspace_preferences', {
@@ -121,6 +125,8 @@ export const materialVersions = pgTable('material_versions', {
   status: text('status').$type<ConversionStatus>().notNull(), failedPages: integer('failed_pages').array().notNull().default(sql`'{}'::integer[]`),
   warnings: jsonb('warnings').$type<ConversionWarning[]>().notNull().default([]), failure: text('failure'), rawObjectId: uuid('raw_object_id'),
   pageCount: integer('page_count'), pagination: text('pagination').$type<Pagination>().notNull(),
+  // Detected when the knowledge layer is built. Prompts and search configuration follow it.
+  language: text('language').$type<Language>().notNull().default('en'),
   // Asynchronous conversion job. A lease fences workers, attempts count provider submissions,
   // and completion failures count results that arrived but could not be saved.
   providerRequestId: text('provider_request_id'), attempts: integer('attempts').notNull().default(0),
@@ -286,6 +292,8 @@ export const tutorSessions = pgTable('tutor_sessions', {
   plannedSessionId: uuid('planned_session_id'), completedLearning: boolean('completed_learning').notNull().default(false),
   sampleDataset: text('sample_dataset'),
   imported: boolean('imported').notNull().default(false), endedAt: timestamp('ended_at', { withTimezone: true }),
+  // Older turns, summarised so a long session sends recent turns verbatim and the rest briefly.
+  historySummary: text('history_summary'), summarisedThrough: integer('summarised_through').notNull().default(-1),
 }, t => [unique('tutor_sessions_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ name: 'tutor_planner_scope_fk', columns: [t.workspaceId, t.courseId, t.plannedSessionId], foreignColumns: [plannedSessions.workspaceId, plannedSessions.courseId, plannedSessions.id] }), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('tutor_sessions_scope_idx').on(t.workspaceId, t.courseId, t.id), index('tutor_chronology_idx').on(t.workspaceId, t.courseId, t.createdAt, t.id)]);
 export const tutorMessages = pgTable('tutor_messages', {
   id: uuid('id').primaryKey(), ...materialScope(), sessionId: uuid('session_id').notNull(), ordinal: integer('ordinal').notNull(),
@@ -303,17 +311,10 @@ export const reminderStates = pgTable('reminder_states', {
 export const aiOperations = pgTable('ai_operations', {
   id: uuid('id').primaryKey(), ...materialScope(), task: text('task').$type<'tutor' | 'generate' | 'grade' | OutlineJobKind>().notNull(),
   targetId: uuid('target_id').notNull(), fingerprint: text('fingerprint').notNull(), input: jsonb('input').$type<unknown>().notNull(),
-  state: text('state').$type<'blocked' | 'running' | 'complete' | 'failed' | 'cancelled' | 'interrupted'>().notNull(),
-  model: text('model').notNull(), promptVersion: text('prompt_version').notNull(), reason: text('reason'),
+  state: text('state').$type<'queued' | 'blocked' | 'running' | 'complete' | 'failed' | 'cancelled' | 'interrupted'>().notNull(),
+  model: text('model'), promptVersion: text('prompt_version').notNull(), reason: text('reason'),
   activeExecutionId: uuid('active_execution_id'), result: jsonb('result').$type<unknown>(), ...timestamps(),
 }, t => [unique('ai_operations_scope_unique').on(t.workspaceId, t.id), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('ai_operations_target_idx').on(t.workspaceId, t.targetId, t.createdAt)]);
-export const aiExecutions = pgTable('ai_executions', {
-  id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull(), operationId: uuid('operation_id').notNull(),
-  state: text('state').$type<'reserved' | 'settled' | 'ambiguous' | 'released'>().notNull(),
-  reservedMicros: bigint('reserved_micros', { mode: 'number' }).notNull(), chargedMicros: bigint('charged_micros', { mode: 'number' }),
-  usage: jsonb('usage').$type<unknown>(), partial: text('partial').notNull().default(''),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(), settledAt: timestamp('settled_at', { withTimezone: true }),
-}, t => [foreignKey({ columns: [t.workspaceId, t.operationId], foreignColumns: [aiOperations.workspaceId, aiOperations.id] }), index('ai_executions_budget_idx').on(t.state, t.createdAt), check('ai_reservation_nonnegative', sql`${t.reservedMicros} >= 0 AND (${t.chargedMicros} IS NULL OR ${t.chargedMicros} >= 0)`)]);
 export const feedbackRevisions = pgTable('feedback_revisions', {
   id: uuid('id').primaryKey(), ...materialScope(), attemptId: uuid('attempt_id').notNull().references(() => learningAttempts.id), questionId: uuid('question_id').notNull(),
   operationId: uuid('operation_id').unique(), sampleDataset: text('sample_dataset'), revision: integer('revision').notNull(), grading: jsonb('grading').$type<WrittenGrading>().notNull(),
@@ -358,3 +359,93 @@ export const developmentSeedRecords = pgTable('development_seed_records', {
 }, t => [primaryKey({ columns: [t.workspaceId, t.version, t.key] }),
   foreignKey({ columns: [t.workspaceId, t.version], foreignColumns: [developmentSeeds.workspaceId, developmentSeeds.version] }),
   index('seed_records_entity_idx').on(t.workspaceId, t.entityType, t.entityId)]);
+
+/** Plan limits and allowed vendors as data. The `default` row is the only plan wired in. */
+export const aiPlans = pgTable('ai_plans', {
+  id: text('id').primaryKey(), policy: jsonb('policy').$type<AiPolicy>().notNull(), ...timestamps(),
+});
+/**
+ * One provider call: the meter and the trace together. A call is reserved before it is sent and
+ * settled from its usage after. An uncertain outcome stays charged at its reservation.
+ */
+export const aiCalls = pgTable('ai_calls', {
+  id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  // The student-facing operation or background job the call serves, when there is one.
+  operationId: uuid('operation_id'), jobId: uuid('job_id'),
+  task: text('task').notNull(), step: integer('step').notNull().default(0),
+  vendor: text('vendor').$type<Vendor>().notNull(), model: text('model').notNull(), region: text('region').notNull(),
+  serviceTier: text('service_tier').$type<ServiceTier>().notNull().default('standard'), language: text('language').$type<Language>().notNull(),
+  state: text('state').$type<CallState>().notNull(),
+  reservedMicros: bigint('reserved_micros', { mode: 'number' }).notNull(), chargedMicros: bigint('charged_micros', { mode: 'number' }),
+  usage: jsonb('usage').$type<Usage>(), latencyMs: integer('latency_ms'), ttftMs: integer('ttft_ms'),
+  validation: text('validation').$type<Validation>(), error: text('error'), partial: text('partial').notNull().default(''),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(), settledAt: timestamp('settled_at', { withTimezone: true }),
+}, t => [
+  index('ai_calls_budget_idx').on(t.workspaceId, t.createdAt), index('ai_calls_open_idx').on(t.state, t.createdAt),
+  index('ai_calls_health_idx').on(t.vendor, t.model, t.createdAt), index('ai_calls_operation_idx').on(t.operationId),
+  check('ai_calls_state_valid', sql`${t.state} in ('reserved', 'settled', 'ambiguous', 'released')`),
+  check('ai_calls_reservation_nonnegative', sql`${t.reservedMicros} >= 0 AND (${t.chargedMicros} IS NULL OR ${t.chargedMicros} >= 0)`),
+]);
+
+const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' });
+const versionScope = () => ({ ...materialScope(), materialId: uuid('material_id').notNull(), versionId: uuid('version_id').notNull() });
+const versionFk = (t: { workspaceId: AnyPgColumn; courseId: AnyPgColumn; materialId: AnyPgColumn; versionId: AnyPgColumn }) =>
+  foreignKey({ columns: [t.workspaceId, t.courseId, t.materialId, t.versionId], foreignColumns: [materialVersions.workspaceId, materialVersions.courseId, materialVersions.materialId, materialVersions.id] }).onDelete('cascade');
+
+/**
+ * Builds a version's knowledge layer once, in stages, under a lease. A newer version of the
+ * same material supersedes a waiting job. Progress lets a large version continue across steps.
+ */
+export const ingestJobs = pgTable('ingest_jobs', {
+  id: uuid('id').primaryKey(), ...versionScope(),
+  state: text('state').$type<'queued' | 'running' | 'done' | 'failed' | 'superseded'>().notNull().default('queued'),
+  stage: text('stage').$type<'chunk' | 'embed' | 'digest' | 'figures' | 'done'>().notNull().default('chunk'),
+  progress: jsonb('progress').$type<{ cursor: number }>().notNull().default({ cursor: 0 }),
+  leaseToken: uuid('lease_token'), leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+  attempts: integer('attempts').notNull().default(0), nextRunAt: timestamp('next_run_at', { withTimezone: true }),
+  failure: text('failure'), ...timestamps(),
+}, t => [
+  unique('ingest_jobs_version_unique').on(t.versionId), versionFk(t), index('ingest_jobs_due_idx').on(t.state, t.nextRunAt),
+  check('ingest_jobs_state_valid', sql`${t.state} in ('queued', 'running', 'done', 'failed', 'superseded')`),
+  check('ingest_jobs_stage_valid', sql`${t.stage} in ('chunk', 'embed', 'digest', 'figures', 'done')`),
+]);
+/** Retrieval units: consecutive blocks of one section, searched by text and by embedding. */
+export const knowledgeChunks = pgTable('knowledge_chunks', {
+  id: uuid('id').primaryKey(), ...versionScope(), ordinal: integer('ordinal').notNull(),
+  // The section's heading block, or null for the lead before the first heading.
+  sectionBlockId: uuid('section_block_id'), heading: text('heading').notNull(), blockIds: jsonb('block_ids').$type<string[]>().notNull(),
+  text: text('text').notNull(), language: text('language').$type<Language>().notNull(), tokens: integer('tokens').notNull(),
+  search: tsvector('search').notNull(), embedding: vector('embedding', { dimensions: 768 }), embeddingModel: text('embedding_model'),
+}, t => [
+  versionFk(t), unique('knowledge_chunks_order_unique').on(t.versionId, t.ordinal),
+  index('knowledge_chunks_scope_idx').on(t.workspaceId, t.courseId, t.versionId),
+  index('knowledge_chunks_search_idx').using('gin', t.search),
+  index('knowledge_chunks_embedding_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
+]);
+/** A section's summary and key terms, written once per version. */
+export const knowledgeSections = pgTable('knowledge_sections', {
+  id: uuid('id').primaryKey(), ...versionScope(), sectionBlockId: uuid('section_block_id'), heading: text('heading').notNull(),
+  summary: text('summary').notNull(), keyTerms: jsonb('key_terms').$type<string[]>().notNull(), blockIds: jsonb('block_ids').$type<string[]>().notNull(),
+  language: text('language').$type<Language>().notNull(), model: text('model').notNull(),
+}, t => [versionFk(t), unique('knowledge_sections_unique').on(t.versionId, t.sectionBlockId).nullsNotDistinct()]);
+/** Atomic claims, each tied to the blocks that state it. */
+export const knowledgeFacts = pgTable('knowledge_facts', {
+  id: uuid('id').primaryKey(), ...versionScope(), sectionBlockId: uuid('section_block_id'),
+  text: text('text').notNull(), blockIds: jsonb('block_ids').$type<string[]>().notNull(), language: text('language').$type<Language>().notNull(),
+}, t => [versionFk(t), index('knowledge_facts_section_idx').on(t.versionId, t.sectionBlockId)]);
+/** One description per figure, written once from the image. */
+export const figureDescriptions = pgTable('figure_descriptions', {
+  blockId: uuid('block_id').primaryKey(), ...versionScope(), description: text('description').notNull(),
+  language: text('language').$type<Language>().notNull(), model: text('model').notNull(),
+}, t => [versionFk(t)]);
+/**
+ * Checked candidate questions. The key is version, section, format, difficulty and prompt version,
+ * never the workspace, so a cohort can share a pool once organisations exist.
+ */
+export const questionPool = pgTable('question_pool', {
+  id: uuid('id').primaryKey(), ...versionScope(), sectionBlockId: uuid('section_block_id'),
+  cacheKey: text('cache_key').notNull(), format: text('format').notNull(), difficulty: text('difficulty').notNull(),
+  language: text('language').$type<Language>().notNull(), content: jsonb('content').$type<PoolQuestion>().notNull(),
+  blockIds: jsonb('block_ids').$type<string[]>().notNull(), verification: jsonb('verification').$type<PoolVerification>().notNull(),
+  state: text('state').$type<'verified' | 'rejected'>().notNull(), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, t => [versionFk(t), index('question_pool_key_idx').on(t.cacheKey, t.state), check('question_pool_state_valid', sql`${t.state} in ('verified', 'rejected')`)]);

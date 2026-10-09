@@ -159,6 +159,8 @@ export interface QuestionProvenance {
   model: string;
   generatedAt: string;
   materialIds: string[];
+  /** The checked pool question it was taken from, so one workspace is not given the same question twice. */
+  poolId?: string;
 }
 
 export interface RubricPoint {

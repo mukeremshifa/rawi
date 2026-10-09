@@ -39,3 +39,29 @@ export async function request<T>(path: string, userId?: string, body?: unknown, 
   return result;
 }
 export function errorMessage(error: unknown) { return error instanceof Error ? error.message : 'The request could not be completed.'; }
+/**
+ * POST and read a newline-delimited JSON stream, one event at a time. Used for tutor replies,
+ * which arrive as they are written. Errors before the stream opens throw like `request`.
+ */
+export async function streamEvents<E>(path: string, userId: string, body: unknown, onEvent: (event: E) => void, signal?: AbortSignal): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`/api${path}`, { method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.any([accountController.signal, ...(signal ? [signal] : [])]), headers: { 'Content-Type': 'application/json', 'X-Rawi-User': userId }, body: JSON.stringify(body) });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new RequestError('network', 'Could not connect. The reply is still being written and will appear when you reload.');
+  }
+  if (!response.ok || !response.body) {
+    const result = await response.json().catch(() => null) as ApiErrorBody | null;
+    throw new RequestError(result?.error?.code ?? 'unavailable', result?.error?.message ?? 'The reply could not start.', result?.error?.requestId);
+  }
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    buffer += value ?? '';
+    let at: number;
+    while ((at = buffer.indexOf('\n')) >= 0) { const line = buffer.slice(0, at).trim(); buffer = buffer.slice(at + 1); if (line) onEvent(JSON.parse(line) as E); }
+    if (done) return;
+  }
+}

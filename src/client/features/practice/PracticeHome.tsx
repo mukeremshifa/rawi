@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { z } from 'zod';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowRightIcon, PlayIcon, SlidersHorizontalIcon } from 'lucide-react';
+import { ArrowRightIcon, PlayIcon, SlidersHorizontalIcon, SparklesIcon } from 'lucide-react';
 import { createSetInput, formats, type LearningAttempt, type LearningRun, type LearningSet, type VersionedQuestion } from '@shared/contracts/learning';
 import type { Material } from '@shared/contracts/materials';
 import type { Difficulty, QuestionFormat } from '@shared/domain/types';
@@ -27,7 +27,8 @@ import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableL
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAccount } from '@/lib/account';
 import { request, errorMessage } from '@/lib/api';
-import { useApiAll, useApiPages, useSave } from '@/lib/data';
+import { useApi, useApiAll, useApiPages, useSave } from '@/lib/data';
+import type { AiStatusView } from '../../../server/api-types';
 import { useUnsentGuard } from '@/lib/hooks';
 import { activityKeys, keys } from '@/lib/query';
 
@@ -51,6 +52,7 @@ export function Practice() {
   const runs = useApiPages<{ id: string; title: string; startedAt: string }, 'runs'>(`/v1/courses/${id}/runs?limit=100`, 'runs');
   const [topic, setTopic] = useState(params.get('topicId') ?? '');
   const [building, setBuilding] = useState(!!params.get('materialId'));
+  const [generating, setGenerating] = useState(false);
   const [starting, setStarting] = useState(false), [startError, setStartError] = useState('');
   const fromMaterial = params.get('materialId') ?? '';
   const topics = useMemo(() => [...new Map(bank.data?.flatMap(q => q.topicId ? [[q.topicId, q.topicLabel ?? 'Topic'] as const] : []) ?? []).entries()].map(([value, label]) => ({ value, label })), [bank.data]);
@@ -74,7 +76,11 @@ export function Practice() {
   };
   return (
     <Page>
-      <PageHeader title="Practice" actions={<Button variant="secondary" onClick={() => setBuilding(true)}><SlidersHorizontalIcon />Build a custom set</Button>} />
+      <PageHeader title="Practice" actions={<>
+        <Button variant="secondary" onClick={() => setGenerating(true)}><SparklesIcon />Generate questions</Button>
+        <Button variant="secondary" onClick={() => setBuilding(true)}><SlidersHorizontalIcon />Build a custom set</Button>
+      </>} />
+      <GenerateSheet courseId={id} open={generating} onOpenChange={setGenerating} />
       {runs.items && runs.items.length > 0 && (
         <Section title="Continue">
           <List>{runs.items.map(r => <ListRow key={r.id} to={`/runs/${r.id}`} title={r.title} meta={`Started ${formatRelative(r.startedAt)}`} trailing={<ArrowRightIcon className="size-4" aria-hidden />} />)}</List>
@@ -86,7 +92,7 @@ export function Practice() {
           <p className="text-muted-foreground text-base">{preferences.values.questionCount} questions, {preferences.values.feedback === 'immediate' ? 'feedback after each answer' : 'feedback at the end'}{preferences.values.hints ? ', hints allowed' : ''}. Change the defaults in Settings.</p>
         </div>
         {bank.error ? <ErrorState error={bank.error} onRetry={() => void bank.refetch()} /> : bank.data?.length === 0 ? (
-          <Notice>Your question bank for this course is empty, and question generation isn't available yet.</Notice>
+          <Notice>Your question bank for this course is empty. <button type="button" className="underline underline-offset-2" onClick={() => setGenerating(true)}>Generate questions</button> from a topic or material.</Notice>
         ) : (
           <div className="flex flex-wrap items-end gap-snug">
             <Field label="Topic" className="w-72 max-w-full">
@@ -208,13 +214,77 @@ function BuildSheet({ courseId, bank, open, onOpenChange, initial, planned }: { 
             </Field>
             <Field layout="row" label="Allow hints" description="Hinted answers count as assisted work."><Switch checked={hints} onCheckedChange={setHints} /></Field>
           </fieldset>
-          <Notice>Question generation isn't available yet. Sets use the questions already in your bank.</Notice>
           {save.error && <FieldError>{save.error}</FieldError>}
         </SheetBody>
         <SheetFooter>
           {body && !save.busy ? <Button variant="ghost" onClick={() => { setBody(null); save.discard(); }}>Edit again</Button> : null}
           <Button variant="secondary" disabled={save.busy} onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button loading={save.busy} disabled={!name.trim() || !pool.length || !count} onClick={submit}>{save.status === 'failed' ? 'Retry' : 'Save set'}</Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/**
+ * Generate a practice set from materials or a topic. Questions are written from what Rawi read in
+ * the material, checked against their source, and saved as a set.
+ */
+function GenerateSheet({ courseId, open, onOpenChange }: { courseId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const navigate = useNavigate();
+  const materials = useApiAll<Material>(open ? `/v1/courses/${courseId}/materials?limit=50` : null, 'materials');
+  const outline = useApi<{ topics: { id: string; title: string }[] }>(open ? `/v1/courses/${courseId}/topics` : null);
+  const status = useApi<AiStatusView>(open ? '/v1/ai/status' : null);
+  const [from, setFrom] = useState('');
+  const [format, setFormat] = useState('multiple-choice');
+  const [difficulty, setDifficulty] = useState('mixed');
+  const [count, setCount] = useState<number | null>(5);
+  const [name, setName] = useState('');
+  const save = useSave();
+  const options = [
+    ...(outline.data?.topics ?? []).map(t => ({ value: `topic:${t.id}`, label: `Topic: ${t.title}` })),
+    ...(materials.data ?? []).filter(m => m.kind !== 'syllabus' && m.status !== 'failed').map(m => ({ value: `material:${m.id}`, label: `Material: ${m.title}` })),
+  ];
+  const chosen = options.find(o => o.value === from);
+  const submit = () => {
+    const [kind, value] = from.split(':');
+    const body = {
+      // Each click is a new request. A failed one saved no set, so there is nothing to resume.
+      operationId: crypto.randomUUID(), name: name.trim() || chosen?.label.replace(/^(Topic|Material): /, '') || 'Generated set', format, count: count ?? 5,
+      topicIds: kind === 'topic' ? [value] : [], materialIds: kind === 'material' ? [value] : [],
+      difficulties: difficulty === 'mixed' ? ['recall', 'reasoning', 'stretch'] : [difficulty],
+    };
+    save.run<{ setId: string }>({ path: `/v1/courses/${courseId}/generate`, body }, {
+      id: 'generate', invalidate: [keys.course(courseId).sets, ...activityKeys],
+      onSuccess: result => { onOpenChange(false); navigate(`/sets/${result.setId}`); },
+    });
+  };
+  return (
+    <Sheet open={open} onOpenChange={next => { if (!save.busy) onOpenChange(next); }}>
+      <SheetContent size="lg">
+        <SheetHeader>
+          <SheetTitle>Generate questions</SheetTitle>
+          <SheetDescription>Rawi writes questions from your material, checks each answer against its source, and saves them as a set.</SheetDescription>
+        </SheetHeader>
+        <SheetBody>
+          {status.data && !status.data.available && <Notice>{status.data.reason}</Notice>}
+          <fieldset disabled={save.busy} className="flex flex-col gap-base">
+            <Field label="From" required><Combobox value={from} onValueChange={setFrom} placeholder="Choose a topic or material" options={options} /></Field>
+            <div className="grid gap-base sm:grid-cols-2">
+              <Field label="Format"><Select value={format} onValueChange={setFormat} options={(['multiple-choice', 'flashcard', 'written-recall'] as QuestionFormat[]).map(f => ({ value: f, label: FORMAT_LABEL[f] }))} /></Field>
+              <Field label="Questions" description="Up to 10."><NumberField value={count} onValueChange={setCount} min={1} max={10} /></Field>
+            </div>
+            <Field label="Difficulty">
+              <SegmentedControl aria-label="Difficulty" value={difficulty} onValueChange={setDifficulty} options={[{ value: 'mixed', label: 'Mixed' }, ...(['recall', 'reasoning', 'stretch'] as Difficulty[]).map(d => ({ value: d, label: DIFFICULTY_LABEL[d] }))]} />
+            </Field>
+            <Field label="Set name" optional><Input maxLength={200} value={name} onChange={e => setName(e.target.value)} placeholder={chosen?.label.replace(/^(Topic|Material): /, '') ?? 'Generated set'} /></Field>
+          </fieldset>
+          {save.busy && <p className="text-muted-foreground text-sm" role="status">Writing and checking questions. This takes about fifteen seconds.</p>}
+          {save.error && <FieldError>{save.error}</FieldError>}
+        </SheetBody>
+        <SheetFooter>
+          <Button variant="secondary" disabled={save.busy} onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button loading={save.busy} disabled={!from || !count || status.data?.available === false} onClick={submit}>{save.status === 'failed' ? 'Retry' : 'Generate'}</Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>

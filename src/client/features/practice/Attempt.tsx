@@ -34,6 +34,8 @@ export function AttemptReview() {
   if (data.isPending) return <Page width="narrow"><PageLoading label="Loading results" /></Page>;
   if (data.error) return <Page width="narrow"><ErrorState error={data.error} onRetry={() => void data.refetch()} /></Page>;
   const a = data.data;
+  // Written answers with text and a rubric that have no feedback yet. One request marks them all.
+  const waiting = a.questions.filter(q => q.result.response.kind === 'text' && q.result.response.text.trim() && q.question.rubric?.length && !a.feedbackRevisions?.some(r => r.questionId === q.question.id)).length;
   const missed = a.questions.filter(missedOf).slice(0, 50);
   const shown = a.questions.map((q, n) => ({ ...q, n })).filter(q => filter === 'all' || (filter === 'missed' ? missedOf(q) : q.result.outcome === 'pending'));
   const practiseMissed = () => save.run<LearningSet>({ path: `/v1/courses/${a.courseId}/sets`, body: { id: setId.current, name: `Review: ${a.title}`.slice(0, 200), questionIds: missed.map(q => q.question.id), feedback: 'immediate', hintsAllowed: true, remediatesAttemptId: a.id } },
@@ -48,7 +50,8 @@ export function AttemptReview() {
         <Stat value={a.questions.filter(q => q.result.outcome === 'correct').length} label={`of ${a.questions.length} correct`} />
         <Stat value={a.pending} label="Awaiting feedback" />
       </div>
-      {a.pending > 0 && <Notice>Written answers awaiting feedback are saved and left out of the marks above, so they don't lower your score. Written feedback isn't available yet.</Notice>}
+      {a.pending > 0 && <Notice>Written answers awaiting feedback are saved and left out of the marks above, so they don't lower your score.</Notice>}
+      {waiting > 0 && !a.sampleDataset && !a.imported && <RequestFeedback attemptId={a.id} count={waiting} onDone={() => void data.refetch()} />}
       {a.sampleTimingNotice && <Notice>{a.sampleTimingNotice}</Notice>}
       {a.sampleDataset && <p className="text-muted-foreground text-sm">Sample activity. Objective answers are marked normally. Sample written feedback is illustrative.</p>}
       {a.imported && <p className="text-muted-foreground text-sm">{a.markingVersion === 'recovered-objective-v1' ? 'Recovered practice, marked by the server. Earlier hint use could not be checked.' : 'Imported history, with its original marking and hint records.'}</p>}
@@ -62,7 +65,6 @@ export function AttemptReview() {
             </div>
             {a.flashcardReview?.firstRatings[question.id] && <p className="text-muted-foreground text-sm">First pass: {RATING_LABEL[a.flashcardReview.firstRatings[question.id]!.rating]}.</p>}
             <QuestionFeedback question={{ ...question, source: undefined }} attempt={result} />
-            {result.response.kind === 'text' && question.rubric && <RequestFeedback attemptId={a.id} questionId={question.id} />}
             {a.feedbackRevisions?.some(r => r.questionId === question.id) && (
               <details className="text-sm">
                 <summary className="text-muted-foreground cursor-pointer">Earlier feedback</summary>

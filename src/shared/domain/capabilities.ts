@@ -6,7 +6,16 @@ import type {
   SessionActivity,
   StudyTopic,
 } from './types';
-import { isUsableMaterial, materialsForTopic } from './ai-context';
+
+/** Material whose current version converted to readable blocks. */
+export function isUsableMaterial(material: StudyMaterial): boolean {
+  return !material.archived && material.readable;
+}
+
+/** Usable materials in this course with a section linked to the topic. */
+export function materialsForTopic(topic: StudyTopic, materials: StudyMaterial[]): StudyMaterial[] {
+  return materials.filter(m => m.courseId === topic.courseId && isUsableMaterial(m) && m.topicIds.includes(topic.id));
+}
 
 /**
  * What can actually be done with a topic, given the content that exists.

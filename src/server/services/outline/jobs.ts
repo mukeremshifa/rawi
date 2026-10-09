@@ -1,15 +1,16 @@
 import { and, asc, eq, inArray, isNull, lte, ne, or } from 'drizzle-orm';
-import { aiOperations, courses, materials, outlineJobs, topics } from '../../db/schema';
+import { courses, materials, outlineJobs, topics } from '../../db/schema';
 import { socketDb, transaction, type SocketDb } from '../../db/client';
 import type { BackendBindings } from '../../config';
 import { ApiError } from '../../errors';
 import type { Citation } from '../../../shared/contracts/document';
 import { blockMarkdown } from '../../../shared/domain/document-text';
 import { OUTLINE_MAX, type OutlineJobKind, type OutlineJobResult } from '../../../shared/contracts/outline';
-import { reserveExecution, settleExecution } from '../ai/operations';
-import { anthropicProvider, costMicros, OUTLINE_MODELS, OUTLINE_PROMPT_VERSION, ProviderFailed, reservationMicros, syllabusPrompt, mappingPrompt, draftPrompt } from './anthropic';
+import { adaptersFor, run, type Task } from '../../ai/engine';
+import { outlineTasks } from './tasks';
+import { runIngest } from '../knowledge/ingest';
 import { rulesProvider } from './rules';
-import { citedOnly, housePunctuation, sequenceNumber, type DraftInput, type MappingInput, type OutlineProvider, type SyllabusInput, type Usage } from './provider';
+import { citedOnly, housePunctuation, sequenceNumber, type DraftInput, type MappingInput, type OutlineProvider, type SyllabusInput } from './provider';
 import { readyMaterials, writeSuggestions } from './links';
 import { sections, sectionExcerpt, versionBlocks, type SectionBlock } from './sections';
 import { addTopics, applyAssessments, applyTopics } from './outline';
@@ -51,6 +52,8 @@ export async function runCourseJobs(env: BackendBindings, scope: Scope) {
     }
   } catch (error) { console.log(JSON.stringify({ operation: 'outline-job', error: error instanceof ApiError ? error.code : 'unexpected' })); }
   finally { await connection.close(); }
+  // The knowledge layer follows the same events, on its own connection.
+  await runIngest(env, scope);
 }
 
 /** The cron safety net. */
@@ -102,7 +105,7 @@ async function step(db: SocketDb, env: BackendBindings, jobId: string) {
       const [current] = await tx.select().from(outlineJobs).where(eq(outlineJobs.id, job.id)).for('update');
       if (current?.leaseToken !== token) throw new ApiError(409, 'lease_lost', 'The outline job lease expired.');
       const summary = await prepared.apply(tx, outcome.value);
-      const result: OutlineJobResult = { provider: outcome.provider, ...(outcome.fallback ? { fallback: outcome.fallback } : {}), ...summary };
+      const result: OutlineJobResult = { provider: outcome.provider, ...(outcome.model ? { model: outcome.model } : {}), ...(outcome.fallback ? { fallback: outcome.fallback } : {}), ...summary };
       await tx.update(outlineJobs).set({ state: 'done', result, failure: null, leaseToken: null, leaseExpiresAt: null, updatedAt: new Date() }).where(eq(outlineJobs.id, job.id));
       return result;
     });
@@ -117,41 +120,27 @@ async function step(db: SocketDb, env: BackendBindings, jobId: string) {
 
 type Prepared = {
   input: SyllabusInput | MappingInput | DraftInput;
-  run: (provider: OutlineProvider) => Promise<{ value: unknown; usage?: Usage }>;
-  prompt: () => { system: string; prompt: string };
+  run: (provider: OutlineProvider) => Promise<{ value: unknown }>;
   apply: (tx: Parameters<Parameters<typeof transaction>[1]>[0], value: unknown) => Promise<Omit<OutlineJobResult, 'provider' | 'fallback'>>;
 };
 
 /**
- * The model when a key is configured and the budget allows, otherwise the
- * rules. A model failure also falls back to the rules, and says so.
+ * A model through the engine when a vendor is configured and the budget allows, otherwise the
+ * rules. A model failure also falls back to the rules, and the outline says so.
  */
-async function execute(db: SocketDb, env: BackendBindings, job: Job, prepared: Prepared): Promise<'busy' | { value: unknown; provider: 'anthropic' | 'rules'; fallback?: OutlineJobResult['fallback'] }> {
+async function execute(db: SocketDb, env: BackendBindings, job: Job, prepared: Prepared): Promise<'busy' | { value: unknown; provider: 'model' | 'rules'; model?: string; fallback?: OutlineJobResult['fallback'] }> {
   const rules = async (fallback: OutlineJobResult['fallback']) => ({ value: (await prepared.run(rulesProvider)).value, provider: 'rules' as const, fallback });
-  if (!env.ANTHROPIC_API_KEY) return rules('unconfigured');
-  const model = OUTLINE_MODELS[job.kind];
-  const prompts = prepared.prompt();
-  const operationId = crypto.randomUUID(), executionId = crypto.randomUUID();
-  await db.insert(aiOperations).values({ id: operationId, workspaceId: job.workspaceId, courseId: job.courseId, task: job.kind, targetId: job.id, fingerprint: job.id, input: { jobId: job.id, versionId: job.versionId }, state: 'blocked', model, promptVersion: OUTLINE_PROMPT_VERSION });
-  try { await reserveExecution(db, job.workspaceId, operationId, executionId, reservationMicros(model, prompts.system.length + prompts.prompt.length)); }
-  catch (error) {
-    await db.update(aiOperations).set({ state: 'failed', reason: error instanceof ApiError ? error.message : 'Not reserved.', updatedAt: new Date() }).where(eq(aiOperations.id, operationId));
-    if (error instanceof ApiError && error.code === 'ai_busy') return 'busy';
-    if (error instanceof ApiError && (error.code === 'ai_budget' || error.code === 'invalid_reservation')) return rules('budget');
-    throw error;
-  }
+  if (!Object.keys(adaptersFor(env)).length) return rules('unconfigured');
   try {
-    const { value, usage } = await prepared.run(anthropicProvider(env.ANTHROPIC_API_KEY));
-    await settleExecution(db, job.workspaceId, executionId, { state: 'settled', chargedMicros: costMicros(model, usage!), usage });
-    await db.update(aiOperations).set({ state: 'complete', reason: null, result: { jobId: job.id }, updatedAt: new Date() }).where(eq(aiOperations.id, operationId));
-    return { value, provider: 'anthropic' };
+    const served = await run(env, { db, workspaceId: job.workspaceId, jobId: job.id }, outlineTasks[job.kind] as Task<unknown, unknown>, prepared.input);
+    return { value: served.value, provider: 'model', model: served.route.model };
   } catch (error) {
-    const usage = (error as { usage?: Usage }).usage;
-    const status = (error as { status?: number }).status;
-    // A completed response is charged. An error status means nothing was generated. Anything else may have been.
-    await settleExecution(db, job.workspaceId, executionId, usage ? { state: 'settled', chargedMicros: costMicros(model, usage), usage } : status && status < 500 ? { state: 'released' } : { state: 'ambiguous' }).catch(() => undefined);
-    console.log(JSON.stringify({ operation: 'outline-model-failed', kind: job.kind, jobId: job.id, reason: error instanceof ProviderFailed ? error.message : status ?? 'unreachable' }));
-    return rules('failed');
+    const code = error instanceof ApiError ? error.code : 'unexpected';
+    if (code === 'ai_busy') return 'busy';
+    if (code === 'ai_budget') return rules('budget');
+    console.log(JSON.stringify({ operation: 'outline-model-failed', kind: job.kind, jobId: job.id, reason: code }));
+    if (code.startsWith('ai_')) return rules('failed');
+    throw error;
   }
 }
 
@@ -170,10 +159,10 @@ async function prepare(db: SocketDb, job: Job): Promise<Prepared | null> {
     const list = await versionBlocks(db, scope.workspaceId, job.versionId!);
     const blocks = keyMap('b', boundedBlocks(list, 150_000));
     const current = keyMap('t', outline);
-    const input: SyllabusInput = { courseName: course.name, blocks: [...blocks].map(([key, b]) => ({ key, text: blockMarkdown(b) })), current: [...current].map(([key, t]) => ({ key, title: t.title, module: t.module })) };
+    const input: SyllabusInput = { courseName: course.name, language: await versionLanguage(db, job.versionId!), blocks: [...blocks].map(([key, b]) => ({ key, text: blockMarkdown(b) })), current: [...current].map(([key, t]) => ({ key, title: t.title, module: t.module })) };
     const cite = (keys: string[]): Citation => ({ materialId: material.id, versionId: job.versionId!, blockIds: [...new Set(keys.flatMap(k => blocks.get(k)?.id ?? []))].slice(0, 50) });
     return {
-      input, prompt: () => syllabusPrompt(input), run: p => p.readSyllabus(input),
+      input, run: p => p.readSyllabus(input),
       apply: async (tx, raw) => {
         const reading = raw as Awaited<ReturnType<OutlineProvider['readSyllabus']>>['value'];
         const known = new Set(blocks.keys());
@@ -205,9 +194,9 @@ async function prepare(db: SocketDb, job: Job): Promise<Prepared | null> {
     const top = Math.min(...all.filter(s => s.headingBlockId).map(s => s.level), 9);
     const chosen = all.filter(s => !s.headingBlockId || s.level <= top + 1).slice(0, 120);
     const keyed = keyMap('s', chosen), topicKeys = keyMap('t', outline);
-    const input: MappingInput = { materialTitle: material.title, newTopics: room, sections: [...keyed].map(([key, s]) => ({ key, heading: s.heading || material.title, excerpt: sectionExcerpt(list, s, 400), parent: chosen.some(o => o !== s && !!o.headingBlockId && s.blockIds.includes(o.headingBlockId)) })), topics: [...topicKeys].map(([key, t]) => ({ key, title: t.title, summary: t.summary })) };
+    const input: MappingInput = { materialTitle: material.title, language: await versionLanguage(db, job.versionId!), newTopics: room, sections: [...keyed].map(([key, s]) => ({ key, heading: s.heading || material.title, excerpt: sectionExcerpt(list, s, 400), parent: chosen.some(o => o !== s && !!o.headingBlockId && s.blockIds.includes(o.headingBlockId)) })), topics: [...topicKeys].map(([key, t]) => ({ key, title: t.title, summary: t.summary })) };
     return {
-      input, prompt: () => mappingPrompt(input), run: p => p.mapMaterial(input),
+      input, run: p => p.mapMaterial(input),
       apply: async (tx, raw) => {
         const mapping = raw as Awaited<ReturnType<OutlineProvider['mapMaterial']>>['value'];
         const suggestions: { headingBlockId: string | null; topicId: string }[] = [];
@@ -235,7 +224,7 @@ async function prepare(db: SocketDb, job: Job): Promise<Prepared | null> {
   const headingKeys = new Map<string, { materialId: string; versionId: string; blockId: string }>();
   let n = 0;
   const input: DraftInput = {
-    courseName: course.name,
+    courseName: course.name, language: await versionLanguage(db, ready[0]!.versionId),
     materials: docs.map(({ m, list }, i) => {
       const heads = sections(list).filter(s => s.headingBlockId && s.level <= 3).slice(0, 60);
       const lead = list[0] ? `h${n++}` : null;
@@ -244,7 +233,7 @@ async function prepare(db: SocketDb, job: Job): Promise<Prepared | null> {
     }),
   };
   return {
-    input, prompt: () => draftPrompt(input), run: p => p.draftOutline(input),
+    input, run: p => p.draftOutline(input),
     apply: async (tx, raw) => {
       const draft = raw as Awaited<ReturnType<OutlineProvider['draftOutline']>>['value'];
       const materialOf = new Map(input.materials.map((m, i) => [m.key, docs[i]!.m]));
@@ -263,6 +252,9 @@ async function prepare(db: SocketDb, job: Job): Promise<Prepared | null> {
     },
   };
 }
+
+const versionLanguage = async (db: SocketDb, versionId: string) =>
+  (await db.select({ language: materialVersions.language }).from(materialVersions).where(eq(materialVersions.id, versionId)))[0]?.language ?? 'en';
 
 /** Blocks in order up to a character budget. Large documents are out of scope, so the rest is left out. */
 function boundedBlocks(list: SectionBlock[], chars: number) {

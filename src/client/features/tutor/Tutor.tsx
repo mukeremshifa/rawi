@@ -28,7 +28,8 @@ import { renderCitations } from '@/features/tutor/citations';
 import { DocumentBlocks } from '@/features/materials/DocumentView';
 import { assetPath, blockPath } from '@/features/materials/Reader';
 import { useAccount } from '@/lib/account';
-import { request } from '@/lib/api';
+import { request, streamEvents } from '@/lib/api';
+import type { AiStatusView, ReplyEvent } from '../../../server/api-types';
 import { useApi, useApiPages, useSave } from '@/lib/data';
 import { useUnsentGuard } from '@/lib/hooks';
 import { activityKeys, keys } from '@/lib/query';
@@ -54,13 +55,14 @@ export function TutorLibrary() {
   const [status, setStatus] = useState<'active' | 'archived'>('active');
   const [query, setQuery] = useState('');
   const sessions = useApiPages<TutorSession, 'sessions'>(`/v1/courses/${id}/tutor`, 'sessions');
+  const ai = useApi<AiStatusView>('/v1/ai/status');
   const fromContext = !!(params.get('blockIds') || params.get('attemptId'));
   const [creating, setCreating] = useState(fromContext);
   const rows = sessions.items?.filter(s => s.archived === (status === 'archived') && s.title.toLowerCase().includes(query.trim().toLowerCase())) ?? [];
   return (
     <Page>
       <PageHeader title="Tutor" actions={<Button size="lg" onClick={() => setCreating(true)}><PlusIcon />New session</Button>} />
-      <Notice>Tutor replies aren't available yet. Sessions keep your questions and sources so you can pick them up later.</Notice>
+      {ai.data && !ai.data.available && <Notice>{ai.data.reason} Sessions keep your questions and sources so you can pick them up later.</Notice>}
       <div className="flex flex-col gap-snug">
         <Toolbar>
           <div className="relative w-64 max-w-full">
@@ -151,10 +153,25 @@ export function Tutor() {
   const [review, setReview] = useState<TutorDetail | null>(null);
   const pending = useRef<Write | null>(null);
   const end = useRef<HTMLDivElement>(null);
+  const status = useApi<AiStatusView>('/v1/ai/status');
+  // The reply streams in after the question is saved. A reload resumes by reading the saved session.
+  const [live, setLive] = useState<{ op: string; text: string; error?: string } | null>(null);
+  const started = useRef<string | null>(null);
+  const pendingReply = data.data?.pendingReply ?? null;
+  useEffect(() => {
+    if (!pendingReply || started.current === pendingReply) return;
+    started.current = pendingReply;
+    setLive({ op: pendingReply, text: '' });
+    void streamEvents<ReplyEvent>(`/v1/tutor/${id}/reply`, user.id, { operationId: pendingReply }, event => {
+      if (event.type === 'delta') setLive(prior => prior && { ...prior, text: prior.text + event.text });
+      else if (event.type === 'error') setLive(prior => prior && { ...prior, error: event.message });
+    }).catch(e => setLive(prior => prior && { ...prior, error: String(e instanceof Error ? e.message : e) }))
+      .finally(() => void data.refetch().then(() => setLive(prior => prior?.error ? prior : null)));
+  }, [pendingReply]); // eslint-disable-line react-hooks/exhaustive-deps
   const row = data.data?.session;
   useUnsentGuard(!!text || !!pending.current || renaming !== null);
   usePageMeta({ courseId: row?.courseId, crumbs: row ? [{ label: 'Tutor', to: `/course/${row.courseId}/tutor` }, { label: row.title }] : undefined });
-  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [data.data?.messages.length]);
+  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [data.data?.messages.length, live?.text.length]);
   const send = (write: Write, after?: () => void) => {
     pending.current ??= write;
     const task = pending.current;
@@ -187,7 +204,7 @@ export function Tutor() {
           </div>
         </header>
 
-        {!d.execution.available && !s.sampleDataset && !s.imported && <Notice>{d.execution.reason}</Notice>}
+        {status.data && !status.data.available && !s.sampleDataset && !s.imported && <Notice>{status.data.reason}</Notice>}
         {s.sampleDataset && <p className="text-muted-foreground text-sm">A sample conversation. Its replies were written for this workspace.</p>}
         {s.imported && <p className="text-muted-foreground text-sm">Imported history, with its original model and source labels.</p>}
         {s.source && <Link className="text-primary-text inline-flex items-center gap-1.5 text-sm underline-offset-2 hover:underline" to={blockPath(s.source.materialId, s.source.versionId, s.source.blockIds[0])}><BookOpenIcon className="size-3.5" />The text this session is about</Link>}
@@ -223,9 +240,18 @@ export function Tutor() {
                     {!!m.provenance?.droppedCitations && <span>{m.provenance.droppedCitations === 1 ? 'One citation did not match your materials and was removed.' : `${m.provenance.droppedCitations} citations did not match your materials and were removed.`}</span>}
                   </div>
                 )}
+                {!tutor && m.state === 'failed' && <span className="text-danger-text text-sm">{m.failure ?? 'No reply was written for this question.'}</span>}
               </li>
             );
           })}
+          {live && (
+            <li className="flex flex-col gap-1.5" aria-live="polite">
+              <span className="text-muted-foreground text-sm font-medium">Tutor</span>
+              {live.text && <div className="font-serif"><Prose text={live.text.replace(/[[[^]]*]]/g, '').replace(/[[[^]]*$/, '')} size="reading" /></div>}
+              {!live.text && !live.error && <span className="text-muted-foreground text-base">Reading your materials…</span>}
+              {live.error && <span className="text-danger-text text-sm">{live.error}</span>}
+            </li>
+          )}
         </ol>
         {d.nextCursor !== null && <Button variant="secondary" className="self-start" onClick={() => void request<TutorDetail>(`/v1/tutor/${id}?cursor=${d.nextCursor}`, user.id).then(page => data.setData({ ...page, messages: [...d.messages, ...page.messages] }), e => toast.error(String(e)))}>Load more messages</Button>}
         {save.conflict && (
@@ -240,10 +266,10 @@ export function Tutor() {
       <div className="bg-background/95 sticky bottom-0 border-t backdrop-blur">
         <form className="ui-reading mx-auto flex flex-col gap-tight px-4 py-3" onSubmit={e => { e.preventDefault(); if (text.trim() || pending.current) send({ path: `/v1/tutor/${id}/messages`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: s.revision, text, action } }, () => setText('')); }}>
           {closed ? <p className="text-muted-foreground text-sm">{s.archived ? 'Restore this session to add questions.' : 'This session has ended. Start a new one to keep going.'}</p> : <>
-            <Textarea aria-label="Your question" className="max-h-48 min-h-16 bg-card" maxLength={4000} value={text} disabled={save.busy || !!pending.current} placeholder="Ask about this topic"
+            <Textarea aria-label="Your question" className="max-h-48 min-h-16 bg-card" maxLength={4000} value={text} disabled={save.busy || !!pending.current || !!pendingReply} placeholder="Ask about this topic"
               onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit(); }} />
             <div className="flex items-center gap-tight">
-              <Select aria-label="How to help" size="sm" className="w-52" value={action} onValueChange={setAction} disabled={save.busy || !!pending.current} options={ACTIONS} />
+              <Select aria-label="How to help" size="sm" className="w-52" value={action} onValueChange={setAction} disabled={save.busy || !!pending.current || !!pendingReply} options={ACTIONS} />
               {save.error && !save.conflict && <span className="text-danger-text min-w-0 flex-1 truncate text-sm" title={save.error}>Not sent. {save.error}</span>}
               <Button type="submit" className="ml-auto" loading={save.busy} disabled={!text.trim() && !pending.current}>{pending.current && !save.busy ? 'Retry' : <><ArrowUpIcon />Send</>}</Button>
             </div>

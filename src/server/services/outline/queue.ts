@@ -3,6 +3,7 @@ import { courses, materials, outlineJobs, topics } from '../../db/schema';
 import type { Transaction } from '../../db/client';
 import type { OutlineJobKind } from '../../../shared/contracts/outline';
 import { readyMaterials } from './links';
+import { enqueueIngest } from '../knowledge/ingest';
 
 type Scope = { workspaceId: string; courseId: string };
 
@@ -23,6 +24,7 @@ export async function afterVersionReady(tx: Transaction, version: Scope & { mate
   const [course] = await tx.select({ syllabus: courses.syllabusMaterialId }).from(courses).where(and(eq(courses.workspaceId, scope.workspaceId), eq(courses.id, scope.courseId)));
   const [material] = await tx.select({ kind: materials.kind }).from(materials).where(eq(materials.id, version.materialId));
   if (!course || !material) return;
+  await enqueueIngest(tx, { ...scope, materialId: version.materialId, id: version.id });
   if (material.kind === 'syllabus') { await enqueueJob(tx, scope, 'read_syllabus', { materialId: version.materialId, versionId: version.id }); return; }
   const [topic] = await tx.select({ id: topics.id }).from(topics).where(and(eq(topics.workspaceId, scope.workspaceId), eq(topics.courseId, scope.courseId))).limit(1);
   if (topic) { await enqueueJob(tx, scope, 'map_material', { materialId: version.materialId, versionId: version.id }); return; }

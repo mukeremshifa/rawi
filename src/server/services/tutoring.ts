@@ -1,25 +1,20 @@
-import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { newTutorInput, tutorMessageInput, tutorMetadataInput } from '../../shared/contracts/tutor';
 import { responseText } from '../../shared/domain/answer-review';
 import { tutorMessages, tutorSessions, topics, aiOperations, plannedSessions } from '../db/schema';
-import { validateCitation } from './materials';
-import { citedPassage, contextMaterials } from './documents/context';
+import { citationBlocks, validateCitation } from './materials';
+import { spansText } from '../../shared/domain/document-text';
 import { operation, attempt } from './learning';
-import { recordBlocked } from './ai/operations';
+import { queueReply } from './ai/tutor';
 import { summariseTutorTurns } from '../../shared/domain/tutor-summary';
 import type { writeInput } from '../../shared/contracts/learning';
-import { planningData, bumpPlanner } from './planning';
-import { selectPassages, priorWorkLines } from '../../shared/domain/ai-context';
-import { AI_LIMITS } from '../../shared/domain/ai';
-import { tutorPrompts } from './ai/prompts';
-import { tutorRequest } from './ai/validate';
+import { bumpPlanner } from './planning';
 import { getCourse } from './workspace';
 import { sectionTopic } from './outline/links';
 import { conflict, notFound, ApiError } from '../errors';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
 
-const reason = 'Your message is saved. Tutor replies are not available yet. No AI request was sent.';
 type Db = ReadDb | Transaction;
 async function ownSession(db: Db, workspaceId: string, id: string, lock = false) {
   const query = db.select().from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, id)));
@@ -35,8 +30,9 @@ export async function listSessions(db: Db, workspaceId: string, courseId: string
 }
 export async function detail(db: Db, workspaceId: string, id: string, cursor = -1) {
   const session = await ownSession(db, workspaceId, id);
+  const [pending] = await db.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), eq(aiOperations.task, 'tutor'), inArray(aiOperations.state, ['queued', 'running']))).orderBy(desc(aiOperations.createdAt)).limit(1);
   const rows = await db.select().from(tutorMessages).where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.sessionId, id), gt(tutorMessages.ordinal, cursor))).orderBy(asc(tutorMessages.ordinal)).limit(51);
-  return { session, summary: session.endedAt ? await sessionSummary(db, workspaceId, session) : null, messages: rows.slice(0, 50).map(({ workspaceId: _w, courseId: _c, sessionId: _s, ...m }) => m), nextCursor: rows.length > 50 ? rows[49]!.ordinal : null, execution: { available: false, reason } };
+  return { session, summary: session.endedAt ? await sessionSummary(db, workspaceId, session) : null, messages: rows.slice(0, 50).map(({ workspaceId: _w, courseId: _c, sessionId: _s, ...m }) => m), nextCursor: rows.length > 50 ? rows[49]!.ordinal : null, pendingReply: pending?.id ?? null };
 }
 export async function createSession(db: SocketDb, workspaceId: string, courseId: string, input: z.infer<typeof newTutorInput>) {
   return operation(db, workspaceId, input.id, { action: 'tutor-session', courseId, input }, async tx => {
@@ -65,44 +61,21 @@ export async function createSession(db: SocketDb, workspaceId: string, courseId:
       review = { attemptId: a.id, questionId: question.id, courseId, ...(topicId ? { topicId } : {}), prompt: question.prompt, response: responseText(result.response, question), answerKey: question.correctIndices?.map(i => question.options?.[i]).join('\n') ?? question.answer ?? question.sequence?.join('\n') ?? question.blanks?.map(b => b.join(' or ')).join('\n') ?? question.pairs?.map(p => `${p.left}: ${p.right}`).join('\n') ?? '', feedback: question.explanation, marksAwarded: result.marksAwarded, marksAvailable: result.marksAvailable, usedHint: result.usedHint, pending: result.outcome === 'pending' };
     }
     if (input.topicId && !topicLabel) throw notFound();
-    const focus = input.source ? await citedPassage(tx, workspaceId, courseId, input.source, []) : null;
-    const title = (input.title || topicLabel || focus?.heading || focus?.materialTitle || 'Tutor session').slice(0, 200);
+    const focus = input.source ? await citationBlocks(tx, workspaceId, courseId, input.source) : null;
+    const heading = focus?.blocks.find(b => b.type === 'heading');
+    const title = (input.title || topicLabel || (heading?.type === 'heading' ? spansText(heading.content.spans) : '') || focus?.title || 'Tutor session').slice(0, 200);
     if (!topicId && !input.source && !review) throw new ApiError(400, 'invalid_input', 'Choose a topic, or start the session from a section of a material.');
     const [saved] = await tx.insert(tutorSessions).values({ id: input.id, workspaceId, courseId, plannedSessionId: input.plannedSessionId, topicId, topicLabel, title, source: input.source ?? null, review }).onConflictDoNothing().returning(); if (!saved) throw notFound(); return detail(tx, workspaceId, saved.id);
   });
 }
-/** Snapshot only owned, bounded context. The cited focus blocks come first, from their own version. */
-async function prepareTurn(tx: Transaction, workspaceId: string, session: Awaited<ReturnType<typeof ownSession>>, input: z.infer<typeof tutorMessageInput>) {
-  const data = await planningData(tx, workspaceId);
-  const course = data.courses.find(c => c.id === session.courseId); if (!course) throw notFound();
-  const topic = data.topics.find(t => t.id === session.topicId);
-  const focus = session.source ? await citedPassage(tx, workspaceId, session.courseId, session.source, session.topicId ? [session.topicId] : []) : null;
-  if (session.source && !focus) throw notFound();
-  const materials = await contextMaterials(tx, workspaceId, session.courseId, data.materials);
-  const picked = selectPassages({ courseId: session.courseId, materials, topicIds: session.topicId ? [session.topicId] : [], query: `${session.topicLabel ?? focus?.heading ?? ''} ${input.text}`, maxChars: 18000 - (focus?.text.length ?? 0) });
-  const context = focus ? [focus, ...picked.filter(p => !p.blockIds.some(id => focus.blockIds.includes(id))).slice(0, 9)] : picked;
-  const recent = await tx.select().from(tutorMessages).where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.sessionId, session.id))).orderBy(desc(tutorMessages.ordinal)).limit(AI_LIMITS.maxHistoryTurns);
-  // History has its own total bound, in addition to the per-turn shared validator.
-  let historyChars = 0;
-  const history = recent.flatMap(m => {
-    const text = m.text.slice(0, Math.min(AI_LIMITS.maxResponseChars, 12000 - historyChars)); historyChars += text.length;
-    return text ? [{ role: m.role, text, ...(m.state === 'interrupted' || m.state === 'cancelled' ? { interrupted: true } : {}) }] : [];
-  }).reverse();
-  const review = session.review ? { ...session.review, prompt: session.review.prompt.slice(0, 6000), response: session.review.response.slice(0, 6000), answerKey: session.review.answerKey.slice(0, 6000), feedback: session.review.feedback.slice(0, 6000) } : undefined;
-  const request = tutorRequest({ courseId: session.courseId, courseName: course.name, topic: session.topicId ? { id: session.topicId, title: session.topicLabel ?? topic?.title ?? '', summary: topic?.summary ?? '' } : null, focusLabel: focus ? [focus.heading, focus.materialTitle].filter(Boolean).join(', in ') : session.title, stage: session.stage, action: input.action, message: input.text, focusPassageId: focus?.id, passages: context, history, review, priorWork: !session.topicId ? [] : priorWorkLines(session.topicId, data.attempts, new Map(data.questions.map(q => [q.id, q]))).map(line => line.slice(0, 400)) });
-  const prompts = tutorPrompts(request);
-  if (prompts.system.length + prompts.prompt.length > 64000) throw new ApiError(413, 'context_limit', 'This session exceeds the reply context limit. Start a new focused session.');
-  return { sessionRevision: session.revision, request, prompts };
-}
 export async function saveMessage(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof tutorMessageInput>) {
   return operation(db, workspaceId, input.operationId, { action: 'tutor-message', id, input }, async tx => {
     const session = await ownSession(tx, workspaceId, id, true); if (session.revision !== input.expectedRevision) throw conflict(); if (session.endedAt) throw new ApiError(409, 'session_ended', 'This session has ended. Start a new session to continue studying.'); if (session.archived) throw new ApiError(409, 'archived', 'Restore the session before adding messages.');
-    const [active] = await tx.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), eq(aiOperations.state, 'running'))).limit(1);
-    if (active) throw new ApiError(409, 'tutor_busy', 'A reply is still running. Stop it or recover its saved status before sending another question.');
-    const prepared = await prepareTurn(tx, workspaceId, session, input);
+    const [active] = await tx.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), inArray(aiOperations.state, ['queued', 'running']))).limit(1);
+    if (active) throw new ApiError(409, 'tutor_busy', 'A reply is still being written. Wait for it before sending another question.');
     const [last] = await tx.select({ ordinal: tutorMessages.ordinal }).from(tutorMessages).where(eq(tutorMessages.sessionId, id)).orderBy(desc(tutorMessages.ordinal)).limit(1);
-    await tx.insert(tutorMessages).values({ id: crypto.randomUUID(), workspaceId, courseId: session.courseId, sessionId: id, ordinal: (last?.ordinal ?? -1) + 1, text: input.text, role: 'student', state: 'blocked', operationId: input.operationId, failure: reason });
-    await recordBlocked(tx, workspaceId, session.courseId, input.operationId, id, 'tutor', prepared);
+    await tx.insert(tutorMessages).values({ id: crypto.randomUUID(), workspaceId, courseId: session.courseId, sessionId: id, ordinal: (last?.ordinal ?? -1) + 1, text: input.text, role: 'student', state: 'pending', operationId: input.operationId, failure: null });
+    await queueReply(tx, workspaceId, session, input.operationId, { text: input.text, action: input.action });
     await tx.update(tutorSessions).set({ revision: session.revision + 1, updatedAt: new Date() }).where(eq(tutorSessions.id, id));
     return detail(tx, workspaceId, id, Math.max(-1, (last?.ordinal ?? -1) - 48));
   });
@@ -127,8 +100,8 @@ export async function endSession(db: SocketDb, workspaceId: string, id: string, 
     const session = await ownSession(tx, workspaceId, id, true);
     if (session.endedAt) return detail(tx, workspaceId, id);
     if (session.revision !== input.expectedRevision) throw conflict();
-    const [running] = await tx.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), eq(aiOperations.state, 'running'))).limit(1);
-    if (running) throw new ApiError(409, 'tutor_busy', 'Stop the active reply before ending this session.');
+    const [running] = await tx.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), inArray(aiOperations.state, ['queued', 'running']))).limit(1);
+    if (running) throw new ApiError(409, 'tutor_busy', 'Wait for the reply to finish before ending this session.');
     const counts = await messageCounts(tx, workspaceId, id);
     const complete = counts.filter(m => !m.imported && m.state === 'complete');
     const completedLearning = complete.filter(m => m.role === 'student').reduce((n, m) => n + m.count, 0) >= 2 && complete.some(m => m.role === 'tutor' && m.count > 0);

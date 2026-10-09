@@ -1,5 +1,6 @@
 import type { AssessmentType } from '../../../shared/domain/types';
 import { OUTLINE_MAX } from '../../../shared/contracts/outline';
+import type { Language } from '../../ai/types';
 
 /**
  * The provider contract for outline jobs. Inputs carry short keys for
@@ -9,6 +10,7 @@ import { OUTLINE_MAX } from '../../../shared/contracts/outline';
  */
 export interface SyllabusInput {
   courseName: string;
+  language: Language;
   /** Blocks in reading order, as Markdown, with their keys. */
   blocks: { key: string; text: string }[];
   /** The current outline, so a re-read reuses a topic's key when the subject is the same. */
@@ -20,6 +22,7 @@ export interface SyllabusReading {
 }
 export interface MappingInput {
   materialTitle: string;
+  language: Language;
   /** `parent` marks a section that holds subsections, such as a document title. It is never a new topic. */
   sections: { key: string; heading: string; excerpt: string; parent: boolean }[];
   topics: { key: string; title: string; summary: string }[];
@@ -32,17 +35,18 @@ export interface Mapping {
 }
 export interface DraftInput {
   courseName: string;
+  language: Language;
   materials: { key: string; title: string; order: number | null; headings: { key: string; text: string; level: number }[]; lead: string | null }[];
 }
 export interface Draft {
   topics: { title: string; module: string; summary: string; material: string; heading: string | null }[];
 }
-export interface Usage { inputTokens: number; outputTokens: number }
 
+/** The rules pass. It runs when no model is available, and the outline says so. */
 export interface OutlineProvider {
-  readSyllabus(input: SyllabusInput): Promise<{ value: SyllabusReading; usage?: Usage }>;
-  mapMaterial(input: MappingInput): Promise<{ value: Mapping; usage?: Usage }>;
-  draftOutline(input: DraftInput): Promise<{ value: Draft; usage?: Usage }>;
+  readSyllabus(input: SyllabusInput): Promise<{ value: SyllabusReading }>;
+  mapMaterial(input: MappingInput): Promise<{ value: Mapping }>;
+  draftOutline(input: DraftInput): Promise<{ value: Draft }>;
 }
 
 /** Rawi's own sentences follow the house punctuation: no em dashes or semicolons. */

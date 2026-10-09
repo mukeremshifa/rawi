@@ -19,5 +19,14 @@ MATERIAL_PENDING_LIMIT=10
 # Datalab key for PDF, DOCX and PPTX conversion. Without it those uploads keep only the original.
 DATALAB_API_KEY=
 
-# Anthropic key for reading syllabi and mapping materials to topics. Without it a rules pass runs.
-ANTHROPIC_API_KEY=
+# AI vendors. Each is used when its credentials are present. Without either, outlines use a rules pass
+# and tutor, generation and feedback report that AI is unavailable.
+# Bedrock: an IAM user allowed only bedrock:InvokeModel and bedrock:InvokeModelWithResponseStream.
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_REGION=us-east-1
+# Vertex: a service account with the Vertex AI User role. Paste the key's private_key in double quotes, as it appears in the JSON key file.
+GOOGLE_VERTEX_PROJECT=
+GOOGLE_VERTEX_LOCATION=global
+GOOGLE_VERTEX_CLIENT_EMAIL=
+GOOGLE_VERTEX_PRIVATE_KEY=
