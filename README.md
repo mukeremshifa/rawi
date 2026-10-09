@@ -32,8 +32,9 @@ npx wrangler deploy --dry-run
 
 `npm run preview` serves the production build and proxies `/api` to the Worker.
 Schema changes use `npm run db:generate` and `npm run db:migrate` against the
-designated development database. Startup never migrates. Applied migrations
-remain unchanged.
+designated development database. Startup never migrates. The schema was reset
+for the materials pipeline, so `drizzle/0000_baseline.sql` is the one applied
+migration. Applied migrations remain unchanged from here on.
 
 ## Layout
 
@@ -77,8 +78,7 @@ returning-browser retirement has been checked and old installations are gone.
 
 ## Learning
 
-Courses include syllabus outlines, versioned materials and passages, notes,
-nine-format practice, resumable runs, immutable attempts, exam rehearsals and
+Courses include syllabus outlines, versioned materials, nine-format practice, resumable runs, immutable attempts, exam rehearsals and
 tutor records. Planning, availability, check-ins, history, search and reminders
 use the same authenticated workspace. Old `/online` links redirect to canonical
 routes with their references intact.
@@ -89,8 +89,25 @@ Pending written feedback does not lower graded totals.
 
 Hosted AI execution and streaming remain unfinished. Blocked requests do not
 mean questions were generated, a tutor replied or written work was graded.
-PDF, DOCX and PPTX originals can be stored, but extraction is not implemented.
-Text and Markdown are readable.
+
+## Materials
+
+An upload goes to private R2, then through a conversion adapter into blocks
+that Rawi owns (`src/shared/contracts/document.ts`): headings, paragraphs,
+lists, tables, equations, figures, code and quotes, with typed inline spans
+and source pages. Nothing is editable after conversion, and the original
+stays downloadable. Pasted text, `.md` and `.txt` use the Markdown adapter
+at publish time. PDF, DOCX and PPTX are published as pending and converted
+by Datalab in the background: `waitUntil` after upload, the version status
+read the Reader polls, and the cron sweep. Raw responses and extracted
+images are stored in R2. Images are served by an authorized Worker route.
+
+Put `DATALAB_API_KEY` in `.dev.vars`. Without it those uploads keep their
+original and show a conversion failure that can be retried once the key is
+set. Questions, tutor sessions and tutor replies cite
+`{ materialId, versionId, blockIds }`, and the Reader opens
+`/materials/:m/versions/:v#block-:id`. AI context groups blocks into
+passages for each request.
 
 ## Development seed
 
@@ -112,8 +129,11 @@ archives and progress, and reports changed records. Legacy `rawi-fictional-v1`
 imports remain intact. The new sample lab is distinctly named and does not replay
 that import envelope. Untouched empty planner defaults can receive availability.
 
-The seed uses domain services and atomic validated historical writes. Four small
-originals use the designated R2 binding through the normal upload lifecycle.
+The seed uses domain services and atomic validated historical writes. Fixture
+text goes through the Markdown adapter, and question sources and authored
+tutor citations resolve to block ids by section heading. Four small
+originals use the designated R2 binding through the normal upload lifecycle
+and convert through Datalab when the key is set.
 Authored tutor replies and written feedback carry Sample labels with no provider
 operations or charges. No fixtures or seed entry points ship in client or Worker
 bundles. Nothing seeds during startup, migration, onboarding or sign-in.
@@ -122,9 +142,9 @@ bundles. Nothing seeds during startup, migration, onboarding or sign-in.
 
 - Hosted AI: tutor replies, question generation, written feedback grading and
   streaming. Blocked operation records are not completed AI output.
-- Text extraction from PDF, DOCX and PPTX originals.
-- Drop the unused `courses.accent` column and the `accent` preference value.
-  The interface no longer shows course or workspace colours.
+- Chunks and search: a chunk index, content search and embeddings. AI
+  context is grouped from blocks on the fly for now.
+- Generated descriptions for figures. Figures contribute their caption only.
 - Deferred from the redesign: illustrations and brand art, a canvas or topic
   map, and native mobile patterns beyond the responsive layout.
 - Latency: planner and progress reads run their queries one after another

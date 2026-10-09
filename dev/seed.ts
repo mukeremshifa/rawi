@@ -16,6 +16,7 @@ import { createSession } from '../src/server/services/tutoring';
 import { propose } from '../src/server/services/planning';
 import { notifications, markReminder } from '../src/server/services/support';
 import { initiate, finalize } from '../src/server/services/uploads';
+import { advance } from '../src/server/services/conversion';
 import type { BackendBindings } from '../src/server/config';
 import { createCourseInput } from '../src/shared/contracts/workspace';
 import { questionInput, validResponse, type LearningAttempt, type VersionedQuestion } from '../src/shared/contracts/learning';
@@ -271,12 +272,22 @@ try {
       const [previous]=await db.select().from(s.uploads).where(and(eq(s.uploads.workspaceId,wid),eq(s.uploads.id,requestId)));
       if(previous?.state==='failed') continue;
       if(previous?.state==='pending'&&previous.expiresAt<=new Date()){await finalize(db,env,wid,requestId);continue;}
-      const prepared=await initiate(db,env,wid,id(fixtureCourses[0]!.id),{requestId,fileName:`sample-source-guide.${type}`,type,size:bytes.length,checksum,title:`Sample original: source guide (${type.toUpperCase()})`,kind:type==='pptx'?'slides':'reading',attribution:'Authored development fixture. Binary extraction is unavailable.',topicIds:[id(`topic:${fixtureTopics[0]!.id}`)]});
+      const prepared=await initiate(db,env,wid,id(fixtureCourses[0]!.id),{requestId,fileName:`sample-source-guide.${type}`,type,size:bytes.length,checksum,title:`Sample original: source guide (${type.toUpperCase()})`,kind:type==='pptx'?'slides':'reading',attribution:'Authored development fixture.',topicIds:[id(`topic:${fixtureTopics[0]!.id}`)]});
       if(prepared.url){const response=await fetch(prepared.url,{method:'PUT',headers:prepared.headers,body:bytes});if(!response.ok)throw new Error(`Original upload failed with HTTP ${response.status}.`);}
       const saved=await finalize(db,env,wid,requestId);if(saved.state!=='ready')throw new Error(`Original did not finalize: ${saved.state}.`);return saved;
       }
       throw new Error('Repeated upload expiry. Resolve storage availability before retrying.');
     });fileRows.push(result);
+  }
+  // Uploaded originals convert like any upload. Without DATALAB_API_KEY they record a clear failure.
+  for(const row of fileRows){
+    if(!row.resultVersionId)continue;
+    for(let i=0;i<60;i++){
+      const [version]=await db.select({status:s.materialVersions.status,nextPollAt:s.materialVersions.nextPollAt}).from(s.materialVersions).where(eq(s.materialVersions.id,row.resultVersionId));
+      if(!version||!['pending','processing'].includes(version.status))break;
+      if(!version.nextPollAt||version.nextPollAt<=new Date()){proxy??=await getPlatformProxy<BackendBindings>({remoteBindings:true,persist:false});await advance({...proxy.env,...config} as BackendBindings,row.resultVersionId);}
+      else await new Promise(resolve=>setTimeout(resolve,2000));
+    }
   }
   await step('read-sample-reminder','reminder_states',id('read-sample-reminder'),async()=>{
     const rows=await notifications(db,wid);const reminder=rows.reminders.find(r=>r.title.startsWith('Sample'));if(!reminder)return {skipped:true};
@@ -284,7 +295,7 @@ try {
   });
   const proposal=await step('complete-proposal','plan_proposals',id('complete-proposal'),()=>propose(db,wid,{operationId:id('complete-proposal'),weekStart:weekStart(seed!.anchorDate)}));
   const records=await db.select({kind:s.developmentSeedRecords.entityType}).from(s.developmentSeedRecords).where(and(eq(s.developmentSeedRecords.workspaceId,wid),eq(s.developmentSeedRecords.version,dataset)));
-  console.log(JSON.stringify({version:dataset,userId:owner.id,workspaceId:wid,email:owner.email,anchor:seed!.anchorDate,timezone:seed!.timezone,legacyImportsPreserved:legacy.length,records:records.reduce<Record<string,number>>((n,r)=>({...n,[r.kind]:(n[r.kind]??0)+1}),{}),conflicts:[...conflicts],courses:fixtureCourses.map(c=>id(c.id)),resume:id(`resume:${fixtureCourses[0]!.id}`),result:reviewed.id,tutor:id('tutor:answer-review'),proposal:proposal.id,originals:fileRows.map(r=>({materialId:r.materialId,versionId:r.resultVersionId}))}));
+  console.log(JSON.stringify({version:dataset,userId:owner.id,workspaceId:wid,email:owner.email,anchor:seed!.anchorDate,timezone:seed!.timezone,legacyImportsPreserved:legacy.length,records:records.reduce<Record<string,number>>((n,r)=>({...n,[r.kind]:(n[r.kind]??0)+1}),{}),conflicts:[...conflicts],courses:fixtureCourses.map(c=>id(c.id)),resume:id(`resume:${fixtureCourses[0]!.id}`),result:reviewed.id,tutor:id('tutor:answer-review'),proposal:proposal.id,originals:await Promise.all(fileRows.map(async r=>({materialId:r.materialId,versionId:r.resultVersionId,status:r.resultVersionId?(await db.select({status:s.materialVersions.status}).from(s.materialVersions).where(eq(s.materialVersions.id,r.resultVersionId)))[0]?.status:null})))}));
 } catch(error) {
   // Never print driver query parameters or signed storage URLs.
   console.error(error instanceof Error && !('query' in error) ? error.message : 'Seed failed. Inspect the scoped seed manifest before retrying.');
