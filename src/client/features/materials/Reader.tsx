@@ -21,13 +21,13 @@ import { Combobox } from '@/components/ui/combobox';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Field, FieldError } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
 import { Select } from '@/components/ui/select';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Hint } from '@/components/ui/tooltip';
 import { DocumentBlocks, pageLabel } from '@/features/materials/DocumentView';
-import { PHASE_LABEL, UPLOAD_HINT, useUpload } from '@/features/materials/upload';
+import { QueueRow, useUploadQueue } from '@/features/materials/queue';
+import { ACCEPT, UPLOAD_HINT, checkFile, hashFile } from '@/features/materials/upload';
 import { useAccount } from '@/lib/account';
 import { errorMessage, request } from '@/lib/api';
 import { useApi, useApiPages, useSave } from '@/lib/data';
@@ -37,6 +37,35 @@ import { usePageMeta } from '@/lib/shell';
 
 type Fields = z.infer<typeof materialFields>;
 const KINDS = (['reading', 'slides', 'other'] as const).map(value => ({ value, label: MATERIAL_KIND_LABEL[value] }));
+const listJoin = (items: string[]) => items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
+const PAGE_NOUNS: Record<MaterialVersion['pagination'], [string, string] | null> = { source: ['page', 'pages'], slides: ['slide', 'slides'], converted: ['converted page', 'converted pages'], none: null };
+
+/**
+ * Conversion warnings as one quiet line, grouped by kind with the pages they
+ * name. Dropped content has the partial notice and an empty document has its
+ * own, so neither repeats here.
+ */
+function warningLine(v: MaterialVersion) {
+  const groups = new Map<string, { message: string; pages: Set<number> }>();
+  for (const w of v.warnings) {
+    if (w.code === 'dropped_content' || w.code === 'empty') continue;
+    const group = groups.get(w.code) ?? { message: w.message, pages: new Set<number>() };
+    if (w.page) group.pages.add(w.page);
+    groups.set(w.code, group);
+  }
+  const where = (pages: Set<number>) => {
+    const nouns = PAGE_NOUNS[v.pagination], sorted = [...pages].sort((a, b) => a - b);
+    if (!nouns || !sorted.length) return '';
+    if (sorted.length === 1) return ` on ${pageLabel(v.pagination, sorted[0]!).toLowerCase()}`;
+    return sorted.length > 6 ? ` on ${sorted.length} ${nouns[1]}` : ` on ${nouns[1]} ${listJoin(sorted.map(String))}`;
+  };
+  return [...groups].map(([code, g]) => {
+    if (code === 'uncertain_text') return `Some content${where(g.pages)} may not have been read correctly.`;
+    if (code === 'simplified_content') return `Some content${where(g.pages)} is shown as plain text.`;
+    if (code === 'missing_image') return 'An image could not be extracted.';
+    return g.message;
+  }).join(' ');
+}
 export const assetPath = (materialId: string, versionId: string) => (assetId: string) => `/api/v1/materials/${materialId}/versions/${versionId}/assets/${assetId}`;
 export const blockPath = (materialId: string, versionId: string, blockId?: string) => `/materials/${materialId}/versions/${versionId}${blockId ? `#block-${blockId}` : ''}`;
 
@@ -153,6 +182,7 @@ export function MaterialReader() {
             {pagesText ? `Some content could not be converted, from ${pagesText}.` : 'Part of this document could not be converted.'} The rest is below. The original has everything.
           </Notice>
         )}
+        {usable && warningLine(v) && <p className="text-muted-foreground text-sm">{warningLine(v)} The original has everything.</p>}
         {usable && pages.isPending && <LoadingState lines={8} label="Loading text" />}
         {pages.error && <ErrorState error={pages.error} onRetry={() => void pages.refetch()} />}
         {usable && !pages.isPending && !blocks.length && <Notice>No readable text was found in this version.</Notice>}
@@ -173,7 +203,7 @@ export function MaterialReader() {
         )}
       </div>
 
-      <MaterialSheet material={row} version={v} panel={panel} onPanel={setPanel} onChanged={next => material.setData(next)} reload={() => { void material.refetch(); void version.refetch(); }} />
+      <MaterialSheet material={row} version={v} panel={panel} onPanel={setPanel} onChanged={next => material.setData(next)} />
     </article>
   );
 }
@@ -191,9 +221,9 @@ function BlockActions({ tutor, link, section }: { tutor: string; link: string; s
 }
 
 /** Versions and details, in a side sheet beside the text. */
-function MaterialSheet({ material, version, panel, onPanel, onChanged, reload }: {
+function MaterialSheet({ material, version, panel, onPanel, onChanged }: {
   material: Material; version: MaterialVersion | undefined; panel: null | 'versions' | 'edit'; onPanel: (p: null | 'versions' | 'edit') => void;
-  onChanged: (m: Material) => void; reload: () => void;
+  onChanged: (m: Material) => void;
 }) {
   return (
     <Sheet open={!!panel} onOpenChange={open => { if (!open) onPanel(null); }}>
@@ -203,7 +233,7 @@ function MaterialSheet({ material, version, panel, onPanel, onChanged, reload }:
           <TabsList className="px-5"><TabsTrigger value="versions">Versions</TabsTrigger><TabsTrigger value="edit">Details</TabsTrigger></TabsList>
           <SheetBody>
             <TabsContent value="versions" className="pt-0"><VersionList material={material} current={version?.id} onNavigate={() => onPanel(null)} /></TabsContent>
-            <TabsContent value="edit" className="pt-0"><EditPanel material={material} onChanged={onChanged} reload={reload} /></TabsContent>
+            <TabsContent value="edit" className="pt-0"><EditPanel material={material} onChanged={onChanged} /></TabsContent>
           </SheetBody>
         </Tabs>
       </SheetContent>
@@ -244,7 +274,7 @@ function VersionList({ material, current, onNavigate }: { material: Material; cu
  * request for Retry, and a revision conflict offers the latest saved
  * material to compare. Converted text is never edited.
  */
-function EditPanel({ material, onChanged, reload }: { material: Material; onChanged: (m: Material) => void; reload: () => void }) {
+function EditPanel({ material, onChanged }: { material: Material; onChanged: (m: Material) => void }) {
   const { user } = useAccount();
   const outline = useApi<CourseDetail>(`/v1/courses/${material.courseId}/topics`);
   const initial = useMemo<Fields>(() => ({ title: material.title, kind: material.kind, attribution: material.attribution, topicIds: material.topicIds }), [material]);
@@ -253,10 +283,33 @@ function EditPanel({ material, onChanged, reload }: { material: Material; onChan
   const [review, setReview] = useState<Material | null>(null);
   const [loadError, setLoadError] = useState('');
   const meta = useSave(), archive = useSave();
-  const upload = useUpload(material.courseId, () => { reload(); toast.success('New version saved'); });
+  // A new file goes through the same queue as Add material, so it shows in the tray and toasts when ready.
+  const queue = useUploadQueue();
+  const replacing = queue.items.filter(i => i.material?.id === material.id).at(-1);
+  const sending = !!replacing && ['waiting', 'preparing', 'uploading', 'saving'].includes(replacing.stage);
+  const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState('');
+  const [hashing, setHashing] = useState(false);
+  const chooseFile = (next: File | null) => {
+    setFile(null); setFileError('');
+    if (!next) return;
+    const checked = checkFile(next);
+    if ('reason' in checked) setFileError(checked.reason); else setFile(next);
+  };
+  const replace = async () => {
+    if (!file) return;
+    const checked = checkFile(file);
+    if ('reason' in checked) return;
+    setHashing(true);
+    try {
+      queue.enqueue([{ courseId: material.courseId, file, type: checked.type, checksum: await hashFile(file), title: material.title, kind: material.kind, topicIds: material.topicIds, material }]);
+      setFile(null);
+    } catch (e) { setFileError(errorMessage(e)); }
+    finally { setHashing(false); }
+  };
   const fieldsDirty = JSON.stringify({ ...fields, topicIds: [...fields.topicIds].sort() }) !== JSON.stringify({ ...initial, topicIds: [...initial.topicIds].sort() });
   useUnsentGuard(fieldsDirty || meta.pending);
-  const busy = meta.busy || upload.busy || archive.busy;
+  const busy = meta.busy || sending || hashing || archive.busy;
   const saveFields = () => {
     const parsed = materialFields.safeParse(fields);
     if (!parsed.success) return;
@@ -311,16 +364,15 @@ function EditPanel({ material, onChanged, reload }: { material: Material; onChan
         <div className="flex flex-wrap items-center gap-tight">
           <Button asChild variant="secondary" size="sm">
             <label className={busy ? 'pointer-events-none opacity-50' : 'cursor-pointer'}>
-              <UploadIcon />{upload.file ? 'Choose another file' : 'Choose a file'}
-              <input type="file" className="sr-only" accept=".txt,.md,.pdf,.docx,.pptx" disabled={busy} onChange={e => upload.setFile(e.target.files?.[0] ?? null)} />
+              <UploadIcon />{file ? 'Choose another file' : 'Choose a file'}
+              <input type="file" className="sr-only" accept={ACCEPT} disabled={busy} onChange={e => { chooseFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
             </label>
           </Button>
-          {upload.file && <span className="text-base">{upload.file.name}</span>}
-          {upload.file && <Button size="sm" loading={upload.busy} disabled={meta.busy}
-            onClick={() => void upload.start({ title: material.title, kind: material.kind, attribution: material.attribution, topicIds: material.topicIds }, material)}>{upload.phase === 'failed' ? 'Retry upload' : 'Upload'}</Button>}
+          {file && <span className="text-base break-all">{file.name}</span>}
+          {file && <Button size="sm" loading={hashing} disabled={meta.busy || sending} onClick={() => void replace()}>Upload</Button>}
         </div>
-        {upload.busy && <div className="flex flex-col gap-1"><span className="text-sm">{PHASE_LABEL[upload.phase]}</span><Progress value={upload.phase === 'uploading' ? upload.progress : null} aria-label="Upload progress" /></div>}
-        {upload.error && <FieldError>{upload.error}</FieldError>}
+        {replacing && <QueueRow item={replacing} />}
+        {fileError && <FieldError>{fileError}</FieldError>}
       </section>
 
       <section className="flex flex-col items-start gap-snug border-t pt-gutter">

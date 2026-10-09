@@ -27,6 +27,7 @@ import { PracticeSet } from '@/features/practice/SetDetail';
 import { Onboarding } from '@/features/account/AccountSettings';
 import { Settings } from '@/features/account/Settings';
 import { safeReturnTo } from '@/app/return-to';
+import { UploadQueueProvider } from '@/features/materials/queue';
 import { AccountContext } from '@/lib/account';
 import { queryClient } from '@/lib/query';
 // The component gallery never ships: the import is dropped from production builds.
@@ -130,7 +131,7 @@ export function App() {
   if (!me) return state === 'unavailable'
     ? <UnavailableScreen busy={busy} error={error} onRetry={() => void refresh()} />
     : <SignInScreen busy={busy} error={signInError} onSignIn={() => void signIn()} />;
-  return <AccountContext.Provider value={me}><DraftBoundary key={me.user.id}>
+  return <AccountContext.Provider value={me}><DraftBoundary key={me.user.id}><UploadQueueProvider>
     {!me.preferences.values.onboardingCompleted ? <Onboarding onSaved={account => { currentAccount.current = account; setMe(account); }} /> :
     <Shell onSignOut={() => void signOut()} signingOut={busy} banner={error && <ConnectionBanner message={error} busy={busy} onRetry={() => void (failed === 'sign-out' ? signOut() : refresh())} />}>
       <Routes>
@@ -170,7 +171,7 @@ export function App() {
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Shell>}
-  </DraftBoundary></AccountContext.Provider>;
+  </UploadQueueProvider></DraftBoundary></AccountContext.Provider>;
 }
 
 /** Course progress lives in the course overview now. */
