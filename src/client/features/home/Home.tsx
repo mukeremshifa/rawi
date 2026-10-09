@@ -23,9 +23,8 @@ function SetupChecklist({ row }: { row: ProgressData }) {
   const planner = useApi<PlannerView>('/v1/planner');
   const materials = useApi<{ materials: unknown[] }>(firstCourse ? `/v1/courses/${firstCourse.id}/materials?limit=1&archived=all` : null);
   const steps = [
-    { done: !!firstCourse, title: 'Add a course', detail: 'Name it and set a goal.', to: '/courses?new=1' },
-    { done: row.topics.length > 0, title: 'Outline its topics', detail: 'Paste a syllabus or add topics one by one.', to: firstCourse ? `/course/${firstCourse.id}/syllabus` : '/courses?new=1' },
-    { done: !!materials.data?.materials.length, title: 'Add materials', detail: 'Readings and notes you want to study from.', to: firstCourse ? `/course/${firstCourse.id}/materials?add=1` : '/courses?new=1' },
+    { done: !!firstCourse, title: 'Add a course', detail: 'A name is all it needs.', to: '/courses?new=1' },
+    { done: row.topics.length > 0 || !!materials.data?.materials.length || !!firstCourse?.syllabusMaterialId, title: 'Add your syllabus or a first material', detail: 'Rawi works out the course outline from your documents.', to: firstCourse ? `/course/${firstCourse.id}` : '/courses?new=1' },
     { done: !!planner.data?.availability.windows.length, title: 'Set your study hours', detail: 'So the planner knows when you are free.', to: '/planner?availability=1' },
   ];
   if (steps.every(s => s.done)) return null;

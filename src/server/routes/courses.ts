@@ -1,7 +1,10 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { createCourseInput, coursePatch, replaceOutlineInput, uuid } from '../../shared/contracts/workspace';
+import { createCourseInput, coursePatch, uuid } from '../../shared/contracts/workspace';
 import * as service from '../services/workspace';
+import * as outline from '../services/outline/outline';
+import * as jobs from '../services/outline/jobs';
+import { outlineCorrection, outlineUndo } from '../../shared/contracts/outline';
 import { jsonInput, type BackendContext } from '../http';
 
 export const coursesRoutes = new Hono<BackendContext>();
@@ -13,7 +16,21 @@ coursesRoutes.post('/courses', async c => c.json(await service.createCourse(c.ge
 coursesRoutes.get('/courses/:id', async c => c.json(await service.getCourse(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
 coursesRoutes.patch('/courses/:id', async c => c.json(await service.updateCourse(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, coursePatch))));
 coursesRoutes.get('/courses/:id/topics', async c => c.json(await service.getOutline(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
-coursesRoutes.put('/courses/:id/topics', async c => {
-  const input = await jsonInput(c, replaceOutlineInput);
-  return c.json(await service.replaceTopics(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), input.expectedRevision, input.topics, input.operationId));
+// Reading the outline advances any due outline job in the background. The course page polls this while one runs.
+coursesRoutes.get('/courses/:id/outline', async c => {
+  const scope = { workspaceId: c.get('workspaceId'), courseId: uuid.parse(c.req.param('id')) };
+  const view = await outline.outlineView(c.get('db'), scope.workspaceId, scope.courseId);
+  if (view.pending) c.executionCtx.waitUntil(jobs.runCourseJobs(c.env, scope));
+  return c.json(view);
+});
+coursesRoutes.post('/courses/:id/outline/corrections', async c => c.json(await outline.correctOutline(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, outlineCorrection))));
+coursesRoutes.post('/courses/:id/outline/undo', async c => {
+  const input = await jsonInput(c, outlineUndo);
+  return c.json(await outline.undoCorrection(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), input.operationId, input.changeId));
+});
+coursesRoutes.post('/courses/:id/outline/read', async c => {
+  const scope = { workspaceId: c.get('workspaceId'), courseId: uuid.parse(c.req.param('id')) };
+  const view = await jobs.readAgain(c.get('socket'), scope);
+  c.executionCtx.waitUntil(jobs.runCourseJobs(c.env, scope));
+  return c.json(view);
 });

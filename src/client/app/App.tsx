@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-do
 import type { Me } from '@shared/contracts/workspace';
 import { authClient, RequestError, request, setActiveAccount } from '@/lib/api';
 import { CourseLibrary } from '@/features/courses/Courses';
-import { CourseEditor } from '@/features/courses/Syllabus';
+import { CourseSettings } from '@/features/courses/CourseSettings';
 import { MaterialReader } from '@/features/materials/Reader';
 import { Materials } from '@/features/materials/Library';
 import { Planner } from '@/features/planning/Planner';
@@ -123,7 +123,7 @@ export function App() {
     } catch { setFailed('sign-out'); setError('Sign-out did not complete, so your session may still be active. Try signing out again.'); }
     finally { authBusy.current = false; setBusy(false); }
   };
-  if (location.pathname === '/online' || location.pathname.startsWith('/online/')) return <Navigate replace to={`${/^\/online\/course\/[^/]+$/.test(location.pathname) ? location.pathname.slice(7) + '/syllabus' : location.pathname.slice(7) || '/'}${location.search}${location.hash}`} />;
+  if (location.pathname === '/online' || location.pathname.startsWith('/online/')) return <Navigate replace to={`${location.pathname.slice(7) || '/'}${location.search}${location.hash}`} />;
   if (state === 'unauthenticated' && location.pathname !== '/sign-in') return <Navigate replace to={`/sign-in?returnTo=${encodeURIComponent(destination)}`} />;
   const settings = <Settings onProfile={user => setMe(previous => previous?.user.id === user.id ? { ...previous, user } : previous)} onPreferences={preferences => setMe(previous => previous?.workspace.id === preferences.workspaceId ? { ...previous, preferences } : previous)} />;
   const signInError = error || (new URLSearchParams(location.search).has('error') ? 'Google sign-in was cancelled or did not finish. Please try again.' : '');
@@ -140,8 +140,8 @@ export function App() {
         <Route path="/storage" element={<Navigate replace to="/settings" />} />
         <Route path="/history" element={<Progress />} />
         <Route path="/welcome" element={<Navigate replace to="/courses" />} />
-        <Route path="/course/:id/syllabus" element={<CourseEditor key={location.pathname} />} />
-        <Route path="/course/:id/settings" element={<CourseEditor key={location.pathname} />} />
+        <Route path="/course/:id/syllabus" element={<CourseRedirect />} />
+        <Route path="/course/:id/settings" element={<CourseSettings key={location.pathname} />} />
         <Route path="/planner/availability" element={<Navigate replace to="/planner?availability=1" />} />
         <Route path="/settings/:section" element={settings} />
         <Route path="/course/:id/progress/topic/:topicId" element={<TopicRedirect />} />
@@ -174,7 +174,7 @@ export function App() {
   </UploadQueueProvider></DraftBoundary></AccountContext.Provider>;
 }
 
-/** Course progress lives in the course overview now. */
+/** Course progress and the outline live in the course overview now. */
 function CourseRedirect() {
   const { id } = useParams();
   return <Navigate replace to={`/course/${id}`} />;

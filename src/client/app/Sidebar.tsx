@@ -1,7 +1,7 @@
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpenIcon, CalendarDaysIcon, CheckIcon, ChevronsUpDownIcon, ClipboardListIcon, GraduationCapIcon, HomeIcon, LayersIcon,
-  LayoutDashboardIcon, ListTreeIcon, LogOutIcon, MessageSquareIcon, PlusIcon, SettingsIcon, TrendingUpIcon,
+  LayoutDashboardIcon, LogOutIcon, MessageSquareIcon, PlusIcon, SettingsIcon, TrendingUpIcon,
 } from 'lucide-react';
 import type { Course } from '@shared/contracts/workspace';
 
@@ -52,7 +52,6 @@ export function Sidebar({ courses, courseId, onNavigate, onSignOut, signingOut }
   ];
   const sections: Item[] = courseId ? [
     { to: base, label: 'Overview', icon: LayoutDashboardIcon, match: new RegExp(`^${base}(/overview|/progress.*)?$`) },
-    { to: `${base}/syllabus`, label: 'Syllabus', icon: ListTreeIcon, match: new RegExp(`^${base}/(syllabus|settings)$`) },
     { to: `${base}/materials`, label: 'Materials', icon: BookOpenIcon },
     { to: `${base}/practice`, label: 'Practice', icon: ClipboardListIcon },
     { to: `${base}/exams`, label: 'Exams', icon: GraduationCapIcon },

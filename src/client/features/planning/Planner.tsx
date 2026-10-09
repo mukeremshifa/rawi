@@ -122,12 +122,14 @@ export function Planner() {
       <Section title="Assessments" actions={<Button variant="ghost" size="sm" disabled={!r.courses.length} onClick={() => setAssessment({ id: null, courseId: active[0]?.id ?? '', title: '', date: r.today, type: 'quiz', topicIds: [] })}><PlusIcon />Add</Button>}>
         {r.assessments.length ? (
           <ul className="divide-y border-y">
-            {[...r.assessments].sort((a, b) => a.date.localeCompare(b.date)).map(a => (
-              <li key={a.id}>
-                <button type="button" className="hover:bg-surface flex w-full items-center gap-snug py-2.5 text-left outline-none focus-visible:bg-surface" onClick={() => { const { id, createdAt: _c, revision: _r, ...rest } = a as PlannedAssessment & { revision?: number }; setAssessment({ ...rest, id }); }}>
-                  <span className="flex min-w-0 flex-1 flex-col"><span className="truncate text-base font-medium">{a.title}</span><span className="text-muted-foreground truncate text-sm">{ASSESSMENT_LABEL[a.type]} · <bdi>{courseName(a.courseId)}</bdi> · {dayLabel(a.date, { weekday: 'short', day: 'numeric', month: 'short' })}{a.time ? `, ${a.time}` : ''}</span></span>
-                  <DueLabel date={a.date} />
+            {[...r.assessments].sort((a, b) => (a.date ?? '9999').localeCompare(b.date ?? '9999')).map(a => (
+              <li key={a.id} className="flex flex-wrap items-center gap-x-snug">
+                <button type="button" className="hover:bg-surface flex min-w-0 flex-1 items-center gap-snug py-2.5 text-left outline-none focus-visible:bg-surface" onClick={() => { const { id, createdAt: _c, revision: _r, source: _s, ...rest } = a as PlannedAssessment & { revision?: number; source?: unknown }; setAssessment({ ...rest, id }); }}>
+                  <span className="flex min-w-0 flex-1 flex-col"><span className="truncate text-base font-medium">{a.title}</span><span className="text-muted-foreground truncate text-sm">{ASSESSMENT_LABEL[a.type]} · <bdi>{courseName(a.courseId)}</bdi>{a.date ? ` · ${dayLabel(a.date, { weekday: 'short', day: 'numeric', month: 'short' })}${a.time ? `, ${a.time}` : ''}` : ''}{a.weightPercent !== undefined ? ` · ${a.weightPercent}%` : ''}</span></span>
+                  {a.date && <DueLabel date={a.date} />}
                 </button>
+                {a.source && <Link className="text-muted-foreground text-sm hover:underline" to={`/materials/${a.source.materialId}/versions/${a.source.versionId}#block-${a.source.blockIds[0]}`} aria-label={`${a.title} in the syllabus`}>Syllabus</Link>}
+                {!a.date && <AddDate assessment={a} revision={r.revision} save={save} />}
               </li>
             ))}
           </ul>
@@ -268,6 +270,27 @@ function SessionSheet({ row, draft, save, onClose }: { row: Data; draft: Session
   );
 }
 
+/**
+ * An assessment the syllabus names without a date does not affect
+ * scheduling, so its row asks for the date in place.
+ */
+function AddDate({ assessment, revision, save }: { assessment: Data['assessments'][number]; revision: number; save: Save }) {
+  const [date, setDate] = useState('');
+  const submit = (value: string) => {
+    setDate(value);
+    if (!value) return;
+    const { id, courseId, createdAt: _c, revision: _r, source: _s, ...fields } = assessment as Data['assessments'][number] & { revision?: number; source?: unknown };
+    save.run({ path: `/v1/courses/${courseId}/assessments`, method: 'PUT', body: { operationId: crypto.randomUUID(), expectedRevision: revision, id, assessment: { ...fields, date: value } } },
+      { id: `assessment-date:${id}:${value}`, invalidate, onSuccess: () => toast.success(`${assessment.title} is on the plan`) });
+  };
+  return (
+    <div className="flex items-center gap-tight pb-2 sm:pb-0">
+      <span className="text-warning-text text-sm" id={`date-${assessment.id}`}>Add the date</span>
+      <DateField className="w-44" value={date} onValueChange={submit} disabled={save.busy} aria-labelledby={`date-${assessment.id}`} />
+    </div>
+  );
+}
+
 function AssessmentSheet({ row, draft, save, onClose }: { row: Data; draft: AssessmentDraft; save: Save; onClose: () => void }) {
   const [a, setA] = useState(draft);
   const allow = useUnsentGuard(JSON.stringify(a) !== JSON.stringify(draft));
@@ -288,7 +311,7 @@ function AssessmentSheet({ row, draft, save, onClose }: { row: Data; draft: Asse
             <Field label="Title" required><Input maxLength={200} value={a.title} onChange={e => set({ title: e.target.value })} placeholder="Midterm" /></Field>
             <div className="grid grid-cols-2 gap-base">
               <Field label="Type"><Select value={a.type} onValueChange={type => set({ type: type as AssessmentType })} options={(Object.keys(ASSESSMENT_LABEL) as AssessmentType[]).map(value => ({ value, label: ASSESSMENT_LABEL[value] }))} /></Field>
-              <Field label="Date" required><DateField value={a.date} onValueChange={date => set({ date })} /></Field>
+              <Field label="Date" optional description={a.date ? undefined : 'Undated assessments do not affect the plan.'}><DateField value={a.date ?? ''} clearable onValueChange={date => set({ date: date || null })} /></Field>
               <Field label="Time" optional><TimeField value={a.time ? Number(a.time.slice(0, 2)) * 60 + Number(a.time.slice(3)) : null} onValueChange={m => set({ time: m === null ? undefined : clock(m) })} /></Field>
               <Field label="Length" optional><NumberField value={a.durationMinutes ?? null} onValueChange={d => set({ durationMinutes: d ?? undefined })} min={1} max={1440} step={15} suffix="min" /></Field>
               <Field label="Weight" optional><NumberField value={a.weightPercent ?? null} onValueChange={w => set({ weightPercent: w ?? undefined })} min={0} max={100} step={5} suffix="%" /></Field>
@@ -300,7 +323,7 @@ function AssessmentSheet({ row, draft, save, onClose }: { row: Data; draft: Asse
         </SheetBody>
         <SheetFooter>
           <Button variant="secondary" disabled={save.busy} onClick={onClose}>Cancel</Button>
-          <Button loading={save.busy} disabled={!a.courseId || !a.title.trim() || !a.date || save.conflict} onClick={submit}>Save assessment</Button>
+          <Button loading={save.busy} disabled={!a.courseId || !a.title.trim() || save.conflict} onClick={submit}>Save assessment</Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArchiveIcon, ArchiveRestoreIcon, ListTreeIcon, PlusIcon, SearchIcon } from 'lucide-react';
+import { ArchiveIcon, ArchiveRestoreIcon, PlusIcon, SearchIcon, SettingsIcon } from 'lucide-react';
 import { createCourseInput, type Course, type CourseDetail, type CreateCourseInput } from '@shared/contracts/workspace';
 import type { ProgressView } from '../../../server/api-types';
 
@@ -16,7 +16,6 @@ import { Field, FieldError } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableLoading, TableRow } from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
 import { useApi, useApiPages, useSave } from '@/lib/data';
 import { useUnsentGuard } from '@/lib/hooks';
 import { keys } from '@/lib/query';
@@ -90,7 +89,7 @@ export function CourseLibrary() {
                       <TableCell className="text-muted-foreground hidden text-sm md:table-cell">{f && (f.last ? formatRelative(f.last) : 'Not yet')}</TableCell>
                       <TableCell>
                         <RowActions label={`Actions for ${course.name}`}>
-                          <DropdownMenuItem onSelect={() => navigate(`/course/${course.id}/syllabus`)}><ListTreeIcon />Edit outline</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => navigate(`/course/${course.id}/settings`)}><SettingsIcon />Course settings</DropdownMenuItem>
                           <DropdownMenuItem disabled={save.busy} onSelect={() => archive(course)}>{course.archived ? <><ArchiveRestoreIcon />Restore</> : <><ArchiveIcon />Archive</>}</DropdownMenuItem>
                         </RowActions>
                       </TableCell>
@@ -108,26 +107,25 @@ export function CourseLibrary() {
 }
 
 /**
- * New course: a name and an optional goal. On success the learner lands on
- * the new course's syllabus. A failed create keeps its id, so Retry cannot
- * make a second course.
+ * New course: a name only. On success the learner lands on the course page,
+ * where the syllabus and materials go. A failed create keeps its id, so Retry
+ * cannot make a second course.
  */
 function NewCourseDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
   const [id, setId] = useState(() => crypto.randomUUID());
   const [name, setName] = useState('');
-  const [goal, setGoal] = useState('');
   const [submitted, setSubmitted] = useState<CreateCourseInput | null>(null);
   const [invalid, setInvalid] = useState('');
   const save = useSave();
-  const allow = useUnsentGuard(open && (!!name || !!goal) || !!submitted);
+  const allow = useUnsentGuard(open && !!name || !!submitted);
   const create = () => {
-    const parsed = createCourseInput.safeParse(submitted ?? { id, name, description: '', goal, topics: [] });
+    const parsed = createCourseInput.safeParse(submitted ?? { id, name });
     if (!parsed.success) { setInvalid('Enter a course name of up to 200 characters.'); return; }
     setInvalid(''); setSubmitted(parsed.data);
     save.run<CourseDetail>({ path: '/v1/courses', body: parsed.data }, {
       id: `create:${parsed.data.id}`, invalidate: [keys.courses.all, keys.progress],
-      onSuccess: result => { allow(); setSubmitted(null); setName(''); setGoal(''); setId(crypto.randomUUID()); navigate(`/course/${result.course.id}/syllabus`); },
+      onSuccess: result => { allow(); setSubmitted(null); setName(''); setId(crypto.randomUUID()); navigate(`/course/${result.course.id}`); },
     });
   };
   return (
@@ -136,11 +134,10 @@ function NewCourseDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
         <form onSubmit={e => { e.preventDefault(); create(); }} className="flex min-h-0 flex-col">
           <DialogHeader>
             <DialogTitle>New course</DialogTitle>
-            <DialogDescription>Name it now. You'll add its topics next.</DialogDescription>
+            <DialogDescription>Name it now. Add the syllabus and materials next, and Rawi outlines the course from them.</DialogDescription>
           </DialogHeader>
           <DialogBody>
             <Field label="Course name" required error={invalid || undefined}><Input autoFocus maxLength={200} value={name} disabled={!!submitted} onChange={e => setName(e.target.value)} placeholder="Introductory statistics" /></Field>
-            <Field label="Your goal" optional description="What you want to be able to do by the end."><Textarea maxLength={4000} value={goal} disabled={!!submitted} onChange={e => setGoal(e.target.value)} /></Field>
             {save.error && (
               <FieldError>
                 {save.error} Retry sends the same request, so it cannot create a duplicate. <Link to={`/course/${submitted?.id}`} className="underline">Check whether it was saved</Link>.

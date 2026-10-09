@@ -5,7 +5,7 @@ import { useAccount } from '@/lib/account';
 import { pathKey } from '@/lib/query';
 
 /** Read one record. `path: null` waits until the caller has what it needs. */
-export function useApi<T>(path: string | null, options: { refetchInterval?: number } = {}) {
+export function useApi<T>(path: string | null, options: { refetchInterval?: number; refetchIntervalInBackground?: boolean } = {}) {
   const { user } = useAccount();
   const qc = useQueryClient();
   const key = pathKey(path ?? '');

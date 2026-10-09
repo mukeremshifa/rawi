@@ -42,7 +42,7 @@ export function CommandMenu({ open, onOpenChange, courses, courseId }: { open: b
         {course && (
           <CommandGroup heading={course.name}>
             <CommandItem onSelect={() => go(`/course/${course.id}`)}><LayoutDashboardIcon />Overview</CommandItem>
-            <CommandItem onSelect={() => go(`/course/${course.id}/syllabus`)}><ListTreeIcon />Syllabus</CommandItem>
+            <CommandItem onSelect={() => go(`/course/${course.id}/settings`)}><SettingsIcon />Course settings</CommandItem>
             <CommandItem onSelect={() => go(`/course/${course.id}/materials`)}><BookOpenIcon />Materials</CommandItem>
             <CommandItem onSelect={() => go(`/course/${course.id}/practice`)}><ClipboardListIcon />Practice</CommandItem>
             <CommandItem onSelect={() => go(`/course/${course.id}/exams`)}><GraduationCapIcon />Exams</CommandItem>

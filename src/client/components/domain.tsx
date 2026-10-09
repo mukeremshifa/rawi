@@ -10,7 +10,6 @@ import type {
   NavigationMode,
   SessionStatus,
   TimingMode,
-  TopicPriority,
   Difficulty,
   Outcome,
   QuestionFormat,
@@ -222,12 +221,11 @@ export const SESSION_STATUS_LABEL: Record<SessionStatus, string> = {
   skipped: 'Skipped',
 };
 
-export const PRIORITY_LABEL: Record<TopicPriority, string> = { low: 'Low', normal: 'Normal', high: 'High' };
-
-export const MATERIAL_KIND_LABEL: Record<'reading' | 'slides' | 'other', string> = {
+export const MATERIAL_KIND_LABEL: Record<'reading' | 'slides' | 'other' | 'syllabus', string> = {
   reading: 'Reading',
   slides: 'Slides',
   other: 'Other',
+  syllabus: 'Syllabus',
 };
 
 export const VERSION_ORIGIN_LABEL: Record<'paste' | 'upload', string> = {
