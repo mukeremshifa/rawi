@@ -26,7 +26,7 @@ export const spans = z.array(span).max(2000);
 export type Span = z.infer<typeof span>;
 
 export type ListContent = { ordered: boolean; items: { spans: Span[]; children?: ListContent }[] };
-const listContent: z.ZodType<ListContent> = z.lazy(() => z.strictObject({
+const listContent: z.ZodType<ListContent, ListContent> = z.lazy(() => z.strictObject({
   ordered: z.boolean(),
   items: z.array(z.strictObject({ spans, children: listContent.optional() })).min(1).max(1000),
 }));

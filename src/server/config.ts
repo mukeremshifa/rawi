@@ -3,6 +3,8 @@ type FileBindings = {
   MATERIALS_BUCKET?: R2Bucket;
   R2_ACCOUNT_ID?: string; R2_BUCKET_NAME?: string; R2_ACCESS_KEY_ID?: string; R2_SECRET_ACCESS_KEY?: string; R2_ENVIRONMENT?: string;
   MATERIAL_MAX_FILE_BYTES?: string; MATERIAL_MAX_TEXT_BYTES?: string; MATERIAL_WORKSPACE_BYTES?: string; MATERIAL_PENDING_LIMIT?: string;
+  // Document conversion. Server-side only, never logged or sent to the client.
+  DATALAB_API_KEY?: string;
 };
 export type BackendBindings = Omit<Env, typeof requiredBindings[number] | keyof FileBindings> & Partial<Record<typeof requiredBindings[number], string>> & FileBindings;
 export function configurationProblems(env: BackendBindings) {

@@ -10,6 +10,8 @@ import { ApiError, conflict, notFound } from '../errors';
 import { getCourse } from './workspace';
 
 type Db = ReadDb | SocketDb | Transaction;
+/** Provider submissions per version, across the first attempt and retries. */
+export const MAX_CONVERSION_ATTEMPTS = 3;
 export const materialScope = (workspaceId: string, id: string) => and(eq(materials.workspaceId, workspaceId), eq(materials.id, id));
 export async function hash(value: string | Uint8Array) {
   const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
@@ -49,7 +51,8 @@ export async function setTopics(tx: Transaction, workspaceId: string, courseId: 
 }
 export function publicVersion(row: typeof materialVersions.$inferSelect) {
   const { fingerprint: _hash, requestId: _request, workspaceId: _workspace, courseId: _course, rawObjectId: _raw, ...version } = row;
-  return { ...version, retryable: row.status === 'failed' && row.adapter === 'datalab' };
+  const { leaseToken: _lease, leaseExpiresAt: _leaseExpiry, providerRequestId: _provider, nextPollAt: _poll, submittedAt: _submitted, attempts, ...visible } = version;
+  return { ...visible, retryable: row.status === 'failed' && row.adapter === 'datalab' && attempts < MAX_CONVERSION_ATTEMPTS };
 }
 /**
  * Validate adapter output against the shared contract, then insert it in
@@ -141,9 +144,6 @@ export async function listVersions(db: ReadDb, workspaceId: string, id: string, 
   await ownMaterial(db, workspaceId, id);
   const rows = await db.select().from(materialVersions).where(and(eq(materialVersions.materialId, id), cursor ? gt(materialVersions.id, cursor) : undefined)).orderBy(asc(materialVersions.id)).limit(limit + 1);
   return { versions: rows.slice(0, limit).map(publicVersion), nextCursor: rows.length > limit ? rows[limit - 1]!.id : null };
-}
-export async function versionStatus(db: Db, workspaceId: string, id: string, versionId: string) {
-  return publicVersion(await ownVersion(db, workspaceId, id, versionId));
 }
 const blockColumns = { id: blocks.id, ordinal: blocks.ordinal, parentId: blocks.parentId, type: blocks.type, content: blocks.content, sources: blocks.sources, flags: blocks.flags };
 /** Blocks of one owned version, by ordinal cursor, or the exact blocks a citation names. */

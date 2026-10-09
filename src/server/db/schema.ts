@@ -118,8 +118,13 @@ export const materialVersions = pgTable('material_versions', {
   status: text('status').$type<ConversionStatus>().notNull(), failedPages: integer('failed_pages').array().notNull().default(sql`'{}'::integer[]`),
   warnings: jsonb('warnings').$type<ConversionWarning[]>().notNull().default([]), failure: text('failure'), rawObjectId: uuid('raw_object_id'),
   pageCount: integer('page_count'), pagination: text('pagination').$type<Pagination>().notNull(),
+  // Asynchronous conversion job. A lease fences workers, and attempts count provider submissions.
+  providerRequestId: text('provider_request_id'), attempts: integer('attempts').notNull().default(0),
+  leaseToken: uuid('lease_token'), leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+  nextPollAt: timestamp('next_poll_at', { withTimezone: true }), submittedAt: timestamp('submitted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [
+  index('versions_conversion_idx').on(t.status, t.nextPollAt),
   unique('versions_scope_unique').on(t.workspaceId, t.courseId, t.materialId, t.id),
   unique('versions_material_number_unique').on(t.materialId, t.number),
   foreignKey({ columns: [t.workspaceId, t.courseId, t.materialId], foreignColumns: [materials.workspaceId, materials.courseId, materials.id] }),
