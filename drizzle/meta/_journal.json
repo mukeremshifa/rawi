@@ -15,6 +15,13 @@
       "when": 1791532232647,
       "tag": "0001_completion_failures",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791536216568,
+      "tag": "0002_outline",
+      "breakpoints": true
     }
   ]
 }

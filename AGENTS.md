@@ -30,9 +30,9 @@ Four places keep an em dash on purpose, so leave them alone:
 - The source attributions under a question's extract, such as
   `- Valderrama, *Atlantic Crossings* (fictional)`. That is a citation
   convention rather than prose punctuation.
-- `SAMPLE_SYLLABUS` in `src/shared/domain/syllabus.ts`. It stands in for a document
+- The sample syllabus in `dev/fixtures/syllabus.md`. It stands in for a document
   somebody else wrote, and the syllabus reader has to cope with the punctuation
   real syllabuses use.
-- The outline matchers in the same file, which must recognise an em dash in
-  text the user pastes in.
+- The schedule-line matcher in `src/server/services/outline/rules.ts`, which must
+  recognise an em dash in the documents students upload.
 - The em-dash glyph used as an empty-value placeholder in a statistic.

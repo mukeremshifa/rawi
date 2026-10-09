@@ -10,7 +10,8 @@ import type { TutorSession, TutorMessage, TutorMessageProvenance } from '../../s
 /** Review summary kept with legacy workspace imports. */
 type ImportReview = { id: string; state: 'review' | 'complete'; courses: number; materials: number; questions: number; sets: number; attempts: number; unsupported: string[]; courseIds?: string[] };
 import type { WrittenGrading } from '../../shared/domain/types';
-import type { BlockType, ConversionStatus, ConversionWarning, Pagination, ParsedBlock } from '../../shared/contracts/document';
+import type { BlockType, Citation, ConversionStatus, ConversionWarning, Pagination, ParsedBlock } from '../../shared/contracts/document';
+import type { OutlineJobKind, OutlineJobResult, TopicOrigin } from '../../shared/contracts/outline';
 
 const timestamps = () => ({
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -51,35 +52,37 @@ export const preferences = pgTable('workspace_preferences', {
 }, t => [check('preferences_revision_positive', sql`${t.revision} > 0`)]);
 export const courses = pgTable('courses', {
   id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(), description: text('description').notNull(), goal: text('goal').notNull(),
+  name: text('name').notNull(), description: text('description').notNull(),
   archived: boolean('archived').notNull().default(false),
   revision: integer('revision').notNull().default(1), createFingerprint: text('create_fingerprint').notNull(), ...timestamps(),
+  // The course's one syllabus. New uploads to the syllabus slot are versions of this material.
+  syllabusMaterialId: uuid('syllabus_material_id'),
+  // Changes with every outline correction or job, so Undo applies only to the latest change.
+  outlineRevision: integer('outline_revision').notNull().default(1),
 }, t => [
   unique('courses_workspace_id_unique').on(t.workspaceId, t.id),
+  foreignKey({ name: 'courses_syllabus_fk', columns: [t.workspaceId, t.id, t.syllabusMaterialId], foreignColumns: syllabusColumns() }),
   index('courses_workspace_list_idx').on(t.workspaceId, t.archived, t.id),
   check('courses_revision_positive', sql`${t.revision} > 0`),
 ]);
 export const topics = pgTable('topics', {
   id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull(), courseId: uuid('course_id').notNull(),
-  title: text('title').notNull(), summary: text('summary').notNull(), priority: text('priority').$type<'low' | 'normal' | 'high'>().notNull(),
+  title: text('title').notNull(), summary: text('summary').notNull(),
   module: text('module').notNull(), order: integer('order').notNull(), revision: integer('revision').notNull().default(1), ...timestamps(),
+  // Where the topic came from, the blocks it was read from, and whether the student changed it.
+  origin: text('origin').$type<TopicOrigin>().notNull().default('student'),
+  source: jsonb('source').$type<Citation>(), edited: boolean('edited').notNull().default(false),
 }, t => [
   unique('topics_scope_id_unique').on(t.workspaceId, t.courseId, t.id),
   foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete('cascade'),
   index('topics_course_order_idx').on(t.workspaceId, t.courseId, t.order, t.id),
   check('topics_revision_positive', sql`${t.revision} > 0`),
-  check('topics_priority_valid', sql`${t.priority} in ('low', 'normal', 'high')`),
-]);
-export const topicLinks = pgTable('topic_links', {
-  workspaceId: uuid('workspace_id').notNull(), courseId: uuid('course_id').notNull(),
-  sourceId: uuid('source_id').notNull(), targetId: uuid('target_id').notNull(),
-}, t => [
-  primaryKey({ columns: [t.workspaceId, t.courseId, t.sourceId, t.targetId] }),
-  foreignKey({ columns: [t.workspaceId, t.courseId, t.sourceId], foreignColumns: [topics.workspaceId, topics.courseId, topics.id] }).onDelete('cascade'),
-  foreignKey({ columns: [t.workspaceId, t.courseId, t.targetId], foreignColumns: [topics.workspaceId, topics.courseId, topics.id] }).onDelete('cascade'),
-  check('topic_links_not_self', sql`${t.sourceId} <> ${t.targetId}`),
+  check('topics_origin_valid', sql`${t.origin} in ('syllabus', 'materials', 'student')`),
 ]);
 
+function syllabusColumns(): [AnyPgColumn, AnyPgColumn, AnyPgColumn] {
+  return [materials.workspaceId, materials.courseId, materials.id];
+}
 const materialScope = () => ({ workspaceId: uuid('workspace_id').notNull(), courseId: uuid('course_id').notNull() });
 function currentVersionColumns(): [AnyPgColumn, AnyPgColumn, AnyPgColumn, AnyPgColumn] {
   return [materialVersions.workspaceId, materialVersions.courseId, materialVersions.materialId, materialVersions.id];
@@ -95,7 +98,7 @@ export const materials = pgTable('materials', {
   foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
   index('materials_list_idx').on(t.workspaceId, t.courseId, t.archived, t.id),
   check('materials_revision_positive', sql`${t.revision} > 0`),
-  check('materials_kind_valid', sql`${t.kind} in ('reading', 'slides', 'other')`),
+  check('materials_kind_valid', sql`${t.kind} in ('reading', 'slides', 'other', 'syllabus')`),
 ]);
 export const fileObjects = pgTable('file_objects', {
   id: uuid('id').primaryKey(), ...materialScope(), key: text('key').notNull().unique(),
@@ -149,12 +152,24 @@ export const blocks = pgTable('blocks', {
   check('blocks_type_valid', sql`${t.type} in ('heading', 'paragraph', 'list', 'table', 'equation', 'figure', 'code', 'quote')`),
   check('blocks_ordinal_nonnegative', sql`${t.ordinal} >= 0`),
 ]);
-export const materialTopicLinks = pgTable('material_topic_links', {
-  ...materialScope(), materialId: uuid('material_id').notNull(), topicId: uuid('topic_id').notNull(),
+/**
+ * A section of one version linked to a topic. A section is a heading and the blocks under it,
+ * or the lead before the first heading when the heading is null. A removed row keeps the
+ * student's removal through remapping, and a removed lead row removes the topic from the whole
+ * version. Heading text carries student links and removals to a new version.
+ */
+export const sectionLinks = pgTable('section_links', {
+  id: uuid('id').primaryKey().defaultRandom(), ...materialScope(), topicId: uuid('topic_id').notNull(),
+  materialId: uuid('material_id').notNull(), versionId: uuid('version_id').notNull(),
+  headingBlockId: uuid('heading_block_id'), headingText: text('heading_text').notNull(),
+  origin: text('origin').$type<'suggested' | 'student'>().notNull(), removed: boolean('removed').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [
-  primaryKey({ columns: [t.materialId, t.topicId] }),
-  foreignKey({ columns: [t.workspaceId, t.courseId, t.materialId], foreignColumns: [materials.workspaceId, materials.courseId, materials.id] }),
+  unique('section_links_unique').on(t.versionId, t.headingBlockId, t.topicId).nullsNotDistinct(),
   foreignKey({ columns: [t.workspaceId, t.courseId, t.topicId], foreignColumns: [topics.workspaceId, topics.courseId, topics.id] }).onDelete('cascade'),
+  foreignKey({ columns: [t.workspaceId, t.courseId, t.materialId, t.versionId], foreignColumns: [materialVersions.workspaceId, materialVersions.courseId, materialVersions.materialId, materialVersions.id] }),
+  index('section_links_course_idx').on(t.workspaceId, t.courseId, t.topicId),
+  check('section_links_origin_valid', sql`${t.origin} in ('suggested', 'student')`),
 ]);
 export const workspaceStorage = pgTable('workspace_storage', {
   workspaceId: uuid('workspace_id').primaryKey().references(() => workspaces.id),
@@ -163,7 +178,7 @@ export const workspaceStorage = pgTable('workspace_storage', {
 }, t => [check('storage_nonnegative', sql`${t.usedBytes} >= 0 and ${t.reservedBytes} >= 0 and ${t.pendingCount} >= 0`)]);
 export const uploads = pgTable('uploads', {
   id: uuid('id').primaryKey(), ...materialScope(), materialId: uuid('material_id').notNull(), isNew: boolean('is_new').notNull(),
-  fingerprint: text('fingerprint').notNull(), fields: jsonb('fields').$type<{ title: string; kind: string; attribution: string; topicIds: string[] }>().notNull(),
+  fingerprint: text('fingerprint').notNull(), fields: jsonb('fields').$type<{ title: string; kind: string; attribution: string }>().notNull(),
   expectedRevision: integer('expected_revision'), expectedSize: bigint('expected_size', { mode: 'number' }).notNull(), expectedType: text('expected_type').notNull(),
   checksum: text('checksum').notNull(), fileName: text('file_name').notNull(), stagingKey: text('staging_key').notNull().unique(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(), state: text('state').$type<'pending' | 'ready' | 'failed'>().notNull().default('pending'),
@@ -245,7 +260,9 @@ export const plannerState = pgTable('planner_state', {
   availability: jsonb('availability').$type<Availability>().notNull(), revision: integer('revision').notNull().default(1),
 });
 export const assessments = pgTable('assessments', {
-  id: uuid('id').primaryKey(), ...materialScope(), date: date('date', { mode: 'string' }).notNull(), content: jsonb('content').$type<PlannedAssessment>().notNull(), revision: integer('revision').notNull().default(1),
+  id: uuid('id').primaryKey(), ...materialScope(), date: date('date', { mode: 'string' }), content: jsonb('content').$type<PlannedAssessment>().notNull(), revision: integer('revision').notNull().default(1),
+  // The syllabus blocks it was read from. A re-read leaves edited assessments alone.
+  source: jsonb('source').$type<Citation>(), edited: boolean('edited').notNull().default(true),
 }, t => [foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('assessments_scope_idx').on(t.workspaceId, t.courseId), unique('assessments_scope_unique').on(t.workspaceId, t.courseId, t.id)]);
 export const plannedSessions = pgTable('planned_sessions', {
   assessmentId: uuid('assessment_id').generatedAlwaysAs(sql`(content->>'assessmentId')::uuid`),
@@ -263,7 +280,7 @@ export const planProposals = pgTable('plan_proposals', {
   proposal: jsonb('proposal').$type<PlanProposal>().notNull(), fingerprint: text('fingerprint').notNull(), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 export const tutorSessions = pgTable('tutor_sessions', {
-  id: uuid('id').primaryKey(), ...materialScope(), topicId: uuid('topic_id').notNull(), topicLabel: text('topic_label').notNull(), title: text('title').notNull(),
+  id: uuid('id').primaryKey(), ...materialScope(), topicId: uuid('topic_id'), topicLabel: text('topic_label'), title: text('title').notNull(),
   archived: boolean('archived').notNull().default(false), revision: integer('revision').notNull().default(1), stage: text('stage').$type<TutorSession['stage']>().notNull().default('orient'),
   source: jsonb('source').$type<TutorSession['source']>(), review: jsonb('review').$type<TutorSession['review']>(), ...timestamps(),
   plannedSessionId: uuid('planned_session_id'), completedLearning: boolean('completed_learning').notNull().default(false),
@@ -284,7 +301,7 @@ export const reminderStates = pgTable('reminder_states', {
   workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id), key: text('key').notNull(), status: text('status').$type<'read' | 'dismissed'>().notNull(),
 }, t => [primaryKey({ columns: [t.workspaceId, t.key] })]);
 export const aiOperations = pgTable('ai_operations', {
-  id: uuid('id').primaryKey(), ...materialScope(), task: text('task').$type<'tutor' | 'generate' | 'grade'>().notNull(),
+  id: uuid('id').primaryKey(), ...materialScope(), task: text('task').$type<'tutor' | 'generate' | 'grade' | OutlineJobKind>().notNull(),
   targetId: uuid('target_id').notNull(), fingerprint: text('fingerprint').notNull(), input: jsonb('input').$type<unknown>().notNull(),
   state: text('state').$type<'blocked' | 'running' | 'complete' | 'failed' | 'cancelled' | 'interrupted'>().notNull(),
   model: text('model').notNull(), promptVersion: text('prompt_version').notNull(), reason: text('reason'),
@@ -302,6 +319,31 @@ export const feedbackRevisions = pgTable('feedback_revisions', {
   operationId: uuid('operation_id').unique(), sampleDataset: text('sample_dataset'), revision: integer('revision').notNull(), grading: jsonb('grading').$type<WrittenGrading>().notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [unique('feedback_revision_unique').on(t.attemptId, t.questionId, t.revision), foreignKey({ name: 'feedback_attempt_scope_fk', columns: [t.workspaceId, t.courseId, t.attemptId], foreignColumns: [learningAttempts.workspaceId, learningAttempts.courseId, learningAttempts.id] }), foreignKey({ columns: [t.workspaceId, t.operationId], foreignColumns: [aiOperations.workspaceId, aiOperations.id] }), foreignKey({ columns: [t.workspaceId, t.courseId, t.questionId], foreignColumns: [questionVersions.workspaceId, questionVersions.courseId, questionVersions.id] })]);
+/**
+ * Structured outline work: reading the syllabus, mapping a material's sections to topics, and
+ * drafting an outline from materials. Jobs advance like conversions, under a short lease.
+ */
+export const outlineJobs = pgTable('outline_jobs', {
+  id: uuid('id').primaryKey(), ...materialScope(), kind: text('kind').$type<OutlineJobKind>().notNull(),
+  materialId: uuid('material_id'), versionId: uuid('version_id'),
+  state: text('state').$type<'queued' | 'running' | 'done' | 'failed'>().notNull().default('queued'),
+  leaseToken: uuid('lease_token'), leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+  attempts: integer('attempts').notNull().default(0), nextRunAt: timestamp('next_run_at', { withTimezone: true }),
+  result: jsonb('result').$type<OutlineJobResult>(), failure: text('failure'), ...timestamps(),
+}, t => [
+  foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
+  index('outline_jobs_due_idx').on(t.state, t.nextRunAt),
+  index('outline_jobs_course_idx').on(t.workspaceId, t.courseId, t.createdAt),
+  check('outline_jobs_kind_valid', sql`${t.kind} in ('read_syllabus', 'map_material', 'draft_outline')`),
+  check('outline_jobs_state_valid', sql`${t.state} in ('queued', 'running', 'done', 'failed')`),
+]);
+
+/** What one outline correction changed, so its Undo can put it back. */
+export const outlineChanges = pgTable('outline_changes', {
+  id: uuid('id').primaryKey(), ...materialScope(), afterRevision: integer('after_revision').notNull(),
+  undo: jsonb('undo').$type<unknown>().notNull(), undone: boolean('undone').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, t => [foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] })]);
 
 // Explicit development provenance, never used by startup or authentication.
 export const developmentSeeds = pgTable('development_seeds', {

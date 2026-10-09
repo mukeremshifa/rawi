@@ -35,10 +35,8 @@
 export interface StudyCourse {
   id: string;
   name: string;
-  /** One or two sentences about the course itself. */
+  /** One or two sentences about the course itself. Optional. */
   description: string;
-  /** The student's own words for what they are trying to achieve. */
-  goal: string;
   /** Set when the student finished setup rather than landing on the seed. */
   createdAt: string;
   /**
@@ -48,18 +46,12 @@ export interface StudyCourse {
   archived?: boolean;
 }
 
-/** How much the student wants to weight a topic. Drives plan ordering. */
-export type TopicPriority = 'low' | 'normal' | 'high';
-
 export interface StudyTopic {
   id: string;
   courseId: string;
   title: string;
-  /** One sentence. Shown under the title everywhere a topic is listed. */
+  /** One or two sentences from the source. Empty for a topic the student added. */
   summary: string;
-  priority: TopicPriority;
-  /** Ids of other topics this is usually compared or contrasted with. */
-  relatedTopicIds: string[];
   /**
    * Which module/week of the outline this topic sits in. Free text, because a
    * syllabus says "Week 3" or "Unit II" and the prototype should not impose
@@ -82,6 +74,7 @@ export interface StudyMaterial {
   kind: MaterialKind;
   /** Where the text came from, as the learner recorded it. */
   attribution?: string;
+  /** Topics its current version's sections are linked to. */
   topicIds: string[];
   /** The current version converted to ready or partial blocks. */
   readable: boolean;
@@ -126,7 +119,8 @@ export interface Question {
   id: string;
   courseId: string;
   format: QuestionFormat;
-  topicId: string;
+  /** Taken from the section of its source. Questions without one still work everywhere. */
+  topicId?: string;
   difficulty: Difficulty;
   /** Marks this question is worth in an exam. Practice ignores it. */
   marks: number;
@@ -205,7 +199,7 @@ export type Outcome = 'correct' | 'partial' | 'incorrect' | 'skipped' | 'pending
 
 export interface QuestionAttempt {
   questionId: string;
-  topicId: string;
+  topicId?: string;
   format: QuestionFormat;
   /** The student's raw answer, in whatever shape the format uses. */
   response: AnswerValue;
@@ -351,7 +345,8 @@ export interface TutorTranscript {
   archived?: boolean;
   id: string;
   courseId: string;
-  topicId: string;
+  /** A session is about a topic, or about a source with no topic. */
+  topicId?: string;
   /** Set when the session was opened from blocks of a material. */
   source?: SourceRef;
   /** Set when the session was opened to review a specific exam mistake. */
@@ -379,7 +374,7 @@ export interface AnswerReview {
   attemptId: string;
   questionId: string;
   courseId: string;
-  topicId: string;
+  topicId?: string;
   prompt: string;
   response: string;
   answerKey: string;
@@ -604,8 +599,11 @@ export interface PlannedAssessment {
   courseId: string;
   title: string;
   type: AssessmentType;
-  /** ISO date (YYYY-MM-DD). */
-  date: string;
+  /**
+   * ISO date (YYYY-MM-DD). Null when the syllabus names the assessment without
+   * a date. Undated assessments do not affect scheduling until dated.
+   */
+  date: string | null;
   /**
    * HH:MM, when the student knows it. Optional because a syllabus often gives
    * only a date, and inventing "09:00" would be a fact the prototype made up.
@@ -820,7 +818,7 @@ export interface TopicEvidence {
 export interface RecurringMistake {
   courseId: string;
   questionId: string;
-  topicId: string;
+  topicId?: string;
   prompt: string;
   times: number;
   lastAttemptId: string;
@@ -872,3 +870,7 @@ export interface StreakSummary {
   /** True when today already has qualifying activity. */
   todayCounted: boolean;
 }
+
+/** An assessment with a date, the only kind that affects scheduling. */
+export type DatedAssessment = PlannedAssessment & { date: string };
+export const isDated = <T extends PlannedAssessment>(a: T): a is T & { date: string } => a.date !== null;

@@ -5,6 +5,8 @@ type FileBindings = {
   MATERIAL_MAX_FILE_BYTES?: string; MATERIAL_MAX_TEXT_BYTES?: string; MATERIAL_WORKSPACE_BYTES?: string; MATERIAL_PENDING_LIMIT?: string;
   // Document conversion. Server-side only, never logged or sent to the client.
   DATALAB_API_KEY?: string;
+  // Reading syllabi and mapping materials to topics. Without it a rules pass runs instead.
+  ANTHROPIC_API_KEY?: string;
 };
 export type BackendBindings = Omit<Env, typeof requiredBindings[number] | keyof FileBindings> & Partial<Record<typeof requiredBindings[number], string>> & FileBindings;
 export function configurationProblems(env: BackendBindings) {

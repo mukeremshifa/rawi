@@ -9,7 +9,7 @@ const text = z.string().max(20000);
 const short = z.string().min(1).max(2000);
 const unique = <T,>(values: T[]) => new Set(values).size === values.length;
 export const questionInput = z.strictObject({
-  format: z.enum(formats), topicId: uuid, difficulty: z.enum(['recall', 'reasoning', 'stretch']),
+  format: z.enum(formats), topicId: uuid.optional(), difficulty: z.enum(['recall', 'reasoning', 'stretch']),
   marks: z.number().int().min(1).max(100), prompt: short, explanation: text,
   answer: text.optional(), options: z.array(short).min(2).max(20).optional(),
   correctIndices: z.array(z.number().int().min(0).max(19)).min(1).max(20).refine(unique).optional(),
@@ -54,7 +54,7 @@ export const answerBatch = z.array(z.strictObject({ itemId: uuid, response: resp
 export const runWriteInput = writeInput.extend({ answers: answerBatch, position: z.number().int().min(0).max(49) });
 export const transitionInput = writeInput.extend({ itemId: uuid, action: z.enum(['check', 'reveal', 'hint']) });
 export const pageQuery = z.strictObject({ cursor: uuid.optional(), limit: z.coerce.number().int().min(1).max(100).default(30), archived: z.enum(['true', 'false', 'all']).default('false') });
-export type VersionedQuestion = Question & { source?: Citation; topicLabel: string; origin: 'imported' | 'generated'; originalId?: string };
+export type VersionedQuestion = Question & { source?: Citation; topicLabel?: string; origin: 'imported' | 'generated'; originalId?: string };
 export type LearningSet = { id: string; courseId: string; name: string; archived: boolean; revision: number; feedback: 'immediate' | 'end'; hintsAllowed: boolean };
 export type RunItem = { id: string; question: Question; response: AnswerValue; checked: boolean; revealed: boolean; hinted: boolean; feedback?: QuestionAttempt };
 export type FlashcardReview = { itemIds: string[]; firstRatings: Record<string, Extract<AnswerValue, { kind: 'self-rating' }>> };

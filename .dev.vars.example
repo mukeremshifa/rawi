@@ -18,3 +18,6 @@ MATERIAL_PENDING_LIMIT=10
 
 # Datalab key for PDF, DOCX and PPTX conversion. Without it those uploads keep only the original.
 DATALAB_API_KEY=
+
+# Anthropic key for reading syllabi and mapping materials to topics. Without it a rules pass runs.
+ANTHROPIC_API_KEY=
