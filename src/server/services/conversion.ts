@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, lte, notExists, or, sql } from 'drizzle-orm';
 import { socketDb, transaction, type ReadDb, type SocketDb } from '../db/client';
 import { materialVersions, fileObjects, blocks } from '../db/schema';
 import type { BackendBindings } from '../config';
@@ -70,7 +70,7 @@ export async function retryConversion(db: SocketDb, env: BackendBindings, worksp
     if (row.status !== 'failed') throw conflict();
     if (row.attempts >= MAX_CONVERSION_ATTEMPTS) throw new ApiError(409, 'conversion_exhausted', MESSAGES.exhausted);
     if (!env.DATALAB_API_KEY) throw new ApiError(503, 'conversion_not_configured', MESSAGES.notConfigured);
-    const [saved] = await tx.update(materialVersions).set({ status: 'pending', failure: null, warnings: [], failedPages: [], providerRequestId: null, submittedAt: null, nextPollAt: null, leaseToken: null, leaseExpiresAt: null }).where(eq(materialVersions.id, versionId)).returning();
+    const [saved] = await tx.update(materialVersions).set({ status: 'pending', failure: null, warnings: [], failedPages: [], completionFailures: 0, providerRequestId: null, submittedAt: null, nextPollAt: null, leaseToken: null, leaseExpiresAt: null }).where(eq(materialVersions.id, versionId)).returning();
     return publicVersion(saved!);
   });
 }
@@ -145,7 +145,17 @@ async function poll(db: SocketDb, env: BackendBindings, row: Version, token: str
     console.log(JSON.stringify({ operation: 'conversion-failed', versionId: row.id, providerStatus: result.status ?? null }));
     return fail(db, row.id, token, MESSAGES.failed);
   }
-  await complete(db, env, row, token, result);
+  try { await complete(db, env, row, token, result); }
+  catch (error) {
+    // A lost lease or slow storage is picked up by the next poll. Any other failure to save a finished
+    // result is counted, and the second one fails the version so it does not poll until the result expires.
+    if (error instanceof ApiError && (error.code === 'lease_lost' || error.code === 'storage_timeout')) throw error;
+    const failures = row.completionFailures + 1;
+    console.log(JSON.stringify({ operation: 'conversion-complete-failed', versionId: row.id, failures, error: error instanceof ApiError ? error.code : 'unexpected' }));
+    await release(db, row.id, token, failures >= 2
+      ? { status: 'failed', failure: MESSAGES.failed, completionFailures: failures, nextPollAt: null }
+      : { completionFailures: failures, nextPollAt: new Date(Date.now() + 10000) });
+  }
 }
 
 /** Store the raw response and images, map to blocks, and publish them in one transaction. */
@@ -153,21 +163,26 @@ async function complete(db: SocketDb, env: BackendBindings, row: Version, token:
   const bucket = env.MATERIALS_BUCKET;
   if (!bucket) return release(db, row.id, token, { nextPollAt: new Date(Date.now() + 60000) });
   const stored: { id: string; key: string; size: number; type: string; checksum: string; etag: string; fileName: string; role: 'asset' | 'raw' }[] = [];
-  const put = async (role: 'asset' | 'raw', bytes: Uint8Array, type: string, fileName: string) => {
-    const id = crypto.randomUUID(), key = `${role === 'raw' ? 'raw' : 'assets'}/${row.workspaceId}/${id}`;
+  const written: string[] = [];
+  const put = async (role: 'asset' | 'raw', bytes: Uint8Array, type: string, fileName: string, id: string = crypto.randomUUID()) => {
+    const key = `${role === 'raw' ? 'raw' : 'assets'}/${row.workspaceId}/${id}`;
+    // Recorded before the write, so a write that times out but lands later is still removed.
+    written.push(key);
     const object = await storageDeadline(bucket.put(key, bytes, { httpMetadata: { contentType: type } }), 30000);
     stored.push({ id, key, size: bytes.length, type, checksum: await hash(bytes), etag: object.etag, fileName, role });
-    return id;
   };
   try {
-    await put('raw', new TextEncoder().encode(JSON.stringify(result)), 'application/json', `${row.id}.json`);
-    const assets = new Map<string, string>();
+    // Ids are assigned first, so only images that a kept figure block shows are stored.
+    const images = new Map<string, { id: string; bytes: Uint8Array; type: string }>();
     for (const [name, data] of collectImages(result)) {
       const image = decodeImage(data);
-      if (image) assets.set(name, await put('asset', image.bytes, image.type, name.slice(0, 200)));
+      if (image) images.set(name, { id: crypto.randomUUID(), ...image });
     }
-    const mapped = mapDocument(result, assets);
+    const mapped = mapDocument(result, new Map([...images].map(([name, image]) => [name, image.id])));
     const prepared = prepareBlocks(mapped.blocks);
+    const shown = new Set(prepared.blocks.flatMap(b => b.type === 'figure' && b.content.assetId ? [b.content.assetId] : []));
+    await put('raw', new TextEncoder().encode(JSON.stringify(result)), 'application/json', `${row.id}.json`);
+    for (const [name, image] of images) if (shown.has(image.id)) await put('asset', image.bytes, image.type, name.slice(0, 200), image.id);
     const status = mapped.failedPages.length || prepared.dropped ? (prepared.blocks.length ? 'partial' : 'failed') : 'ready';
     const warnings = [...mapped.warnings, ...prepared.warnings, ...(prepared.blocks.length || status === 'failed' ? [] : [{ code: 'empty', message: 'No readable text was found in this document.' }])];
     await transaction(db, async tx => {
@@ -178,14 +193,31 @@ async function complete(db: SocketDb, env: BackendBindings, row: Version, token:
       if (existing?.n) throw new ApiError(409, 'already_converted', 'This version already has blocks.');
       if (status !== 'failed') await insertBlocks(tx, { workspaceId: row.workspaceId, courseId: row.courseId, materialId: row.materialId, versionId: row.id }, prepared.blocks);
       await tx.update(materialVersions).set({ status, failure: status === 'failed' ? MESSAGES.nothing : null, failedPages: mapped.failedPages, warnings, pageCount: mapped.pageCount,
-        rawObjectId: stored[0]!.id, adapterVersion: DATALAB_ADAPTER_VERSION, leaseToken: null, leaseExpiresAt: null, nextPollAt: null }).where(eq(materialVersions.id, row.id));
+        rawObjectId: stored.find(o => o.role === 'raw')!.id, adapterVersion: DATALAB_ADAPTER_VERSION, leaseToken: null, leaseExpiresAt: null, nextPollAt: null }).where(eq(materialVersions.id, row.id));
     });
-    console.log(JSON.stringify({ operation: 'conversion-complete', versionId: row.id, status, blocks: prepared.blocks.length, assets: assets.size, failedPages: mapped.failedPages.length }));
+    console.log(JSON.stringify({ operation: 'conversion-complete', versionId: row.id, status, blocks: prepared.blocks.length, assets: shown.size, failedPages: mapped.failedPages.length }));
   } catch (error) {
-    // Nothing references these objects when publication fails. The lease expires and the next poll tries again.
-    for (const o of stored) { try { await storageDeadline(bucket.delete(o.key), 10000); } catch { /* Left unreferenced. */ } }
+    // Nothing references these objects when publication fails, including after a lost lease. The next poll tries again.
+    for (const key of written) { try { await storageDeadline(bucket.delete(key), 10000); } catch { /* The asset sweep cannot see these. */ } }
     throw error;
   }
+}
+
+/**
+ * Extracted images older than an hour that no figure block shows. Earlier
+ * completions stored every image the provider returned, including ones a
+ * dropped or skipped block would have shown. The object goes first, so a
+ * failed delete keeps its row for the next sweep.
+ */
+export async function sweepOrphanAssets(db: SocketDb, env: BackendBindings, limit = 25) {
+  if (!env.MATERIALS_BUCKET) return { orphanAssets: 0 };
+  const rows = await db.select({ id: fileObjects.id, key: fileObjects.key }).from(fileObjects).where(and(eq(fileObjects.role, 'asset'), lt(fileObjects.createdAt, new Date(Date.now() - 3600000)),
+    notExists(db.select({ id: blocks.id }).from(blocks).where(and(eq(blocks.workspaceId, fileObjects.workspaceId), eq(blocks.courseId, fileObjects.courseId), eq(blocks.type, 'figure'), sql`${blocks.content}->>'assetId' = ${fileObjects.id}::text`))))).limit(limit);
+  for (const row of rows) {
+    await storageDeadline(env.MATERIALS_BUCKET.delete(row.key), 10000);
+    await db.delete(fileObjects).where(and(eq(fileObjects.id, row.id), eq(fileObjects.role, 'asset')));
+  }
+  return { orphanAssets: rows.length };
 }
 
 const IMAGE_TYPES: [RegExp, string][] = [[/^\x89PNG/, 'image/png'], [/^\xff\xd8\xff/, 'image/jpeg'], [/^GIF8/, 'image/gif'], [/^RIFF....WEBP/s, 'image/webp']];

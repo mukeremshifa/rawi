@@ -52,7 +52,7 @@ export async function setTopics(tx: Transaction, workspaceId: string, courseId: 
 }
 export function publicVersion(row: typeof materialVersions.$inferSelect) {
   const { fingerprint: _hash, requestId: _request, workspaceId: _workspace, courseId: _course, rawObjectId: _raw, ...version } = row;
-  const { leaseToken: _lease, leaseExpiresAt: _leaseExpiry, providerRequestId: _provider, nextPollAt: _poll, submittedAt: _submitted, attempts, ...visible } = version;
+  const { leaseToken: _lease, leaseExpiresAt: _leaseExpiry, providerRequestId: _provider, nextPollAt: _poll, submittedAt: _submitted, completionFailures: _failures, attempts, ...visible } = version;
   return { ...visible, retryable: row.status === 'failed' && row.adapter === 'datalab' && attempts < MAX_CONVERSION_ATTEMPTS };
 }
 /** The readable text of a block that failed validation, without Markdown table or math fences. */

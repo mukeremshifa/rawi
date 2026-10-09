@@ -118,8 +118,10 @@ export const materialVersions = pgTable('material_versions', {
   status: text('status').$type<ConversionStatus>().notNull(), failedPages: integer('failed_pages').array().notNull().default(sql`'{}'::integer[]`),
   warnings: jsonb('warnings').$type<ConversionWarning[]>().notNull().default([]), failure: text('failure'), rawObjectId: uuid('raw_object_id'),
   pageCount: integer('page_count'), pagination: text('pagination').$type<Pagination>().notNull(),
-  // Asynchronous conversion job. A lease fences workers, and attempts count provider submissions.
+  // Asynchronous conversion job. A lease fences workers, attempts count provider submissions,
+  // and completion failures count results that arrived but could not be saved.
   providerRequestId: text('provider_request_id'), attempts: integer('attempts').notNull().default(0),
+  completionFailures: integer('completion_failures').notNull().default(0),
   leaseToken: uuid('lease_token'), leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
   nextPollAt: timestamp('next_poll_at', { withTimezone: true }), submittedAt: timestamp('submitted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
