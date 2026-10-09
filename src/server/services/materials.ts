@@ -1,7 +1,7 @@
 import { transaction } from '../db/client';
 import { and, asc, desc, eq, exists, gt, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
-import type { createMaterialInput, materialPatch, textVersionInput, materialListInput } from '../../shared/contracts/materials';
+import type { createMaterialInput, materialPatch, materialListInput } from '../../shared/contracts/materials';
 import { materials, materialVersions, passages, materialTopicLinks, topics, courses } from '../db/schema';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
 import { ApiError, conflict, notFound } from '../errors';
@@ -67,7 +67,7 @@ export function publicVersion(row: typeof materialVersions.$inferSelect) {
   return version;
 }
 export async function publishVersion(tx: Transaction, row: typeof materials.$inferSelect, input: {
-  requestId: string; fingerprint: string; origin: 'paste' | 'edit' | 'upload'; sourceObjectId: string | null;
+  requestId: string; fingerprint: string; origin: 'paste' | 'upload'; sourceObjectId: string | null;
   format: string; text?: string; contentStatus: 'readable' | 'not_extracted' | 'failed';
 }) {
   const [latest] = await tx.select({ number: materialVersions.number }).from(materialVersions).where(eq(materialVersions.materialId, row.id)).orderBy(desc(materialVersions.number)).limit(1);
@@ -85,7 +85,6 @@ export async function createMaterial(db: SocketDb, workspaceId: string, courseId
   const fingerprint = await hash(JSON.stringify({ ...input, topicIds: [...input.topicIds].sort() }));
   return transaction(db, async tx => {
     await lockCourse(tx, workspaceId, courseId);
-    if (input.noteSource) { const ref = input.noteSource; const [source] = await tx.select({ id: passages.id }).from(passages).where(and(eq(passages.workspaceId, workspaceId), eq(passages.courseId, courseId), eq(passages.materialId, ref.materialId), eq(passages.versionId, ref.versionId), eq(passages.id, ref.passageId))); if (!source) throw notFound(); }
     const { text, format, topicIds, ...fields } = input;
     const [inserted] = await tx.insert(materials).values({ ...fields, workspaceId, courseId, createFingerprint: fingerprint }).onConflictDoNothing().returning();
     const row = inserted ?? await ownMaterial(tx, workspaceId, input.id);
@@ -107,24 +106,6 @@ export async function patchMaterial(db: SocketDb, workspaceId: string, id: strin
     if (!saved) throw conflict();
     if (topicIds) await setTopics(tx, workspaceId, row.courseId, id, topicIds);
     return materialDetail(tx, workspaceId, id);
-  });
-}
-export async function addTextVersion(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof textVersionInput>, limit: number) {
-  readableText(input.text, limit);
-  const fingerprint = await hash(JSON.stringify(input));
-  return transaction(db, async tx => {
-    const initial = await ownMaterial(tx, workspaceId, id);
-    await lockCourse(tx, workspaceId, initial.courseId);
-    const row = await ownMaterial(tx, workspaceId, id);
-    const [existing] = await tx.select().from(materialVersions).where(eq(materialVersions.requestId, input.requestId));
-    if (existing) {
-      if (existing.workspaceId !== workspaceId || existing.materialId !== id) throw notFound();
-      if (existing.fingerprint !== fingerprint) throw conflict();
-      return publicVersion(existing);
-    }
-    if (row.revision !== input.expectedRevision) throw conflict();
-    const current = row.currentVersionId ? await ownVersion(tx, workspaceId, id, row.currentVersionId) : null;
-    return publishVersion(tx, row, { requestId: input.requestId, fingerprint, origin: 'edit', sourceObjectId: current?.sourceObjectId ?? null, format: input.format, text: input.text, contentStatus: 'readable' });
   });
 }
 export async function listMaterials(db: ReadDb, workspaceId: string, courseId: string, input: z.infer<typeof materialListInput>) {

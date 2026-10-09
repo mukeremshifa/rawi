@@ -86,7 +86,7 @@ function Gallery() {
           <Field label="Course name" required error="Enter a course name."><Input defaultValue="" /></Field>
           <Field label="Goal" optional><Textarea placeholder="What you want to be able to do" /></Field>
           <Field label="Disabled"><Input disabled value="Managed by Google" readOnly /></Field>
-          <Field label="Kind"><Select value={select} onValueChange={setSelect} placeholder="Choose a kind" options={[{ value: '', label: 'Any kind' }, { value: 'reading', label: 'Reading' }, { value: 'notes', label: 'Notes' }, { value: 'slides', label: 'Slides' }]} /></Field>
+          <Field label="Kind"><Select value={select} onValueChange={setSelect} placeholder="Choose a kind" options={[{ value: '', label: 'Any kind' }, { value: 'reading', label: 'Reading' }, { value: 'slides', label: 'Slides' }]} /></Field>
           <Field label="Topic"><Combobox value={single} onValueChange={setSingle} options={topics} searchPlaceholder="Search topics" /></Field>
           <Field label="Topics"><Combobox multiple value={many} onValueChange={setMany} options={topics} placeholder="All topics" /></Field>
           <Field label="Questions"><NumberField value={count} onValueChange={setCount} min={1} max={50} /></Field>

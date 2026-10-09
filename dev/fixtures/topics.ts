@@ -42,7 +42,6 @@ export const SEED_COURSE: StudyCourse = {
   description:
     'A reading-heavy introductory survey of the Atlantic basin from first contact to the age of revolutions, taught through primary extracts and competing historiography.',
   goal: 'Explain causes and compare historians’ interpretations without notes.',
-  accent: 'indigo',
   createdAt: new Date('2026-10-07T08:00:00.000Z').toISOString(),
 };
 

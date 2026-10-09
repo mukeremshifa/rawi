@@ -7,7 +7,7 @@ import { getPlatformProxy } from 'wrangler';
 import { socketDb, transaction } from '../src/server/db/client';
 import * as s from '../src/server/db/schema';
 import { bootstrap, createCourse } from '../src/server/services/workspace';
-import { createMaterial, addTextVersion } from '../src/server/services/materials';
+import { createMaterial } from '../src/server/services/materials';
 import { importBank, createSet, setQuestions } from '../src/server/services/learning';
 import { createExam } from '../src/server/services/exams';
 import { createSession } from '../src/server/services/tutoring';
@@ -95,7 +95,7 @@ try {
   for(const c of fixtureCourses){
     const topics=fixtureTopics.filter(t=>t.courseId===c.id).map(({courseId:_c,...t})=>({...t,id:id(`topic:${t.id}`),module:t.module??'',relatedTopicIds:t.relatedTopicIds.map(t=>id(`topic:${t}`))}));
     await step(`course:${c.id}`,'courses',id(c.id),async()=>{
-      await createCourse(db,wid,createCourseInput.parse({id:id(c.id),name:`Sample lab: ${c.name}`,description:`Fictional sample course. ${c.description}`,goal:c.goal,accent:c.accent,topics}));
+      await createCourse(db,wid,createCourseInput.parse({id:id(c.id),name:`Sample lab: ${c.name}`,description:`Fictional sample course. ${c.description}`,goal:c.goal,topics}));
       if(c.archived) await db.update(s.courses).set({archived:true}).where(and(eq(s.courses.workspaceId,wid),eq(s.courses.id,id(c.id)),eq(s.courses.revision,1)));
       return {id:id(c.id)};
     });
@@ -104,20 +104,14 @@ try {
   for(const m of fixtureMaterials){
     const result=await step(`material:${m.id}`,'materials',id(m.id),async()=>{
       const text=m.passages.map(p=>`# ${p.heading}\n\n${p.text}`).join('\n\n');
-      const material=await createMaterial(db,wid,id(m.courseId),createMaterialInput.parse({id:id(m.id),title:`Sample: ${m.title}`,kind:m.kind==='reading'?'reading':'notes',attribution:`Fictional sample material. ${m.attribution??''}`,topicIds:m.topicIds.map(t=>id(`topic:${t}`)),text,format:'md'}),1048576);
+      const material=await createMaterial(db,wid,id(m.courseId),createMaterialInput.parse({id:id(m.id),title:`Sample: ${m.title}`,kind:'reading',attribution:`Fictional sample material. ${m.attribution??''}`,topicIds:m.topicIds.map(t=>id(`topic:${t}`)),text,format:'md'}),1048576);
       const [first]=await db.select().from(s.materialVersions).where(and(eq(s.materialVersions.workspaceId,wid),eq(s.materialVersions.materialId,material.id))).orderBy(asc(s.materialVersions.number));
       const parts=await db.select().from(s.passages).where(eq(s.passages.versionId,first!.id)).orderBy(asc(s.passages.order));
       // Each original passage maps to the exact immutable chunk that contains it.
       const refs=m.passages.map(p=>{const chunk=parts.find(part=>part.text.includes(p.text.slice(0,150)))??parts[0]!;return {oldId:p.id,materialId:material.id,versionId:first!.id,passageId:chunk.id};});
-      if(m===fixtureMaterials.find(x=>x.courseId===m.courseId)) await addTextVersion(db,wid,material.id,{requestId:id(`version2:${m.id}`),expectedRevision:1,format:'md',text:`${text}\n\n## Reading checklist\nState the main claim, identify a specific supporting detail, and explain one limitation of the evidence.`},1048576).catch(error=>{if(error?.code!=='revision_conflict')throw error;conflicts.add(`material:${m.id}`);});
       return {id:material.id,refs};
     });
     for(const r of result.refs) sources.set(`${m.id}:${r.oldId}`,r);
-  }
-  for(const c of fixtureCourses.slice(0,2)){
-    const firstMaterial=fixtureMaterials.find(m=>m.courseId===c.id)!;
-    const source=sources.get(`${firstMaterial.id}:${firstMaterial.passages[0]!.id}`)!;
-    await step(`note:${c.id}`,'materials',id(`note:${c.id}`),()=>createMaterial(db,wid,id(c.id),{id:id(`note:${c.id}`),title:'Sample: my source-linked reading notes',kind:'notes',attribution:'Authored sample learner note.',topicIds:[id(`topic:${fixtureTopics.find(t=>t.courseId===c.id)!.id}`)],noteSource:{materialId:source.materialId,versionId:source.versionId,passageId:source.passageId},format:'md',text:'# Claim, evidence, limitation\n\nThe source supports a specific claim. I will separate the observation from its interpretation and compare it with another explanation before generalising.'},1048576));
   }
   const bank: VersionedQuestion[]=[];
   for(const c of fixtureCourses.slice(0,2)){
@@ -226,8 +220,8 @@ try {
   }
   const linkedPlan=planned.find(p=>p.date===date(-1)&&p.activity==='practice');
   if(linkedPlan) await history(`linked-history:${linkedPlan.id}`,id(`set:${fixtureCourses.find(c=>id(c.id)===linkedPlan.courseId)!.id}:mixed`),-1,0);
-  await step('archived-note','materials',id('archived-note'),async()=>{
-    const c=fixtureCourses[0]!;const saved=await createMaterial(db,wid,id(c.id),{id:id('archived-note'),title:'Sample: archived reading checklist',kind:'notes',attribution:'Superseded sample note.',topicIds:[],format:'md',text:'# Earlier checklist\n\nIdentify the main claim and one supporting detail. The current source-linked note adds a limitation and a comparison.'},1048576);
+  await step('archived-checklist','materials',id('archived-checklist'),async()=>{
+    const c=fixtureCourses[0]!;const saved=await createMaterial(db,wid,id(c.id),{id:id('archived-checklist'),title:'Sample: archived reading checklist',kind:'reading',attribution:'Superseded sample checklist.',topicIds:[],format:'md',text:'# Earlier checklist\n\nIdentify the main claim and one supporting detail. A later version adds a limitation and a comparison.'},1048576);
     await db.update(s.materials).set({archived:true}).where(and(eq(s.materials.workspaceId,wid),eq(s.materials.id,saved.id),eq(s.materials.revision,1)));return {id:saved.id};
   });
   const reviewed=histories.find(a=>a.questions.some(q=>q.question.format==='essay'&&q.result.response.kind==='text'))!;

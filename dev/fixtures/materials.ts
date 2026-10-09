@@ -286,29 +286,4 @@ Step three is the one that separates a good answer from a competent one, and it 
       },
     ],
   },
-  {
-    id: 'mat-student-note',
-    courseId: ATLANTIC_COURSE_ID,
-    title: 'My notes: things I keep forgetting',
-    kind: 'student-note',
-    origin: 'pasted',
-    topicIds: ['topic-encomienda', 'topic-debate'],
-    addedAt: new Date(Date.parse('2026-10-07T08:00:00.000Z') - 1000 * 60 * 60 * 24 * 3).toISOString(),
-    passages: [
-      {
-        id: 'p-note-1',
-        heading: 'Pasted note',
-        topicIds: ['topic-encomienda', 'topic-debate'],
-        text: `encomienda = PEOPLE not land. keep writing "land grant" in essays, stop it.
-
-New Laws 1542: tried to stop inheritance, mostly failed, colonists revolted in Peru.
-
-V = fiscal/tax, O = coercion. the test between them is what changed after 1542 (paperwork vs actual labour). ← remember this, it's the bit that makes it a comparison
-
-Larssen = ledgers/credit. Mbeki = says ledgers only show what the owner thought mattered.
-
-I can recognise all of this when I read it and then produce none of it in a timed essay.`,
-      },
-    ],
-  },
 ];

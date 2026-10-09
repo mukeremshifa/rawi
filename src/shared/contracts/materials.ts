@@ -3,14 +3,13 @@ import { uuid, revision } from './workspace';
 
 export const fileTypes = ['txt', 'md', 'pdf', 'docx', 'pptx'] as const;
 export const materialFields = z.strictObject({
-  title: z.string().trim().min(1).max(200), kind: z.enum(['reading', 'notes', 'slides', 'other']),
+  title: z.string().trim().min(1).max(200), kind: z.enum(['reading', 'slides', 'other']),
   attribution: z.string().max(4000), topicIds: z.array(uuid).max(200).refine(ids => new Set(ids).size === ids.length),
 });
 // Do not trim source content. Wording and whitespace belong to the learner.
 export const sourceText = z.string().min(1).max(1048576).refine(text => text.trim().length > 0);
-export const createMaterialInput = materialFields.extend({ id: uuid, text: sourceText, format: z.enum(['txt', 'md']), noteSource: z.strictObject({ materialId: uuid, versionId: uuid, passageId: uuid }).optional() }).strict();
+export const createMaterialInput = materialFields.extend({ id: uuid, text: sourceText, format: z.enum(['txt', 'md']) }).strict();
 export const materialPatch = materialFields.partial().extend({ archived: z.boolean().optional(), expectedRevision: revision }).strict();
-export const textVersionInput = z.strictObject({ requestId: uuid, expectedRevision: revision, text: sourceText, format: z.enum(['txt', 'md']) });
 export const uploadInput = materialFields.extend({
   requestId: uuid, materialId: uuid.optional(), expectedRevision: revision.optional(),
   fileName: z.string().min(1).max(240).refine(s => !/[\x00-\x1f\x7f]/.test(s)),
@@ -22,11 +21,10 @@ export const materialListInput = pageInput.extend({ archived: z.enum(['true', 'f
 export interface Material {
   id: string; courseId: string; title: string; kind: z.infer<typeof materialFields>['kind']; attribution: string;
   archived: boolean; currentVersionId: string | null; revision: number; createdAt: string; updatedAt: string; topicIds: string[];
-  noteSource?: { materialId: string; versionId: string; passageId: string } | null;
   contentStatus: 'readable' | 'not_extracted' | 'failed' | null;
 }
 export interface MaterialVersion {
-  id: string; materialId: string; number: number; origin: 'paste' | 'upload' | 'edit';
+  id: string; materialId: string; number: number; origin: 'paste' | 'upload';
   sourceObjectId: string | null; contentStatus: 'readable' | 'not_extracted' | 'failed'; format: typeof fileTypes[number]; createdAt: string;
 }
 export interface Passage { id: string; heading: string; text: string; order: number }

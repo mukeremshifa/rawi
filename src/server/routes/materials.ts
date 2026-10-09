@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { uuid } from '../../shared/contracts/workspace';
-import { createMaterialInput, materialPatch, textVersionInput, uploadInput, materialListInput, pageInput } from '../../shared/contracts/materials';
+import { createMaterialInput, materialPatch, uploadInput, materialListInput, pageInput } from '../../shared/contracts/materials';
 import * as materialService from '../services/materials';
 import * as uploadService from '../services/uploads';
 import { limits } from '../services/storage';
@@ -16,7 +16,6 @@ materialsRoutes.get('/materials/:id/versions', async c => {
   const query = pageInput.parse(c.req.query());
   return c.json(await materialService.listVersions(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), query.limit, query.cursor));
 });
-materialsRoutes.post('/materials/:id/versions', async c => c.json(await materialService.addTextVersion(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, textVersionInput), limits(c.env).text)));
 materialsRoutes.get('/materials/:id/versions/:versionId', async c => {
   const query = z.strictObject({ cursor: z.coerce.number().int().min(-1).max(1048576).default(-1) }).parse(c.req.query());
   return c.json(await materialService.versionDetail(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')), query.cursor));

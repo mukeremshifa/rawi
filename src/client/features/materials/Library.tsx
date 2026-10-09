@@ -28,9 +28,9 @@ import { useUnsentGuard } from '@/lib/hooks';
 import { keys } from '@/lib/query';
 
 type Fields = z.infer<typeof materialFields>;
-const KINDS = (['reading', 'notes', 'slides', 'other'] as const).map(value => ({ value, label: MATERIAL_KIND_LABEL[value] }));
+const KINDS = (['reading', 'slides', 'other'] as const).map(value => ({ value, label: MATERIAL_KIND_LABEL[value] }));
 
-/** Materials: a table of the course's readings and notes, with Add material in a sheet. */
+/** Materials: a table of the course's documents, with Add material in a sheet. */
 export function Materials() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
@@ -59,7 +59,7 @@ export function Materials() {
         </Toolbar>
         {save.error && <ErrorState title="The material was not updated" detail={save.error} onRetry={save.retry} />}
         {pages.error ? <ErrorState error={pages.error} onRetry={() => void pages.refetch()} />
-          : empty && status === 'false' && !topic ? <EmptyState title="No materials yet" description="Add readings and notes to study from. Practice and the tutor cite them." action={<Button onClick={() => setAdding(true)}><PlusIcon />Add material</Button>} />
+          : empty && status === 'false' && !topic ? <EmptyState title="No materials yet" description="Add readings and slides to study from. Practice and the tutor cite them." action={<Button onClick={() => setAdding(true)}><PlusIcon />Add material</Button>} />
             : (
               <Table>
                 <TableHeader>
@@ -171,7 +171,7 @@ function AddMaterialSheet({ courseId, topics, open, onOpenChange, onSaved }: {
       <SheetContent size="lg">
         <SheetHeader>
           <SheetTitle>Add material</SheetTitle>
-          <SheetDescription>A reading, lecture notes or your own notes.</SheetDescription>
+          <SheetDescription>A reading, slides or another course document.</SheetDescription>
         </SheetHeader>
         <SheetBody>
           <fieldset disabled={locked} className="flex flex-col gap-base">

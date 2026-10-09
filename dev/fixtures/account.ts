@@ -9,7 +9,7 @@ export function stableId(workspace: string, key: string) {
   const hex = createHash('sha256').update(`${dataset}:${workspace}:${key}`).digest('hex');
   return `${hex.slice(0,8)}-${hex.slice(8,12)}-5${hex.slice(13,16)}-a${hex.slice(17,20)}-${hex.slice(20,32)}`;
 }
-const arabic: StudyCourse = { id: 'arabic', name: 'القراءة النقدية', description: 'دورة نموذجية مؤرشفة تربط الفكرة الرئيسة بالدليل وحدود الاستنتاج في نصوص قصيرة.', goal: 'تمييز الادعاء عن الدليل وكتابة تفسير واضح تدعمه قراءة دقيقة.', accent: 'teal', createdAt: '2026-10-07T08:00:00.000Z', archived: true };
+const arabic: StudyCourse = { id: 'arabic', name: 'القراءة النقدية', description: 'دورة نموذجية مؤرشفة تربط الفكرة الرئيسة بالدليل وحدود الاستنتاج في نصوص قصيرة.', goal: 'تمييز الادعاء عن الدليل وكتابة تفسير واضح تدعمه قراءة دقيقة.', createdAt: '2026-10-07T08:00:00.000Z', archived: true };
 const arabicTopics: StudyTopic[] = ['الادعاء والدليل', 'السياق وحدود الاستنتاج', 'المقارنة بين تفسيرين'].map((title,i)=>({id:`arabic-${i}`,courseId:'arabic',title,summary:['تحديد ما يقوله الكاتب وما يقدمه لدعم قوله.', 'ربط معنى الفقرة بظروفها وتحديد ما لا يمكن استنتاجه.', 'مقارنة تفسيرين باستخدام دليل مشترك مع بيان الاختلاف.'][i]!,module:i<2?'الوحدة الأولى: قراءة دقيقة':'الوحدة الثانية: كتابة تفسير',order:i,priority:i===0?'high':'normal',relatedTopicIds:[`arabic-${(i+1)%3}`]}));
 export const fixtureCourses = [SEED_COURSE, {...STATS_COURSE,name:'Statistics | الإحصاء التطبيقي',description:`${STATS_COURSE.description} أمثلة تطبيقية تربط العينات بالتقدير وعدم اليقين.`},arabic];
 export const fixtureTopics = [...SEED_TOPICS,...STATS_TOPICS,...arabicTopics];

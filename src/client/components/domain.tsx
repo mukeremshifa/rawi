@@ -225,17 +225,15 @@ export const SESSION_STATUS_LABEL: Record<SessionStatus, string> = {
 
 export const PRIORITY_LABEL: Record<TopicPriority, string> = { low: 'Low', normal: 'Normal', high: 'High' };
 
-export const MATERIAL_KIND_LABEL: Record<'reading' | 'notes' | 'slides' | 'other', string> = {
+export const MATERIAL_KIND_LABEL: Record<'reading' | 'slides' | 'other', string> = {
   reading: 'Reading',
-  notes: 'Notes',
   slides: 'Slides',
   other: 'Other',
 };
 
-export const VERSION_ORIGIN_LABEL: Record<'paste' | 'upload' | 'edit', string> = {
+export const VERSION_ORIGIN_LABEL: Record<'paste' | 'upload', string> = {
   paste: 'Pasted',
   upload: 'Uploaded',
-  edit: 'Edited',
 };
 
 export const TIMING_LABEL: Record<TimingMode, string> = {

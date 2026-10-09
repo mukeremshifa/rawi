@@ -51,13 +51,12 @@ export const preferences = pgTable('workspace_preferences', {
 export const courses = pgTable('courses', {
   id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
   name: text('name').notNull(), description: text('description').notNull(), goal: text('goal').notNull(),
-  accent: text('accent').$type<PreferenceFields['accent']>().notNull(), archived: boolean('archived').notNull().default(false),
+  archived: boolean('archived').notNull().default(false),
   revision: integer('revision').notNull().default(1), createFingerprint: text('create_fingerprint').notNull(), ...timestamps(),
 }, t => [
   unique('courses_workspace_id_unique').on(t.workspaceId, t.id),
   index('courses_workspace_list_idx').on(t.workspaceId, t.archived, t.id),
   check('courses_revision_positive', sql`${t.revision} > 0`),
-  check('courses_accent_valid', sql`${t.accent} in ('indigo', 'amber', 'teal', 'rose', 'violet')`),
 ]);
 export const topics = pgTable('topics', {
   id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull(), courseId: uuid('course_id').notNull(),
@@ -86,7 +85,7 @@ function currentVersionColumns(): [AnyPgColumn, AnyPgColumn, AnyPgColumn, AnyPgC
 }
 export const materials = pgTable('materials', {
   id: uuid('id').primaryKey(), ...materialScope(), title: text('title').notNull(), kind: text('kind').notNull(),
-  attribution: text('attribution').notNull(), noteSource: jsonb('note_source').$type<{ materialId: string; versionId: string; passageId: string }>(), archived: boolean('archived').notNull().default(false),
+  attribution: text('attribution').notNull(), archived: boolean('archived').notNull().default(false),
   currentVersionId: uuid('current_version_id').references((): AnyPgColumn => materialVersions.id),
   revision: integer('revision').notNull().default(1), createFingerprint: text('create_fingerprint').notNull(), ...timestamps(),
 }, t => [
@@ -95,7 +94,7 @@ export const materials = pgTable('materials', {
   foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
   index('materials_list_idx').on(t.workspaceId, t.courseId, t.archived, t.id),
   check('materials_revision_positive', sql`${t.revision} > 0`),
-  check('materials_kind_valid', sql`${t.kind} in ('reading', 'notes', 'slides', 'other')`),
+  check('materials_kind_valid', sql`${t.kind} in ('reading', 'slides', 'other')`),
 ]);
 export const fileObjects = pgTable('file_objects', {
   id: uuid('id').primaryKey(), ...materialScope(), key: text('key').notNull().unique(),
@@ -109,7 +108,7 @@ export const fileObjects = pgTable('file_objects', {
 export const materialVersions = pgTable('material_versions', {
   id: uuid('id').primaryKey(), ...materialScope(), materialId: uuid('material_id').notNull(), number: integer('number').notNull(),
   requestId: uuid('request_id').notNull().unique(), fingerprint: text('fingerprint').notNull(),
-  origin: text('origin').$type<'paste' | 'upload' | 'edit'>().notNull(), sourceObjectId: uuid('source_object_id'),
+  origin: text('origin').$type<'paste' | 'upload'>().notNull(), sourceObjectId: uuid('source_object_id'),
   contentStatus: text('content_status').$type<'readable' | 'not_extracted' | 'failed'>().notNull(), format: text('format').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [
@@ -119,7 +118,7 @@ export const materialVersions = pgTable('material_versions', {
   foreignKey({ columns: [t.workspaceId, t.courseId, t.sourceObjectId], foreignColumns: [fileObjects.workspaceId, fileObjects.courseId, fileObjects.id] }),
   check('versions_number_positive', sql`${t.number} > 0`),
   check('versions_status_valid', sql`${t.contentStatus} in ('readable', 'not_extracted', 'failed')`),
-  check('versions_origin_valid', sql`${t.origin} in ('paste', 'upload', 'edit')`),
+  check('versions_origin_valid', sql`${t.origin} in ('paste', 'upload')`),
 ]);
 export const passages = pgTable('passages', {
   id: uuid('id').primaryKey(), ...materialScope(), materialId: uuid('material_id').notNull(), versionId: uuid('version_id').notNull(),

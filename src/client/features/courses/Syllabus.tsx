@@ -67,7 +67,7 @@ function LoadedEditor({ initial, onSaved }: { initial: CourseDetail; onSaved: (d
     });
   };
   const saveFields = (archived?: boolean) => {
-    const parsed = courseFields.omit({ accent: true }).safeParse(fields);
+    const parsed = courseFields.safeParse(fields);
     if (!parsed.success) { setInvalid('Enter a course name and check the field lengths.'); return; }
     setInvalid('');
     metaSave.run<Course>({ path: `/v1/courses/${base.course.id}`, method: 'PATCH', body: { ...parsed.data, operationId: crypto.randomUUID(), ...(archived === undefined ? {} : { archived }), expectedRevision: base.course.revision } }, {

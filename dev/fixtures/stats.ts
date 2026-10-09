@@ -38,7 +38,6 @@ export const STATS_COURSE: StudyCourse = {
   description:
     'A problem-based second-year methods course. Weekly problem sets, two in-term quizzes and a practical exam. The emphasis is on interpreting estimates rather than deriving them.',
   goal: 'Read a result and say honestly what it does and does not support.',
-  accent: 'teal',
   createdAt: new Date('2026-10-07T08:00:00.000Z').toISOString(),
 };
 

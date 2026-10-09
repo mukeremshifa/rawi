@@ -39,12 +39,6 @@ export interface StudyCourse {
   description: string;
   /** The student's own words for what they are trying to achieve. */
   goal: string;
-  /**
-   * A token name from the course accent ramp in `globals.css`. Courses are
-   * told apart by colour in every aggregated view, so this is data rather
-   * than a per-screen decision.
-   */
-  accent: CourseAccent;
   /** Set when the student finished setup rather than landing on the seed. */
   createdAt: string;
   /**
@@ -53,8 +47,6 @@ export interface StudyCourse {
    */
   archived?: boolean;
 }
-
-export type CourseAccent = 'indigo' | 'amber' | 'teal' | 'rose' | 'violet';
 
 /** How much the student wants to weight a topic. Drives plan ordering. */
 export type TopicPriority = 'low' | 'normal' | 'high';
@@ -80,7 +72,7 @@ export interface StudyTopic {
 
 /* ── Materials ────────────────────────────────────────────────────────── */
 
-export type MaterialKind = 'reading' | 'lecture-notes' | 'student-note';
+export type MaterialKind = 'reading' | 'lecture-notes';
 
 /**
  * How a material's text got here. This is the honesty flag: the prototype
@@ -135,7 +127,6 @@ export interface StudyMaterial {
   addedAt: string;
   updatedAt?: string;
   priorPassages?: StudyPassage[];
-  noteSource?: SourceRef;
 }
 
 /* ── Questions ────────────────────────────────────────────────────────── */
