@@ -42,10 +42,8 @@ const blockQuery = z.strictObject({
   ids: z.string().max(8000).transform(value => value.split(',')).pipe(z.array(uuid).min(1).max(200)).optional(),
 });
 materialsRoutes.get('/materials/:id/versions/:versionId/blocks', async c => c.json(await materialService.readBlocks(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')), blockQuery.parse(c.req.query()))));
-materialsRoutes.get('/courses/:id/uploads', async c => {
-  const query = pageInput.parse(c.req.query());
-  return c.json(await uploadService.listUploads(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), query.cursor));
-});
+const originalsQuery = z.strictObject({ checksums: z.string().max(700).transform(value => value.split(',')).pipe(z.array(z.string().regex(/^[a-f0-9]{64}$/)).min(1).max(10)) });
+materialsRoutes.get('/courses/:id/originals', async c => c.json(await uploadService.findOriginals(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), originalsQuery.parse(c.req.query()).checksums)));
 materialsRoutes.post('/courses/:id/uploads', async c => c.json(await uploadService.initiate(c.get('socket'), c.env, c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, uploadInput))));
 materialsRoutes.get('/uploads/:id', async c => c.json(await uploadService.getUpload(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
 materialsRoutes.post('/uploads/:id/finalize', async c => {

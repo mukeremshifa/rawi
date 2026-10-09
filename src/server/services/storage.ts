@@ -18,7 +18,7 @@ export function limits(env: BackendBindings) {
     if (!Number.isSafeInteger(n) || n < 1 || n > maximum) throw new ApiError(503, 'invalid_limits', 'Material storage limits are not configured correctly.');
     return n;
   };
-  return { file: value(env.MATERIAL_MAX_FILE_BYTES, 25 * 1048576, 25 * 1048576), text: value(env.MATERIAL_MAX_TEXT_BYTES, 1048576, 1048576), workspace: value(env.MATERIAL_WORKSPACE_BYTES, 1073741824, Number.MAX_SAFE_INTEGER), pending: value(env.MATERIAL_PENDING_LIMIT, 5, 100) };
+  return { file: value(env.MATERIAL_MAX_FILE_BYTES, 25 * 1048576, 25 * 1048576), text: value(env.MATERIAL_MAX_TEXT_BYTES, 1048576, 1048576), workspace: value(env.MATERIAL_WORKSPACE_BYTES, 1073741824, Number.MAX_SAFE_INTEGER), pending: value(env.MATERIAL_PENDING_LIMIT, 10, 100) };
 }
 export function storage(env: BackendBindings) {
   if (!env.MATERIALS_BUCKET || !env.R2_ACCOUNT_ID || !env.R2_BUCKET_NAME || !env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY || !env.R2_ENVIRONMENT) throw new ApiError(503, 'storage_not_configured', 'Private file storage is not configured. You can still save pasted text.');
@@ -34,13 +34,16 @@ export async function signedUrl(env: BackendBindings, key: string, method: 'PUT'
   const request = await client.sign(url, { method, headers: type ? { 'Content-Type': type } : {}, aws: { signQuery: true, allHeaders: true } });
   return request.url;
 }
+// A verified target stays verified in this isolate for a few minutes, so a batch of uploads checks once.
+let verified: { target: string; until: number } | null = null;
 export async function verifyStorageTarget(env: BackendBindings) {
   const bucket = storage(env);
+  const expected = `${env.R2_ACCOUNT_ID}/${env.R2_BUCKET_NAME}/${env.R2_ENVIRONMENT}`;
+  if (verified?.target === expected && verified.until > Date.now()) return;
   // A read-only identity marker proves that the binding and signed endpoint see the same environment.
   let marker: R2ObjectBody | null;
   try { marker = await storageDeadline(bucket.get('_rawi/environment'), 10000); }
   catch { throw new ApiError(503, 'storage_unavailable', 'The private bucket binding is unavailable. Check the development storage connection.'); }
-  const expected = `${env.R2_ACCOUNT_ID}/${env.R2_BUCKET_NAME}/${env.R2_ENVIRONMENT}`;
   if (!marker || marker.size > 512 || (await marker.text()).trim() !== expected) throw new ApiError(503, 'storage_target_mismatch', 'The private storage environment has not been verified.');
   let response: Response;
   try {
@@ -53,6 +56,7 @@ export async function verifyStorageTarget(env: BackendBindings) {
   if (!response.ok || Number(response.headers.get('content-length')) > 512) { await response.body?.cancel(); throw new ApiError(503, 'storage_target_mismatch', 'The private storage signing target could not be verified.'); }
   const bytes = await boundedBytes(response.body!, 512);
   if (new TextDecoder().decode(bytes).trim() !== expected) throw new ApiError(503, 'storage_target_mismatch', 'The private storage binding and signing target do not match.');
+  verified = { target: expected, until: Date.now() + 5 * 60_000 };
 }
 export async function boundedBytes(stream: ReadableStream<Uint8Array>, limit: number) {
   const reader = stream.getReader(); const chunks: Uint8Array[] = []; let size = 0;

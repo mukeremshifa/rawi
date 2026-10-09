@@ -1,10 +1,10 @@
 import { transaction } from '../db/client';
-import { and, asc, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { uploadInput } from '../../shared/contracts/materials';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
 import type { BackendBindings } from '../config';
-import { uploads, uploadCandidates, workspaceStorage, materials, fileObjects } from '../db/schema';
+import { uploads, uploadCandidates, workspaceStorage, materials, materialVersions, fileObjects } from '../db/schema';
 import { ApiError, conflict, notFound } from '../errors';
 import { hash, lockCourse, ownMaterial, ownVersion, publishVersion, setTopics, validateTopics } from './materials';
 import { getCourse } from './workspace';
@@ -43,10 +43,14 @@ export async function getUpload(db: SocketDb, workspaceId: string, id: string) {
     return publicUpload(row.state === 'pending' && row.expiresAt.getTime() <= Date.now() ? await fail(tx, row, 'Upload expired. Select the file to start a new upload.') : row);
   });
 }
-export async function listUploads(db: ReadDb, workspaceId: string, courseId: string, cursor?: string) {
+/** Originals in this course with any of these checksums, so the client can flag a file that is already there. */
+export async function findOriginals(db: ReadDb, workspaceId: string, courseId: string, checksums: string[]) {
   await getCourse(db, workspaceId, courseId);
-  const rows = await db.select().from(uploads).where(and(eq(uploads.workspaceId, workspaceId), eq(uploads.courseId, courseId), eq(uploads.state, 'pending'), cursor ? sql`${uploads.id} > ${cursor}` : undefined)).orderBy(asc(uploads.id)).limit(21);
-  return { uploads: rows.slice(0, 20).map(publicUpload), nextCursor: rows.length > 20 ? rows[19]!.id : null };
+  const rows = checksums.length ? await db.selectDistinctOn([fileObjects.checksum], { checksum: fileObjects.checksum, materialId: materials.id, title: materials.title })
+    .from(fileObjects).innerJoin(materialVersions, eq(materialVersions.sourceObjectId, fileObjects.id)).innerJoin(materials, eq(materials.id, materialVersions.materialId))
+    .where(and(eq(fileObjects.workspaceId, workspaceId), eq(fileObjects.courseId, courseId), eq(fileObjects.role, 'original'), inArray(fileObjects.checksum, checksums)))
+    .orderBy(fileObjects.checksum, desc(materialVersions.createdAt)) : [];
+  return { originals: rows };
 }
 export async function initiate(db: SocketDb, env: BackendBindings, workspaceId: string, courseId: string, input: z.infer<typeof uploadInput>) {
   const max = limits(env);
