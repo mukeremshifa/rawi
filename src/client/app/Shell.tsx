@@ -6,6 +6,7 @@ import type { Course } from '@shared/contracts/workspace';
 import { CommandMenu } from '@/app/CommandMenu';
 import { RemindersButton } from '@/app/Reminders';
 import { Sidebar } from '@/app/Sidebar';
+import { UploadTray } from '@/features/materials/queue';
 import { Breadcrumbs, MEDIA_DESKTOP, useMediaQuery, type Crumb } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Kbd, modKey } from '@/components/ui/kbd';
@@ -74,7 +75,7 @@ export function Shell({ children, onSignOut, signingOut, banner }: { children: R
             </SheetContent>
           </Sheet>
         )}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="relative flex min-w-0 flex-1 flex-col">
           <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3 sm:px-4">
             {!desktop && <Button variant="ghost" size="icon" aria-label="Open navigation" onClick={() => setNavOpen(true)}><MenuIcon /></Button>}
             <Breadcrumbs items={crumbs} className="min-w-0 flex-1" />
@@ -87,6 +88,7 @@ export function Shell({ children, onSignOut, signingOut, banner }: { children: R
             <RemindersButton />
           </header>
           <main className="min-h-0 flex-1 overflow-y-auto">{banner}{children}</main>
+          <UploadTray className="absolute bottom-4 left-4 z-40" />
         </div>
       </div>
       {command}

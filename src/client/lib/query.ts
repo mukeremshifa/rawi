@@ -42,7 +42,6 @@ export const keys = {
     all: pathKey(`/v1/courses/${id}`),
     topics: pathKey(`/v1/courses/${id}/topics`),
     materials: pathKey(`/v1/courses/${id}/materials`),
-    uploads: pathKey(`/v1/courses/${id}/uploads`),
     sets: pathKey(`/v1/courses/${id}/sets`),
     runs: pathKey(`/v1/courses/${id}/runs`),
     attempts: pathKey(`/v1/courses/${id}/attempts`),

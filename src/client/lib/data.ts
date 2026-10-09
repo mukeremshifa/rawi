@@ -19,11 +19,12 @@ export function useApi<T>(path: string | null, options: { refetchInterval?: numb
 }
 
 /** A cursor-paged list, shown as "Load more" or an infinite list. */
-export function useApiPages<T, K extends string>(path: string | null, field: K) {
+export function useApiPages<T, K extends string>(path: string | null, field: K, options: { refetchInterval?: number | false } = {}) {
   const { user } = useAccount();
   const query = useInfiniteQuery({
     queryKey: pathKey(path ?? ''),
     enabled: path !== null,
+    ...options,
     initialPageParam: '' as string | number,
     queryFn: ({ pageParam, signal }) => request<Record<K, T[]> & { nextCursor: string | number | null }>(
       `${path}${pageParam !== '' ? `${path!.includes('?') ? '&' : '?'}cursor=${pageParam}` : ''}`, user.id, undefined, 'GET', signal),

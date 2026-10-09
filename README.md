@@ -102,6 +102,16 @@ by Datalab in the background: `waitUntil` after upload, the version status
 read the Reader polls, and the cron sweep. Raw responses and extracted
 images are stored in R2. Images are served by an authorized Worker route.
 
+Add material opens on files. Files dropped on the Materials page or chosen
+in the sheet need only a title, prefilled from the filename, and a file that
+is already an original in the course is flagged before it moves. Up to 10
+files go into a client queue above the routes, at most 3 transferring at
+once, each asking for its ticket just before its transfer. A tray and the
+table show progress, and each file toasts once when it is readable. The
+queue is memory only: a closed tab loses unsent files, and their tickets
+expire. A finished result that fails to save twice marks the version
+failed, and the cron sweep removes extracted images that no block shows.
+
 Put `DATALAB_API_KEY` in `.dev.vars`. Without it those uploads keep their
 original and show a conversion failure that can be retried once the key is
 set. Questions, tutor sessions and tutor replies cite
