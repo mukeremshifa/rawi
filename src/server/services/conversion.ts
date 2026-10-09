@@ -3,7 +3,7 @@ import { socketDb, transaction, type ReadDb, type SocketDb } from '../db/client'
 import { materialVersions, fileObjects, blocks } from '../db/schema';
 import type { BackendBindings } from '../config';
 import { ApiError, conflict, notFound } from '../errors';
-import { hash, insertBlocks, MAX_CONVERSION_ATTEMPTS, ownVersion, publicVersion } from './materials';
+import { hash, insertBlocks, MAX_CONVERSION_ATTEMPTS, ownVersion, prepareBlocks, publicVersion } from './materials';
 import { mimeTypes, storageDeadline } from './storage';
 import { collectImages, mapDocument, DATALAB_ADAPTER_VERSION, type DatalabResult } from './documents/datalab';
 
@@ -167,19 +167,20 @@ async function complete(db: SocketDb, env: BackendBindings, row: Version, token:
       if (image) assets.set(name, await put('asset', image.bytes, image.type, name.slice(0, 200)));
     }
     const mapped = mapDocument(result, assets);
-    const status = mapped.failedPages.length ? (mapped.blocks.length ? 'partial' : 'failed') : 'ready';
-    const warnings = mapped.blocks.length || status === 'failed' ? mapped.warnings : [...mapped.warnings, { code: 'empty', message: 'No readable text was found in this document.' }];
+    const prepared = prepareBlocks(mapped.blocks);
+    const status = mapped.failedPages.length || prepared.dropped ? (prepared.blocks.length ? 'partial' : 'failed') : 'ready';
+    const warnings = [...mapped.warnings, ...prepared.warnings, ...(prepared.blocks.length || status === 'failed' ? [] : [{ code: 'empty', message: 'No readable text was found in this document.' }])];
     await transaction(db, async tx => {
       const [current] = await tx.select().from(materialVersions).where(eq(materialVersions.id, row.id)).for('update');
       if (current?.leaseToken !== token || current.status !== 'processing') throw new ApiError(409, 'lease_lost', 'The conversion lease expired.');
       await tx.insert(fileObjects).values(stored.map(o => ({ id: o.id, workspaceId: row.workspaceId, courseId: row.courseId, key: o.key, size: o.size, detectedType: o.type, checksum: o.checksum, etag: o.etag, fileName: o.fileName, role: o.role })));
       const [existing] = await tx.select({ n: sql<number>`count(*)::int` }).from(blocks).where(eq(blocks.versionId, row.id));
       if (existing?.n) throw new ApiError(409, 'already_converted', 'This version already has blocks.');
-      if (status !== 'failed') await insertBlocks(tx, { workspaceId: row.workspaceId, courseId: row.courseId, materialId: row.materialId, versionId: row.id }, mapped.blocks);
+      if (status !== 'failed') await insertBlocks(tx, { workspaceId: row.workspaceId, courseId: row.courseId, materialId: row.materialId, versionId: row.id }, prepared.blocks);
       await tx.update(materialVersions).set({ status, failure: status === 'failed' ? MESSAGES.nothing : null, failedPages: mapped.failedPages, warnings, pageCount: mapped.pageCount,
         rawObjectId: stored[0]!.id, adapterVersion: DATALAB_ADAPTER_VERSION, leaseToken: null, leaseExpiresAt: null, nextPollAt: null }).where(eq(materialVersions.id, row.id));
     });
-    console.log(JSON.stringify({ operation: 'conversion-complete', versionId: row.id, status, blocks: mapped.blocks.length, assets: assets.size, failedPages: mapped.failedPages.length }));
+    console.log(JSON.stringify({ operation: 'conversion-complete', versionId: row.id, status, blocks: prepared.blocks.length, assets: assets.size, failedPages: mapped.failedPages.length }));
   } catch (error) {
     // Nothing references these objects when publication fails. The lease expires and the next poll tries again.
     for (const o of stored) { try { await storageDeadline(bucket.delete(o.key), 10000); } catch { /* Left unreferenced. */ } }

@@ -102,7 +102,7 @@ export function MaterialReader() {
     id: `convert:${v.id}`, invalidate: [keys.course(row.courseId).materials], onSuccess: next => { version.setData(next); setPolling(true); },
   });
   const originalButton = v?.sourceObjectId ? <Button variant="secondary" size="sm" onClick={() => void download()}><DownloadIcon />Download original</Button> : undefined;
-  const pagesText = v ? v.failedPages.map(p => pageLabel(v.pagination, p) || `Page ${p}`).join(', ') : '';
+  const pagesText = v ? [...new Set([...v.failedPages, ...v.warnings.flatMap(w => w.code === 'dropped_content' && w.page ? [w.page] : [])])].sort((a, b) => a - b).map(p => pageLabel(v.pagination, p) || `Page ${p}`).join(', ') : '';
   const contents = blocks.filter(b => b.type === 'heading' && b.content.level <= 2);
   const topicId = row.topicIds[0] ?? '';
   return (
@@ -150,7 +150,7 @@ export function MaterialReader() {
         )}
         {v?.status === 'partial' && (
           <Notice action={originalButton}>
-            {pagesText ? `Some pages could not be converted: ${pagesText}.` : 'Part of this document could not be converted.'} The rest is below. The original has everything.
+            {pagesText ? `Some content could not be converted, from ${pagesText}.` : 'Part of this document could not be converted.'} The rest is below. The original has everything.
           </Notice>
         )}
         {usable && pages.isPending && <LoadingState lines={8} label="Loading text" />}

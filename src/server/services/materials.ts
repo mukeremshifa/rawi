@@ -3,7 +3,8 @@ import { and, asc, desc, eq, exists, gt, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { createMaterialInput, materialPatch, materialListInput } from '../../shared/contracts/materials';
 import { materials, materialVersions, blocks, materialTopicLinks, topics, courses } from '../db/schema';
-import { blockInput, DOCUMENT_SCHEMA_VERSION, usableStatus, type BlockInput, type Citation, type DocumentBlock, type Pagination } from '../../shared/contracts/document';
+import { blockInput, DOCUMENT_SCHEMA_VERSION, usableStatus, type BlockBody, type BlockInput, type Citation, type ConversionWarning, type DocumentBlock, type Pagination, type ParsedBlock } from '../../shared/contracts/document';
+import { blockMarkdown, spansText } from '../../shared/domain/document-text';
 import { markdownBlocks, MARKDOWN_ADAPTER_VERSION } from './documents/markdown';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
 import { ApiError, conflict, notFound } from '../errors';
@@ -54,16 +55,53 @@ export function publicVersion(row: typeof materialVersions.$inferSelect) {
   const { leaseToken: _lease, leaseExpiresAt: _leaseExpiry, providerRequestId: _provider, nextPollAt: _poll, submittedAt: _submitted, attempts, ...visible } = version;
   return { ...visible, retryable: row.status === 'failed' && row.adapter === 'datalab' && attempts < MAX_CONVERSION_ATTEMPTS };
 }
+/** The readable text of a block that failed validation, without Markdown table or math fences. */
+function plainText(block: BlockBody): string {
+  switch (block.type) {
+    case 'table': return block.content.rows.map(row => row.cells.map(cell => spansText(cell.spans)).join(' | ')).join('\n');
+    case 'equation': return block.content.latex;
+    case 'code': return block.content.text;
+    default: return blockMarkdown(block);
+  }
+}
 /**
- * Validate adapter output against the shared contract, then insert it in
- * order. Section parents come from heading levels, so every adapter gets the
- * same hierarchy rule. Callers run this inside the transaction that marks
- * the version ready or partial.
+ * Validate adapter output block by block against the shared contract. A
+ * block that fails keeps its text as plain paragraphs, and only a block with
+ * no usable text is dropped. Either way the version records a warning, so
+ * one irregular table never costs the rest of the document. Dropped content
+ * makes the version partial.
  */
-export async function insertBlocks(tx: Transaction, scope: { workspaceId: string; courseId: string; materialId: string; versionId: string }, inputs: BlockInput[]) {
+export function prepareBlocks(inputs: BlockInput[]) {
+  const out: ParsedBlock[] = [];
+  const simplified = new Set<number | undefined>(), dropped = new Set<number | undefined>();
+  for (const input of inputs) {
+    const parsed = blockInput.safeParse(input);
+    if (parsed.success) { out.push(parsed.data); continue; }
+    const page = input.sources?.[0]?.page;
+    const sources = (input.sources ?? []).slice(0, 50);
+    let text = '';
+    try { text = plainText(input as BlockBody).replace(/\r\n/g, '\n').trim(); } catch { text = ''; }
+    const pieces = text.split(/\n{2,}/).flatMap(part => part.match(/[\s\S]{1,20000}/g) ?? []).filter(part => part.trim());
+    const fallback = pieces.map(part => blockInput.safeParse({ type: 'paragraph', content: { spans: [{ type: 'text', text: part }] }, sources }));
+    if (pieces.length && fallback.every(f => f.success)) { for (const f of fallback) if (f.success) out.push(f.data); simplified.add(page); }
+    else dropped.add(page);
+  }
+  const note = (pages: Set<number | undefined>, code: string, message: string): ConversionWarning[] =>
+    [...pages].sort((a, b) => (a ?? 0) - (b ?? 0)).map(page => ({ code, message, ...(page ? { page } : {}) }));
+  const warnings = [
+    ...note(simplified, 'simplified_content', 'Some content was too large or irregular to keep its layout, so it is shown as plain text.'),
+    ...note(dropped, 'dropped_content', 'Some content could not be kept. The original still has it.'),
+  ];
+  return { blocks: out, warnings, dropped: dropped.size > 0 };
+}
+/**
+ * Insert prepared blocks in order. Section parents come from heading levels,
+ * so every adapter gets the same hierarchy rule. Callers run this inside the
+ * transaction that marks the version ready or partial.
+ */
+export async function insertBlocks(tx: Transaction, scope: { workspaceId: string; courseId: string; materialId: string; versionId: string }, prepared: ParsedBlock[]) {
   const headings: { id: string; level: number }[] = [];
-  const rows = inputs.map((input, ordinal) => {
-    const block = blockInput.parse(input);
+  const rows = prepared.map((block, ordinal) => {
     const id = crypto.randomUUID();
     if (block.type === 'heading') while (headings.length && headings.at(-1)!.level >= block.content.level) headings.pop();
     const parentId = headings.at(-1)?.id ?? null;
@@ -82,14 +120,14 @@ export async function publishVersion(tx: Transaction, row: typeof materials.$inf
   const [latest] = await tx.select({ number: materialVersions.number }).from(materialVersions).where(eq(materialVersions.materialId, row.id)).orderBy(desc(materialVersions.number)).limit(1);
   const { conversion, ...fields } = input;
   // Markdown converts in the publish transaction. Other formats wait for their conversion job.
-  const markdown = conversion.adapter === 'markdown' ? markdownBlocks(conversion.text, conversion.format) : null;
+  const markdown = conversion.adapter === 'markdown' ? prepareBlocks(markdownBlocks(conversion.text, conversion.format)) : null;
   const [version] = await tx.insert(materialVersions).values({
     ...fields, id: crypto.randomUUID(), workspaceId: row.workspaceId, courseId: row.courseId, materialId: row.id, number: (latest?.number ?? 0) + 1,
     schemaVersion: DOCUMENT_SCHEMA_VERSION, adapter: conversion.adapter, adapterVersion: conversion.adapter === 'markdown' ? MARKDOWN_ADAPTER_VERSION : '',
-    status: markdown ? 'ready' : 'pending', pagination: conversion.adapter === 'markdown' ? 'none' : conversion.pagination,
-    warnings: markdown && !markdown.length ? [{ code: 'empty', message: 'No readable text was found in this material.' }] : [],
+    status: markdown ? (markdown.dropped ? 'partial' : 'ready') : 'pending', pagination: conversion.adapter === 'markdown' ? 'none' : conversion.pagination,
+    warnings: markdown ? [...markdown.warnings, ...(markdown.blocks.length ? [] : [{ code: 'empty', message: 'No readable text was found in this material.' }])] : [],
   }).returning();
-  if (markdown) await insertBlocks(tx, { workspaceId: row.workspaceId, courseId: row.courseId, materialId: row.id, versionId: version!.id }, markdown);
+  if (markdown) await insertBlocks(tx, { workspaceId: row.workspaceId, courseId: row.courseId, materialId: row.id, versionId: version!.id }, markdown.blocks);
   await tx.update(materials).set({ currentVersionId: version!.id, revision: latest ? row.revision + 1 : row.revision, updatedAt: new Date() }).where(eq(materials.id, row.id));
   return publicVersion(version!);
 }
