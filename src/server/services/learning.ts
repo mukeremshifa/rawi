@@ -5,8 +5,8 @@ import { createSetInput, metadataInput, questionInput, runWriteInput, transition
 import { attemptTotals, toQuestionAttempt } from '../../shared/domain/marking';
 import { sectionLocked, locate } from '../../shared/domain/exam';
 import { uuid } from '../../shared/contracts/workspace';
-import { questionVersions, questionSources, learningSets, setItems, learningRuns, runAnswers, learningAttempts, learningOperations, workspaces, topics, passages, plannedSessions } from '../db/schema';
-import { hash, lockCourse } from './materials';
+import { questionVersions, questionSources, learningSets, setItems, learningRuns, runAnswers, learningAttempts, learningOperations, workspaces, topics, plannedSessions } from '../db/schema';
+import { hash, lockCourse, validateCitation } from './materials';
 import { bumpPlanner } from './planning';
 import { withFeedback } from './feedback';
 import { getCourse } from './workspace';
@@ -39,10 +39,7 @@ export async function importBank(db: SocketDb, workspaceId: string, courseId: st
     for (const q of input.questions) {
       const topic = ownTopics.find(t => t.id === q.topicId);
       if (!topic) throw notFound();
-      if (q.source) {
-        const [source] = await tx.select({ id: passages.id }).from(passages).where(and(eq(passages.workspaceId, workspaceId), eq(passages.courseId, courseId), eq(passages.materialId, q.source.materialId), eq(passages.versionId, q.source.versionId), eq(passages.id, q.source.passageId)));
-        if (!source) throw notFound();
-      }
+      if (q.source) await validateCitation(tx, workspaceId, courseId, q.source);
       const id = crypto.randomUUID();
       records.push({ id, workspaceId, courseId, content: { ...q, id, courseId, topicLabel: topic.title, origin: 'imported' } });
     }

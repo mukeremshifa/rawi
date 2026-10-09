@@ -107,7 +107,7 @@ export async function validateFile(bytes: Uint8Array, type: string, textLimit: n
   if (type === 'txt' || type === 'md') {
     let text: string;
     try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { throw new ApiError(400, 'invalid_text', 'The file is not valid UTF-8 text.'); }
-    return { text: readableText(text, textLimit), contentStatus: 'readable' as const };
+    return { text: readableText(text, textLimit) };
   }
   try {
     if (type === 'pdf') {
@@ -125,5 +125,5 @@ export async function validateFile(bytes: Uint8Array, type: string, textLimit: n
     } else if (type === 'docx' || type === 'pptx') await inspectOffice(bytes, type);
     else throw invalid();
   } catch { throw invalid(); }
-  return { contentStatus: 'not_extracted' as const };
+  return {};
 }

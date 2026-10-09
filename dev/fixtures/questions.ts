@@ -1,4 +1,4 @@
-import type { Question } from '../../src/shared/domain/types';
+import type { FixtureQuestion } from './types';
 import { ATLANTIC_COURSE_ID } from './topics';
 
 /**
@@ -22,7 +22,7 @@ import { ATLANTIC_COURSE_ID } from './topics';
  * uses and matters because the exam builder shows a live total.
  */
 
-export const SEED_QUESTIONS: Question[] = [
+export const SEED_QUESTIONS: FixtureQuestion[] = [
   /* ── Columbian Exchange ─────────────────────────────────────────────── */
   {
     id: 'q-col-fc-1',
@@ -36,7 +36,7 @@ export const SEED_QUESTIONS: Question[] = [
       'Eastward, to Europe, Africa and Asia. They raised the calorie ceiling of Old World agriculture and underwrote a long demographic expansion.',
     explanation:
       'The direction is the easy half. The consequence, a higher calorie ceiling, therefore population growth, is the half that earns marks.',
-    source: { materialId: 'mat-exchange-reading', passageId: 'p-exch-1' },
+    source: { materialId: 'mat-exchange-reading', sectionId: 'p-exch-1' },
   },
   {
     id: 'q-col-fc-2',
@@ -50,7 +50,7 @@ export const SEED_QUESTIONS: Question[] = [
       'Europeans and Africans had lived alongside domesticated herd animals for millennia and carried acquired immunity to the resulting diseases. American populations had no such exposure history.',
     explanation:
       'The asymmetry traces to animal domestication, not to any difference in the populations themselves.',
-    source: { materialId: 'mat-exchange-reading', passageId: 'p-exch-1' },
+    source: { materialId: 'mat-exchange-reading', sectionId: 'p-exch-1' },
   },
   {
     id: 'q-col-mc-1',
@@ -70,7 +70,7 @@ export const SEED_QUESTIONS: Question[] = [
     correctIndices: [1],
     explanation:
       'The demand for labour came first. Epidemic mortality removed the indigenous supply that had been meeting it, and the slave trade expanded into the resulting gap. Option 3 inverts the order and option 1 overcorrects into denying any link at all.',
-    source: { materialId: 'mat-exchange-reading', passageId: 'p-exch-2' },
+    source: { materialId: 'mat-exchange-reading', sectionId: 'p-exch-2' },
   },
   {
     id: 'q-col-ms-1',
@@ -91,7 +91,7 @@ export const SEED_QUESTIONS: Question[] = [
     correctIndices: [0, 1, 2],
     explanation:
       'The argument is that identical pathogens produced different outcomes depending on colonial demands, so biology alone cannot be the explanation. Options 4 and 5 are true statements from the reading but they support the biological account or are neutral, so they are not part of the case against it.',
-    source: { materialId: 'mat-exchange-reading', passageId: 'p-exch-3' },
+    source: { materialId: 'mat-exchange-reading', sectionId: 'p-exch-3' },
   },
   {
     id: 'q-col-fb-1',
@@ -110,7 +110,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'Each step tightens the loop: fewer workers, heavier demands on those remaining, higher mortality, a larger gap for the slave trade to fill.',
-    source: { materialId: 'mat-exchange-reading', passageId: 'p-exch-2' },
+    source: { materialId: 'mat-exchange-reading', sectionId: 'p-exch-2' },
   },
   {
     id: 'q-col-wr-1',
@@ -149,7 +149,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'A strong answer names three links and their order: demand exists, supply collapses, the trade expands into the gap.',
-    source: { materialId: 'mat-exchange-reading', passageId: 'p-exch-2' },
+    source: { materialId: 'mat-exchange-reading', sectionId: 'p-exch-2' },
   },
 
   /* ── Encomienda ─────────────────────────────────────────────────────── */
@@ -165,7 +165,7 @@ export const SEED_QUESTIONS: Question[] = [
       'The right to tribute and labour from a named group of people, in exchange for obligations to protect and instruct them. Not land: the land remained legally theirs.',
     explanation:
       'People, not acres, and conditionally at that. This is the distinction most undergraduate answers get wrong.',
-    source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-1' },
+    source: { materialId: 'mat-encomienda-reading', sectionId: 'p-enc-1' },
   },
   {
     id: 'q-enc-fc-2',
@@ -179,7 +179,7 @@ export const SEED_QUESTIONS: Question[] = [
       'Limit the encomienda to a single lifetime by preventing inheritance, among other restrictions on colonial labour demands.',
     explanation:
       'The attempt matters as much as the outcome: colonial resistance to it, including armed revolt in Peru, is evidence about how valuable the institution was held to be.',
-    source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-1' },
+    source: { materialId: 'mat-encomienda-reading', sectionId: 'p-enc-1' },
   },
   {
     id: 'q-enc-mc-1',
@@ -198,7 +198,7 @@ export const SEED_QUESTIONS: Question[] = [
     correctIndices: [1],
     explanation:
       'The grant was of people and conditional. Reading it as a land grant makes every subsequent argument about the institution go wrong.',
-    source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-1' },
+    source: { materialId: 'mat-encomienda-reading', sectionId: 'p-enc-1' },
   },
   {
     id: 'q-enc-mc-2',
@@ -218,7 +218,7 @@ export const SEED_QUESTIONS: Question[] = [
     correctIndices: [1],
     explanation:
       'Her test is survival: if abolishing the fiscal arrangement leaves the coercion intact, the coercion was not merely a by-product of it.',
-    source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-3' },
+    source: { materialId: 'mat-encomienda-reading', sectionId: 'p-enc-3' },
   },
   {
     id: 'q-enc-match-1',
@@ -236,7 +236,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'The pattern is the point: each historian’s conclusion follows from which archive they treat as revealing. That observation is the spine of a comparison answer.',
-    source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-3' },
+    source: { materialId: 'mat-encomienda-reading', sectionId: 'p-enc-3' },
   },
   {
     id: 'q-enc-fb-1',
@@ -250,7 +250,7 @@ export const SEED_QUESTIONS: Question[] = [
       'An encomienda granted the right to ___ and labour from a named group of people, in exchange for an obligation to protect them and see them instructed in ___. The ___ remained, in law, theirs.',
     blanks: [['tribute'], ['christianity', 'the faith', 'religion'], ['land']],
     explanation: 'Tribute, Christianity, land. Three words that carry most of the definition.',
-    source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-1' },
+    source: { materialId: 'mat-encomienda-reading', sectionId: 'p-enc-1' },
   },
   {
     id: 'q-enc-wr-1',
@@ -288,7 +288,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'Definition, contrast, consequence. The third part is what turns a definition into an argument.',
-    source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-1' },
+    source: { materialId: 'mat-encomienda-reading', sectionId: 'p-enc-1' },
   },
   {
     id: 'q-enc-sa-1',
@@ -329,7 +329,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'Claim, evidence, limitation, in that order. The limitation is where marks are usually lost, because it requires bringing in what the source is silent about.',
-    source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-2' },
+    source: { materialId: 'mat-encomienda-reading', sectionId: 'p-enc-2' },
   },
 
   /* ── Plantation complex ─────────────────────────────────────────────── */
@@ -345,7 +345,7 @@ export const SEED_QUESTIONS: Question[] = [
       'Cane must be milled within about a day of cutting or its sucrose content falls sharply, which puts the mill beside the field and requires a large coordinated workforce and heavy fixed capital.',
     explanation:
       'The technical constraint comes before the economic consequence. Answers that start with profit skip the step that explains the form.',
-    source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-1' },
+    source: { materialId: 'mat-plantation-reading', sectionId: 'p-plant-1' },
   },
   {
     id: 'q-pl-mc-1',
@@ -365,7 +365,7 @@ export const SEED_QUESTIONS: Question[] = [
     correctIndices: [1],
     explanation:
       'The governing logic is in the credit and insurance contracts, not the plantation ledger. That is why Larssen reads the planter as a debtor rather than a landowner.',
-    source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-2' },
+    source: { materialId: 'mat-plantation-reading', sectionId: 'p-plant-2' },
   },
   {
     id: 'q-pl-ord-1',
@@ -385,7 +385,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'The circuit begins with European credit, not with the African coast. Starting in the wrong place is what makes an answer describe a triangle of trade rather than a system of finance.',
-    source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-2' },
+    source: { materialId: 'mat-plantation-reading', sectionId: 'p-plant-2' },
   },
   {
     id: 'q-pl-ms-1',
@@ -405,7 +405,7 @@ export const SEED_QUESTIONS: Question[] = [
     correctIndices: [0, 1, 3],
     explanation:
       'Mbeki does not dispute Larssen’s facts about credit or profit. She disputes what the ledger can show. Options 3 and 5 attribute a factual disagreement to her that she does not make.',
-    source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-3' },
+    source: { materialId: 'mat-plantation-reading', sectionId: 'p-plant-3' },
   },
   {
     id: 'q-pl-sa-1',
@@ -446,7 +446,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'This is Mbeki’s method applied directly: read the commercial document against its purpose and the resistance it was written to complain about becomes visible.',
-    source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-3' },
+    source: { materialId: 'mat-plantation-reading', sectionId: 'p-plant-3' },
   },
   {
     id: 'q-pl-fb-1',
@@ -460,7 +460,7 @@ export const SEED_QUESTIONS: Question[] = [
       'Cane must be ___ within roughly a day of cutting or its ___ content falls sharply. This forces the mill next to the field and requires heavy fixed ___ investment.',
     blanks: [['milled', 'ground', 'processed'], ['sucrose', 'sugar'], ['capital']],
     explanation: 'Milled, sucrose, capital: the chain from plant biology to industrial form.',
-    source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-1' },
+    source: { materialId: 'mat-plantation-reading', sectionId: 'p-plant-1' },
   },
   {
     id: 'q-pl-wr-1',
@@ -498,7 +498,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'Constraint, consequence, contrast. The contrast is what makes it an explanation rather than a description.',
-    source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-1' },
+    source: { materialId: 'mat-plantation-reading', sectionId: 'p-plant-1' },
   },
 
   /* ── Mercantilism ───────────────────────────────────────────────────── */
@@ -514,7 +514,7 @@ export const SEED_QUESTIONS: Question[] = [
       'National wealth is measured in bullion, trade is close to zero-sum, and colonies exist to supply raw materials to the metropole and to buy its manufactures.',
     explanation:
       'Bullion, zero-sum, colonial subordination. Holding all three together is what makes it a doctrine rather than three opinions.',
-    source: { materialId: 'mat-mercantilism-lecture', passageId: 'p-merc-1' },
+    source: { materialId: 'mat-mercantilism-lecture', sectionId: 'p-merc-1' },
   },
   {
     id: 'q-mer-mc-1',
@@ -534,7 +534,7 @@ export const SEED_QUESTIONS: Question[] = [
     correctIndices: [1],
     explanation:
       'The doctrine was a reasonable response to its own conditions. Judging it against later economic theory tells you about the theory, not about the eighteenth century.',
-    source: { materialId: 'mat-mercantilism-lecture', passageId: 'p-merc-1' },
+    source: { materialId: 'mat-mercantilism-lecture', sectionId: 'p-merc-1' },
   },
   {
     id: 'q-mer-ms-1',
@@ -554,7 +554,7 @@ export const SEED_QUESTIONS: Question[] = [
     correctIndices: [0, 1, 2],
     explanation:
       'Three requirements: English shipping, enumeration, and entrepôt. Options 4 and 5 invert the point of the system: the Acts existed to channel colonial produce, not to suppress it.',
-    source: { materialId: 'mat-mercantilism-lecture', passageId: 'p-merc-2' },
+    source: { materialId: 'mat-mercantilism-lecture', sectionId: 'p-merc-2' },
   },
   {
     id: 'q-mer-fb-1',
@@ -569,7 +569,7 @@ export const SEED_QUESTIONS: Question[] = [
     blanks: [['local'], ['smuggling', 'contraband'], ['wharf', 'dock', 'quay']],
     explanation:
       'Local officials, large-scale smuggling, and the resulting gap between law and practice.',
-    source: { materialId: 'mat-mercantilism-lecture', passageId: 'p-merc-2' },
+    source: { materialId: 'mat-mercantilism-lecture', sectionId: 'p-merc-2' },
   },
   {
     id: 'q-mer-wr-1',
@@ -608,7 +608,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'Concede, specify, then say what is missing. That shape works for any "X caused Y" question you are sceptical of.',
-    source: { materialId: 'mat-mercantilism-lecture', passageId: 'p-merc-3' },
+    source: { materialId: 'mat-mercantilism-lecture', sectionId: 'p-merc-3' },
   },
 
   /* ── Resistance and revolt ──────────────────────────────────────────── */
@@ -624,7 +624,7 @@ export const SEED_QUESTIONS: Question[] = [
       'It makes resistance look rare. Organised revolt was its least common form. The spectrum ran from slowdown and feigned incomprehension through flight and maroon settlement to armed rising.',
     explanation:
       'Counting only the most visible form and concluding resistance was exceptional is a methodological error, not a finding.',
-    source: { materialId: 'mat-revolt-reading', passageId: 'p-rev-1' },
+    source: { materialId: 'mat-revolt-reading', sectionId: 'p-rev-1' },
   },
   {
     id: 'q-rev-mc-1',
@@ -643,7 +643,7 @@ export const SEED_QUESTIONS: Question[] = [
     correctIndices: [1],
     explanation:
       'A community that had escaped bondage became, in law, an instrument of its enforcement. Mbeki’s point is that a history written to supply heroes cannot see this.',
-    source: { materialId: 'mat-revolt-reading', passageId: 'p-rev-2' },
+    source: { materialId: 'mat-revolt-reading', sectionId: 'p-rev-2' },
   },
   {
     id: 'q-rev-ord-1',
@@ -663,7 +663,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'The ordering is the argument: what the archive records best is what was rarest, which systematically distorts any count.',
-    source: { materialId: 'mat-revolt-reading', passageId: 'p-rev-1' },
+    source: { materialId: 'mat-revolt-reading', sectionId: 'p-rev-1' },
   },
   {
     id: 'q-rev-sa-1',
@@ -705,7 +705,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'Read against its purpose, a document of control becomes the best surviving evidence of the person it was written to capture.',
-    source: { materialId: 'mat-revolt-reading', passageId: 'p-rev-3' },
+    source: { materialId: 'mat-revolt-reading', sectionId: 'p-rev-3' },
   },
   {
     id: 'q-rev-wr-1',
@@ -743,7 +743,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'Who made it, what that biases, and how to read around it. Three moves that work for any question about difficult archives.',
-    source: { materialId: 'mat-revolt-reading', passageId: 'p-rev-3' },
+    source: { materialId: 'mat-revolt-reading', sectionId: 'p-rev-3' },
   },
 
   /* ── Interpretation and historiography ──────────────────────────────── */
@@ -759,7 +759,7 @@ export const SEED_QUESTIONS: Question[] = [
       'Economic (Larssen: capital, credit, commodity flows), cultural or social (Mbeki: human relations and the actions of people inside the system), and imperial or institutional (Valderrama: state capacity and what governments could actually manage at distance).',
     explanation:
       'None is the correct one. The productive question is which reading better explains a particular piece of evidence.',
-    source: { materialId: 'mat-debate-lecture', passageId: 'p-deb-2' },
+    source: { materialId: 'mat-debate-lecture', sectionId: 'p-deb-2' },
   },
   {
     id: 'q-deb-mc-1',
@@ -779,7 +779,7 @@ export const SEED_QUESTIONS: Question[] = [
     correctIndices: [1],
     explanation:
       'The axis is the whole thing. Valderrama and Okonkwo barely disagree about events. They disagree about which sources reveal the institution’s function.',
-    source: { materialId: 'mat-debate-lecture', passageId: 'p-deb-1' },
+    source: { materialId: 'mat-debate-lecture', sectionId: 'p-deb-1' },
   },
   {
     id: 'q-deb-ord-1',
@@ -797,7 +797,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'Step three is the one that separates a good answer from a competent one, and it is almost always the missing one.',
-    source: { materialId: 'mat-debate-lecture', passageId: 'p-deb-3' },
+    source: { materialId: 'mat-debate-lecture', sectionId: 'p-deb-3' },
   },
   {
     id: 'q-deb-match-1',
@@ -815,7 +815,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'The biological reading is included because it is the one Valderrama explicitly argues does not go far enough on its own.',
-    source: { materialId: 'mat-debate-lecture', passageId: 'p-deb-2' },
+    source: { materialId: 'mat-debate-lecture', sectionId: 'p-deb-2' },
   },
   {
     id: 'q-deb-essay-1',
@@ -870,7 +870,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'The upper band is reached by step four: naming what evidence would settle it. Most answers stop after presenting both positions.',
-    source: { materialId: 'mat-encomienda-reading', passageId: 'p-enc-4' },
+    source: { materialId: 'mat-encomienda-reading', sectionId: 'p-enc-4' },
   },
   {
     id: 'q-deb-essay-2',
@@ -917,7 +917,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'A "how far" question wants a boundary, not a verdict. Say where the commercial account works and where it runs out.',
-    source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-3' },
+    source: { materialId: 'mat-plantation-reading', sectionId: 'p-plant-3' },
   },
   {
     id: 'q-deb-essay-3',
@@ -964,7 +964,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'Planning practice is worth as much as writing practice, and takes a fifth of the time. Thesis, sequence, evidence, counter-argument.',
-    source: { materialId: 'mat-exchange-reading', passageId: 'p-exch-2' },
+    source: { materialId: 'mat-exchange-reading', sectionId: 'p-exch-2' },
   },
   {
     id: 'q-deb-wr-1',
@@ -1002,7 +1002,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'Knowing the structure is what makes a timed comparison answer possible without notes.',
-    source: { materialId: 'mat-debate-lecture', passageId: 'p-deb-3' },
+    source: { materialId: 'mat-debate-lecture', sectionId: 'p-deb-3' },
   },
   {
     id: 'q-deb-sa-1',
@@ -1043,7 +1043,7 @@ export const SEED_QUESTIONS: Question[] = [
     ],
     explanation:
       'Distinguishing "incomplete" from "wrong" is the move that makes a historiographical answer sound like a historian.',
-    source: { materialId: 'mat-plantation-reading', passageId: 'p-plant-3' },
+    source: { materialId: 'mat-plantation-reading', sectionId: 'p-plant-3' },
   },
 ];
 

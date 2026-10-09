@@ -84,8 +84,7 @@ export function topicCapabilities(
     read: materials.some(
       (m) =>
         isUsableMaterial(m) &&
-        (m.topicIds.includes(topicId) ||
-          m.passages.some((p) => p.topicIds.includes(topicId))),
+        m.topicIds.includes(topicId),
     ),
     activities,
     anyQuestion: forTopic.length > 0,

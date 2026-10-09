@@ -2,12 +2,14 @@ import { readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from '@neondatabase/serverless';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getPlatformProxy } from 'wrangler';
 import { socketDb, transaction } from '../src/server/db/client';
 import * as s from '../src/server/db/schema';
 import { bootstrap, createCourse } from '../src/server/services/workspace';
-import { createMaterial } from '../src/server/services/materials';
+import { createMaterial, readBlocks } from '../src/server/services/materials';
+import type { Citation } from '../src/shared/contracts/document';
+import { spansText } from '../src/shared/domain/document-text';
 import { importBank, createSet, setQuestions } from '../src/server/services/learning';
 import { createExam } from '../src/server/services/exams';
 import { createSession } from '../src/server/services/tutoring';
@@ -100,27 +102,33 @@ try {
       return {id:id(c.id)};
     });
   }
-  const sources = new Map<string,{materialId:string;versionId:string;passageId:string}>();
+  // Sections resolve to the blocks of their published version: the section heading and everything up to the next top-level heading.
+  const sources = new Map<string,Citation>();
   for(const m of fixtureMaterials){
     const result=await step(`material:${m.id}`,'materials',id(m.id),async()=>{
-      const text=m.passages.map(p=>`# ${p.heading}\n\n${p.text}`).join('\n\n');
+      const text=m.sections.map(p=>`# ${p.heading}\n\n${p.text}`).join('\n\n');
       const material=await createMaterial(db,wid,id(m.courseId),createMaterialInput.parse({id:id(m.id),title:`Sample: ${m.title}`,kind:'reading',attribution:`Fictional sample material. ${m.attribution??''}`,topicIds:m.topicIds.map(t=>id(`topic:${t}`)),text,format:'md'}),1048576);
-      const [first]=await db.select().from(s.materialVersions).where(and(eq(s.materialVersions.workspaceId,wid),eq(s.materialVersions.materialId,material.id))).orderBy(asc(s.materialVersions.number));
-      const parts=await db.select().from(s.passages).where(eq(s.passages.versionId,first!.id)).orderBy(asc(s.passages.order));
-      // Each original passage maps to the exact immutable chunk that contains it.
-      const refs=m.passages.map(p=>{const chunk=parts.find(part=>part.text.includes(p.text.slice(0,150)))??parts[0]!;return {oldId:p.id,materialId:material.id,versionId:first!.id,passageId:chunk.id};});
+      const versionId=material.currentVersionId!;
+      const {blocks}=await readBlocks(db,wid,material.id,versionId,{cursor:-1,limit:10000});
+      const tops=blocks.filter(b=>b.type==='heading'&&b.content.level===1);
+      const refs=m.sections.map((p,i)=>{
+        const heading=tops.find(b=>b.type==='heading'&&spansText(b.content.spans)===p.heading)??tops[i];
+        if(!heading)throw new Error(`Seed section heading is missing: ${p.id}.`);
+        const start=blocks.indexOf(heading),end=blocks.findIndex((b,j)=>j>start&&b.type==='heading'&&b.content.level===1);
+        return {oldId:p.id,materialId:material.id,versionId,blockIds:blocks.slice(start,end<0?undefined:end).slice(0,200).map(b=>b.id)};
+      });
       return {id:material.id,refs};
     });
-    for(const r of result.refs) sources.set(`${m.id}:${r.oldId}`,r);
+    for(const {oldId,...r} of result.refs) sources.set(`${m.id}:${oldId}`,r);
   }
   const bank: VersionedQuestion[]=[];
   for(const c of fixtureCourses.slice(0,2)){
     const inputs=fixtureQuestions.filter(q=>q.courseId===c.id).map(q=>{
       const {id:_id,courseId:_c,source,provenance:_p,...fields}=q;
-      const exact=source?sources.get(`${source.materialId}:${source.passageId}`):undefined;
+      const exact=source?sources.get(`${source.materialId}:${source.sectionId}`):undefined;
       const rubric=fields.rubric?.map(r=>({...r,keywords:r.keywords??[]}));
       const total=rubric?.reduce((n,r)=>n+r.marks,0);
-      return questionInput.parse({...fields,topicId:id(`topic:${q.topicId}`),...(rubric?{rubric,marks:total}:{}),source:exact?{materialId:exact.materialId,versionId:exact.versionId,passageId:exact.passageId}:undefined});
+      return questionInput.parse({...fields,topicId:id(`topic:${q.topicId}`),...(rubric?{rubric,marks:total}:{}),source:exact});
     });
     for(let offset=0;offset<inputs.length;offset+=50){const key=`bank:${c.id}:${offset}`;const saved=await step(key,'question_versions',id(key),()=>importBank(db,wid,id(c.id),{operationId:id(key),questions:inputs.slice(offset,offset+50)}));bank.push(...saved.questions);}
   }
@@ -235,12 +243,12 @@ try {
   for(const [i,kind] of ['completed','open','archived','interrupted','answer-review'].entries()){
     const key=`tutor:${kind}`;
     await step(key,'tutor_sessions',id(key),async()=>{
-      await createSession(db,wid,reviewed.courseId,{id:id(key),title:`Sample: ${kind==='answer-review'?'discuss a saved answer':kind+' source discussion'}`,topicId:written.question.topicId,source:{materialId:focus.materialId,versionId:focus.versionId,passageId:focus.passageId},...(kind==='answer-review'?{review:{attemptId:reviewed.id,questionId:written.question.id}}:{})});
+      await createSession(db,wid,reviewed.courseId,{id:id(key),title:`Sample: ${kind==='answer-review'?'discuss a saved answer':kind+' source discussion'}`,topicId:written.question.topicId,source:focus,...(kind==='answer-review'?{review:{attemptId:reviewed.id,questionId:written.question.id}}:{})});
       await transaction(db,async tx=>{
         const [current]=await tx.select().from(s.tutorSessions).where(eq(s.tutorSessions.id,id(key))).for('update');
         if(current!.sampleDataset || current!.revision>1){if(current!.revision>1)conflicts.add(key);return;}
-        const texts=[['student','How can I distinguish the main claim from the evidence?'],['tutor',`Start with the claim that explains the change. Then identify the observation offered in support. The source distinguishes an economic incentive from the conditions that made it possible. [[${focus.passageId}]]`],['student','So a change in conditions does not prove it was the only cause. I should compare another explanation.'],['tutor',`Yes. Name the alternative, identify the evidence both accounts can explain, then explain where their predictions differ. A source can support an interpretation without eliminating all alternatives. [[${focus.passageId}]]`],['student','My next answer will state the claim, cite one detail and acknowledge a limitation.'],['tutor',kind==='interrupted'?'A useful way to test that comparison is to look at the timing of the evidence. The first point to examine is':'That gives you a useful structure. Practise without notes next, then revisit the exact passage to check whether your explanation uses the evidence accurately.']];
-        await tx.insert(s.tutorMessages).values(texts.map(([role,text],ordinal)=>({id:id(`${key}:${ordinal}`),workspaceId:wid,courseId:reviewed.courseId,sessionId:id(key),ordinal,role:role as 'student'|'tutor',text:text!,state:kind==='interrupted'&&ordinal===5?'interrupted' as const:'complete' as const,operationId:id(`${key}:operation:${ordinal}`),createdAt:instant(-8+i,600+ordinal*3),provenance:{sampleDataset:dataset,imported:false,stage:ordinal<2?'understand' as const:'reason' as const,grounding:'materials' as const,citations:role==='tutor'?[{materialId:focus.materialId,versionId:focus.versionId,passageId:focus.passageId}]:[]}}))).onConflictDoNothing();
+        const texts=[['student','How can I distinguish the main claim from the evidence?'],['tutor',`Start with the claim that explains the change. Then identify the observation offered in support. The source distinguishes an economic incentive from the conditions that made it possible. [[1]]`],['student','So a change in conditions does not prove it was the only cause. I should compare another explanation.'],['tutor',`Yes. Name the alternative, identify the evidence both accounts can explain, then explain where their predictions differ. A source can support an interpretation without eliminating all alternatives. [[1]]`],['student','My next answer will state the claim, cite one detail and acknowledge a limitation.'],['tutor',kind==='interrupted'?'A useful way to test that comparison is to look at the timing of the evidence. The first point to examine is':'That gives you a useful structure. Practise without notes next, then revisit the exact passage to check whether your explanation uses the evidence accurately.']];
+        await tx.insert(s.tutorMessages).values(texts.map(([role,text],ordinal)=>({id:id(`${key}:${ordinal}`),workspaceId:wid,courseId:reviewed.courseId,sessionId:id(key),ordinal,role:role as 'student'|'tutor',text:text!,state:kind==='interrupted'&&ordinal===5?'interrupted' as const:'complete' as const,operationId:id(`${key}:operation:${ordinal}`),createdAt:instant(-8+i,600+ordinal*3),provenance:{sampleDataset:dataset,imported:false,stage:ordinal<2?'understand' as const:'reason' as const,grounding:'materials' as const,citations:role==='tutor'?[focus]:[]}}))).onConflictDoNothing();
         await tx.update(s.tutorSessions).set({sampleDataset:dataset,stage:'reason',archived:kind==='archived',createdAt:instant(-8+i),updatedAt:instant(-8+i,620),endedAt:['completed','archived'].includes(kind)?instant(-8+i,620):null,completedLearning:['completed','archived'].includes(kind)}).where(eq(s.tutorSessions.id,id(key)));
       });return {id:id(key)};
     });

@@ -404,4 +404,25 @@ html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-
   .rawi-prose :where(blockquote) { border-left: 2px solid var(--border-strong); padding-left: 1em; color: var(--muted-foreground); }
   .rawi-prose :where(code) { font-family: var(--font-mono); font-size: 0.875em; background: var(--muted); border-radius: var(--radius-sm); padding: 0.1em 0.3em; }
   .rawi-prose > :first-child { margin-top: 0; }
+  .rawi-prose :where(ul ul, ol ol, ul ol, ol ul) { margin-top: 0.3em; }
+  .rawi-prose :where(pre) { font-family: var(--font-mono); font-size: 0.8em; line-height: 1.5; background: var(--muted); border-radius: var(--radius-md); padding: 0.75em 1em; overflow-x: auto; white-space: pre; }
+  .rawi-prose :where(pre code) { background: none; padding: 0; font-size: 1em; }
+
+  /* Converted documents: one block per wrapper, each an anchor. */
+  .rawi-document > .rawi-block:first-child > :first-child { margin-top: 0; }
+  .rawi-document :where(h2, h3, h4, h5) { font-family: var(--font-serif); font-weight: 600; line-height: 1.3; margin-top: 1.6em; }
+  .rawi-document :where(h2) { font-size: 1.35em; }
+  .rawi-document :where(h3) { font-size: 1.15em; }
+  .rawi-document :where(h4, h5) { font-size: 1em; }
+  .rawi-document .rawi-block { border-radius: var(--radius-sm); transition: background-color 600ms var(--ease-standard); }
+  .rawi-document .rawi-highlight { background: var(--primary-subtle); box-shadow: 0 0 0 6px var(--primary-subtle); }
+  .rawi-page-label { margin-top: 1.4em; font-family: var(--font-sans); font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-foreground); }
+  .rawi-equation { margin-top: 0.9em; }
+  .rawi-table { margin-top: 0.9em; overflow-x: auto; }
+  .rawi-table table { border-collapse: collapse; font-size: 0.9em; line-height: 1.45; }
+  .rawi-table :where(th, td) { border: 1px solid var(--border); padding: 0.35em 0.6em; text-align: left; vertical-align: top; }
+  .rawi-table th { font-weight: 600; background: var(--surface); }
+  .rawi-document figure { margin-top: 1.2em; }
+  .rawi-document figure img { max-width: 100%; height: auto; border-radius: var(--radius-sm); background: white; }
+  .rawi-document figcaption { margin-top: 0.4em; font-size: 0.875em; color: var(--muted-foreground); }
 }

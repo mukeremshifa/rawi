@@ -27,7 +27,7 @@ export function useApiPages<T, K extends string>(path: string | null, field: K) 
     initialPageParam: '' as string | number,
     queryFn: ({ pageParam, signal }) => request<Record<K, T[]> & { nextCursor: string | number | null }>(
       `${path}${pageParam !== '' ? `${path!.includes('?') ? '&' : '?'}cursor=${pageParam}` : ''}`, user.id, undefined, 'GET', signal),
-    // Cursors are ids or, for passages, an order number that can be 0.
+    // Cursors are ids or, for blocks, an ordinal that can be 0.
     getNextPageParam: page => page.nextCursor ?? undefined,
   });
   const items = query.data?.pages.flatMap(page => page[field]);

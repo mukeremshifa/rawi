@@ -23,9 +23,9 @@
  * owned by a course but scheduled on one calendar, and availability, planner
  * sessions and check-ins belong to the student rather than to any one course.
  *
- * Passages are the addressable unit inside a material, because "ask the tutor
- * about this bit" and "this exam question came from that bit" both need an id
- * to point at. Everything a student does becomes an `Attempt`, and Progress is
+ * Blocks of a converted document are the addressable unit inside a material,
+ * because "ask the tutor about this bit" and "this exam question came from
+ * that bit" both need an id to point at. Everything a student does becomes an `Attempt`, and Progress is
  * a read over the attempt log rather than a separate score that can drift away
  * from it.
  */
@@ -74,59 +74,19 @@ export interface StudyTopic {
 
 export type MaterialKind = 'reading' | 'lecture-notes';
 
-/**
- * How a material's text got here. This is the honesty flag: the prototype
- * cannot parse a PDF, so anything that is not real text says so.
- *
- *   authored   seeded course content, written for this prototype
- *   imported   real source text converted to Markdown outside the app and
- *              seeded in. The words are genuinely the author's, and Rawi did
- *              not do the converting, so the label says both.
- *   pasted     the student pasted text in
- *   text-file  a .txt/.md file read in the browser with the File API
- *   preview    an unsupported file type. The text is a labelled sample, and
- *              every surface that shows it says the file was not parsed.
- *
- * `authored` and `imported` are kept apart because they carry opposite
- * warnings. Authored material is invented and must say so. Imported material
- * is real and must not be called fictional, while still making clear that the
- * conversion happened elsewhere rather than in a parser Rawi does not have.
- */
-export type MaterialOrigin =
-  | 'authored'
-  | 'imported'
-  | 'pasted'
-  | 'text-file'
-  | 'preview';
-
-export interface StudyPassage {
-  id: string;
-  /** Usually a heading; falls back to "Passage 3" style numbering. */
-  heading: string;
-  text: string;
-  /** Topics this passage is evidence for. Drives "practise this" actions. */
-  topicIds: string[];
-}
-
 export interface StudyMaterial {
   archived?: boolean;
   id: string;
   courseId: string;
   title: string;
   kind: MaterialKind;
-  origin: MaterialOrigin;
-  /**
-   * Where the text came from. Fictional for authored material, and labelled
-   * as such in the UI; a real citation for imported material.
-   */
+  /** Where the text came from, as the learner recorded it. */
   attribution?: string;
-  /** The original filename, when one exists. Shown for previews. */
-  fileName?: string;
   topicIds: string[];
-  passages: StudyPassage[];
+  /** The current version converted to ready or partial blocks. */
+  readable: boolean;
   addedAt: string;
   updatedAt?: string;
-  priorPassages?: StudyPassage[];
 }
 
 /* ── Questions ────────────────────────────────────────────────────────── */
@@ -144,11 +104,8 @@ export type QuestionFormat =
 
 export type Difficulty = 'recall' | 'reasoning' | 'stretch';
 
-/** Where a question points back to in the library. */
-export interface SourceRef {
-  materialId: string;
-  passageId: string;
-}
+/** Exact blocks of one immutable material version. */
+export type SourceRef = import('../contracts/document').Citation;
 
 export interface MatchPair {
   left: string;
@@ -364,7 +321,7 @@ export interface TutorTurn {
   status?: 'complete' | 'interrupted';
   /** How far the reply rests on the course material. */
   grounding?: 'materials' | 'mixed' | 'general' | 'insufficient';
-  /** Validated passages cited in the text, in citation order. */
+  /** Validated block citations in the text, in citation order. */
   citations?: SourceRef[];
   /** Citations the model made to passages it was not given, removed. */
   droppedCitations?: number;
@@ -395,7 +352,7 @@ export interface TutorTranscript {
   id: string;
   courseId: string;
   topicId: string;
-  /** Set when the session was opened from a passage. */
+  /** Set when the session was opened from blocks of a material. */
   source?: SourceRef;
   /** Set when the session was opened to review a specific exam mistake. */
   fromAttemptId?: string;

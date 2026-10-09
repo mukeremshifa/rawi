@@ -8,11 +8,12 @@ import { uuid } from '../../../shared/contracts/workspace';
 import { selectPassages } from '../../../shared/domain/ai-context';
 import { generatePrompts, gradePrompts } from './prompts';
 import { generateRequest, gradeRequest, generatedQuestion, gradeOutput, tutorRequest } from './validate';
-import { aiOperations, aiExecutions, passages, materials, feedbackRevisions, questionVersions, questionSources, learningSets, setItems, tutorSessions, tutorMessages } from '../../db/schema';
+import { aiOperations, aiExecutions, feedbackRevisions, questionVersions, questionSources, learningSets, setItems, tutorSessions, tutorMessages } from '../../db/schema';
 import { planningData, bumpPlanner } from '../planning';
 import { questionInput, type VersionedQuestion } from '../../../shared/contracts/learning';
 import { operation, attempt } from '../learning';
-import { hash } from '../materials';
+import { hash, validateCitation } from '../materials';
+import { citedPassage, contextMaterials } from '../documents/context';
 import { ApiError, notFound } from '../../errors';
 import type { ReadDb, SocketDb, Transaction } from '../../db/client';
 
@@ -37,10 +38,10 @@ export async function viewOperation(db: ReadDb | Transaction, workspaceId: strin
 }
 export async function prepareGeneration(db: SocketDb, workspaceId: string, courseId: string, input: z.infer<typeof generateInput>) {
   return operation(db, workspaceId, input.operationId, { action: 'generate', courseId, input }, async tx => {
-    const data = await planningData(tx, workspaceId, { passageCourseId: courseId }); const course = data.courses.find(c => c.id === courseId); if (!course) throw notFound();
+    const data = await planningData(tx, workspaceId); const course = data.courses.find(c => c.id === courseId); if (!course) throw notFound();
     const topics = input.topicIds.map(id => { const t = data.topics.find(t => t.id === id && t.courseId === courseId); if (!t) throw notFound(); return { id: t.id, title: t.title, summary: t.summary }; });
     const selected = input.materialIds.map(id => { const m = data.materials.find(m => m.id === id && m.courseId === courseId); if (!m) throw notFound(); return m; });
-    const context = selectPassages({ courseId, materials: selected, topicIds: input.topicIds, query: topics.map(t => t.title).join(' ') });
+    const context = selectPassages({ courseId, materials: await contextMaterials(tx, workspaceId, courseId, selected), topicIds: input.topicIds, query: topics.map(t => t.title).join(' ') });
     if (!context.length) throw new ApiError(400, 'no_content', 'Choose readable material linked to these topics.');
     const request = generateRequest({ courseId, courseName: course.name, format: input.format, count: input.count, difficulties: input.difficulties, topics, passages: context });
     const prompts = generatePrompts(request);
@@ -54,8 +55,8 @@ export async function prepareGrade(db: SocketDb, workspaceId: string, attemptId:
     const saved = await attempt(tx, workspaceId, attemptId); const item = saved.questions.find(q => q.question.id === input.questionId); if (!item) throw notFound();
     const q = item.question;
     if (!q.rubric?.length || item.result.response.kind !== 'text' || !item.result.response.text.trim()) throw new ApiError(400, 'no_written_response', 'This answer has no written response and rubric to grade.');
-    const context = q.source ? await tx.select({ id: passages.id, courseId: passages.courseId, materialId: passages.materialId, materialTitle: materials.title, heading: passages.heading, text: passages.text }).from(passages).innerJoin(materials, eq(materials.id, passages.materialId)).where(and(eq(passages.workspaceId, workspaceId), eq(passages.courseId, saved.courseId), eq(passages.versionId, q.source.versionId), eq(passages.id, q.source.passageId))).limit(1) : [];
-    const request = gradeRequest({ courseId: saved.courseId, prompt: q.prompt, modelAnswer: q.answer ?? '', rubric: q.rubric, passages: context.map(p => ({ ...p, text: p.text.slice(0, 6000), topicIds: [q.topicId] })), response: item.result.response.text });
+    const source = q.source ? await citedPassage(tx, workspaceId, saved.courseId, q.source, [q.topicId]) : null;
+    const request = gradeRequest({ courseId: saved.courseId, prompt: q.prompt, modelAnswer: q.answer ?? '', rubric: q.rubric, passages: source ? [source] : [], response: item.result.response.text });
     await recordBlocked(tx, workspaceId, saved.courseId, input.operationId, attemptId, 'grade', { questionId: q.id, markingVersion: saved.markingVersion, request, prompts: gradePrompts(request) });
     return viewOperation(tx, workspaceId, input.operationId);
   });
@@ -145,9 +146,12 @@ export async function publishStructured(db: SocketDb, workspaceId: string, execu
       for (const row of proposed) {
         const q = generatedQuestion(row, req); if (!q) continue;
         const key = promptKey(q.prompt); if (seen.has(key)) continue; seen.add(key);
-        const [source] = await tx.select().from(passages).where(and(eq(passages.workspaceId, workspaceId), eq(passages.courseId, op.courseId), eq(passages.id, q.sourcePassageId))); if (!source) throw notFound();
+        // The cited passage resolves to its exact blocks, which must still exist in that version.
+        const passage = req.passages.find(p => p.id === q.sourcePassageId)!;
+        const source = { materialId: passage.materialId, versionId: passage.versionId, blockIds: passage.blockIds };
+        await validateCitation(tx, workspaceId, op.courseId, source);
         const id = crypto.randomUUID(); const rubric = q.rubric?.map((r, i) => ({ ...r, id: `${id}:${i}`, keywords: [] }));
-        const content = questionInput.parse({ format: req.format, topicId: q.topicId, difficulty: q.difficulty, marks: rubric?.reduce((n, p) => n + p.marks, 0) ?? 1, prompt: q.prompt, explanation: q.explanation, answer: q.answer, options: q.options, correctIndices: q.correctIndex === undefined ? undefined : [q.correctIndex], rubric, source: { materialId: source.materialId, versionId: source.versionId, passageId: source.id } });
+        const content = questionInput.parse({ format: req.format, topicId: q.topicId, difficulty: q.difficulty, marks: rubric?.reduce((n, p) => n + p.marks, 0) ?? 1, prompt: q.prompt, explanation: q.explanation, answer: q.answer, options: q.options, correctIndices: q.correctIndex === undefined ? undefined : [q.correctIndex], rubric, source });
         questions.push({ ...content, id, courseId: op.courseId, topicLabel: req.topics.find(t => t.id === q.topicId)!.title, origin: 'generated', provenance: { kind: 'generated', model: op.model, generatedAt: new Date().toISOString(), materialIds: [source.materialId] } });
         if (questions.length === req.count) break;
       }
@@ -164,7 +168,10 @@ export async function publishStructured(db: SocketDb, workspaceId: string, execu
   });
 }
 
-/** Internal reply publication. Only supplied immutable references become citations. */
+/**
+ * Internal reply publication. Only supplied immutable references become
+ * citations, and the saved text marks each one by its position in the list.
+ */
 export async function publishTutor(db: SocketDb, workspaceId: string, executionId: string, raw: string, outcome: 'complete' | 'interrupted' = 'complete') {
   if (!raw.trim() || raw.length > 12000) throw new ApiError(502, 'invalid_output', 'The tutor reply is empty or exceeds its output limit.');
   return transaction(db, async tx => {
@@ -173,15 +180,15 @@ export async function publishTutor(db: SocketDb, workspaceId: string, executionI
     if (op.state === 'complete' && op.result) return op.result;
     if (op.activeExecutionId !== executionId || e.state !== 'reserved') throw new ApiError(409, 'stale_execution', 'This execution no longer owns the tutor reply.');
     const [session] = await tx.select().from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, op.targetId))).for('update'); if (!session) throw notFound();
-    const input = op.input as { request: unknown; sessionRevision: number; sources: TutorMessageProvenance['citations'] };
+    const input = op.input as { request: unknown; sessionRevision: number };
     if (session.revision !== input.sessionRevision + 1 || session.archived || session.endedAt) throw new ApiError(409, 'stale_execution', 'The session changed before this reply could be published. Its partial text remains recoverable.');
     const req = tutorRequest(input.request);
     const checked = finishTutorText(raw, new Set(req.passages.map(p => p.id)), req.stage);
     if (!checked.text) throw new ApiError(502, 'invalid_output', 'No readable tutor reply was returned.');
-    const provenance: TutorMessageProvenance = { model: op.model, stage: outcome === 'complete' ? checked.meta.stage : req.stage, grounding: checked.meta.grounding, droppedCitations: checked.dropped, imported: false, citations: checked.citations.map(id => { const source = input.sources.find(p => p.passageId === id); if (!source) throw new ApiError(502, 'invalid_citation', 'A cited passage is missing its saved version.'); return source; }) };
+    const provenance: TutorMessageProvenance = { model: op.model, stage: outcome === 'complete' ? checked.meta.stage : req.stage, grounding: checked.meta.grounding, droppedCitations: checked.dropped, imported: false, citations: checked.citations.map(id => { const p = req.passages.find(p => p.id === id)!; return { materialId: p.materialId, versionId: p.versionId, blockIds: p.blockIds }; }) };
     const [last] = await tx.select({ ordinal: tutorMessages.ordinal }).from(tutorMessages).where(eq(tutorMessages.sessionId, session.id)).orderBy(desc(tutorMessages.ordinal)).limit(1);
     const id = crypto.randomUUID();
-    await tx.insert(tutorMessages).values({ id, workspaceId, courseId: session.courseId, sessionId: session.id, ordinal: (last?.ordinal ?? -1) + 1, role: 'tutor', state: outcome, text: checked.text, operationId: executionId, provenance });
+    await tx.insert(tutorMessages).values({ id, workspaceId, courseId: session.courseId, sessionId: session.id, ordinal: (last?.ordinal ?? -1) + 1, role: 'tutor', state: outcome, text: checked.text.replace(/\[\[([^\]\s]{1,200})\]\]/g, (_m, id: string) => `[[${checked.citations.indexOf(id) + 1}]]`), operationId: executionId, provenance });
     await tx.update(tutorMessages).set({ state: 'complete', failure: null }).where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.operationId, op.id), eq(tutorMessages.role, 'student')));
     await tx.update(tutorSessions).set({ revision: session.revision + 1, stage: provenance.stage, updatedAt: new Date() }).where(eq(tutorSessions.id, session.id));
     const result = { sessionId: session.id, messageId: id };

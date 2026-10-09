@@ -159,7 +159,6 @@ export function App() {
         <Route path="/course/:id/materials" element={<Materials key={location.pathname} />} />
         <Route path="/materials/:materialId" element={<MaterialReader key={location.pathname} />} />
         <Route path="/materials/:materialId/versions/:versionId" element={<MaterialReader key={location.pathname} />} />
-        <Route path="/materials/:materialId/versions/:versionId/passages/:passageId" element={<MaterialReader key={location.pathname} />} />
         <Route path="/course/:id/tutor" element={<TutorLibrary key={location.pathname} />} />
         <Route path="/tutor/:id" element={<Tutor key={location.pathname} />} />
         <Route path="/course/:id/exams" element={<Exams key={location.pathname} />} />

@@ -6,7 +6,7 @@ import type { z } from 'zod';
 import { createMaterialInput, materialFields, type Material, type UploadState } from '@shared/contracts/materials';
 import type { CourseDetail } from '@shared/contracts/workspace';
 
-import { MATERIAL_KIND_LABEL, formatRelative } from '@/components/domain';
+import { MATERIAL_KIND_LABEL, VERSION_STATUS_LABEL, formatRelative } from '@/components/domain';
 import { Page, PageHeader, Toolbar } from '@/components/layout';
 import { EmptyState, ErrorState } from '@/components/states';
 import { Badge } from '@/components/ui/badge';
@@ -79,9 +79,9 @@ export function Materials() {
                     <TableRow key={m.id} onClick={() => navigate(`/materials/${m.id}`)}>
                       <TableCell className="max-w-0">
                         <div className="flex items-center gap-2">
-                          {m.contentStatus === 'readable' ? <BookOpenIcon className="text-muted-foreground size-4 shrink-0" aria-hidden /> : <FileIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />}
+                          {m.status === 'ready' || m.status === 'partial' ? <BookOpenIcon className="text-muted-foreground size-4 shrink-0" aria-hidden /> : <FileIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />}
                           <Link to={`/materials/${m.id}`} onClick={e => e.stopPropagation()} className="truncate font-medium hover:underline">{m.title}</Link>
-                          {m.contentStatus !== 'readable' && <Badge variant="outline" className="hidden lg:inline-flex">Original only</Badge>}
+                          {m.status && m.status !== 'ready' && <Badge variant={m.status === 'failed' ? 'danger' : 'outline'} className="hidden lg:inline-flex">{VERSION_STATUS_LABEL[m.status]}</Badge>}
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground hidden sm:table-cell">{MATERIAL_KIND_LABEL[m.kind]}</TableCell>

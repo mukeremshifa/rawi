@@ -2,12 +2,14 @@ import { transaction } from '../db/client';
 import { and, asc, desc, eq, exists, gt, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { createMaterialInput, materialPatch, materialListInput } from '../../shared/contracts/materials';
-import { materials, materialVersions, passages, materialTopicLinks, topics, courses } from '../db/schema';
+import { materials, materialVersions, blocks, materialTopicLinks, topics, courses } from '../db/schema';
+import { blockInput, DOCUMENT_SCHEMA_VERSION, usableStatus, type BlockInput, type Citation, type DocumentBlock, type Pagination } from '../../shared/contracts/document';
+import { markdownBlocks, MARKDOWN_ADAPTER_VERSION } from './documents/markdown';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
 import { ApiError, conflict, notFound } from '../errors';
 import { getCourse } from './workspace';
 
-type Db = ReadDb | Transaction;
+type Db = ReadDb | SocketDb | Transaction;
 export const materialScope = (workspaceId: string, id: string) => and(eq(materials.workspaceId, workspaceId), eq(materials.id, id));
 export async function hash(value: string | Uint8Array) {
   const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
@@ -18,23 +20,6 @@ export function readableText(text: string, limit = 1048576) {
     throw new ApiError(400, 'invalid_text', 'Use readable UTF-8 text within the text size limit.');
   }
   return text;
-}
-export function splitPassages(text: string) {
-  // Fixed bounded chunks preserve every source character, including line endings.
-  const result: { id: string; heading: string; text: string; order: number }[] = [];
-  let start = 0;
-  while (start < text.length) {
-    let end = Math.min(start + 8000, text.length);
-    if (end < text.length) {
-      const newline = text.lastIndexOf('\n', end);
-      if (newline > start + 4000) end = newline + 1;
-      if (/[\uD800-\uDBFF]/.test(text[end - 1]!)) end--;
-    }
-    const chunk = text.slice(start, end);
-    result.push({ id: crypto.randomUUID(), heading: /^#{1,6} (.+)/m.exec(chunk)?.[1]?.slice(0, 200) ?? `Passage ${result.length + 1}`, text: chunk, order: result.length });
-    start = end;
-  }
-  return result;
 }
 export async function lockCourse(tx: Transaction, workspaceId: string, id: string) {
   const [course] = await tx.select({ id: courses.id }).from(courses).where(and(eq(courses.workspaceId, workspaceId), eq(courses.id, id))).for('update');
@@ -48,9 +33,9 @@ export async function ownMaterial(db: Db, workspaceId: string, id: string) {
 export async function materialDetail(db: Db, workspaceId: string, id: string) {
   const row = await ownMaterial(db, workspaceId, id);
   const links = await db.select({ id: materialTopicLinks.topicId }).from(materialTopicLinks).where(eq(materialTopicLinks.materialId, id));
-  const [version] = row.currentVersionId ? await db.select({ status: materialVersions.contentStatus }).from(materialVersions).where(eq(materialVersions.id, row.currentVersionId)) : [];
+  const [version] = row.currentVersionId ? await db.select({ status: materialVersions.status }).from(materialVersions).where(eq(materialVersions.id, row.currentVersionId)) : [];
   const { createFingerprint: _private, workspaceId: _workspace, ...visible } = row;
-  return { ...visible, topicIds: links.map(l => l.id), contentStatus: version?.status ?? null };
+  return { ...visible, topicIds: links.map(l => l.id), status: version?.status ?? null };
 }
 export async function validateTopics(tx: Transaction, workspaceId: string, courseId: string, ids: string[]) {
   if (!ids.length) return;
@@ -63,20 +48,45 @@ export async function setTopics(tx: Transaction, workspaceId: string, courseId: 
   if (ids.length) await tx.insert(materialTopicLinks).values(ids.map(topicId => ({ workspaceId, courseId, materialId, topicId })));
 }
 export function publicVersion(row: typeof materialVersions.$inferSelect) {
-  const { fingerprint: _hash, requestId: _request, workspaceId: _workspace, courseId: _course, ...version } = row;
-  return version;
+  const { fingerprint: _hash, requestId: _request, workspaceId: _workspace, courseId: _course, rawObjectId: _raw, ...version } = row;
+  return { ...version, retryable: row.status === 'failed' && row.adapter === 'datalab' };
 }
+/**
+ * Validate adapter output against the shared contract, then insert it in
+ * order. Section parents come from heading levels, so every adapter gets the
+ * same hierarchy rule. Callers run this inside the transaction that marks
+ * the version ready or partial.
+ */
+export async function insertBlocks(tx: Transaction, scope: { workspaceId: string; courseId: string; materialId: string; versionId: string }, inputs: BlockInput[]) {
+  const headings: { id: string; level: number }[] = [];
+  const rows = inputs.map((input, ordinal) => {
+    const block = blockInput.parse(input);
+    const id = crypto.randomUUID();
+    if (block.type === 'heading') while (headings.length && headings.at(-1)!.level >= block.content.level) headings.pop();
+    const parentId = headings.at(-1)?.id ?? null;
+    if (block.type === 'heading') headings.push({ id, level: block.content.level });
+    return { ...scope, id, ordinal, parentId, type: block.type, content: block.content, sources: block.sources, flags: block.flags };
+  });
+  for (let i = 0; i < rows.length; i += 500) await tx.insert(blocks).values(rows.slice(i, i + 500));
+  return rows.length;
+}
+type Conversion =
+  | { adapter: 'markdown'; text: string; format: 'md' | 'txt' }
+  | { adapter: 'datalab'; pagination: Pagination };
 export async function publishVersion(tx: Transaction, row: typeof materials.$inferSelect, input: {
-  requestId: string; fingerprint: string; origin: 'paste' | 'upload'; sourceObjectId: string | null;
-  format: string; text?: string; contentStatus: 'readable' | 'not_extracted' | 'failed';
+  requestId: string; fingerprint: string; origin: 'paste' | 'upload'; sourceObjectId: string | null; format: string; conversion: Conversion;
 }) {
   const [latest] = await tx.select({ number: materialVersions.number }).from(materialVersions).where(eq(materialVersions.materialId, row.id)).orderBy(desc(materialVersions.number)).limit(1);
-  const { text, ...fields } = input;
-  const [version] = await tx.insert(materialVersions).values({ ...fields, id: crypto.randomUUID(), workspaceId: row.workspaceId, courseId: row.courseId, materialId: row.id, number: (latest?.number ?? 0) + 1 }).returning();
-  if (text !== undefined) {
-    const records = splitPassages(text).map(p => ({ ...p, workspaceId: row.workspaceId, courseId: row.courseId, materialId: row.id, versionId: version!.id }));
-    await tx.insert(passages).values(records);
-  }
+  const { conversion, ...fields } = input;
+  // Markdown converts in the publish transaction. Other formats wait for their conversion job.
+  const markdown = conversion.adapter === 'markdown' ? markdownBlocks(conversion.text, conversion.format) : null;
+  const [version] = await tx.insert(materialVersions).values({
+    ...fields, id: crypto.randomUUID(), workspaceId: row.workspaceId, courseId: row.courseId, materialId: row.id, number: (latest?.number ?? 0) + 1,
+    schemaVersion: DOCUMENT_SCHEMA_VERSION, adapter: conversion.adapter, adapterVersion: conversion.adapter === 'markdown' ? MARKDOWN_ADAPTER_VERSION : '',
+    status: markdown ? 'ready' : 'pending', pagination: conversion.adapter === 'markdown' ? 'none' : conversion.pagination,
+    warnings: markdown && !markdown.length ? [{ code: 'empty', message: 'No readable text was found in this material.' }] : [],
+  }).returning();
+  if (markdown) await insertBlocks(tx, { workspaceId: row.workspaceId, courseId: row.courseId, materialId: row.id, versionId: version!.id }, markdown);
   await tx.update(materials).set({ currentVersionId: version!.id, revision: latest ? row.revision + 1 : row.revision, updatedAt: new Date() }).where(eq(materials.id, row.id));
   return publicVersion(version!);
 }
@@ -92,7 +102,7 @@ export async function createMaterial(db: SocketDb, workspaceId: string, courseId
     if (row.createFingerprint !== fingerprint) throw new ApiError(409, 'create_conflict', 'This request ID was used with different content.');
     if (inserted) {
       await setTopics(tx, workspaceId, courseId, row.id, topicIds);
-      await publishVersion(tx, row, { requestId: input.id, fingerprint, origin: 'paste', sourceObjectId: null, format, text, contentStatus: 'readable' });
+      await publishVersion(tx, row, { requestId: input.id, fingerprint, origin: 'paste', sourceObjectId: null, format, conversion: { adapter: 'markdown', text, format } });
     }
     return materialDetail(tx, workspaceId, row.id);
   });
@@ -114,13 +124,13 @@ export async function listMaterials(db: ReadDb, workspaceId: string, courseId: s
     const [topic] = await db.select({ id: topics.id }).from(topics).where(and(eq(topics.workspaceId, workspaceId), eq(topics.courseId, courseId), eq(topics.id, input.topicId)));
     if (!topic) throw notFound();
   }
-  const rows = await db.select({ material: materials, contentStatus: materialVersions.contentStatus }).from(materials).leftJoin(materialVersions, eq(materialVersions.id, materials.currentVersionId)).where(and(eq(materials.workspaceId, workspaceId), eq(materials.courseId, courseId),
+  const rows = await db.select({ material: materials, status: materialVersions.status }).from(materials).leftJoin(materialVersions, eq(materialVersions.id, materials.currentVersionId)).where(and(eq(materials.workspaceId, workspaceId), eq(materials.courseId, courseId),
     input.archived === 'all' ? undefined : eq(materials.archived, input.archived === 'true'), input.cursor ? gt(materials.id, input.cursor) : undefined,
     input.topicId ? exists(db.select({ id: materialTopicLinks.materialId }).from(materialTopicLinks).where(and(eq(materialTopicLinks.materialId, materials.id), eq(materialTopicLinks.topicId, input.topicId)))) : undefined,
   )).orderBy(asc(materials.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const links = page.length ? await db.select().from(materialTopicLinks).where(inArray(materialTopicLinks.materialId, page.map(r => r.material.id))) : [];
-  return { materials: page.map(({ material: { createFingerprint: _hash, workspaceId: _workspace, ...material }, contentStatus }) => ({ ...material, contentStatus, topicIds: links.filter(l => l.materialId === material.id).map(l => l.topicId) })), nextCursor: rows.length > input.limit ? rows[input.limit - 1]!.material.id : null };
+  return { materials: page.map(({ material: { createFingerprint: _hash, workspaceId: _workspace, ...material }, status }) => ({ ...material, status, topicIds: links.filter(l => l.materialId === material.id).map(l => l.topicId) })), nextCursor: rows.length > input.limit ? rows[input.limit - 1]!.material.id : null };
 }
 export async function ownVersion(db: Db, workspaceId: string, materialId: string, id: string) {
   const [row] = await db.select().from(materialVersions).where(and(eq(materialVersions.workspaceId, workspaceId), eq(materialVersions.materialId, materialId), eq(materialVersions.id, id)));
@@ -132,14 +142,28 @@ export async function listVersions(db: ReadDb, workspaceId: string, id: string, 
   const rows = await db.select().from(materialVersions).where(and(eq(materialVersions.materialId, id), cursor ? gt(materialVersions.id, cursor) : undefined)).orderBy(asc(materialVersions.id)).limit(limit + 1);
   return { versions: rows.slice(0, limit).map(publicVersion), nextCursor: rows.length > limit ? rows[limit - 1]!.id : null };
 }
-export async function versionDetail(db: ReadDb, workspaceId: string, id: string, versionId: string, cursor = -1) {
-  const version = await ownVersion(db, workspaceId, id, versionId);
-  const rows = await db.select({ id: passages.id, heading: passages.heading, text: passages.text, order: passages.order }).from(passages).where(and(eq(passages.versionId, versionId), gt(passages.order, cursor))).orderBy(asc(passages.order)).limit(21);
-  return { version: publicVersion(version), passages: rows.slice(0, 20), nextCursor: rows.length > 20 ? rows[19]!.order : null };
+export async function versionStatus(db: Db, workspaceId: string, id: string, versionId: string) {
+  return publicVersion(await ownVersion(db, workspaceId, id, versionId));
 }
-export async function exactPassage(db: ReadDb, workspaceId: string, id: string, versionId: string, passageId: string) {
+const blockColumns = { id: blocks.id, ordinal: blocks.ordinal, parentId: blocks.parentId, type: blocks.type, content: blocks.content, sources: blocks.sources, flags: blocks.flags };
+/** Blocks of one owned version, by ordinal cursor, or the exact blocks a citation names. */
+export async function readBlocks(db: Db, workspaceId: string, id: string, versionId: string, query: { cursor: number; limit: number; ids?: string[] }) {
   await ownVersion(db, workspaceId, id, versionId);
-  const [row] = await db.select({ id: passages.id, heading: passages.heading, text: passages.text, order: passages.order }).from(passages).where(and(eq(passages.versionId, versionId), eq(passages.id, passageId)));
-  if (!row) throw notFound();
-  return row;
+  const rows = await db.select(blockColumns).from(blocks).where(and(eq(blocks.workspaceId, workspaceId), eq(blocks.versionId, versionId),
+    query.ids ? inArray(blocks.id, query.ids) : gt(blocks.ordinal, query.cursor))).orderBy(asc(blocks.ordinal)).limit(query.ids ? query.ids.length : query.limit + 1);
+  const page = query.ids ? rows : rows.slice(0, query.limit);
+  return { blocks: page as DocumentBlock[], nextCursor: !query.ids && rows.length > query.limit ? page.at(-1)!.ordinal : null };
+}
+/** A citation must name blocks that exist in a usable version of a material in this course. */
+export async function validateCitation(tx: Db, workspaceId: string, courseId: string, citation: Citation) {
+  const [version] = await tx.select({ status: materialVersions.status }).from(materialVersions).where(and(eq(materialVersions.workspaceId, workspaceId), eq(materialVersions.courseId, courseId), eq(materialVersions.materialId, citation.materialId), eq(materialVersions.id, citation.versionId)));
+  if (!version || !usableStatus(version.status)) throw notFound();
+  const [found] = await tx.select({ n: sql<number>`count(*)::int` }).from(blocks).where(and(eq(blocks.workspaceId, workspaceId), eq(blocks.versionId, citation.versionId), inArray(blocks.id, citation.blockIds)));
+  if (found?.n !== citation.blockIds.length) throw notFound();
+}
+/** The cited blocks with their material title, in reading order. */
+export async function citationBlocks(tx: Db, workspaceId: string, courseId: string, citation: Citation) {
+  const rows = await tx.select({ ...blockColumns, title: materials.title }).from(blocks).innerJoin(materials, eq(materials.id, blocks.materialId))
+    .where(and(eq(blocks.workspaceId, workspaceId), eq(blocks.courseId, courseId), eq(blocks.materialId, citation.materialId), eq(blocks.versionId, citation.versionId), inArray(blocks.id, citation.blockIds))).orderBy(asc(blocks.ordinal));
+  return { title: rows[0]?.title ?? '', blocks: rows as (DocumentBlock & { title: string })[] };
 }

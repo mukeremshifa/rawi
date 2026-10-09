@@ -1,4 +1,5 @@
-import type { StudyCourse, StudyMaterial, Question, StudyTopic } from '../../src/shared/domain/types';
+import type { StudyCourse, StudyTopic } from '../../src/shared/domain/types';
+import type { FixtureMaterial, FixtureQuestion } from './types';
 
 /**
  * The second seeded course: "Statistical Inference for Social Research".
@@ -112,7 +113,7 @@ export const STATS_TOPICS: StudyTopic[] = [
 
 const ADDED = new Date(Date.parse('2026-10-07T08:00:00.000Z') - 1000 * 60 * 60 * 24 * 9).toISOString();
 
-export const STATS_MATERIALS: StudyMaterial[] = [
+export const STATS_MATERIALS: FixtureMaterial[] = [
   {
     id: 'mat-stat-intervals',
     courseId: STATS_COURSE_ID,
@@ -123,7 +124,7 @@ export const STATS_MATERIALS: StudyMaterial[] = [
       'Lecture notes, R. Adeyemi, *Inference for Social Research* (fictional, week 3)',
     topicIds: ['stat-intervals'],
     addedAt: ADDED,
-    passages: [
+    sections: [
       {
         id: 'p-stat-int-1',
         heading: 'The quantity that varies',
@@ -163,7 +164,7 @@ The defensible reading is about the procedure: if we repeated this sampling and 
     attribution: 'Adapted from R. Adeyemi, *Inference for Social Research* (fictional, ch. 6)',
     topicIds: ['stat-testing', 'stat-multiple'],
     addedAt: ADDED,
-    passages: [
+    sections: [
       {
         id: 'p-stat-test-1',
         heading: 'The conditional that does the work',
@@ -199,7 +200,7 @@ This is why the analysis plan matters more than the analysis. Twenty tests decla
     attribution: 'Problem set 6, *Inference for Social Research* (fictional)',
     topicIds: ['stat-causal', 'stat-sampling'],
     addedAt: ADDED,
-    passages: [
+    sections: [
       {
         id: 'p-stat-caus-1',
         heading: 'The confounder that is doing the work',
@@ -234,7 +235,7 @@ The useful habit is to state the assumption the causal reading requires, in one 
  * in either course, and carry enough per-topic depth that the planner has real
  * work to schedule.
  */
-export const STATS_QUESTIONS: Question[] = [
+export const STATS_QUESTIONS: FixtureQuestion[] = [
   /* ── Sampling ─────────────────────────────────────────────────────────── */
   {
     id: 'q-stat-samp-fc-1',
@@ -267,7 +268,7 @@ export const STATS_QUESTIONS: Question[] = [
     correctIndices: [1],
     explanation:
       'Sample size shrinks variance, not bias. The large poll estimates support among people who chose to respond, and no amount of extra respondents of that kind moves it toward the population value.',
-    source: { materialId: 'mat-stat-intervals', passageId: 'p-stat-int-2' },
+    source: { materialId: 'mat-stat-intervals', sectionId: 'p-stat-int-2' },
   },
   {
     id: 'q-stat-samp-written-1',
@@ -359,7 +360,7 @@ export const STATS_QUESTIONS: Question[] = [
     ],
     explanation:
       'Conflating these two is the most common error in reading a result: one is about people, the other is about estimates.',
-    source: { materialId: 'mat-stat-intervals', passageId: 'p-stat-int-3' },
+    source: { materialId: 'mat-stat-intervals', sectionId: 'p-stat-int-3' },
   },
 
   /* ── Intervals ────────────────────────────────────────────────────────── */
@@ -374,7 +375,7 @@ export const STATS_QUESTIONS: Question[] = [
     answer: 's / √n, the sample standard deviation divided by the square root of the sample size.',
     explanation:
       'The √n is the important part: quadrupling the sample halves the standard error, so precision gets steadily more expensive.',
-    source: { materialId: 'mat-stat-intervals', passageId: 'p-stat-int-1' },
+    source: { materialId: 'mat-stat-intervals', sectionId: 'p-stat-int-1' },
   },
   {
     id: 'q-stat-int-mc-1',
@@ -389,7 +390,7 @@ export const STATS_QUESTIONS: Question[] = [
     correctIndices: [0],
     explanation:
       'SE = 100/√400 = 5, and 1.96 × 5 ≈ 9.8. The last option gives one standard error rather than the 95% multiple of it.',
-    source: { materialId: 'mat-stat-intervals', passageId: 'p-stat-int-2' },
+    source: { materialId: 'mat-stat-intervals', sectionId: 'p-stat-int-2' },
   },
   {
     id: 'q-stat-int-ms-1',
@@ -409,7 +410,7 @@ export const STATS_QUESTIONS: Question[] = [
     correctIndices: [0, 3],
     explanation:
       'The first is the frequentist definition. The fourth is a compatibility reading, which is defensible. The second attaches a probability to a fixed quantity. The third confuses the interval for the mean with the spread of individuals.',
-    source: { materialId: 'mat-stat-intervals', passageId: 'p-stat-int-3' },
+    source: { materialId: 'mat-stat-intervals', sectionId: 'p-stat-int-3' },
   },
   {
     id: 'q-stat-int-order-1',
@@ -469,7 +470,7 @@ export const STATS_QUESTIONS: Question[] = [
     ],
     explanation:
       'This is the single most common misreading in applied work, and the corrected version is genuinely less satisfying, which is why it keeps being replaced by the wrong one.',
-    source: { materialId: 'mat-stat-intervals', passageId: 'p-stat-int-3' },
+    source: { materialId: 'mat-stat-intervals', sectionId: 'p-stat-int-3' },
   },
 
   /* ── Testing ──────────────────────────────────────────────────────────── */
@@ -485,7 +486,7 @@ export const STATS_QUESTIONS: Question[] = [
       'The probability of data at least as extreme as that observed, assuming the null hypothesis is true.',
     explanation:
       'The assumption clause is the definition. Without it the number becomes a claim about the null being true, which it is not.',
-    source: { materialId: 'mat-stat-testing', passageId: 'p-stat-test-1' },
+    source: { materialId: 'mat-stat-testing', sectionId: 'p-stat-test-1' },
   },
   {
     id: 'q-stat-test-mc-1',
@@ -504,7 +505,7 @@ export const STATS_QUESTIONS: Question[] = [
     correctIndices: [2],
     explanation:
       'The first two invert the conditional, and the fourth confuses significance with magnitude, which no p-value speaks to.',
-    source: { materialId: 'mat-stat-testing', passageId: 'p-stat-test-1' },
+    source: { materialId: 'mat-stat-testing', sectionId: 'p-stat-test-1' },
   },
   {
     id: 'q-stat-test-match-1',
@@ -539,7 +540,7 @@ export const STATS_QUESTIONS: Question[] = [
     ],
     explanation:
       'Significance answers "is it distinguishable from zero", and the interval answers "how big, and how sure", which is usually the question that was asked.',
-    source: { materialId: 'mat-stat-testing', passageId: 'p-stat-test-2' },
+    source: { materialId: 'mat-stat-testing', sectionId: 'p-stat-test-2' },
   },
   {
     id: 'q-stat-test-source-1',
@@ -591,7 +592,7 @@ export const STATS_QUESTIONS: Question[] = [
     ],
     explanation:
       'This is the archetype of a defensible test supporting an indefensible headline. Every individual number is correct.',
-    source: { materialId: 'mat-stat-testing', passageId: 'p-stat-test-2' },
+    source: { materialId: 'mat-stat-testing', sectionId: 'p-stat-test-2' },
   },
 
   /* ── Multiple comparisons ─────────────────────────────────────────────── */
@@ -607,7 +608,7 @@ export const STATS_QUESTIONS: Question[] = [
       'The analytic choices, which cases to exclude, which covariates to include, where to cut a continuous variable, that are made after seeing the data and can be made in the direction that helps.',
     explanation:
       'The term is useful because it does not require anyone to be dishonest. The choices feel reasonable one at a time.',
-    source: { materialId: 'mat-stat-testing', passageId: 'p-stat-test-3' },
+    source: { materialId: 'mat-stat-testing', sectionId: 'p-stat-test-3' },
   },
   {
     id: 'q-stat-mult-mc-1',
@@ -622,7 +623,7 @@ export const STATS_QUESTIONS: Question[] = [
     correctIndices: [2],
     explanation:
       '1 − 0.95²⁰ ≈ 0.64. The per-test rate is unchanged. It is the family-wise rate that has climbed.',
-    source: { materialId: 'mat-stat-testing', passageId: 'p-stat-test-3' },
+    source: { materialId: 'mat-stat-testing', sectionId: 'p-stat-test-3' },
   },
   {
     id: 'q-stat-mult-written-1',
@@ -663,7 +664,7 @@ export const STATS_QUESTIONS: Question[] = [
     ],
     explanation:
       'The point is that this is a bookkeeping problem before it is a statistical one.',
-    source: { materialId: 'mat-stat-testing', passageId: 'p-stat-test-3' },
+    source: { materialId: 'mat-stat-testing', sectionId: 'p-stat-test-3' },
   },
 
   /* ── Causal ───────────────────────────────────────────────────────────── */
@@ -698,7 +699,7 @@ export const STATS_QUESTIONS: Question[] = [
     correctIndices: [1],
     explanation:
       'Selection into treatment is the objection. The others are either not supported by what we are told or are much weaker.',
-    source: { materialId: 'mat-stat-causal', passageId: 'p-stat-caus-1' },
+    source: { materialId: 'mat-stat-causal', sectionId: 'p-stat-caus-1' },
   },
   {
     id: 'q-stat-caus-ms-1',
@@ -718,7 +719,7 @@ export const STATS_QUESTIONS: Question[] = [
     correctIndices: [0, 1, 3],
     explanation:
       'A bigger sample sharpens a biased estimate without moving it toward the truth. The other three each address comparability.',
-    source: { materialId: 'mat-stat-causal', passageId: 'p-stat-caus-2' },
+    source: { materialId: 'mat-stat-causal', sectionId: 'p-stat-caus-2' },
   },
   {
     id: 'q-stat-caus-essay-1',
@@ -778,6 +779,6 @@ export const STATS_QUESTIONS: Question[] = [
     ],
     explanation:
       'The strongest answers refuse both extremes: observational work is not proof, and treating it as worthless would discard most of what is known about smoking, diet and education.',
-    source: { materialId: 'mat-stat-causal', passageId: 'p-stat-caus-2' },
+    source: { materialId: 'mat-stat-causal', sectionId: 'p-stat-caus-2' },
   },
 ];

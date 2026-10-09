@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
  * The vocabulary shared across features.
  *
  * Anything that appears in more than one product area and carries a meaning
- * lives here — an evidence level, a format name, a link back to a passage. The
+ * lives here — an evidence level, a format name, a link back to a source. The
  * alternative is six features each deciding independently what "practising"
  * looks like, which is how an app stops reading as one product.
  */
@@ -81,7 +81,7 @@ export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
 /* ── Source links ─────────────────────────────────────────────────────── */
 
 /**
- * A link back to the passage a question or explanation came from.
+ * A link back to the exact blocks a question or explanation came from.
  *
  * ── Why the course comes from the material, not from context ──────────────
  *
@@ -90,7 +90,7 @@ export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
  * material* rather than from whichever course the student happens to be
  * looking at. Those are almost always the same, and when they are not the
  * material's own course is the correct answer: a global history list can cite
- * a passage from a course you are not currently inside, and sending you to the
+ * a source from a course you are not currently inside, and sending you to the
  * active course's copy of that id would be wrong twice over.
  *
  * ── Why an unresolvable source still renders ──────────────────────────────
@@ -108,8 +108,7 @@ export function SourceLink({
   className?: string;
 }) {
   if (!source) return null;
-  const versionId = 'versionId' in source && typeof source.versionId === 'string' ? source.versionId === '' ? null : source.versionId : null;
-  if (!versionId) {
+  if (!source.versionId || !source.blockIds.length) {
     return (
       <span
         className={cn(
@@ -125,7 +124,7 @@ export function SourceLink({
 
   return (
     <Link
-      to={`/materials/${source.materialId}/versions/${versionId}/passages/${source.passageId}`}
+      to={`/materials/${source.materialId}/versions/${source.versionId}#block-${source.blockIds[0]}`}
       className={cn(
         'text-muted-foreground hover:text-foreground inline-flex items-center gap-hairline text-xs underline-offset-4 hover:underline',
         className,
@@ -234,6 +233,14 @@ export const MATERIAL_KIND_LABEL: Record<'reading' | 'slides' | 'other', string>
 export const VERSION_ORIGIN_LABEL: Record<'paste' | 'upload', string> = {
   paste: 'Pasted',
   upload: 'Uploaded',
+};
+
+export const VERSION_STATUS_LABEL: Record<import('@shared/contracts/document').ConversionStatus, string> = {
+  pending: 'Waiting to convert',
+  processing: 'Converting',
+  ready: 'Ready',
+  partial: 'Partly converted',
+  failed: 'Conversion failed',
 };
 
 export const TIMING_LABEL: Record<TimingMode, string> = {

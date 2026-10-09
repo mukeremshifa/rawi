@@ -16,11 +16,12 @@ materialsRoutes.get('/materials/:id/versions', async c => {
   const query = pageInput.parse(c.req.query());
   return c.json(await materialService.listVersions(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), query.limit, query.cursor));
 });
-materialsRoutes.get('/materials/:id/versions/:versionId', async c => {
-  const query = z.strictObject({ cursor: z.coerce.number().int().min(-1).max(1048576).default(-1) }).parse(c.req.query());
-  return c.json(await materialService.versionDetail(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')), query.cursor));
+materialsRoutes.get('/materials/:id/versions/:versionId', async c => c.json(await materialService.versionStatus(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')))));
+const blockQuery = z.strictObject({
+  cursor: z.coerce.number().int().min(-1).max(10000000).default(-1), limit: z.coerce.number().int().min(1).max(500).default(200),
+  ids: z.string().max(8000).transform(value => value.split(',')).pipe(z.array(uuid).min(1).max(200)).optional(),
 });
-materialsRoutes.get('/materials/:id/versions/:versionId/passages/:passageId', async c => c.json(await materialService.exactPassage(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')), uuid.parse(c.req.param('passageId')))));
+materialsRoutes.get('/materials/:id/versions/:versionId/blocks', async c => c.json(await materialService.readBlocks(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')), blockQuery.parse(c.req.query()))));
 materialsRoutes.get('/courses/:id/uploads', async c => {
   const query = pageInput.parse(c.req.query());
   return c.json(await uploadService.listUploads(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), query.cursor));

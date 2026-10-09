@@ -78,7 +78,7 @@ export function AttemptReview() {
             )}
             <div className="flex flex-wrap gap-tight">
               <Button asChild variant="ghost" size="sm"><Link to={`/course/${a.courseId}/tutor?attemptId=${a.id}&questionId=${question.id}&topicId=${question.topicId}`}><MessageSquareIcon />Discuss with the tutor</Link></Button>
-              {question.source && <Button asChild variant="ghost" size="sm"><Link to={`/materials/${question.source.materialId}/versions/${question.source.versionId}/passages/${question.source.passageId}`}><BookOpenIcon />Read the source</Link></Button>}
+              {question.source && <Button asChild variant="ghost" size="sm"><Link to={`/materials/${question.source.materialId}/versions/${question.source.versionId}#block-${question.source.blockIds[0]}`}><BookOpenIcon />Read the source</Link></Button>}
             </div>
           </li>
         ))}

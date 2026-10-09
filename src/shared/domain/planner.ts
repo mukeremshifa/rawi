@@ -442,11 +442,7 @@ function candidates(input: PlanInputs): Candidate[] {
          it by editing the session. */
       const readingMaterial =
         activity === 'read'
-          ? courseMaterials.find(
-              (m) =>
-                m.topicIds.includes(topic.id) ||
-                m.passages.some((pass) => pass.topicIds.includes(topic.id)),
-            )
+          ? courseMaterials.find((m) => m.topicIds.includes(topic.id))
           : undefined;
 
       out.push({

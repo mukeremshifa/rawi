@@ -1,17 +1,18 @@
-import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import Markdown from 'react-markdown';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   ArchiveIcon, ArchiveRestoreIcon, ClipboardListIcon, DownloadIcon, LinkIcon, MessageSquareIcon, MoreHorizontalIcon,
-  PanelRightIcon, UploadIcon,
+  PanelRightIcon, RotateCwIcon, UploadIcon,
 } from 'lucide-react';
 import type { z } from 'zod';
-import { materialFields, type Material, type MaterialVersion, type Passage, type VersionDetail } from '@shared/contracts/materials';
+import { materialFields, type Material, type MaterialVersion } from '@shared/contracts/materials';
+import type { DocumentBlock } from '@shared/contracts/document';
 import type { CourseDetail } from '@shared/contracts/workspace';
+import { spansText } from '@shared/domain/document-text';
 
 import { InlineText } from '@/components/InlineText';
-import { MATERIAL_KIND_LABEL, VERSION_ORIGIN_LABEL, formatDate } from '@/components/domain';
+import { MATERIAL_KIND_LABEL, VERSION_ORIGIN_LABEL, VERSION_STATUS_LABEL, formatDate } from '@/components/domain';
 import { Page } from '@/components/layout';
 import { ErrorState, LoadingState, Notice, PageLoading, SaveIndicator } from '@/components/states';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +26,7 @@ import { Select } from '@/components/ui/select';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Hint } from '@/components/ui/tooltip';
+import { DocumentBlocks, pageLabel } from '@/features/materials/DocumentView';
 import { PHASE_LABEL, UPLOAD_HINT, useUpload } from '@/features/materials/upload';
 import { useAccount } from '@/lib/account';
 import { errorMessage, request } from '@/lib/api';
@@ -35,119 +37,156 @@ import { usePageMeta } from '@/lib/shell';
 
 type Fields = z.infer<typeof materialFields>;
 const KINDS = (['reading', 'slides', 'other'] as const).map(value => ({ value, label: MATERIAL_KIND_LABEL[value] }));
-/** Drop a leading Markdown heading that repeats the passage heading. */
-const bodyOf = (p: Passage) => {
-  const match = /^\s*#{1,6}\s+(.+?)\s*\n/.exec(p.text);
-  return match && match[1]!.trim() === p.heading.trim() ? p.text.slice(match[0].length) : p.text;
-};
-/** A passage's text: Markdown without HTML or images, and links only to the web. */
-export function PassageText({ passage, markdown }: { passage: Passage; markdown: boolean }) {
-  return markdown
-    ? <Markdown skipHtml components={{ img: () => null, h1: 'h3', h2: 'h3', a: ({ children, href }) => <a href={href && /^https?:\/\//i.test(href) ? href : undefined} rel="noreferrer noopener" target="_blank">{children}</a> }}>{bodyOf(passage)}</Markdown>
-    : <div className="whitespace-pre-wrap">{bodyOf(passage)}</div>;
+export const assetPath = (materialId: string, versionId: string) => (assetId: string) => `/api/v1/materials/${materialId}/versions/${versionId}/assets/${assetId}`;
+export const blockPath = (materialId: string, versionId: string, blockId?: string) => `/materials/${materialId}/versions/${versionId}${blockId ? `#block-${blockId}` : ''}`;
+
+/** A heading cites its whole section, up to the next heading at its level or above. Other blocks cite themselves. */
+function citedBlocks(blocks: DocumentBlock[], block: DocumentBlock) {
+  if (block.type !== 'heading') return [block.id];
+  const start = blocks.indexOf(block), ids = [block.id];
+  for (const next of blocks.slice(start + 1)) {
+    if ((next.type === 'heading' && next.content.level <= block.content.level) || ids.length >= 50) break;
+    ids.push(next.id);
+  }
+  return ids;
 }
-const passagePath = (m: string, v: string, p: string) => `/materials/${m}/versions/${v}/passages/${p}`;
 
 /**
- * The reader: a calm editorial page. Serif text at the reading-size
- * preference and a measure of about 68 characters, passage anchors, and
- * per-passage actions to note, practise or link. Versions, editing and
- * notes live in a side sheet.
+ * The reader: a clean editorial page rendered from the converted document.
+ * Serif text at the reading-size preference and a measure of about 68
+ * characters, section anchors, quiet source page labels, and a short table
+ * of contents. Nothing here is editable. Versions and details live in a side
+ * sheet, and the original stays downloadable.
  */
 export function MaterialReader() {
-  const { materialId = '', versionId, passageId } = useParams();
+  const { materialId = '', versionId } = useParams();
+  const { hash } = useLocation();
   const { user } = useAccount();
   const material = useApi<Material>(`/v1/materials/${materialId}`);
   const m = material.data;
   const selected = versionId ?? m?.currentVersionId ?? null;
-  const pages = useApiPages<Passage, 'passages'>(selected && !passageId ? `/v1/materials/${materialId}/versions/${selected}` : null, 'passages');
-  const single = useApi<Passage>(passageId && selected ? `/v1/materials/${materialId}/versions/${selected}/passages/${passageId}` : null);
-  const singleVersion = useApi<VersionDetail>(passageId && selected ? `/v1/materials/${materialId}/versions/${selected}` : null);
+  const [polling, setPolling] = useState(false);
+  const version = useApi<MaterialVersion>(selected ? `/v1/materials/${materialId}/versions/${selected}` : null, { refetchInterval: polling ? 3000 : undefined });
+  const v = version.data;
+  useEffect(() => { setPolling(v?.status === 'pending' || v?.status === 'processing'); }, [v?.status]);
+  const usable = v?.status === 'ready' || v?.status === 'partial';
+  const pages = useApiPages<DocumentBlock, 'blocks'>(usable ? `/v1/materials/${materialId}/versions/${v.id}/blocks?limit=500` : null, 'blocks');
+  // The whole document loads page by page, so contents and deep links see every block.
+  useEffect(() => { if (pages.hasNextPage && !pages.isFetchingNextPage && !pages.error) void pages.fetchNextPage(); }, [pages]);
+  const blocks = useMemo(() => pages.items ?? [], [pages.items]);
+  const target = /^#block-([0-9a-f-]{36})$/.exec(hash)?.[1] ?? null;
+  const [highlight, setHighlight] = useState<string | null>(null);
+  useEffect(() => {
+    if (!target || !blocks.some(b => b.id === target)) return;
+    document.getElementById(`block-${target}`)?.scrollIntoView({ block: 'center' });
+    setHighlight(target);
+    const timer = setTimeout(() => setHighlight(null), 4000);
+    return () => clearTimeout(timer);
+  }, [target, blocks]);
   const [panel, setPanel] = useState<null | 'versions' | 'edit'>(null);
+  const retry = useSave();
   usePageMeta({ courseId: m?.courseId, crumbs: m ? [{ label: 'Materials', to: `/course/${m.courseId}/materials` }, { label: m.title }] : undefined });
 
   if (material.isPending) return <Page width="narrow"><PageLoading label="Opening material" /></Page>;
   if (material.error) return <Page width="narrow"><ErrorState error={material.error} onRetry={() => void material.refetch()} /></Page>;
   const row = material.data;
-  const version = passageId ? singleVersion.data?.version : (pages.data?.pages[0] as unknown as VersionDetail | undefined)?.version;
-  const passages = passageId ? (single.data ? [single.data] : []) : pages.items ?? [];
-  const loading = passageId ? single.isPending : pages.isPending;
-  const failure = passageId ? single.error ?? singleVersion.error : pages.error;
   const download = async () => {
-    if (!version) return;
+    if (!v) return;
     try {
-      const result = await request<{ available: boolean; url?: string; message?: string }>(`/v1/materials/${materialId}/versions/${version.id}/download`, user.id, {}, 'POST');
+      const result = await request<{ available: boolean; url?: string; message?: string }>(`/v1/materials/${materialId}/versions/${v.id}/download`, user.id, {}, 'POST');
       if (!result.available || !result.url) { toast(result.message ?? 'There is no original file for this version.'); return; }
       const link = document.createElement('a'); link.href = result.url; link.rel = 'noreferrer'; link.referrerPolicy = 'no-referrer'; link.click();
     } catch (e) { toast.error(errorMessage(e)); }
   };
+  const reconvert = () => v && retry.run<MaterialVersion>({ path: `/v1/materials/${materialId}/versions/${v.id}/convert`, body: {} }, {
+    id: `convert:${v.id}`, invalidate: [keys.course(row.courseId).materials], onSuccess: next => { version.setData(next); setPolling(true); },
+  });
+  const originalButton = v?.sourceObjectId ? <Button variant="secondary" size="sm" onClick={() => void download()}><DownloadIcon />Download original</Button> : undefined;
+  const pagesText = v ? v.failedPages.map(p => pageLabel(v.pagination, p) || `Page ${p}`).join(', ') : '';
+  const contents = blocks.filter(b => b.type === 'heading' && b.content.level <= 2);
+  const topicId = row.topicIds[0] ?? '';
   return (
     <article className="px-4 pt-8 pb-24 sm:px-gutter">
       <header className="ui-reading mx-auto flex flex-col gap-3">
         <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <span>{MATERIAL_KIND_LABEL[row.kind]}</span>
-          {version && <><span aria-hidden>·</span><span>Version {version.number}</span><span aria-hidden>·</span><span>{formatDate(version.createdAt)}</span></>}
+          {v && <><span aria-hidden>·</span><span>Version {v.number}</span><span aria-hidden>·</span><span>{formatDate(v.createdAt)}</span></>}
           {versionId && versionId !== row.currentVersionId && <Badge variant="warning">Earlier version</Badge>}
           {row.archived && <Badge>Archived</Badge>}
         </div>
         <h1 className="font-serif text-2xl leading-tight font-medium tracking-tight text-balance sm:text-[2.25rem] sm:leading-[1.15]">{row.title}</h1>
         {row.attribution && <p className="text-muted-foreground font-serif text-md"><InlineText text={row.attribution} /></p>}
         <div className="flex flex-wrap items-center gap-tight pt-1">
-          <Button asChild variant="secondary" size="sm"><Link to={`/course/${row.courseId}/practice?materialId=${materialId}${version ? `&versionId=${version.id}` : ''}`}><ClipboardListIcon />Practise</Link></Button>
+          <Button asChild variant="secondary" size="sm"><Link to={`/course/${row.courseId}/practice?materialId=${materialId}${v ? `&versionId=${v.id}` : ''}`}><ClipboardListIcon />Practise</Link></Button>
           <Button variant="ghost" size="sm" onClick={() => setPanel('versions')}><PanelRightIcon />Details</Button>
-          {version?.sourceObjectId && <Hint label="Download original"><Button variant="ghost" size="icon-sm" aria-label="Download original" onClick={() => void download()}><DownloadIcon /></Button></Hint>}
+          {v?.sourceObjectId && <Hint label="Download original"><Button variant="ghost" size="icon-sm" aria-label="Download original" onClick={() => void download()}><DownloadIcon /></Button></Hint>}
         </div>
         {versionId && versionId !== row.currentVersionId && <Notice action={<Button asChild variant="link" size="sm"><Link to={`/materials/${materialId}`}>Read the current version</Link></Button>}>You are reading an earlier version.</Notice>}
+        {contents.length >= 3 && (
+          <details className="text-base">
+            <summary className="text-muted-foreground cursor-pointer text-sm font-medium">Contents</summary>
+            <ol className="mt-2 flex flex-col gap-1 border-l pl-3">
+              {contents.map(h => h.type === 'heading' && (
+                <li key={h.id} className={h.content.level === 2 ? 'pl-3' : undefined}><a className="hover:text-primary-text hover:underline" href={`#block-${h.id}`}>{spansText(h.content.spans)}</a></li>
+              ))}
+            </ol>
+          </details>
+        )}
       </header>
 
-      <div className="ui-reading mx-auto mt-section">
-        {loading && <LoadingState lines={8} label="Loading text" />}
-        {failure && <ErrorState error={failure} onRetry={() => { void pages.refetch(); void single.refetch(); }} />}
-        {version && version.contentStatus !== 'readable' && (
-          <Notice action={version.sourceObjectId ? <Button variant="secondary" size="sm" onClick={() => void download()}><DownloadIcon />Download original</Button> : undefined}>
-            {version.contentStatus === 'not_extracted' ? "This file is stored, but its text isn't available for reading or study yet." : 'The text of this file could not be read.'}
+      <div className="ui-reading mx-auto mt-section flex flex-col gap-gutter">
+        {version.isPending && selected && <LoadingState lines={8} label="Loading text" />}
+        {version.error && <ErrorState error={version.error} onRetry={() => void version.refetch()} />}
+        {!selected && <Notice>This material has no saved version yet.</Notice>}
+        {(v?.status === 'pending' || v?.status === 'processing') && (
+          <Notice action={originalButton}>
+            <span className="inline-flex items-center gap-2"><span className="bg-primary size-2 animate-pulse rounded-full" aria-hidden />Converting this document. It appears here when it is ready, and you can leave this page meanwhile.</span>
           </Notice>
         )}
-        {version?.contentStatus === 'readable' && passages.map(p => (
-          <section key={p.id} id={`passage-${p.id}`} className="group relative scroll-mt-20 border-b border-transparent pb-gutter">
-            <div className="absolute top-1 -right-1 flex gap-0.5 opacity-100 transition-opacity sm:-right-12 sm:flex-col sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
-              <PassageActions practise={`/course/${row.courseId}/practice?materialId=${materialId}&versionId=${version.id}`}
-                tutor={`/course/${row.courseId}/tutor?materialId=${materialId}&versionId=${version.id}&passageId=${p.id}&topicId=${row.topicIds[0] ?? ''}`}
-                link={passagePath(materialId, version.id, p.id)} />
-            </div>
-            {p.heading && <h2 className="mt-section mb-3 pr-10 font-serif text-xl leading-snug font-semibold sm:pr-0">{p.heading}</h2>}
-            <div className="rawi-prose font-serif">
-              <PassageText passage={p} markdown={version.format === 'md'} />
-            </div>
-          </section>
-        ))}
-        {passageId && version && <p className="mt-section"><Button asChild variant="secondary"><Link to={`/materials/${materialId}${versionId !== row.currentVersionId ? `/versions/${version.id}` : ''}#passage-${passageId}`}>Read the whole material</Link></Button></p>}
-        {!passageId && pages.hasNextPage && <Button variant="secondary" className="mt-gutter" loading={pages.isFetchingNextPage} onClick={() => void pages.fetchNextPage()}>Continue reading</Button>}
-        {!passageId && version?.contentStatus === 'readable' && !pages.hasNextPage && !loading && (
-          <footer className="text-muted-foreground mt-section flex flex-col gap-1 border-t pt-gutter text-sm">
+        {v?.status === 'failed' && (
+          <Notice action={<span className="flex gap-tight">{v.retryable && <Button size="sm" loading={retry.busy} onClick={reconvert}><RotateCwIcon />Try again</Button>}{originalButton}</span>}>
+            {v.failure ?? 'This document could not be converted.'}{retry.error && <span className="text-danger-text block">{retry.error}</span>}
+          </Notice>
+        )}
+        {v?.status === 'partial' && (
+          <Notice action={originalButton}>
+            {pagesText ? `Some pages could not be converted: ${pagesText}.` : 'Part of this document could not be converted.'} The rest is below. The original has everything.
+          </Notice>
+        )}
+        {usable && pages.isPending && <LoadingState lines={8} label="Loading text" />}
+        {pages.error && <ErrorState error={pages.error} onRetry={() => void pages.refetch()} />}
+        {usable && !pages.isPending && !blocks.length && <Notice>No readable text was found in this version.</Notice>}
+        {v && blocks.length > 0 && (
+          <DocumentBlocks blocks={blocks} pagination={v.pagination} assetUrl={assetPath(materialId, v.id)} highlight={highlight}
+            aside={block => (
+              <div className="absolute top-0 -right-1 opacity-100 transition-opacity sm:-right-11 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
+                <BlockActions tutor={`/course/${row.courseId}/tutor?materialId=${materialId}&versionId=${v.id}&blockIds=${citedBlocks(blocks, block).join(',')}&topicId=${topicId}`}
+                  link={blockPath(materialId, v.id, block.id)} section={block.type === 'heading'} />
+              </div>
+            )} />
+        )}
+        {usable && blocks.length > 0 && !pages.hasNextPage && (
+          <footer className="text-muted-foreground flex flex-col gap-1 border-t pt-gutter text-sm">
             <span>End of {row.title}.</span>
             {row.attribution && <span className="font-serif"><InlineText text={row.attribution} /></span>}
           </footer>
         )}
       </div>
 
-      <MaterialSheet material={row} version={version} panel={panel} onPanel={setPanel} onChanged={next => material.setData(next)} reload={() => { void material.refetch(); void pages.refetch(); }} />
+      <MaterialSheet material={row} version={v} panel={panel} onPanel={setPanel} onChanged={next => material.setData(next)} reload={() => { void material.refetch(); void version.refetch(); }} />
     </article>
   );
 }
 
-function PassageActions({ practise, tutor, link }: { practise: string; tutor: string; link: string }) {
+function BlockActions({ tutor, link, section }: { tutor: string; link: string; section: boolean }) {
   return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Passage actions"><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuItem asChild><Link to={practise}><ClipboardListIcon />Practise from this</Link></DropdownMenuItem>
-          <DropdownMenuItem asChild><Link to={tutor}><MessageSquareIcon />Discuss with the tutor</Link></DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => { void navigator.clipboard?.writeText(new URL(link, location.origin).href).then(() => toast.success('Link copied'), () => toast(link)); }}><LinkIcon />Copy link to passage</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={section ? 'Section actions' : 'Block actions'}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuItem asChild><Link to={tutor}><MessageSquareIcon />{section ? 'Discuss this section with the tutor' : 'Discuss this with the tutor'}</Link></DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => { void navigator.clipboard?.writeText(new URL(link, location.origin).href).then(() => toast.success('Link copied'), () => toast(link)); }}><LinkIcon />Copy link</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -178,7 +217,7 @@ function VersionList({ material, current, onNavigate }: { material: Material; cu
   if (versions.error) return <ErrorState error={versions.error} onRetry={() => void versions.refetch()} />;
   return (
     <div className="flex flex-col gap-snug">
-      <p className="text-muted-foreground text-base">Every saved version stays readable, so citations keep pointing at the exact text.</p>
+      <p className="text-muted-foreground text-base">Every version keeps its converted text, so citations keep pointing at the exact blocks.</p>
       <ol className="divide-y border-y">
         {versions.items?.map(v => (
           <li key={v.id}>
@@ -186,7 +225,7 @@ function VersionList({ material, current, onNavigate }: { material: Material; cu
               className="hover:bg-surface flex items-center gap-snug py-2.5 outline-none focus-visible:bg-surface">
               <span className="tabular w-10 text-sm font-medium">v{v.number}</span>
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="text-base">{VERSION_ORIGIN_LABEL[v.origin]}{v.contentStatus !== 'readable' ? ', original only' : ''}</span>
+                <span className="text-base">{VERSION_ORIGIN_LABEL[v.origin]}{v.status !== 'ready' ? `, ${VERSION_STATUS_LABEL[v.status].toLowerCase()}` : ''}</span>
                 <span className="text-muted-foreground text-sm">{new Date(v.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
               </span>
               {v.id === material.currentVersionId && <Badge variant="accent">Current</Badge>}

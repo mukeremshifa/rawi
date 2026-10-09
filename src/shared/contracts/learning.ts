@@ -2,12 +2,12 @@ import { z } from 'zod';
 import { uuid } from './workspace';
 import type { AnswerValue, Question, QuestionAttempt, Attempt } from '../domain/types';
 import type { ExamRuntime } from './exams';
+import { citationInput, type Citation } from './document';
 
 export const formats = ['flashcard', 'multiple-choice', 'multiple-select', 'matching', 'ordering', 'fill-blank', 'written-recall', 'source-analysis', 'essay'] as const;
 const text = z.string().max(20000);
 const short = z.string().min(1).max(2000);
 const unique = <T,>(values: T[]) => new Set(values).size === values.length;
-export const sourceInput = z.strictObject({ materialId: uuid, versionId: uuid, passageId: uuid });
 export const questionInput = z.strictObject({
   format: z.enum(formats), topicId: uuid, difficulty: z.enum(['recall', 'reasoning', 'stretch']),
   marks: z.number().int().min(1).max(100), prompt: short, explanation: text,
@@ -17,7 +17,7 @@ export const questionInput = z.strictObject({
   sequence: z.array(short).min(2).max(20).refine(unique).optional(), template: text.optional(),
   blanks: z.array(z.array(short).min(1).max(10)).min(1).max(20).optional(), extract: text.optional(),
   rubric: z.array(z.strictObject({ id: short, label: short, marks: z.number().int().min(1).max(100), keywords: z.array(short).max(30).default([]), missedAdvice: text })).min(1).max(30).optional(),
-  source: sourceInput.optional(),
+  source: citationInput.optional(),
 }).superRefine((q, ctx) => {
   const fail = () => ctx.addIssue({ code: 'custom', message: 'Question content does not match its format.' });
   if (q.format === 'flashcard' && !q.answer?.trim()) fail();
@@ -54,7 +54,7 @@ export const answerBatch = z.array(z.strictObject({ itemId: uuid, response: resp
 export const runWriteInput = writeInput.extend({ answers: answerBatch, position: z.number().int().min(0).max(49) });
 export const transitionInput = writeInput.extend({ itemId: uuid, action: z.enum(['check', 'reveal', 'hint']) });
 export const pageQuery = z.strictObject({ cursor: uuid.optional(), limit: z.coerce.number().int().min(1).max(100).default(30), archived: z.enum(['true', 'false', 'all']).default('false') });
-export type VersionedQuestion = Question & { source?: z.infer<typeof sourceInput>; topicLabel: string; origin: 'imported' | 'generated'; originalId?: string };
+export type VersionedQuestion = Question & { source?: Citation; topicLabel: string; origin: 'imported' | 'generated'; originalId?: string };
 export type LearningSet = { id: string; courseId: string; name: string; archived: boolean; revision: number; feedback: 'immediate' | 'end'; hintsAllowed: boolean };
 export type RunItem = { id: string; question: Question; response: AnswerValue; checked: boolean; revealed: boolean; hinted: boolean; feedback?: QuestionAttempt };
 export type FlashcardReview = { itemIds: string[]; firstRatings: Record<string, Extract<AnswerValue, { kind: 'self-rating' }>> };

@@ -5,10 +5,11 @@ import type { Attempt, StudyMaterial, StudyTopic } from '../../shared/domain/typ
 import { planWeek, replacedByPlan, addDays } from '../../shared/domain/planner';
 import { deriveAllEvidence, dueReviews, recurringMistakes, buildPlan } from '../../shared/domain/progress';
 import { zonedParts, type plannerWrite, type scheduleWrite, type assessmentWrite, type proposalInput, type checkInInput } from '../../shared/contracts/planner';
-import { plannerState, plannedSessions, assessments, checkIns, planProposals, courses, topics, learningAttempts, learningRuns, materials, passages, materialTopicLinks, questionVersions, preferences, tutorSessions } from '../db/schema';
+import { plannerState, plannedSessions, assessments, checkIns, planProposals, courses, topics, learningAttempts, learningRuns, materials, materialVersions, materialTopicLinks, questionVersions, preferences, tutorSessions } from '../db/schema';
 import { operation } from './learning';
 import { withFeedback } from './feedback';
 import { hash, validateTopics } from './materials';
+import { usableStatus } from '../../shared/contracts/document';
 import { getCourse } from './workspace';
 import { conflict, notFound, ApiError } from '../errors';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
@@ -28,7 +29,7 @@ export async function learningData(db: ReadDb | Transaction, workspaceId: string
   const attempts: Attempt[] = rows.map(({ snapshot: a, setId }) => a.imported ? { ...a.imported, assistanceRecord: 'unknown', marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable } : ({ id: a.id, courseId: a.courseId, kind: a.exam ? 'exam' : 'practice', mode: a.exam ? 'exam' : a.questions.every(q => q.question.format === 'flashcard') ? 'self-rated' : 'practice', title: a.title, topicIds: [...new Set(a.questions.map(q => q.question.topicId))], startedAt: a.startedAt, completedAt: a.completedAt, questions: a.questions.map(q => q.result), marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable, assistanceRecord: 'tracked', practiceSetId: a.exam ? undefined : setId, examConfigSnapshot: a.exam?.configSnapshot, finish: a.finish, plannedSessionId: a.plannedSessionId, remediatesAttemptId: a.remediatesAttemptId }));
   return { attempts, snapshots: rows.map(r => r.snapshot) };
 }
-export async function planningData(tx: Transaction, workspaceId: string, options: { calendarOnly?: boolean; passageCourseId?: string } = {}) {
+export async function planningData(tx: Transaction, workspaceId: string, options: { calendarOnly?: boolean } = {}) {
   const planner = await ensurePlanner(tx, workspaceId);
   const [prefs] = await tx.select().from(preferences).where(eq(preferences.workspaceId, workspaceId));
   const courseRows = await tx.select().from(courses).where(eq(courses.workspaceId, workspaceId));
@@ -41,10 +42,10 @@ export async function planningData(tx: Transaction, workspaceId: string, options
   for (const row of sessionRows) if (activeLinks.some(r => r.id === row.id) || tutorLinks.some(r => !r.endedAt && r.id === row.id)) row.content = { ...row.content, locked: true };
   const checkInRows = await tx.select().from(checkIns).where(eq(checkIns.workspaceId, workspaceId));
   const questionRows = options.calendarOnly ? [] : await tx.select({ content: questionVersions.content }).from(questionVersions).where(eq(questionVersions.workspaceId, workspaceId));
-  const materialRows = options.calendarOnly ? [] : await tx.select().from(materials).where(eq(materials.workspaceId, workspaceId));
+  // Planning needs to know which materials are readable, never their text.
+  const materialRows = options.calendarOnly ? [] : await tx.select({ material: materials, status: materialVersions.status }).from(materials).leftJoin(materialVersions, eq(materialVersions.id, materials.currentVersionId)).where(eq(materials.workspaceId, workspaceId));
   const links = options.calendarOnly ? [] : await tx.select().from(materialTopicLinks).where(eq(materialTopicLinks.workspaceId, workspaceId));
-  const readable = options.calendarOnly ? [] : await tx.select({ materialId: passages.materialId, id: passages.id, heading: passages.heading, text: options.passageCourseId ? passages.text : sql<string>`''` }).from(passages).innerJoin(materials, and(eq(materials.currentVersionId, passages.versionId), eq(materials.workspaceId, passages.workspaceId))).where(and(eq(passages.workspaceId, workspaceId), options.passageCourseId ? eq(passages.courseId, options.passageCourseId) : undefined));
-  const materialData: StudyMaterial[] = materialRows.map(m => ({ id: m.id, courseId: m.courseId, title: m.title, kind: m.kind === 'slides' ? 'lecture-notes' : 'reading', origin: 'pasted', archived: m.archived, addedAt: m.createdAt.toISOString(), topicIds: links.filter(l => l.materialId === m.id).map(l => l.topicId), passages: readable.filter(p => p.materialId === m.id).map(p => ({ ...p, topicIds: links.filter(l => l.materialId === m.id).map(l => l.topicId) })) }));
+  const materialData: StudyMaterial[] = materialRows.map(({ material: m, status }) => ({ id: m.id, courseId: m.courseId, title: m.title, kind: m.kind === 'slides' ? 'lecture-notes' : 'reading', archived: m.archived, addedAt: m.createdAt.toISOString(), topicIds: links.filter(l => l.materialId === m.id).map(l => l.topicId), readable: usableStatus(status) }));
   const { attempts, snapshots } = options.calendarOnly ? { attempts: [], snapshots: [] } : await learningData(tx, workspaceId);
   return { revision: planner.revision, availability: planner.availability, timezone: prefs?.timezone ?? 'UTC', courses: courseRows.map(c => ({ ...c, createdAt: c.createdAt.toISOString() })), topics: topicData, assessments: assessmentRows.map(r => ({ ...r.content, revision: r.revision })), sessions: sessionRows.map(r => ({ ...r.content, revision: r.revision })), checkIns: checkInRows.map(r => r.content), questions: questionRows.map(r => r.content), materials: materialData, attempts, snapshots };
 }

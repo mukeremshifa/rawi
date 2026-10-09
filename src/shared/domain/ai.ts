@@ -9,10 +9,16 @@ import type { AnswerReview, Difficulty, TutorStage } from './types';
  * the location or anything about how the server authenticates.
  */
 
-/** A passage as the server sees it. Always from the request's own course. */
+/**
+ * A passage as the server sees it. Always from the request's own course.
+ * It is a group of consecutive blocks from one version, and the model cites
+ * its id. The server resolves a cited id to `blockIds` before saving.
+ */
 export interface AiPassage {
   id: string;
   materialId: string;
+  versionId: string;
+  blockIds: string[];
   courseId: string;
   materialTitle: string;
   heading: string;
@@ -100,7 +106,7 @@ export interface TutorRequest {
   action: TutorAction;
   /** The student's newest message. */
   message: string;
-  /** The passage the session was opened from, when there is one. */
+  /** The passage built from the blocks the session was opened from, when there is one. */
   focusPassageId?: string;
   passages: AiPassage[];
   history: TutorTurn[];

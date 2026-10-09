@@ -9,7 +9,7 @@ import { useUnsentGuard } from '@/lib/hooks';
 type Fields = z.infer<typeof materialFields>;
 export type UploadPhase = 'idle' | 'preparing' | 'uploading' | 'finalizing' | 'done' | 'failed';
 
-export const UPLOAD_HINT = 'Text and Markdown files become readable. PDF, Word and PowerPoint files are stored for download, but their text is not available for study yet. Up to 25 MB, or 1 MB for text.';
+export const UPLOAD_HINT = 'Text and Markdown files are readable at once. PDF, Word and PowerPoint files are converted into a readable page after upload, and the original stays downloadable. Up to 25 MB, or 1 MB for text.';
 
 /**
  * The upload lifecycle: hash, ask for a ticket, send the bytes straight to

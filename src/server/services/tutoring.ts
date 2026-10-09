@@ -1,8 +1,10 @@
-import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { newTutorInput, tutorMessageInput, tutorMetadataInput } from '../../shared/contracts/tutor';
 import { responseText } from '../../shared/domain/answer-review';
-import { tutorMessages, tutorSessions, topics, passages, materials, aiOperations, plannedSessions } from '../db/schema';
+import { tutorMessages, tutorSessions, topics, aiOperations, plannedSessions } from '../db/schema';
+import { validateCitation } from './materials';
+import { citedPassage, contextMaterials } from './documents/context';
 import { operation, attempt } from './learning';
 import { recordBlocked } from './ai/operations';
 import { summariseTutorTurns } from '../../shared/domain/tutor-summary';
@@ -44,7 +46,7 @@ export async function createSession(db: SocketDb, workspaceId: string, courseId:
       const [planned] = await tx.select().from(plannedSessions).where(and(eq(plannedSessions.workspaceId, workspaceId), eq(plannedSessions.courseId, courseId), eq(plannedSessions.id, input.plannedSessionId)));
       if (!planned || planned.content.activity !== 'tutor') throw notFound();
     }
-    if (input.source) { const s = input.source; const [p] = await tx.select({ id: passages.id }).from(passages).where(and(eq(passages.workspaceId, workspaceId), eq(passages.courseId, courseId), eq(passages.materialId, s.materialId), eq(passages.versionId, s.versionId), eq(passages.id, s.passageId))); if (!p) throw notFound(); }
+    if (input.source) await validateCitation(tx, workspaceId, courseId, input.source);
     let review = null;
     if (input.review) {
       const a = await attempt(tx, workspaceId, input.review.attemptId); if (a.courseId !== courseId) throw notFound();
@@ -57,21 +59,16 @@ export async function createSession(db: SocketDb, workspaceId: string, courseId:
     const [saved] = await tx.insert(tutorSessions).values({ id: input.id, workspaceId, courseId, plannedSessionId: input.plannedSessionId, topicId: input.topicId, topicLabel, title: input.title, source: input.source ?? null, review }).onConflictDoNothing().returning(); if (!saved) throw notFound(); return detail(tx, workspaceId, saved.id);
   });
 }
-/** Snapshot only owned, bounded context. Historical focus versions take precedence. */
+/** Snapshot only owned, bounded context. The cited focus blocks come first, from their own version. */
 async function prepareTurn(tx: Transaction, workspaceId: string, session: Awaited<ReturnType<typeof ownSession>>, input: z.infer<typeof tutorMessageInput>) {
-  const data = await planningData(tx, workspaceId, { passageCourseId: session.courseId });
+  const data = await planningData(tx, workspaceId);
   const course = data.courses.find(c => c.id === session.courseId); if (!course) throw notFound();
   const topic = data.topics.find(t => t.id === session.topicId);
-  const focus = session.source;
-  const contextMaterials = data.materials.filter(m => m.courseId === session.courseId);
-  if (focus) {
-    const [p] = await tx.select({ passage: passages, title: materials.title }).from(passages).innerJoin(materials, eq(materials.id, passages.materialId)).where(and(eq(passages.workspaceId, workspaceId), eq(passages.courseId, session.courseId), eq(passages.materialId, focus.materialId), eq(passages.versionId, focus.versionId), eq(passages.id, focus.passageId)));
-    if (!p) throw notFound();
-    contextMaterials.unshift({ id: p.passage.materialId, courseId: session.courseId, title: p.title, kind: 'reading', origin: 'pasted', addedAt: '', topicIds: [session.topicId], passages: [{ id: p.passage.id, heading: p.passage.heading, text: p.passage.text, topicIds: [session.topicId] }] });
-  }
-  const picked = selectPassages({ courseId: session.courseId, materials: contextMaterials, topicIds: [session.topicId], query: `${session.topicLabel} ${input.text}`, focusPassageId: focus?.passageId });
-  const context = picked.filter((p, i) => picked.findIndex(q => q.id === p.id) === i);
-  const versions = context.length ? await tx.select({ materialId: passages.materialId, versionId: passages.versionId, passageId: passages.id }).from(passages).where(and(eq(passages.workspaceId, workspaceId), eq(passages.courseId, session.courseId), inArray(passages.id, context.map(p => p.id)))) : [];
+  const focus = session.source ? await citedPassage(tx, workspaceId, session.courseId, session.source, [session.topicId]) : null;
+  if (session.source && !focus) throw notFound();
+  const materials = await contextMaterials(tx, workspaceId, session.courseId, data.materials);
+  const picked = selectPassages({ courseId: session.courseId, materials, topicIds: [session.topicId], query: `${session.topicLabel} ${input.text}`, maxChars: 18000 - (focus?.text.length ?? 0) });
+  const context = focus ? [focus, ...picked.filter(p => !p.blockIds.some(id => focus.blockIds.includes(id))).slice(0, 9)] : picked;
   const recent = await tx.select().from(tutorMessages).where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.sessionId, session.id))).orderBy(desc(tutorMessages.ordinal)).limit(AI_LIMITS.maxHistoryTurns);
   // History has its own total bound, in addition to the per-turn shared validator.
   let historyChars = 0;
@@ -80,10 +77,10 @@ async function prepareTurn(tx: Transaction, workspaceId: string, session: Awaite
     return text ? [{ role: m.role, text, ...(m.state === 'interrupted' || m.state === 'cancelled' ? { interrupted: true } : {}) }] : [];
   }).reverse();
   const review = session.review ? { ...session.review, prompt: session.review.prompt.slice(0, 6000), response: session.review.response.slice(0, 6000), answerKey: session.review.answerKey.slice(0, 6000), feedback: session.review.feedback.slice(0, 6000) } : undefined;
-  const request = tutorRequest({ courseId: session.courseId, courseName: course.name, topic: { id: session.topicId, title: session.topicLabel, summary: topic?.summary ?? '' }, stage: session.stage, action: input.action, message: input.text, focusPassageId: focus?.passageId, passages: context, history, review, priorWork: priorWorkLines(session.topicId, data.attempts, new Map(data.questions.map(q => [q.id, q]))).map(line => line.slice(0, 400)) });
+  const request = tutorRequest({ courseId: session.courseId, courseName: course.name, topic: { id: session.topicId, title: session.topicLabel, summary: topic?.summary ?? '' }, stage: session.stage, action: input.action, message: input.text, focusPassageId: focus?.id, passages: context, history, review, priorWork: priorWorkLines(session.topicId, data.attempts, new Map(data.questions.map(q => [q.id, q]))).map(line => line.slice(0, 400)) });
   const prompts = tutorPrompts(request);
   if (prompts.system.length + prompts.prompt.length > 64000) throw new ApiError(413, 'context_limit', 'This session exceeds the reply context limit. Start a new focused session.');
-  return { sessionRevision: session.revision, request, prompts, sources: versions };
+  return { sessionRevision: session.revision, request, prompts };
 }
 export async function saveMessage(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof tutorMessageInput>) {
   return operation(db, workspaceId, input.operationId, { action: 'tutor-message', id, input }, async tx => {

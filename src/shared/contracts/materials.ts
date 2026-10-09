@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { uuid, revision } from './workspace';
+import type { ConversionStatus, ConversionWarning, Pagination } from './document';
 
 export const fileTypes = ['txt', 'md', 'pdf', 'docx', 'pptx'] as const;
 export const materialFields = z.strictObject({
@@ -21,14 +22,17 @@ export const materialListInput = pageInput.extend({ archived: z.enum(['true', 'f
 export interface Material {
   id: string; courseId: string; title: string; kind: z.infer<typeof materialFields>['kind']; attribution: string;
   archived: boolean; currentVersionId: string | null; revision: number; createdAt: string; updatedAt: string; topicIds: string[];
-  contentStatus: 'readable' | 'not_extracted' | 'failed' | null;
+  /** Conversion status of the current version. */
+  status: ConversionStatus | null;
 }
 export interface MaterialVersion {
   id: string; materialId: string; number: number; origin: 'paste' | 'upload';
-  sourceObjectId: string | null; contentStatus: 'readable' | 'not_extracted' | 'failed'; format: typeof fileTypes[number]; createdAt: string;
+  sourceObjectId: string | null; format: typeof fileTypes[number]; createdAt: string;
+  schemaVersion: number; adapter: 'markdown' | 'datalab'; adapterVersion: string; status: ConversionStatus;
+  failedPages: number[]; warnings: ConversionWarning[]; failure: string | null; pageCount: number | null; pagination: Pagination;
+  /** A failed conversion that the learner may start again. */
+  retryable: boolean;
 }
-export interface Passage { id: string; heading: string; text: string; order: number }
-export interface VersionDetail { version: MaterialVersion; passages: Passage[]; nextCursor: number | null }
 export interface UploadState {
   id: string; courseId: string; materialId: string; fileName: string; state: 'pending' | 'ready' | 'failed';
   expiresAt: string; resultVersionId: string | null; failure: string | null; inProgress: boolean;

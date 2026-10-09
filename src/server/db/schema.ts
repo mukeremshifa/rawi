@@ -10,6 +10,7 @@ import type { TutorSession, TutorMessage, TutorMessageProvenance } from '../../s
 /** Review summary kept with legacy workspace imports. */
 type ImportReview = { id: string; state: 'review' | 'complete'; courses: number; materials: number; questions: number; sets: number; attempts: number; unsupported: string[]; courseIds?: string[] };
 import type { WrittenGrading } from '../../shared/domain/types';
+import type { BlockType, ConversionStatus, ConversionWarning, Pagination, ParsedBlock } from '../../shared/contracts/document';
 
 const timestamps = () => ({
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -100,32 +101,46 @@ export const fileObjects = pgTable('file_objects', {
   id: uuid('id').primaryKey(), ...materialScope(), key: text('key').notNull().unique(),
   size: bigint('size', { mode: 'number' }).notNull(), detectedType: text('detected_type').notNull(),
   checksum: text('checksum').notNull(), etag: text('etag').notNull(), fileName: text('file_name').notNull(),
+  // Originals are uploads. Assets are images extracted by conversion, raw is a provider response.
+  role: text('role').$type<'original' | 'asset' | 'raw'>().notNull().default('original'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [unique('objects_scope_unique').on(t.workspaceId, t.courseId, t.id),
   foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
   check('objects_size_positive', sql`${t.size} > 0`),
+  check('objects_role_valid', sql`${t.role} in ('original', 'asset', 'raw')`),
 ]);
 export const materialVersions = pgTable('material_versions', {
   id: uuid('id').primaryKey(), ...materialScope(), materialId: uuid('material_id').notNull(), number: integer('number').notNull(),
   requestId: uuid('request_id').notNull().unique(), fingerprint: text('fingerprint').notNull(),
-  origin: text('origin').$type<'paste' | 'upload'>().notNull(), sourceObjectId: uuid('source_object_id'),
-  contentStatus: text('content_status').$type<'readable' | 'not_extracted' | 'failed'>().notNull(), format: text('format').notNull(),
+  origin: text('origin').$type<'paste' | 'upload'>().notNull(), sourceObjectId: uuid('source_object_id'), format: text('format').notNull(),
+  // The conversion that produced this version's blocks.
+  schemaVersion: integer('schema_version').notNull(), adapter: text('adapter').$type<'markdown' | 'datalab'>().notNull(), adapterVersion: text('adapter_version').notNull(),
+  status: text('status').$type<ConversionStatus>().notNull(), failedPages: integer('failed_pages').array().notNull().default(sql`'{}'::integer[]`),
+  warnings: jsonb('warnings').$type<ConversionWarning[]>().notNull().default([]), failure: text('failure'), rawObjectId: uuid('raw_object_id'),
+  pageCount: integer('page_count'), pagination: text('pagination').$type<Pagination>().notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [
   unique('versions_scope_unique').on(t.workspaceId, t.courseId, t.materialId, t.id),
   unique('versions_material_number_unique').on(t.materialId, t.number),
   foreignKey({ columns: [t.workspaceId, t.courseId, t.materialId], foreignColumns: [materials.workspaceId, materials.courseId, materials.id] }),
   foreignKey({ columns: [t.workspaceId, t.courseId, t.sourceObjectId], foreignColumns: [fileObjects.workspaceId, fileObjects.courseId, fileObjects.id] }),
+  foreignKey({ name: 'versions_raw_object_fk', columns: [t.workspaceId, t.courseId, t.rawObjectId], foreignColumns: [fileObjects.workspaceId, fileObjects.courseId, fileObjects.id] }),
   check('versions_number_positive', sql`${t.number} > 0`),
-  check('versions_status_valid', sql`${t.contentStatus} in ('readable', 'not_extracted', 'failed')`),
+  check('versions_status_valid', sql`${t.status} in ('pending', 'processing', 'ready', 'partial', 'failed')`),
+  check('versions_adapter_valid', sql`${t.adapter} in ('markdown', 'datalab')`),
+  check('versions_pagination_valid', sql`${t.pagination} in ('source', 'slides', 'converted', 'none')`),
   check('versions_origin_valid', sql`${t.origin} in ('paste', 'upload')`),
 ]);
-export const passages = pgTable('passages', {
+// Blocks are immutable once their version is ready or partial. Ids are stable only within a version.
+export const blocks = pgTable('blocks', {
   id: uuid('id').primaryKey(), ...materialScope(), materialId: uuid('material_id').notNull(), versionId: uuid('version_id').notNull(),
-  heading: text('heading').notNull(), text: text('text').notNull(), order: integer('order').notNull(),
+  ordinal: integer('ordinal').notNull(), parentId: uuid('parent_id'), type: text('type').$type<BlockType>().notNull(),
+  content: jsonb('content').$type<ParsedBlock['content']>().notNull(), sources: jsonb('sources').$type<ParsedBlock['sources']>().notNull(), flags: jsonb('flags').$type<ParsedBlock['flags']>().notNull(),
 }, t => [
   foreignKey({ columns: [t.workspaceId, t.courseId, t.materialId, t.versionId], foreignColumns: [materialVersions.workspaceId, materialVersions.courseId, materialVersions.materialId, materialVersions.id] }),
-  unique('passages_scope_unique').on(t.workspaceId, t.courseId, t.materialId, t.versionId, t.id), unique('passages_order_unique').on(t.versionId, t.order),
+  unique('blocks_scope_unique').on(t.workspaceId, t.courseId, t.materialId, t.versionId, t.id), unique('blocks_ordinal_unique').on(t.versionId, t.ordinal),
+  check('blocks_type_valid', sql`${t.type} in ('heading', 'paragraph', 'list', 'table', 'equation', 'figure', 'code', 'quote')`),
+  check('blocks_ordinal_nonnegative', sql`${t.ordinal} >= 0`),
 ]);
 export const materialTopicLinks = pgTable('material_topic_links', {
   ...materialScope(), materialId: uuid('material_id').notNull(), topicId: uuid('topic_id').notNull(),
@@ -167,8 +182,10 @@ export const questionVersions = pgTable('question_versions', {
   foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
   index('questions_course_idx').on(t.workspaceId, t.courseId, t.id)]);
 export const questionSources = pgTable('question_sources', {
-  ...materialScope(), questionId: uuid('question_id').primaryKey(), materialId: uuid('material_id').notNull(), versionId: uuid('version_id').notNull(), passageId: uuid('passage_id').notNull().references(() => passages.id),
-}, t => [foreignKey({ name: 'question_sources_passage_scope_fk', columns: [t.workspaceId, t.courseId, t.materialId, t.versionId, t.passageId], foreignColumns: [passages.workspaceId, passages.courseId, passages.materialId, passages.versionId, passages.id] }), foreignKey({ columns: [t.workspaceId, t.courseId, t.questionId], foreignColumns: [questionVersions.workspaceId, questionVersions.courseId, questionVersions.id] }),
+  ...materialScope(), questionId: uuid('question_id').primaryKey(), materialId: uuid('material_id').notNull(), versionId: uuid('version_id').notNull(),
+  // Validated against the version's blocks on insert. An array cannot carry a foreign key.
+  blockIds: uuid('block_ids').array().notNull(),
+}, t => [foreignKey({ columns: [t.workspaceId, t.courseId, t.questionId], foreignColumns: [questionVersions.workspaceId, questionVersions.courseId, questionVersions.id] }),
   foreignKey({ columns: [t.workspaceId, t.courseId, t.materialId, t.versionId], foreignColumns: [materialVersions.workspaceId, materialVersions.courseId, materialVersions.materialId, materialVersions.id] })]);
 export const learningSets = pgTable('learning_sets', {
   id: uuid('id').primaryKey(), ...materialScope(), name: text('name').notNull(), archived: boolean('archived').notNull().default(false),

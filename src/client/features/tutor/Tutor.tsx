@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner';
 import { ArchiveIcon, ArchiveRestoreIcon, ArrowUpIcon, BookOpenIcon, CheckCircleIcon, MoreHorizontalIcon, PencilIcon, PlusIcon, SearchIcon } from 'lucide-react';
 import type { CourseDetail } from '@shared/contracts/workspace';
-import type { Passage } from '@shared/contracts/materials';
+import type { BlockPage } from '@shared/contracts/document';
 import type { TutorDetail, TutorMessage, TutorSession } from '@shared/contracts/tutor';
 import { STAGE_LABEL } from '@shared/domain/tutor';
 
@@ -25,7 +25,8 @@ import { Select } from '@/components/ui/select';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { renderCitations } from '@/features/tutor/citations';
-import { PassageText } from '@/features/materials/Reader';
+import { DocumentBlocks } from '@/features/materials/DocumentView';
+import { assetPath, blockPath } from '@/features/materials/Reader';
 import { useAccount } from '@/lib/account';
 import { request } from '@/lib/api';
 import { useApi, useApiPages, useSave } from '@/lib/data';
@@ -53,7 +54,7 @@ export function TutorLibrary() {
   const [status, setStatus] = useState<'active' | 'archived'>('active');
   const [query, setQuery] = useState('');
   const sessions = useApiPages<TutorSession, 'sessions'>(`/v1/courses/${id}/tutor`, 'sessions');
-  const fromContext = !!(params.get('passageId') || params.get('attemptId'));
+  const fromContext = !!(params.get('blockIds') || params.get('attemptId'));
   const [creating, setCreating] = useState(fromContext);
   const rows = sessions.items?.filter(s => s.archived === (status === 'archived') && s.title.toLowerCase().includes(query.trim().toLowerCase())) ?? [];
   return (
@@ -69,7 +70,7 @@ export function TutorLibrary() {
           <SegmentedControl aria-label="Session status" value={status} onValueChange={setStatus} options={[{ value: 'active', label: 'Active' }, { value: 'archived', label: 'Archived' }]} />
         </Toolbar>
         {sessions.error ? <ErrorState error={sessions.error} onRetry={() => void sessions.refetch()} /> : sessions.isPending ? <ListLoading rows={3} /> : !rows.length ? (
-          <EmptyState compact title={query ? 'No sessions match your search' : status === 'archived' ? 'No archived sessions' : 'No sessions yet'} description={!query && status === 'active' ? 'Start a session on a topic, a passage or an answer you want to understand.' : undefined} />
+          <EmptyState compact title={query ? 'No sessions match your search' : status === 'archived' ? 'No archived sessions' : 'No sessions yet'} description={!query && status === 'active' ? 'Start a session on a topic, a section of a material or an answer you want to understand.' : undefined} />
         ) : (
           <List>
             {rows.map(s => <ListRow key={s.id} to={`/tutor/${s.id}`} title={s.title} meta={`${s.topicLabel} · ${STAGE_LABEL[s.stage]}${s.endedAt ? ' · Ended' : ''}`} trailing={formatRelative(s.updatedAt)} />)}
@@ -97,7 +98,7 @@ function NewSessionDialog({ courseId, open, onOpenChange }: { courseId: string; 
     body.current ??= {
       id: crypto.randomUUID(), title, topicId,
       ...(params.get('plannedSessionId') ? { plannedSessionId: params.get('plannedSessionId') } : {}),
-      ...(params.get('passageId') ? { source: { materialId: params.get('materialId'), versionId: params.get('versionId'), passageId: params.get('passageId') } } : {}),
+      ...(params.get('blockIds') ? { source: { materialId: params.get('materialId'), versionId: params.get('versionId'), blockIds: params.get('blockIds')!.split(',') } } : {}),
       ...(params.get('attemptId') ? { review: { attemptId: params.get('attemptId'), questionId: params.get('questionId') } } : {}),
     };
     save.run<TutorDetail>({ path: `/v1/courses/${courseId}/tutor`, body: body.current }, {
@@ -111,7 +112,7 @@ function NewSessionDialog({ courseId, open, onOpenChange }: { courseId: string; 
         <form onSubmit={e => { e.preventDefault(); create(); }}>
           <DialogHeader>
             <DialogTitle>New tutor session</DialogTitle>
-            <DialogDescription>{params.get('passageId') ? 'The session keeps the exact passage you came from.' : params.get('attemptId') ? 'The session keeps your saved answer and its feedback.' : 'Pick the topic you want to work on.'}</DialogDescription>
+            <DialogDescription>{params.get('blockIds') ? 'The session keeps the exact text you came from.' : params.get('attemptId') ? 'The session keeps your saved answer and its feedback.' : 'Pick the topic you want to work on.'}</DialogDescription>
           </DialogHeader>
           <DialogBody>
             <Field label="Title" required><Input autoFocus maxLength={200} value={title} disabled={!!body.current} onChange={e => setTitle(e.target.value)} placeholder="Why the encomienda was not a land grant" /></Field>
@@ -132,7 +133,7 @@ type Write = { path: string; method: string; body: { operationId: string } & Rec
 
 /**
  * A tutor session: a chat column at reading measure. Citations open the
- * exact passage in a side panel, where the session summary also lives.
+ * exact cited blocks in a side panel, where the session summary also lives.
  * Unavailable replies are explained once, not on every message.
  */
 export function Tutor() {
@@ -187,7 +188,7 @@ export function Tutor() {
         {!d.execution.available && !s.sampleDataset && !s.imported && <Notice>{d.execution.reason}</Notice>}
         {s.sampleDataset && <p className="text-muted-foreground text-sm">A sample conversation. Its replies were written for this workspace.</p>}
         {s.imported && <p className="text-muted-foreground text-sm">Imported history, with its original model and source labels.</p>}
-        {s.source && <Link className="text-primary-text inline-flex items-center gap-1.5 text-sm underline-offset-2 hover:underline" to={`/materials/${s.source.materialId}/versions/${s.source.versionId}/passages/${s.source.passageId}`}><BookOpenIcon className="size-3.5" />The passage this session is about</Link>}
+        {s.source && <Link className="text-primary-text inline-flex items-center gap-1.5 text-sm underline-offset-2 hover:underline" to={blockPath(s.source.materialId, s.source.versionId, s.source.blockIds[0])}><BookOpenIcon className="size-3.5" />The text this session is about</Link>}
         {s.review && (
           <details className="bg-surface rounded-lg border px-4 py-3">
             <summary className="cursor-pointer text-base font-medium">The answer you're reviewing</summary>
@@ -205,7 +206,7 @@ export function Tutor() {
           {d.messages.map(m => {
             const tutor = m.role === 'tutor';
             const citations = m.provenance?.citations ?? [];
-            const body = tutor ? renderCitations(m.text, citations.map(c => c.passageId)) : m.text;
+            const body = tutor ? renderCitations(m.text, citations.length) : m.text;
             return (
               <li key={m.id} className="flex flex-col gap-1.5">
                 <span className="text-muted-foreground text-sm font-medium">{tutor ? m.provenance?.model ?? 'Tutor' : 'You'}</span>
@@ -288,11 +289,12 @@ export function Tutor() {
   );
 }
 
-/** The cited passage, read beside the conversation. */
+/** The cited blocks, read beside the conversation in the same renderer as the reader. */
 function SourcePanel({ message, index, onIndex }: { message: TutorMessage; index: number; onIndex: (i: number) => void }) {
   const citations = useMemo(() => message.provenance?.citations ?? [], [message]);
   const c = citations[index];
-  const passage = useApi<Passage>(c ? `/v1/materials/${c.materialId}/versions/${c.versionId}/passages/${c.passageId}` : null);
+  const cited = useApi<BlockPage>(c ? `/v1/materials/${c.materialId}/versions/${c.versionId}/blocks?ids=${c.blockIds.join(',')}` : null);
+  const version = useApi<{ pagination: 'source' | 'slides' | 'converted' | 'none' }>(c ? `/v1/materials/${c.materialId}/versions/${c.versionId}` : null);
   return (
     <>
       <SheetHeader><SheetTitle>Source {index + 1}{citations.length > 1 ? ` of ${citations.length}` : ''}</SheetTitle></SheetHeader>
@@ -300,13 +302,10 @@ function SourcePanel({ message, index, onIndex }: { message: TutorMessage; index
         {citations.length > 1 && (
           <div className="flex gap-1">{citations.map((_, i) => <Button key={i} size="sm" variant={i === index ? 'primary' : 'secondary'} aria-pressed={i === index} onClick={() => onIndex(i)}>{i + 1}</Button>)}</div>
         )}
-        {passage.isPending ? <LoadingState lines={6} label="Loading passage" /> : passage.error ? <ErrorState error={passage.error} onRetry={() => void passage.refetch()} /> : (
-          <article className="flex flex-col gap-snug">
-            {passage.data.heading && <h2 className="font-serif text-lg font-semibold">{passage.data.heading}</h2>}
-            <div className="rawi-prose font-serif"><PassageText passage={passage.data} markdown /></div>
-          </article>
+        {cited.isPending ? <LoadingState lines={6} label="Loading source" /> : cited.error ? <ErrorState error={cited.error} onRetry={() => void cited.refetch()} /> : c && (
+          <DocumentBlocks blocks={cited.data.blocks} pagination={version.data?.pagination ?? 'none'} assetUrl={assetPath(c.materialId, c.versionId)} />
         )}
-        {c && <Button asChild variant="secondary" className="self-start"><Link to={`/materials/${c.materialId}/versions/${c.versionId}/passages/${c.passageId}`}><BookOpenIcon />Open in the reader</Link></Button>}
+        {c && <Button asChild variant="secondary" className="self-start"><Link to={blockPath(c.materialId, c.versionId, c.blockIds[0])}><BookOpenIcon />Open in the reader</Link></Button>}
         <Badge variant="outline" className="self-start">Exact version cited</Badge>
       </SheetBody>
     </>

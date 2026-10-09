@@ -1,25 +1,27 @@
 import { AI_LIMITS, type AiPassage, type AiTopic } from './ai';
-import type { Attempt, StudyMaterial, StudyPassage, Question, StudyTopic } from './types';
+import type { Attempt, StudyMaterial, Question, StudyTopic } from './types';
+import type { BlockPassage } from './document-text';
 
 /**
  * Bounded context for AI requests, built from one course's records.
  *
- * Relevance is deliberately simple: a passage the session was opened from
- * comes first, then passages linked to the topic, then passages that share
- * words with the topic and the student's question. At the size of one
+ * Passages are groups of consecutive blocks, built on the fly from a
+ * version's blocks by `groupPassages`. Relevance is deliberately simple: the
+ * passage the session was opened from comes first, then passages from
+ * materials linked to the topic, then passages that share words with the
+ * topic and the student's question. At the size of one
  * student's course that is enough, and it is easy to explain. Every function
  * here takes records that the caller has already scoped to one course, and
  * `forCourse` checks that again before anything leaves the browser.
  */
 
-/**
- * Material whose text is real. A `preview` is a placeholder recorded for a
- * file Rawi could not read, and its text is a description of that failure,
- * so it must never be sent as if it were course content.
- */
+/** Material whose current version converted to readable blocks. */
 export function isUsableMaterial(material: StudyMaterial): boolean {
-  return !material.archived && material.origin !== 'preview' && material.passages.some((p) => p.text.trim());
+  return !material.archived && material.readable;
 }
+
+/** A usable material with the passages built from its current version. */
+export type ContextMaterial = StudyMaterial & { versionId: string; passages: BlockPassage[] };
 
 const STOP = new Set(
   'about above after again against because been before being below between both could does doing down during each from further have having here into itself just more most other over same should some such than that their theirs them then there these they this those through under until very what when where which while with would your yours what how why the and for are was were not but can its you'.split(
@@ -50,9 +52,7 @@ export function materialsForTopic(topic: StudyTopic, materials: StudyMaterial[])
     (m) =>
       m.courseId === topic.courseId &&
       isUsableMaterial(m) &&
-      (m.topicIds.includes(topic.id) ||
-        m.passages.some((p) => p.topicIds.includes(topic.id)) ||
-        m.passages.some((p) => overlap(topicTerms, `${p.heading} ${p.text}`) >= 2)),
+      (m.topicIds.includes(topic.id) || overlap(topicTerms, m.title) >= 2),
   );
 }
 
@@ -60,15 +60,17 @@ export function toAiTopic(topic: StudyTopic): AiTopic {
   return { id: topic.id, title: topic.title, summary: topic.summary };
 }
 
-export function toAiPassage(material: StudyMaterial, passage: StudyPassage): AiPassage {
+export function toAiPassage(material: ContextMaterial, passage: BlockPassage): AiPassage {
   return {
     id: passage.id,
     materialId: material.id,
+    versionId: material.versionId,
+    blockIds: passage.blockIds,
     courseId: material.courseId,
     materialTitle: material.title,
     heading: passage.heading,
     text: passage.text.slice(0, AI_LIMITS.maxPassageChars),
-    topicIds: passage.topicIds,
+    topicIds: material.topicIds,
   };
 }
 
@@ -81,7 +83,7 @@ export function toAiPassage(material: StudyMaterial, passage: StudyPassage): AiP
  */
 export function selectPassages(params: {
   courseId: string;
-  materials: StudyMaterial[];
+  materials: ContextMaterial[];
   topicIds: string[];
   query: string;
   focusPassageId?: string;
@@ -99,8 +101,7 @@ export function selectPassages(params: {
       if (!passage.text.trim()) continue;
       let score = 0;
       if (passage.id === params.focusPassageId) score += 100;
-      if (passage.topicIds.some((t) => topics.has(t))) score += 6;
-      if (materialLinked) score += 3;
+      if (materialLinked) score += 6;
       score += Math.min(8, overlap(queryTerms, `${passage.heading} ${passage.text}`));
       if (score > 0) scored.push({ score, passage: toAiPassage(material, passage) });
     }

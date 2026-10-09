@@ -74,6 +74,8 @@ function passages(value: unknown, courseId: string): AiPassage[] {
     const passage: AiPassage = {
       id: id(p.id, 'passage id'),
       materialId: id(p.materialId, 'material id'),
+      versionId: id(p.versionId, 'version id'),
+      blockIds: list(p.blockIds, 'passage blocks', 200).map((b) => id(b, 'block id')),
       courseId: id(p.courseId, 'passage course'),
       materialTitle: text(p.materialTitle, 'material title', 300),
       heading: text(p.heading ?? '', 'passage heading', 300, { allowEmpty: true }),

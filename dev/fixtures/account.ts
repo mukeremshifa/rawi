@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import type { AnswerValue, Question, StudyCourse, StudyTopic, StudyMaterial } from '../../src/shared/domain/types';
+import type { AnswerValue, Question, StudyCourse, StudyTopic } from '../../src/shared/domain/types';
+import type { FixtureMaterial } from './types';
 import { SEED_COURSE, SEED_TOPICS } from './topics';
 import { STATS_COURSE, STATS_TOPICS, STATS_MATERIALS, STATS_QUESTIONS } from './stats';
 import { SEED_MATERIALS } from './materials';
@@ -13,7 +14,7 @@ const arabic: StudyCourse = { id: 'arabic', name: 'القراءة النقدية
 const arabicTopics: StudyTopic[] = ['الادعاء والدليل', 'السياق وحدود الاستنتاج', 'المقارنة بين تفسيرين'].map((title,i)=>({id:`arabic-${i}`,courseId:'arabic',title,summary:['تحديد ما يقوله الكاتب وما يقدمه لدعم قوله.', 'ربط معنى الفقرة بظروفها وتحديد ما لا يمكن استنتاجه.', 'مقارنة تفسيرين باستخدام دليل مشترك مع بيان الاختلاف.'][i]!,module:i<2?'الوحدة الأولى: قراءة دقيقة':'الوحدة الثانية: كتابة تفسير',order:i,priority:i===0?'high':'normal',relatedTopicIds:[`arabic-${(i+1)%3}`]}));
 export const fixtureCourses = [SEED_COURSE, {...STATS_COURSE,name:'Statistics | الإحصاء التطبيقي',description:`${STATS_COURSE.description} أمثلة تطبيقية تربط العينات بالتقدير وعدم اليقين.`},arabic];
 export const fixtureTopics = [...SEED_TOPICS,...STATS_TOPICS,...arabicTopics];
-export const fixtureMaterials: StudyMaterial[] = [...SEED_MATERIALS.filter(m=>m.passages.length),...STATS_MATERIALS.filter(m=>m.passages.length),{id:'arabic-reading',courseId:'arabic',title:'نص نموذجي: قراءة نتائج استطلاع',kind:'reading',origin:'authored',attribution:'مادة نموذجية خيالية للتدريب.',topicIds:['arabic-0','arabic-1'],addedAt:arabic.createdAt,passages:[{id:'arabic-passage',heading:'الدليل وحدوده',topicIds:['arabic-0','arabic-1'],text:'في استطلاع خيالي شارك ثلاثون طالبا من ناد للقراءة. قال عشرون منهم إنهم يفضلون القراءة مساء. تدعم النتيجة وصف هذه المجموعة، لكنها لا تكفي لتعميم الحكم على جميع الطلاب. اختيار المشاركين يؤثر في معنى النتيجة، كما أن التفضيل المعلن لا يثبت عدد ساعات القراءة الفعلية.'}]}];
+export const fixtureMaterials: FixtureMaterial[] = [...SEED_MATERIALS.filter(m=>m.sections.length),...STATS_MATERIALS.filter(m=>m.sections.length),{id:'arabic-reading',courseId:'arabic',title:'نص نموذجي: قراءة نتائج استطلاع',kind:'reading',origin:'authored',attribution:'مادة نموذجية خيالية للتدريب.',topicIds:['arabic-0','arabic-1'],addedAt:arabic.createdAt,sections:[{id:'arabic-section',heading:'الدليل وحدوده',topicIds:['arabic-0','arabic-1'],text:'في استطلاع خيالي شارك ثلاثون طالبا من ناد للقراءة. قال عشرون منهم إنهم يفضلون القراءة مساء. تدعم النتيجة وصف هذه المجموعة، لكنها لا تكفي لتعميم الحكم على جميع الطلاب. اختيار المشاركين يؤثر في معنى النتيجة، كما أن التفضيل المعلن لا يثبت عدد ساعات القراءة الفعلية.'}]}];
 export const fixtureQuestions = [...SEED_QUESTIONS,...STATS_QUESTIONS];
 export function answer(q: Question, variant: number): AnswerValue {
   if (variant === 3) return {kind:'none'};

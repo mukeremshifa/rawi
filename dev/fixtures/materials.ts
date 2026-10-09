@@ -1,4 +1,4 @@
-import type { StudyMaterial } from '../../src/shared/domain/types';
+import type { FixtureMaterial } from './types';
 import { ATLANTIC_COURSE_ID } from './topics';
 
 /**
@@ -13,15 +13,15 @@ import { ATLANTIC_COURSE_ID } from './topics';
  *
  * Internal consistency matters more than it looks. The exam questions, the
  * tutor's authored branches and the source-analysis extracts all quote these
- * passages, so a date changed here has to be changed in three other files. The
+ * sections, so a date changed here has to be changed in three other files. The
  * fixed points are: Valderrama argues the encomienda was primarily fiscal;
  * Okonkwo argues it was primarily coercive labour extraction; Larssen reads the
  * plantation complex as a commercial system; Mbeki reads it through resistance.
  * Those four positions are what the comparison questions turn on.
  *
- * ── Passages are the addressable unit ─────────────────────────────────────
+ * ── Sections are the addressable unit ─────────────────────────────────────
  *
- * A material is split into passages because everything interesting points at
+ * A material is written as sections because everything interesting points at
  * one: "ask the tutor about this", "this exam question came from here",
  * "practise the topic this covers". A material-level link would be too coarse
  * to be useful for any of the three.
@@ -29,7 +29,7 @@ import { ATLANTIC_COURSE_ID } from './topics';
 
 const ADDED = new Date(Date.parse('2026-10-07T08:00:00.000Z') - 1000 * 60 * 60 * 24 * 12).toISOString();
 
-export const SEED_MATERIALS: StudyMaterial[] = [
+export const SEED_MATERIALS: FixtureMaterial[] = [
   {
     id: 'mat-exchange-reading',
     courseId: ATLANTIC_COURSE_ID,
@@ -39,7 +39,7 @@ export const SEED_MATERIALS: StudyMaterial[] = [
     attribution: 'Adapted from H. Valderrama, *Atlantic Crossings* (fictional, ch. 2)',
     topicIds: ['topic-columbian'],
     addedAt: ADDED,
-    passages: [
+    sections: [
       {
         id: 'p-exch-1',
         heading: 'What crossed, and in which direction',
@@ -78,7 +78,7 @@ Where colonial demands on labour were lightest, indigenous populations recovered
       'Adapted from H. Valderrama, *Atlantic Crossings* (fictional, ch. 4) and A. Okonkwo, *The Coerced Atlantic* (fictional, ch. 1)',
     topicIds: ['topic-encomienda', 'topic-debate'],
     addedAt: ADDED,
-    passages: [
+    sections: [
       {
         id: 'p-enc-1',
         heading: 'What an encomienda actually granted',
@@ -128,7 +128,7 @@ The test that separates them is what happened after 1542. If the encomienda was 
     attribution: 'Adapted from I. Larssen, *The Plantation Complex* (fictional, ch. 3)',
     topicIds: ['topic-plantation', 'topic-mercantilism'],
     addedAt: ADDED,
-    passages: [
+    sections: [
       {
         id: 'p-plant-1',
         heading: 'Why sugar and not something else',
@@ -168,7 +168,7 @@ Her argument is not sentimental. It is that the commercial model cannot explain 
     attribution: 'Fictional lecture notes, Week 7',
     topicIds: ['topic-mercantilism'],
     addedAt: ADDED,
-    passages: [
+    sections: [
       {
         id: 'p-merc-1',
         heading: 'The doctrine, stated fairly',
@@ -208,7 +208,7 @@ This is the line of argument that connects mercantilism to the imperial crises o
     attribution: 'Adapted from N. Mbeki, *Refusal* (fictional, ch. 1 and 5)',
     topicIds: ['topic-revolt'],
     addedAt: ADDED,
-    passages: [
+    sections: [
       {
         id: 'p-rev-1',
         heading: 'The spectrum of refusal',
@@ -248,7 +248,7 @@ The advertisements are more useful than they first appear. Written to enable rec
     attribution: 'Fictional lecture notes, Week 11',
     topicIds: ['topic-debate'],
     addedAt: ADDED,
-    passages: [
+    sections: [
       {
         id: 'p-deb-1',
         heading: 'Comparison is not summary',

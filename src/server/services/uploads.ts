@@ -142,7 +142,10 @@ export async function finalize(db: SocketDb, env: BackendBindings, workspaceId: 
       }
       const objectId = crypto.randomUUID();
       await tx.insert(fileObjects).values({ id: objectId, workspaceId, courseId: row.courseId, key, size: bytes.length, detectedType: mimeTypes[row.expectedType]!, checksum: row.checksum, etag: stored.etag, fileName: row.fileName });
-      const version = await publishVersion(tx, material, { requestId: row.id, fingerprint: row.fingerprint, origin: 'upload', sourceObjectId: objectId, format: row.expectedType, ...content });
+      const conversion = content.text !== undefined
+        ? { adapter: 'markdown' as const, text: content.text, format: row.expectedType as 'md' | 'txt' }
+        : { adapter: 'datalab' as const, pagination: row.expectedType === 'pdf' ? 'source' as const : row.expectedType === 'pptx' ? 'slides' as const : 'converted' as const };
+      const version = await publishVersion(tx, material, { requestId: row.id, fingerprint: row.fingerprint, origin: 'upload', sourceObjectId: objectId, format: row.expectedType, conversion });
       await settle(tx, row, bytes.length);
       await tx.update(uploadCandidates).set({ state: 'published' }).where(eq(uploadCandidates.token, token));
       const [ready] = await tx.update(uploads).set({ state: 'ready', resultVersionId: version.id, leaseToken: null, leaseExpiresAt: null, failure: null, updatedAt: new Date() }).where(eq(uploads.id, id)).returning();
