@@ -3,12 +3,14 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   ArchiveIcon, ArchiveRestoreIcon, ClipboardListIcon, DownloadIcon, LinkIcon, MessageSquareIcon, MoreHorizontalIcon,
-  PanelRightIcon, RotateCwIcon, UploadIcon,
+  PanelRightIcon, PlusIcon, RotateCwIcon, UploadIcon, XIcon,
 } from 'lucide-react';
 import type { z } from 'zod';
 import { materialFields, type Material, type MaterialVersion } from '@shared/contracts/materials';
 import type { DocumentBlock } from '@shared/contracts/document';
 import type { CourseDetail } from '@shared/contracts/workspace';
+import type { Covers } from '@shared/contracts/outline';
+import { useQueryClient } from '@tanstack/react-query';
 import { spansText } from '@shared/domain/document-text';
 
 import { InlineText } from '@/components/InlineText';
@@ -32,7 +34,7 @@ import { useAccount } from '@/lib/account';
 import { errorMessage, request } from '@/lib/api';
 import { useApi, useApiPages, useSave } from '@/lib/data';
 import { useUnsentGuard } from '@/lib/hooks';
-import { keys } from '@/lib/query';
+import { keys, pathKey } from '@/lib/query';
 import { usePageMeta } from '@/lib/shell';
 
 type Fields = z.infer<typeof materialFields>;
@@ -69,12 +71,20 @@ function warningLine(v: MaterialVersion) {
 export const assetPath = (materialId: string, versionId: string) => (assetId: string) => `/api/v1/materials/${materialId}/versions/${versionId}/assets/${assetId}`;
 export const blockPath = (materialId: string, versionId: string, blockId?: string) => `/materials/${materialId}/versions/${versionId}${blockId ? `#block-${blockId}` : ''}`;
 
-/** A heading cites its whole section, up to the next heading at its level or above. Other blocks cite themselves. */
-function citedBlocks(blocks: DocumentBlock[], block: DocumentBlock) {
-  if (block.type !== 'heading') return [block.id];
-  const start = blocks.indexOf(block), ids = [block.id];
+/**
+ * The section a block sits in: its nearest heading, and every block under
+ * that heading up to the next one at its level or above. Content before the
+ * first heading is the lead section.
+ */
+function sectionBlocks(blocks: DocumentBlock[], block: DocumentBlock) {
+  const heading = block.type === 'heading' ? block : blocks.find(b => b.id === block.parentId);
+  if (!heading || heading.type !== 'heading') {
+    const first = blocks.findIndex(b => b.type === 'heading');
+    return (first < 0 ? blocks : blocks.slice(0, first)).slice(0, 50).map(b => b.id);
+  }
+  const start = blocks.indexOf(heading), ids = [heading.id];
   for (const next of blocks.slice(start + 1)) {
-    if ((next.type === 'heading' && next.content.level <= block.content.level) || ids.length >= 50) break;
+    if ((next.type === 'heading' && next.content.level <= heading.content.level) || ids.length >= 50) break;
     ids.push(next.id);
   }
   return ids;
@@ -114,7 +124,7 @@ export function MaterialReader() {
   }, [target, blocks]);
   const [panel, setPanel] = useState<null | 'versions' | 'edit'>(null);
   const retry = useSave();
-  usePageMeta({ courseId: m?.courseId, crumbs: m ? [{ label: 'Materials', to: `/course/${m.courseId}/materials` }, { label: m.title }] : undefined });
+  usePageMeta({ courseId: m?.courseId, crumbs: m ? [m.kind === 'syllabus' ? { label: 'Course', to: `/course/${m.courseId}` } : { label: 'Materials', to: `/course/${m.courseId}/materials` }, { label: m.title }] : undefined });
 
   if (material.isPending) return <Page width="narrow"><PageLoading label="Opening material" /></Page>;
   if (material.error) return <Page width="narrow"><ErrorState error={material.error} onRetry={() => void material.refetch()} /></Page>;
@@ -133,7 +143,8 @@ export function MaterialReader() {
   const originalButton = v?.sourceObjectId ? <Button variant="secondary" size="sm" onClick={() => void download()}><DownloadIcon />Download original</Button> : undefined;
   const pagesText = v ? [...new Set([...v.failedPages, ...v.warnings.flatMap(w => w.code === 'dropped_content' && w.page ? [w.page] : [])])].sort((a, b) => a - b).map(p => pageLabel(v.pagination, p) || `Page ${p}`).join(', ') : '';
   const contents = blocks.filter(b => b.type === 'heading' && b.content.level <= 2);
-  const topicId = row.topicIds[0] ?? '';
+  // The syllabus is a source for the outline, not something to practise or be tutored on.
+  const teaching = row.kind !== 'syllabus';
   return (
     <article className="px-4 pt-8 pb-24 sm:px-gutter">
       <header className="ui-reading mx-auto flex flex-col gap-3">
@@ -146,7 +157,7 @@ export function MaterialReader() {
         <h1 className="font-serif text-2xl leading-tight font-medium tracking-tight text-balance sm:text-[2.25rem] sm:leading-[1.15]">{row.title}</h1>
         {row.attribution && <p className="text-muted-foreground font-serif text-md"><InlineText text={row.attribution} /></p>}
         <div className="flex flex-wrap items-center gap-tight pt-1">
-          <Button asChild variant="secondary" size="sm"><Link to={`/course/${row.courseId}/practice?materialId=${materialId}${v ? `&versionId=${v.id}` : ''}`}><ClipboardListIcon />Practise</Link></Button>
+          {teaching && <Button asChild variant="secondary" size="sm"><Link to={`/course/${row.courseId}/practice?materialId=${materialId}${v ? `&versionId=${v.id}` : ''}`}><ClipboardListIcon />Practise</Link></Button>}
           <Button variant="ghost" size="sm" onClick={() => setPanel('versions')}><PanelRightIcon />Details</Button>
           {v?.sourceObjectId && <Hint label="Download original"><Button variant="ghost" size="icon-sm" aria-label="Download original" onClick={() => void download()}><DownloadIcon /></Button></Hint>}
         </div>
@@ -190,7 +201,7 @@ export function MaterialReader() {
           <DocumentBlocks blocks={blocks} pagination={v.pagination} assetUrl={assetPath(materialId, v.id)} highlight={highlight}
             aside={block => (
               <div className="absolute top-0 -right-1 opacity-100 transition-opacity sm:-right-11 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
-                <BlockActions tutor={`/course/${row.courseId}/tutor?materialId=${materialId}&versionId=${v.id}&blockIds=${citedBlocks(blocks, block).join(',')}&topicId=${topicId}`}
+                <BlockActions tutor={teaching ? `/course/${row.courseId}/tutor?materialId=${materialId}&versionId=${v.id}&blockIds=${sectionBlocks(blocks, block).join(',')}` : null}
                   link={blockPath(materialId, v.id, block.id)} section={block.type === 'heading'} />
               </div>
             )} />
@@ -208,12 +219,12 @@ export function MaterialReader() {
   );
 }
 
-function BlockActions({ tutor, link, section }: { tutor: string; link: string; section: boolean }) {
+function BlockActions({ tutor, link, section }: { tutor: string | null; link: string; section: boolean }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={section ? 'Section actions' : 'Block actions'}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
       <DropdownMenuContent>
-        <DropdownMenuItem asChild><Link to={tutor}><MessageSquareIcon />{section ? 'Discuss this section with the tutor' : 'Discuss this with the tutor'}</Link></DropdownMenuItem>
+        {tutor && <DropdownMenuItem asChild><Link to={tutor}><MessageSquareIcon />Tutor me on this section</Link></DropdownMenuItem>}
         <DropdownMenuItem onSelect={() => { void navigator.clipboard?.writeText(new URL(link, location.origin).href).then(() => toast.success('Link copied'), () => toast(link)); }}><LinkIcon />Copy link</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -276,8 +287,8 @@ function VersionList({ material, current, onNavigate }: { material: Material; cu
  */
 function EditPanel({ material, onChanged }: { material: Material; onChanged: (m: Material) => void }) {
   const { user } = useAccount();
-  const outline = useApi<CourseDetail>(`/v1/courses/${material.courseId}/topics`);
-  const initial = useMemo<Fields>(() => ({ title: material.title, kind: material.kind, attribution: material.attribution, topicIds: material.topicIds }), [material]);
+  const syllabus = material.kind === 'syllabus';
+  const initial = useMemo<Fields>(() => ({ title: material.title, kind: syllabus ? 'reading' : material.kind as Fields['kind'], attribution: material.attribution }), [material, syllabus]);
   const [fields, setFields] = useState<Fields>(initial);
   const base = material.revision;
   const [review, setReview] = useState<Material | null>(null);
@@ -302,18 +313,19 @@ function EditPanel({ material, onChanged }: { material: Material; onChanged: (m:
     if ('reason' in checked) return;
     setHashing(true);
     try {
-      queue.enqueue([{ courseId: material.courseId, file, type: checked.type, checksum: await hashFile(file), title: material.title, kind: material.kind, topicIds: material.topicIds, material }]);
+      queue.enqueue([{ courseId: material.courseId, file, type: checked.type, checksum: await hashFile(file), title: material.title, kind: material.kind, material }]);
       setFile(null);
     } catch (e) { setFileError(errorMessage(e)); }
     finally { setHashing(false); }
   };
-  const fieldsDirty = JSON.stringify({ ...fields, topicIds: [...fields.topicIds].sort() }) !== JSON.stringify({ ...initial, topicIds: [...initial.topicIds].sort() });
+  const fieldsDirty = JSON.stringify(fields) !== JSON.stringify(initial);
   useUnsentGuard(fieldsDirty || meta.pending);
   const busy = meta.busy || sending || hashing || archive.busy;
   const saveFields = () => {
     const parsed = materialFields.safeParse(fields);
     if (!parsed.success) return;
-    meta.run<Material>({ path: `/v1/materials/${material.id}`, method: 'PATCH', body: { ...parsed.data, expectedRevision: base } }, {
+    const { kind, ...rest } = parsed.data;
+    meta.run<Material>({ path: `/v1/materials/${material.id}`, method: 'PATCH', body: { ...rest, ...(syllabus ? {} : { kind }), expectedRevision: base } }, {
       id: `meta:${base}`, invalidate: [keys.course(material.courseId).materials],
       onSuccess: saved => onChanged(saved),
     });
@@ -324,6 +336,7 @@ function EditPanel({ material, onChanged }: { material: Material; onChanged: (m:
   };
   return (
     <div className="flex flex-col gap-section">
+      {!syllabus && material.currentVersionId && <CoversPanel material={material} />}
       {meta.conflict && (
         <div className="bg-warning-subtle text-warning-text flex flex-wrap items-center gap-snug rounded-md px-3 py-2 text-sm">
           <span className="flex-1">This material changed elsewhere. Your edits are kept here.</span>
@@ -337,7 +350,7 @@ function EditPanel({ material, onChanged }: { material: Material; onChanged: (m:
           <p className="text-muted-foreground text-sm">{MATERIAL_KIND_LABEL[review.kind]}{review.attribution ? ` · ${review.attribution}` : ''}</p>
           <div className="flex flex-wrap gap-tight">
             <Button size="sm" onClick={() => { meta.discard(); onChanged(review); setReview(null); }}>Keep my edits, save over this</Button>
-            <Button size="sm" variant="secondary" onClick={() => { meta.discard(); onChanged(review); setFields({ title: review.title, kind: review.kind, attribution: review.attribution, topicIds: review.topicIds }); setReview(null); }}>Discard my edits</Button>
+            <Button size="sm" variant="secondary" onClick={() => { meta.discard(); onChanged(review); setFields({ title: review.title, kind: syllabus ? 'reading' : review.kind as Fields['kind'], attribution: review.attribution }); setReview(null); }}>Discard my edits</Button>
           </div>
         </div>
       )}
@@ -346,10 +359,7 @@ function EditPanel({ material, onChanged }: { material: Material; onChanged: (m:
         <h3 className="text-md font-semibold">Details</h3>
         <fieldset disabled={busy} className="flex flex-col gap-base">
           <Field label="Title" required><Input maxLength={200} value={fields.title} onChange={e => setFields({ ...fields, title: e.target.value })} /></Field>
-          <div className="grid gap-base sm:grid-cols-2">
-            <Field label="Kind"><Select value={fields.kind} onValueChange={kind => setFields({ ...fields, kind: kind as Fields['kind'] })} options={KINDS} /></Field>
-            <Field label="Topics" optional><Combobox multiple value={fields.topicIds} onValueChange={topicIds => setFields({ ...fields, topicIds })} placeholder="None" options={outline.data?.topics.map(t => ({ value: t.id, label: t.title })) ?? []} /></Field>
-          </div>
+          {!syllabus && <Field label="Kind"><Select value={fields.kind} onValueChange={kind => setFields({ ...fields, kind: kind as Fields['kind'] })} options={KINDS} /></Field>}
           <Field label="Source" optional><Input maxLength={4000} value={fields.attribution} onChange={e => setFields({ ...fields, attribution: e.target.value })} /></Field>
         </fieldset>
         <div className="flex items-center justify-end gap-snug">
@@ -360,7 +370,7 @@ function EditPanel({ material, onChanged }: { material: Material; onChanged: (m:
 
       <section className="flex flex-col gap-snug">
         <h3 className="text-md font-semibold">Replace the file</h3>
-        <p className="text-muted-foreground text-base">Uploads a new version. Title, source and topics stay as they are. {UPLOAD_HINT}</p>
+        <p className="text-muted-foreground text-base">Uploads a new version. Title and source stay as they are, and topics you added or removed carry over by section heading. {UPLOAD_HINT}</p>
         <div className="flex flex-wrap items-center gap-tight">
           <Button asChild variant="secondary" size="sm">
             <label className={busy ? 'pointer-events-none opacity-50' : 'cursor-pointer'}>
@@ -386,5 +396,64 @@ function EditPanel({ material, onChanged }: { material: Material; onChanged: (m:
         {archive.error && <FieldError>{archive.error}</FieldError>}
       </section>
     </div>
+  );
+}
+
+/**
+ * Covers: the topics this material's sections are linked to. A removed
+ * topic stays removed through remapping and new versions. This is the only
+ * place a student links a material to topics by hand.
+ */
+function CoversPanel({ material }: { material: Material }) {
+  const covers = useApi<Covers>(`/v1/materials/${material.id}/covers`);
+  const outline = useApi<CourseDetail>(`/v1/courses/${material.courseId}/topics`);
+  const [adding, setAdding] = useState('');
+  const save = useSave();
+  const qc = useQueryClient();
+  const mapping = !!covers.data?.mapping;
+  useEffect(() => {
+    if (!mapping) return;
+    const timer = setInterval(() => void covers.refetch(), 3000);
+    return () => clearInterval(timer);
+  }, [mapping, covers]);
+  const change = (topicId: string, action: 'add' | 'remove', undo = false) => {
+    const data = covers.data;
+    if (!data) return;
+    const title = outline.data?.topics.find(t => t.id === topicId)?.title ?? 'the topic';
+    save.run<Covers>({ path: `/v1/materials/${material.id}/covers`, body: { operationId: crypto.randomUUID(), versionId: data.versionId, topicId, action } }, {
+      id: `covers:${topicId}:${action}:${undo}`, invalidate: [keys.course(material.courseId).materials, keys.material(material.id), keys.progress],
+      onSuccess: next => {
+        covers.setData(next); setAdding('');
+        void qc.invalidateQueries({ queryKey: pathKey(`/v1/courses/${material.courseId}/outline`) });
+        if (undo) return;
+        toast.success(action === 'remove' ? `Removed ${title} from this material` : `Added ${title} to this material`, { action: { label: 'Undo', onClick: () => change(topicId, action === 'remove' ? 'add' : 'remove', true) } });
+      },
+    });
+  };
+  if (covers.isPending) return <LoadingState lines={2} label="Loading topics" />;
+  if (covers.error) return <ErrorState error={covers.error} onRetry={() => void covers.refetch()} />;
+  const topics = outline.data?.topics ?? [];
+  const available = topics.filter(t => !covers.data.topics.some(c => c.id === t.id));
+  return (
+    <section className="flex flex-col gap-snug" aria-labelledby="covers-heading">
+      <h3 id="covers-heading" className="text-md font-semibold">Covers</h3>
+      {covers.data.topics.length ? (
+        <ul className="flex flex-wrap gap-1.5" aria-label="Topics this material covers">
+          {covers.data.topics.map(t => (
+            <li key={t.id} className="bg-surface inline-flex items-center gap-1 rounded-full border py-0.5 pr-0.5 pl-2.5 text-sm">
+              {t.title}
+              <Button variant="ghost" size="icon-sm" className="size-6 rounded-full" aria-label={`Remove ${t.title} from this material`} disabled={save.busy} onClick={() => change(t.id, 'remove')}><XIcon /></Button>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-muted-foreground text-base">{mapping ? 'Matching its sections to the outline.' : topics.length ? 'Not in the outline yet.' : 'The course has no outline yet.'}</p>}
+      {available.length > 0 && (
+        <div className="flex flex-wrap items-center gap-tight">
+          <Combobox className="w-64 max-w-full" aria-label="Topic to add" value={adding} onValueChange={setAdding} placeholder="Add a topic" options={available.map(t => ({ value: t.id, label: t.title }))} />
+          <Button size="sm" variant="secondary" disabled={!adding || save.busy} onClick={() => change(adding, 'add')}><PlusIcon />Add</Button>
+        </div>
+      )}
+      {save.error && <FieldError>{save.error}</FieldError>}
+    </section>
   );
 }

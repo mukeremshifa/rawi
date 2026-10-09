@@ -11,7 +11,6 @@ import { Page, PageHeader, Toolbar } from '@/components/layout';
 import { EmptyState, ErrorState } from '@/components/states';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Combobox } from '@/components/ui/combobox';
 import { DropdownMenuItem, RowActions } from '@/components/ui/dropdown-menu';
 import { Field, FieldError } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -97,7 +96,7 @@ export function Materials() {
                   <TableRow>
                     <TableHead>Title</TableHead>
                     <TableHead className="hidden w-24 sm:table-cell">Kind</TableHead>
-                    <TableHead className="hidden w-52 md:table-cell">Topic</TableHead>
+                    <TableHead className="hidden w-52 md:table-cell">Covers</TableHead>
                     <TableHead className="hidden w-28 sm:table-cell">Updated</TableHead>
                     <TableHead className="w-10"><span className="sr-only">Actions</span></TableHead>
                   </TableRow>
@@ -120,7 +119,7 @@ export function Materials() {
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground hidden sm:table-cell">{MATERIAL_KIND_LABEL[m.kind]}</TableCell>
-                      <TableCell className="text-muted-foreground hidden max-w-0 truncate text-sm md:table-cell">{topicName(m.topicIds) || 'None'}</TableCell>
+                      <TableCell className="text-muted-foreground hidden max-w-0 truncate text-sm md:table-cell">{topicName(m.topicIds) || (m.status === 'ready' || m.status === 'partial' ? 'Not in the outline' : '')}</TableCell>
                       <TableCell className="text-muted-foreground hidden text-sm sm:table-cell">{formatRelative(m.updatedAt)}</TableCell>
                       <TableCell>
                         <RowActions label={`Actions for ${m.title}`}>
@@ -144,7 +143,7 @@ export function Materials() {
           </div>
         </div>
       )}
-      <AddMaterialSheet courseId={id} topics={topics} open={adding} onOpenChange={setAdding} staging={staging} dragging={dragging}
+      <AddMaterialSheet courseId={id} open={adding} onOpenChange={setAdding} staging={staging} dragging={dragging}
         onSaved={materialId => { setAdding(false); void pages.refetch(); navigate(`/materials/${materialId}`); }} />
     </Page>
   );
@@ -164,14 +163,13 @@ function IncomingRow({ item }: { item: QueueItem }) {
  * nothing but a title, which is prefilled from the filename. Upload hands
  * them to the queue, so the sheet can close while they move.
  */
-function AddMaterialSheet({ courseId, topics, open, onOpenChange, onSaved, staging, dragging }: {
-  courseId: string; topics: { id: string; title: string }[]; open: boolean; onOpenChange: (open: boolean) => void; onSaved: (materialId: string) => void;
+function AddMaterialSheet({ courseId, open, onOpenChange, onSaved, staging, dragging }: {
+  courseId: string; open: boolean; onOpenChange: (open: boolean) => void; onSaved: (materialId: string) => void;
   staging: Staging; dragging: boolean;
 }) {
   const queue = useUploadQueue();
   const [mode, setMode] = useState<'files' | 'paste'>('files');
-  const [topicIds, setTopicIds] = useState<string[]>([]);
-  const [fields, setFields] = useState<Fields>({ title: '', kind: 'reading', attribution: '', topicIds: [] });
+  const [fields, setFields] = useState<Fields>({ title: '', kind: 'reading', attribution: '' });
   const [text, setText] = useState('');
   const [format, setFormat] = useState<'md' | 'txt'>('md');
   const [createId, setCreateId] = useState(() => crypto.randomUUID());
@@ -179,7 +177,7 @@ function AddMaterialSheet({ courseId, topics, open, onOpenChange, onSaved, stagi
   const [invalid, setInvalid] = useState('');
   const save = useSave();
   const allow = useUnsentGuard(!!fields.title || !!text || !!submitted || staging.staged.length > 0);
-  const resetText = () => { setFields({ title: '', kind: 'reading', attribution: '', topicIds: [] }); setText(''); setSubmitted(null); setCreateId(crypto.randomUUID()); };
+  const resetText = () => { setFields({ title: '', kind: 'reading', attribution: '' }); setText(''); setSubmitted(null); setCreateId(crypto.randomUUID()); };
   const titleOk = fields.title.trim().length > 0;
   const moving = queue.items.filter(i => i.courseId === courseId && !i.material && unsettled(i));
   useEffect(() => { if (open && staging.staged.length) setMode('files'); }, [open, staging.staged.length]);
@@ -194,8 +192,8 @@ function AddMaterialSheet({ courseId, topics, open, onOpenChange, onSaved, stagi
     });
   };
   const upload = () => {
-    queue.enqueue(staging.take(topicIds));
-    staging.clear(); setTopicIds([]);
+    queue.enqueue(staging.take());
+    staging.clear();
   };
   const count = staging.ready.length;
   const undecided = staging.staged.filter(s => s.duplicate).length;
@@ -223,11 +221,7 @@ function AddMaterialSheet({ courseId, topics, open, onOpenChange, onSaved, stagi
                   ))}
                 </ul>
               )}
-              {staging.staged.length > 0 && topics.length > 0 && (
-                <Field label="Topics" optional description="Applies to every file above. Kind and source can be changed later in each material's details.">
-                  <Combobox multiple value={topicIds} onValueChange={setTopicIds} placeholder="None" options={topics.map(t => ({ value: t.id, label: t.title }))} />
-                </Field>
-              )}
+              {staging.staged.length > 0 && <p className="text-muted-foreground text-sm">Rawi links each file's sections to the course outline once it is readable. Kind and source can be changed later in each material's details.</p>}
               {moving.length > 0 && (
                 <section className="flex flex-col gap-snug" aria-label="Uploading">
                   <h3 className="text-sm font-medium">Uploading</h3>
@@ -239,12 +233,7 @@ function AddMaterialSheet({ courseId, topics, open, onOpenChange, onSaved, stagi
             <TabsContent value="paste" className="flex flex-col gap-base">
               <fieldset disabled={!!submitted} className="flex flex-col gap-base">
                 <Field label="Title" required><Input maxLength={200} value={fields.title} onChange={e => setFields({ ...fields, title: e.target.value })} /></Field>
-                <div className="grid gap-base sm:grid-cols-2">
-                  <Field label="Kind"><Select value={fields.kind} onValueChange={kind => setFields({ ...fields, kind: kind as Fields['kind'] })} options={KINDS} /></Field>
-                  <Field label="Topics" optional>
-                    <Combobox multiple value={fields.topicIds} onValueChange={ids => setFields({ ...fields, topicIds: ids })} placeholder="None" options={topics.map(t => ({ value: t.id, label: t.title }))} />
-                  </Field>
-                </div>
+                <Field label="Kind"><Select value={fields.kind} onValueChange={kind => setFields({ ...fields, kind: kind as Fields['kind'] })} options={KINDS} /></Field>
                 <Field label="Source" optional description="Author and title, so citations can name it."><Input maxLength={4000} value={fields.attribution} onChange={e => setFields({ ...fields, attribution: e.target.value })} /></Field>
                 <SegmentedControl aria-label="Text format" size="sm" value={format} onValueChange={setFormat} options={[{ value: 'md', label: 'Markdown' }, { value: 'txt', label: 'Plain text' }]} />
                 <Field label="Text"><Textarea className="max-h-[45vh] min-h-56 font-serif text-md" value={text} onChange={e => setText(e.target.value)} /></Field>

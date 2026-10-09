@@ -6,7 +6,8 @@ import type { ReadDb, SocketDb, Transaction } from '../db/client';
 import type { BackendBindings } from '../config';
 import { uploads, uploadCandidates, workspaceStorage, materials, materialVersions, fileObjects } from '../db/schema';
 import { ApiError, conflict, notFound } from '../errors';
-import { hash, lockCourse, ownMaterial, ownVersion, publishVersion, setTopics, validateTopics } from './materials';
+import { hash, lockCourse, ownMaterial, ownVersion, publishVersion } from './materials';
+import { courses } from '../db/schema';
 import { getCourse } from './workspace';
 import { boundedBytes, limits, mimeTypes, signedUrl, storage, storageDeadline, validateFile, verifyStorageTarget } from './storage';
 
@@ -58,12 +59,12 @@ export async function initiate(db: SocketDb, env: BackendBindings, workspaceId: 
   await transaction(db, async tx => {
     await lockCourse(tx, workspaceId, courseId);
     if (input.materialId) { const material = await ownMaterial(tx, workspaceId, input.materialId); if (material.courseId !== courseId) throw notFound(); }
-    await validateTopics(tx, workspaceId, courseId, input.topicIds);
+    await checkSyllabusSlot(tx, workspaceId, courseId, input);
   });
   if (input.size > max.file || (['txt', 'md'].includes(input.type) && input.size > max.text)) throw new ApiError(400, 'file_limit', 'The file exceeds the permitted size.');
   if (!input.fileName.toLowerCase().endsWith(`.${input.type}`)) throw new ApiError(400, 'invalid_file', 'The filename must match the selected file format.');
   await verifyStorageTarget(env);
-  const fingerprint = await hash(JSON.stringify({ ...input, topicIds: [...input.topicIds].sort() }));
+  const fingerprint = await hash(JSON.stringify(input));
   const row = await transaction(db, async tx => {
     const usage = await lockStorage(tx, workspaceId);
     await lockCourse(tx, workspaceId, courseId);
@@ -78,10 +79,10 @@ export async function initiate(db: SocketDb, env: BackendBindings, workspaceId: 
       if (material.courseId !== courseId) throw notFound();
       if (material.revision !== input.expectedRevision) throw conflict();
     }
-    await validateTopics(tx, workspaceId, courseId, input.topicIds);
+    await checkSyllabusSlot(tx, workspaceId, courseId, input);
     if (usage.pendingCount >= max.pending || usage.usedBytes + usage.reservedBytes + input.size > max.workspace) throw new ApiError(409, 'storage_limit', 'The workspace storage or pending upload limit has been reached. Finish pending uploads or wait for them to expire.');
     const [created] = await tx.insert(uploads).values({ id: input.requestId, workspaceId, courseId, materialId: input.materialId ?? crypto.randomUUID(), isNew: !input.materialId,
-      fingerprint, fields: { title: input.title, kind: input.kind, attribution: input.attribution, topicIds: input.topicIds }, expectedRevision: input.expectedRevision,
+      fingerprint, fields: { title: input.title, kind: input.kind, attribution: input.attribution }, expectedRevision: input.expectedRevision,
       expectedSize: input.size, expectedType: input.type, checksum: input.checksum, fileName: input.fileName,
       stagingKey: `staging/${workspaceId}/${crypto.randomUUID()}`, expiresAt: new Date(Date.now() + 300000),
     }).onConflictDoNothing().returning();
@@ -136,9 +137,10 @@ export async function finalize(db: SocketDb, env: BackendBindings, workspaceId: 
       await lockCourse(tx, workspaceId, row.courseId);
       let material: typeof materials.$inferSelect;
       if (row.isNew) {
-        const { topicIds: _topics, ...fields } = row.fields;
-        [material] = await tx.insert(materials).values({ ...fields, id: row.materialId, workspaceId, courseId: row.courseId, createFingerprint: row.fingerprint }).returning() as [typeof materials.$inferSelect];
-        await setTopics(tx, workspaceId, row.courseId, material.id, row.fields.topicIds);
+        const { kind, ...fields } = row.fields;
+        if (kind === 'syllabus') await checkSyllabusSlot(tx, workspaceId, row.courseId, { kind });
+        [material] = await tx.insert(materials).values({ ...fields, kind, id: row.materialId, workspaceId, courseId: row.courseId, createFingerprint: row.fingerprint }).returning() as [typeof materials.$inferSelect];
+        if (kind === 'syllabus') await tx.update(courses).set({ syllabusMaterialId: material.id, updatedAt: new Date() }).where(and(eq(courses.workspaceId, workspaceId), eq(courses.id, row.courseId)));
       } else {
         material = await ownMaterial(tx, workspaceId, row.materialId);
         if (material.courseId !== row.courseId) throw notFound();
@@ -170,6 +172,14 @@ export async function finalize(db: SocketDb, env: BackendBindings, workspaceId: 
     } catch { /* Lease expiry recovers after database availability returns. */ }
     throw error;
   }
+}
+/** One syllabus per course: a new one only into an empty slot, and versions only of that material. */
+async function checkSyllabusSlot(tx: Transaction, workspaceId: string, courseId: string, input: { kind: string; materialId?: string }) {
+  const [course] = await tx.select({ syllabus: courses.syllabusMaterialId }).from(courses).where(and(eq(courses.workspaceId, workspaceId), eq(courses.id, courseId)));
+  if (!course) throw notFound();
+  const toSyllabus = input.materialId ? input.materialId === course.syllabus : input.kind === 'syllabus';
+  if (input.kind === 'syllabus' && !input.materialId && course.syllabus) throw new ApiError(409, 'syllabus_exists', 'This course already has a syllabus. Upload the new file as a new version of it.');
+  if (toSyllabus !== (input.kind === 'syllabus')) throw new ApiError(400, 'invalid_input', 'Upload the syllabus to the syllabus slot on the course page.');
 }
 export async function download(db: ReadDb, env: BackendBindings, workspaceId: string, materialId: string, versionId: string) {
   const version = await ownVersion(db, workspaceId, materialId, versionId);

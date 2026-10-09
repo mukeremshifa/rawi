@@ -97,9 +97,9 @@ export function useStaging(courseId: string) {
   const checking = staged.some(s => !s.checksum);
   const ready = staged.filter(s => s.checksum && !s.duplicate);
   /** Queue entries for every checked file that is not an undecided duplicate. */
-  const take = (topicIds: string[]): QueueInput[] => ready.map(s => ({
+  const take = (): QueueInput[] => ready.map(s => ({
     courseId, file: s.file, type: s.type, checksum: s.checksum!, title: s.title.trim() || titleFromName(s.file.name),
-    kind: s.type === 'pptx' ? 'slides' : 'reading', topicIds,
+    kind: s.type === 'pptx' ? 'slides' : 'reading',
   }));
   return { staged, rejected, add, update, remove, clear, checking, ready, take };
 }

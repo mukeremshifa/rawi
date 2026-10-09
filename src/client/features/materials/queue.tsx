@@ -14,10 +14,10 @@ import { cn } from '@/lib/utils';
 
 export type FileType = typeof fileTypes[number];
 export type Stage = 'waiting' | 'preparing' | 'uploading' | 'saving' | 'converting' | 'ready' | 'failed';
-export type NewVersionOf = Pick<Material, 'id' | 'revision' | 'title' | 'kind' | 'attribution' | 'topicIds'>;
+export type NewVersionOf = Pick<Material, 'id' | 'revision' | 'title' | 'kind' | 'attribution'>;
 export interface QueueItem {
   id: string; courseId: string; file: File; type: FileType; checksum: string;
-  title: string; kind: Material['kind']; topicIds: string[];
+  title: string; kind: Material['kind'];
   /** Set when the file is a new version of an existing material. */
   material?: NewVersionOf;
   stage: Stage; progress: number; error?: string;
@@ -25,7 +25,7 @@ export interface QueueItem {
   retryable?: boolean;
   requestId: string; materialId?: string; versionId?: string;
 }
-export type QueueInput = Pick<QueueItem, 'courseId' | 'file' | 'type' | 'checksum' | 'title' | 'kind' | 'topicIds' | 'material'>;
+export type QueueInput = Pick<QueueItem, 'courseId' | 'file' | 'type' | 'checksum' | 'title' | 'kind' | 'material'>;
 
 const PARALLEL = 3;
 const TRANSFERRING = new Set<Stage>(['waiting', 'preparing', 'uploading', 'saving']);
@@ -104,7 +104,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
     update(id, { stage: 'preparing', progress: 0, error: undefined, retryable: undefined });
     try {
       const body = (requestId: string) => uploadInput.parse({
-        title: item.title, kind: item.kind, attribution: material?.attribution ?? '', topicIds: item.topicIds, requestId,
+        title: item.title, kind: item.kind, attribution: material?.attribution ?? '', requestId,
         materialId: material?.id, expectedRevision: material?.revision, fileName: file.name, size: file.size, type: item.type, checksum: item.checksum,
       });
       let ticket = await request<UploadTicket>(`/v1/courses/${courseId}/uploads`, user.id, body(item.requestId), 'POST');

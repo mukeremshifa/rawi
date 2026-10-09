@@ -6,11 +6,21 @@ import * as materialService from '../services/materials';
 import * as uploadService from '../services/uploads';
 import * as conversion from '../services/conversion';
 import { limits } from '../services/storage';
+import * as outline from '../services/outline/outline';
+import * as jobs from '../services/outline/jobs';
+import { coversInput } from '../../shared/contracts/outline';
 import { jsonInput, type BackendContext } from '../http';
 
 export const materialsRoutes = new Hono<BackendContext>();
 materialsRoutes.get('/courses/:id/materials', async c => c.json(await materialService.listMaterials(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), materialListInput.parse(c.req.query()))));
-materialsRoutes.post('/courses/:id/materials', async c => c.json(await materialService.createMaterial(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, createMaterialInput), limits(c.env).text)));
+materialsRoutes.post('/courses/:id/materials', async c => {
+  const courseId = uuid.parse(c.req.param('id'));
+  const material = await materialService.createMaterial(c.get('socket'), c.get('workspaceId'), courseId, await jsonInput(c, createMaterialInput), limits(c.env).text);
+  c.executionCtx.waitUntil(jobs.runCourseJobs(c.env, { workspaceId: c.get('workspaceId'), courseId }));
+  return c.json(material);
+});
+materialsRoutes.get('/materials/:id/covers', async c => c.json(await outline.getCovers(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
+materialsRoutes.post('/materials/:id/covers', async c => c.json(await outline.changeCovers(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, coversInput))));
 materialsRoutes.get('/materials/:id', async c => c.json(await materialService.materialDetail(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
 materialsRoutes.patch('/materials/:id', async c => c.json(await materialService.patchMaterial(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, materialPatch))));
 materialsRoutes.get('/materials/:id/versions', async c => {
@@ -49,7 +59,10 @@ materialsRoutes.get('/uploads/:id', async c => c.json(await uploadService.getUpl
 materialsRoutes.post('/uploads/:id/finalize', async c => {
   const upload = await uploadService.finalize(c.get('socket'), c.env, c.get('workspaceId'), uuid.parse(c.req.param('id')));
   // Conversion starts outside the publish transaction. The cron sweep catches anything this misses.
-  if (upload.state === 'ready' && upload.resultVersionId) c.executionCtx.waitUntil(conversion.advance(c.env, upload.resultVersionId));
+  if (upload.state === 'ready' && upload.resultVersionId) {
+    c.executionCtx.waitUntil(conversion.advance(c.env, upload.resultVersionId));
+    c.executionCtx.waitUntil(jobs.runCourseJobs(c.env, { workspaceId: c.get('workspaceId'), courseId: upload.courseId }));
+  }
   return c.json(upload);
 });
 materialsRoutes.post('/materials/:id/versions/:versionId/download', async c => c.json(await uploadService.download(c.get('db'), c.env, c.get('workspaceId'), uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')))));
