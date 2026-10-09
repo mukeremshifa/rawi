@@ -146,7 +146,8 @@ function AddMaterialSheet({ courseId, topics, open, onOpenChange, onSaved }: {
   const [submitted, setSubmitted] = useState<z.infer<typeof createMaterialInput> | null>(null);
   const [invalid, setInvalid] = useState('');
   const save = useSave();
-  const upload = useUpload(courseId, state => { reset(); onSaved(state.materialId); });
+  // A finished upload is saved, so leaving the sheet must not warn about unsaved work.
+  const upload = useUpload(courseId, state => { allow(); reset(); onSaved(state.materialId); });
   const allow = useUnsentGuard(open && (!!fields.title || !!text || fields.topicIds.length > 0) || !!submitted);
   const reset = () => { setFields({ title: '', kind: 'reading', attribution: '', topicIds: [] }); setText(''); setSubmitted(null); setCreateId(crypto.randomUUID()); upload.setFile(null); };
   const titleOk = fields.title.trim().length > 0;

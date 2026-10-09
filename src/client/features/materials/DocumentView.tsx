@@ -129,7 +129,7 @@ export function DocumentBlocks({ blocks, pagination, assetUrl, highlight, aside,
         return (
           <Fragment key={block.id}>
             {label && <p className="rawi-page-label" aria-label={label}>{label}</p>}
-            <div id={`block-${block.id}`} data-block={block.type} className={cn('rawi-block group relative scroll-mt-24', highlight === block.id && 'rawi-highlight')}>
+            <div id={`block-${block.id}`} data-block={block.type} dir="auto" className={cn('rawi-block group relative scroll-mt-24', highlight === block.id && 'rawi-highlight')}>
               <BlockView block={block} assetUrl={assetUrl} />
               {aside?.(block)}
             </div>
