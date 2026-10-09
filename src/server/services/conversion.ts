@@ -6,6 +6,8 @@ import { ApiError, conflict, notFound } from '../errors';
 import { hash, insertBlocks, MAX_CONVERSION_ATTEMPTS, ownVersion, prepareBlocks, publicVersion } from './materials';
 import { mimeTypes, storageDeadline } from './storage';
 import { collectImages, mapDocument, DATALAB_ADAPTER_VERSION, type DatalabResult } from './documents/datalab';
+import { afterVersionReady } from './outline/queue';
+import { courseJobsDue, runCourseJobs } from './outline/jobs';
 
 /**
  * Asynchronous conversion jobs for PDF, DOCX and PPTX versions.
@@ -45,9 +47,16 @@ export function conversionDue(row: Pick<Version, 'adapter' | 'status' | 'leaseEx
 export async function advance(env: BackendBindings, versionId: string) {
   if (!env.DATABASE_URL) return;
   const connection = socketDb(env.DATABASE_URL);
-  try { await step(connection.db, env, versionId); }
+  let scope: { workspaceId: string; courseId: string } | null = null;
+  try {
+    await step(connection.db, env, versionId);
+    // A version that just became readable may have queued an outline job.
+    const [row] = await connection.db.select({ workspaceId: materialVersions.workspaceId, courseId: materialVersions.courseId, status: materialVersions.status }).from(materialVersions).where(eq(materialVersions.id, versionId));
+    if (row && (row.status === 'ready' || row.status === 'partial') && await courseJobsDue(connection.db, row)) scope = row;
+  }
   catch (error) { console.log(JSON.stringify({ operation: 'conversion', versionId, error: error instanceof ApiError ? error.code : 'unexpected' })); }
   finally { await connection.close(); }
+  if (scope) await runCourseJobs(env, scope);
 }
 
 /** The cron safety net: pending submissions and processing polls that are due. */
@@ -192,6 +201,7 @@ async function complete(db: SocketDb, env: BackendBindings, row: Version, token:
       const [existing] = await tx.select({ n: sql<number>`count(*)::int` }).from(blocks).where(eq(blocks.versionId, row.id));
       if (existing?.n) throw new ApiError(409, 'already_converted', 'This version already has blocks.');
       if (status !== 'failed') await insertBlocks(tx, { workspaceId: row.workspaceId, courseId: row.courseId, materialId: row.materialId, versionId: row.id }, prepared.blocks);
+      if (status !== 'failed' && prepared.blocks.length) await afterVersionReady(tx, row);
       await tx.update(materialVersions).set({ status, failure: status === 'failed' ? MESSAGES.nothing : null, failedPages: mapped.failedPages, warnings, pageCount: mapped.pageCount,
         rawObjectId: stored.find(o => o.role === 'raw')!.id, adapterVersion: DATALAB_ADAPTER_VERSION, leaseToken: null, leaseExpiresAt: null, nextPollAt: null }).where(eq(materialVersions.id, row.id));
     });
