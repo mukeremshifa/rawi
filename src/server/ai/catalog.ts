@@ -39,6 +39,9 @@ export const ROUTES: Route[] = [
   bedrock('qwen3-32b', 'qwen.qwen3-32b-v1:0', { input: 0.15, cacheWrite: 0, cacheRead: 0, output: 0.6 }, { flex: true }),
   bedrock('gpt-oss-20b', 'openai.gpt-oss-20b-1:0', { input: 0.07, cacheWrite: 0, cacheRead: 0, output: 0.3 }, { flex: true, reasoning: 'gpt-oss-low' }),
   bedrock('gpt-oss-120b', 'openai.gpt-oss-120b-1:0', { input: 0.15, cacheWrite: 0, cacheRead: 0, output: 0.6 }, { flex: true, reasoning: 'gpt-oss-low' }),
+  // Priced from the AWS Price List API on 10 October 2026. Where the list shows two regional
+  // figures the higher one is used, so the meter overestimates rather than under.
+  bedrock('mistral-large-3', 'mistral.mistral-large-3-675b-instruct', { input: 0.5, cacheWrite: 0, cacheRead: 0, output: 1.5 }),
   bedrock('nova-lite', 'us.amazon.nova-lite-v1:0', { input: 0.06, cacheWrite: 0, cacheRead: 0.015, output: 0.24 }, { cache: 'explicit', vision: true }),
   bedrock('nova-micro', 'us.amazon.nova-micro-v1:0', { input: 0.035, cacheWrite: 0, cacheRead: 0.00875, output: 0.14 }, { cache: 'explicit' }),
   vertex('gemini-2.5-flash-lite', 'gemini-2.5-flash-lite', { input: 0.1, cacheWrite: 0, cacheRead: 0.01, output: 0.4 }),
@@ -56,7 +59,13 @@ export const ROUTES: Route[] = [
  * - chat: Qwen3 32B cited and kept the reply format every time, with first tokens under a second.
  * - writer: only Gemini 3.1 Flash-Lite wrote complete, rule-clean question sets.
  * - strong: Gemini 3.5 Flash matched Flash-Lite on every fixture at six times the cost and took
- *   up to 150 seconds, so it is left out.
+ *   up to 150 seconds, so it is left out. Mistral Large 3 passed syllabus, digest and grading
+ *   6 of 6 at about a thousandth of a dollar a call and keeps no prompts, so it leads. It cannot
+ *   write questions (0 of 6). Kimi K3 passed too, at 20 to 40 times the cost and about 5 seconds
+ *   to a first token. DeepSeek V3.2, Nemotron Super 120B and Nova Pro wrote complete question
+ *   sets at most 1 time in 6, so Gemini 3.1 Flash-Lite stays the only writer.
+ * - tutor: no model keeps the reply format reliably (see the tutor trailer), so the choice
+ *   between Qwen3 32B and the others is open until that is fixed.
  * Vertex returned quota errors (429) for Gemini 2.5 Flash-Lite under light load, so Bedrock leads
  * where quality allows.
  */
@@ -64,7 +73,7 @@ export const TIERS: Record<Tier, string[]> = {
   small: ['gpt-oss-20b', 'qwen3-32b', 'gemini-2.5-flash-lite'],
   chat: ['qwen3-32b', 'gemini-2.5-flash-lite', 'gpt-oss-120b'],
   writer: ['gemini-3.1-flash-lite', 'qwen3-32b'],
-  strong: ['gemini-3.1-flash-lite', 'qwen3-32b', 'gpt-oss-120b'],
+  strong: ['mistral-large-3', 'gemini-3.1-flash-lite', 'qwen3-32b', 'gpt-oss-120b'],
   vision: ['gemini-2.5-flash-lite', 'nova-lite'],
   embed: ['text-multilingual-embedding-002'],
 };
