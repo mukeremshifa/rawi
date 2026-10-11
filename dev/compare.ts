@@ -6,6 +6,7 @@
  *
  *   npx tsx dev/compare.ts                      every text route, every case, once
  *   npx tsx dev/compare.ts --routes qwen3-32b,gemini-2.5-flash-lite --cases tutor --repeat 3
+ *   npx tsx dev/compare.ts --pipeline --label baseline --repeat 6   the real pipeline, see pipeline.ts
  */
 import { readFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
@@ -25,7 +26,16 @@ import { SEED_QUESTIONS } from './fixtures/questions';
 import type { BackendBindings } from '../src/server/config';
 
 process.loadEnvFile('.dev.vars');
-const { values: args } = parseArgs({ options: { routes: { type: 'string' }, cases: { type: 'string' }, repeat: { type: 'string', default: '1' }, debug: { type: 'boolean', default: false } } });
+const { values: args } = parseArgs({ options: {
+  routes: { type: 'string' }, cases: { type: 'string' }, repeat: { type: 'string', default: '1' }, debug: { type: 'boolean', default: false },
+  pipeline: { type: 'boolean', default: false }, label: { type: 'string', default: 'latest' }, suites: { type: 'string', default: 'retrieval,tutor,questions,grading' },
+  'tutor-routes': { type: 'string' }, 'grade-routes': { type: 'string' },
+} });
+if (args.pipeline) {
+  const { runPipeline } = await import('./pipeline');
+  await runPipeline({ label: args.label, suites: args.suites.split(','), repeat: Number(args.repeat), tutorRoutes: args['tutor-routes']?.split(','), gradeRoutes: args['grade-routes']?.split(','), debug: args.debug });
+  process.exit(0);
+}
 const adapters = adaptersFor(process.env as unknown as BackendBindings);
 
 /* ── Fixture cases ───────────────────────────────────────────────────────── */

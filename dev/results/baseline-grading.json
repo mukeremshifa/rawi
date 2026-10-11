@@ -1,0 +1,362 @@
+{
+  "label": "baseline-grading",
+  "at": "2026-10-11T00:09:27.480Z",
+  "repeat": 6,
+  "grading": [
+    {
+      "route": "gpt-oss-20b",
+      "runs": 36,
+      "failed": 2,
+      "points": 306,
+      "exact": 287,
+      "within1": 299,
+      "totalAbsError": 26,
+      "items": 102,
+      "falseCredit": 4,
+      "wrongItems": 50,
+      "alternativeShare": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "byType": {
+        "strong": {
+          "exact": 48,
+          "points": 48
+        },
+        "fluent-wrong": {
+          "exact": 48,
+          "points": 48
+        },
+        "off-topic": {
+          "exact": 48,
+          "points": 48
+        },
+        "partial": {
+          "exact": 41,
+          "points": 54
+        },
+        "keyword-stuffed": {
+          "exact": 48,
+          "points": 54
+        },
+        "alternative": {
+          "exact": 54,
+          "points": 54
+        }
+      },
+      "ms": [
+        3143,
+        3759,
+        2234,
+        2753,
+        2411,
+        2993,
+        2850,
+        4097,
+        5191,
+        2074,
+        1092,
+        2726,
+        3020,
+        4085,
+        2714,
+        2018,
+        1747,
+        5986,
+        2657,
+        3593,
+        2289,
+        3257,
+        1776,
+        2863,
+        2627,
+        3357,
+        1191,
+        3018,
+        2540,
+        2965,
+        2319,
+        3925,
+        2720,
+        2702,
+        1108,
+        1874
+      ],
+      "micros": 9869
+    },
+    {
+      "route": "qwen3-32b",
+      "runs": 36,
+      "failed": 6,
+      "points": 270,
+      "exact": 222,
+      "within1": 256,
+      "totalAbsError": 62,
+      "items": 90,
+      "falseCredit": 13,
+      "wrongItems": 44,
+      "alternativeShare": [
+        1,
+        0.8333333333333334,
+        1,
+        0.6666666666666666,
+        1,
+        1,
+        1,
+        1,
+        0.8333333333333334,
+        1,
+        1,
+        1,
+        1,
+        0.8333333333333334,
+        1,
+        1
+      ],
+      "byType": {
+        "strong": {
+          "exact": 42,
+          "points": 42
+        },
+        "fluent-wrong": {
+          "exact": 42,
+          "points": 42
+        },
+        "off-topic": {
+          "exact": 42,
+          "points": 42
+        },
+        "partial": {
+          "exact": 30,
+          "points": 48
+        },
+        "keyword-stuffed": {
+          "exact": 23,
+          "points": 48
+        },
+        "alternative": {
+          "exact": 43,
+          "points": 48
+        }
+      },
+      "ms": [
+        2609,
+        3261,
+        2857,
+        2214,
+        2933,
+        2877,
+        1054,
+        2801,
+        2546,
+        2432,
+        2431,
+        2329,
+        2510,
+        2126,
+        3224,
+        3364,
+        2547,
+        2547,
+        2269,
+        2366,
+        2132,
+        3096,
+        2396,
+        2344,
+        2450,
+        2085,
+        3941,
+        2814,
+        2404,
+        2426,
+        2374,
+        1770,
+        2523,
+        2505,
+        2378,
+        2489
+      ],
+      "micros": 18065
+    },
+    {
+      "route": "mistral-large-3",
+      "runs": 36,
+      "failed": 0,
+      "points": 324,
+      "exact": 291,
+      "within1": 324,
+      "totalAbsError": 33,
+      "items": 108,
+      "falseCredit": 15,
+      "wrongItems": 54,
+      "alternativeShare": [
+        0.8333333333333334,
+        1,
+        1,
+        0.8333333333333334,
+        0.8333333333333334,
+        1,
+        0.8333333333333334,
+        1,
+        1,
+        0.8333333333333334,
+        1,
+        1,
+        0.8333333333333334,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "byType": {
+        "strong": {
+          "exact": 54,
+          "points": 54
+        },
+        "fluent-wrong": {
+          "exact": 54,
+          "points": 54
+        },
+        "off-topic": {
+          "exact": 54,
+          "points": 54
+        },
+        "partial": {
+          "exact": 42,
+          "points": 54
+        },
+        "keyword-stuffed": {
+          "exact": 39,
+          "points": 54
+        },
+        "alternative": {
+          "exact": 48,
+          "points": 54
+        }
+      },
+      "ms": [
+        3315,
+        28232,
+        3343,
+        3659,
+        2730,
+        3166,
+        3611,
+        3964,
+        3444,
+        4204,
+        3905,
+        4365,
+        3280,
+        4369,
+        5036,
+        3931,
+        3089,
+        3334,
+        26128,
+        4526,
+        2984,
+        4516,
+        3514,
+        3523,
+        3292,
+        3102,
+        3193,
+        4102,
+        3764,
+        4118,
+        3250,
+        3244,
+        3514,
+        3655,
+        2150,
+        2986
+      ],
+      "micros": 56463
+    },
+    {
+      "route": "gemini-2.5-flash-lite",
+      "runs": 36,
+      "failed": 20,
+      "points": 144,
+      "exact": 128,
+      "within1": 132,
+      "totalAbsError": 28,
+      "items": 48,
+      "falseCredit": 5,
+      "wrongItems": 25,
+      "alternativeShare": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "byType": {
+        "strong": {
+          "exact": 27,
+          "points": 27
+        },
+        "fluent-wrong": {
+          "exact": 27,
+          "points": 27
+        },
+        "off-topic": {
+          "exact": 27,
+          "points": 27
+        },
+        "partial": {
+          "exact": 14,
+          "points": 21
+        },
+        "keyword-stuffed": {
+          "exact": 12,
+          "points": 21
+        },
+        "alternative": {
+          "exact": 21,
+          "points": 21
+        }
+      },
+      "ms": [
+        3714,
+        2379,
+        2604,
+        2215,
+        2246,
+        2348,
+        2097,
+        2381,
+        2619,
+        2265,
+        2397,
+        2410,
+        2182,
+        2472,
+        3106,
+        2227
+      ],
+      "micros": 6312
+    }
+  ]
+}

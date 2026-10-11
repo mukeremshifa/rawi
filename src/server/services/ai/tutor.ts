@@ -165,7 +165,7 @@ export async function streamReply(env: BackendBindings, workspaceId: string, ses
   await summariseOlder(env, workspaceId, sessionId).catch(() => undefined);
 }
 
-async function prepare(env: BackendBindings, ctx: CallContext, sessionId: string, saved: { text: string; action: Action; sessionRevision: number }) {
+export async function prepare(env: BackendBindings, ctx: CallContext, sessionId: string, saved: { text: string; action: Action; sessionRevision: number }) {
   const { db, workspaceId } = ctx;
   const [session] = await db.select().from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, sessionId)));
   if (!session || session.archived || session.endedAt) throw new ApiError(409, 'session_closed', 'This session is closed.');
