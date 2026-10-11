@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { pgTable, date, text, boolean, timestamp, uuid, integer, bigint, jsonb, unique, index, foreignKey, primaryKey, check, vector, customType, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { AiPolicy, CallState, Language, ServiceTier, Usage, Validation, Vendor } from '../ai/types';
-import type { PoolQuestion, PoolVerification } from '../services/knowledge/types';
+import type { KnowledgeCoverage, PoolQuestion, PoolVerification } from '../services/knowledge/types';
 import type { PreferenceFields } from '../../shared/contracts/workspace';
 import type { VersionedQuestion, LearningAttempt, FlashcardReview } from '../../shared/contracts/learning';
 import type { AnswerValue } from '../../shared/domain/types';
@@ -399,15 +399,22 @@ const versionFk = (t: { workspaceId: AnyPgColumn; courseId: AnyPgColumn; materia
 export const ingestJobs = pgTable('ingest_jobs', {
   id: uuid('id').primaryKey(), ...versionScope(),
   state: text('state').$type<'queued' | 'running' | 'done' | 'failed' | 'superseded'>().notNull().default('queued'),
-  stage: text('stage').$type<'chunk' | 'embed' | 'digest' | 'figures' | 'done'>().notNull().default('chunk'),
+  stage: text('stage').$type<'chunk' | 'embed' | 'digest' | 'figures' | 'repair' | 'done'>().notNull().default('chunk'),
   progress: jsonb('progress').$type<{ cursor: number }>().notNull().default({ cursor: 0 }),
+  // Searchable once every block is in a chunk. Enriched once embeddings, the digest and figure
+  // descriptions are complete too. Coverage says what is missing, so a gap is never hidden.
+  readiness: text('readiness').$type<'pending' | 'searchable' | 'enriched'>().notNull().default('pending'),
+  coverage: jsonb('coverage').$type<KnowledgeCoverage>().notNull().default({}),
+  // The chunking and embedding configuration the layer was built with. A change rebuilds it.
+  indexVersion: text('index_version').notNull().default(''),
   leaseToken: uuid('lease_token'), leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
   attempts: integer('attempts').notNull().default(0), nextRunAt: timestamp('next_run_at', { withTimezone: true }),
   failure: text('failure'), ...timestamps(),
 }, t => [
   unique('ingest_jobs_version_unique').on(t.versionId), versionFk(t), index('ingest_jobs_due_idx').on(t.state, t.nextRunAt),
   check('ingest_jobs_state_valid', sql`${t.state} in ('queued', 'running', 'done', 'failed', 'superseded')`),
-  check('ingest_jobs_stage_valid', sql`${t.stage} in ('chunk', 'embed', 'digest', 'figures', 'done')`),
+  check('ingest_jobs_stage_valid', sql`${t.stage} in ('chunk', 'embed', 'digest', 'figures', 'repair', 'done')`),
+  check('ingest_jobs_readiness_valid', sql`${t.readiness} in ('pending', 'searchable', 'enriched')`),
 ]);
 /** Retrieval units: consecutive blocks of one section, searched by text and by embedding. */
 export const knowledgeChunks = pgTable('knowledge_chunks', {
@@ -416,7 +423,12 @@ export const knowledgeChunks = pgTable('knowledge_chunks', {
   sectionBlockId: uuid('section_block_id'), heading: text('heading').notNull(), blockIds: jsonb('block_ids').$type<string[]>().notNull(),
   text: text('text').notNull(), language: text('language').$type<Language>().notNull(), tokens: integer('tokens').notNull(),
   search: tsvector('search').notNull(), embedding: vector('embedding', { dimensions: 768 }), embeddingModel: text('embedding_model'),
+  // `figure` is a generated description of a figure, never the material's own words.
+  kind: text('kind').$type<'text' | 'figure'>().notNull().default('text'),
+  // Conversion was unsure of some text here, so it is not used to write questions.
+  uncertain: boolean('uncertain').notNull().default(false),
 }, t => [
+  check('knowledge_chunks_kind_valid', sql`${t.kind} in ('text', 'figure')`),
   versionFk(t), unique('knowledge_chunks_order_unique').on(t.versionId, t.ordinal),
   index('knowledge_chunks_scope_idx').on(t.workspaceId, t.courseId, t.versionId),
   index('knowledge_chunks_search_idx').using('gin', t.search),

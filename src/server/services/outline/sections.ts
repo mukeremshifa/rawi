@@ -9,13 +9,13 @@ import { blockMarkdown, spansText } from '../../../shared/domain/document-text';
  * up to the next heading at its level or above. Content before the first
  * heading is the lead section, with no heading block.
  */
-export type SectionBlock = BlockBody & { id: string; ordinal: number; parentId: string | null };
+export type SectionBlock = BlockBody & { id: string; ordinal: number; parentId: string | null; flags?: { uncertain?: boolean; interpreted?: boolean } };
 export interface Section { headingBlockId: string | null; heading: string; level: number; blockIds: string[]; firstBlockId: string | null }
 
 export const normalHeading = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
 export async function versionBlocks(db: ReadDb | SocketDb | Transaction, workspaceId: string, versionId: string): Promise<SectionBlock[]> {
-  return await db.select({ id: blocks.id, ordinal: blocks.ordinal, parentId: blocks.parentId, type: blocks.type, content: blocks.content })
+  return await db.select({ id: blocks.id, ordinal: blocks.ordinal, parentId: blocks.parentId, type: blocks.type, content: blocks.content, flags: blocks.flags })
     .from(blocks).where(and(eq(blocks.workspaceId, workspaceId), eq(blocks.versionId, versionId))).orderBy(asc(blocks.ordinal)) as SectionBlock[];
 }
 

@@ -43,6 +43,13 @@
       "when": 1791584151724,
       "tag": "0005_tutor_history",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791677770432,
+      "tag": "0006_knowledge_readiness",
+      "breakpoints": true
     }
   ]
 }

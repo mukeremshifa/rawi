@@ -108,12 +108,12 @@ async function rebuildKnowledge(db: Db, c: Corpus) {
   await drain();
   for (const m of replaced) await db.update(s.materials).set({ currentVersionId: m.versions.at(-1)! }).where(eq(s.materials.id, m.id));
   await drain();
-  const jobs = await db.select({ state: s.ingestJobs.state, stage: s.ingestJobs.stage, failure: s.ingestJobs.failure }).from(s.ingestJobs).where(eq(s.ingestJobs.workspaceId, c.workspaceId));
+  const jobs = await db.select({ state: s.ingestJobs.state, stage: s.ingestJobs.stage, failure: s.ingestJobs.failure, readiness: s.ingestJobs.readiness }).from(s.ingestJobs).where(eq(s.ingestJobs.workspaceId, c.workspaceId));
   const spend = await spent(db, c.workspaceId, from);
   const [chunks] = await db.select({ n: sql<number>`count(*)::int`, embedded: sql<number>`count(embedding)::int` }).from(s.knowledgeChunks).where(eq(s.knowledgeChunks.workspaceId, c.workspaceId));
   // Coverage: how much of each current version's block text is present in some chunk.
   const coverage = await blockCoverage(db, c);
-  return { ms: Date.now() - started, micros: spend.micros, calls: spend.calls, jobs: jobs.map(j => `${j.state}/${j.stage}${j.failure ? `:${j.failure}` : ''}`), chunks: chunks!.n, embedded: chunks!.embedded, coverage };
+  return { ms: Date.now() - started, micros: spend.micros, calls: spend.calls, jobs: jobs.map(j => `${j.state}/${j.stage}/${j.readiness}${j.failure ? `:${j.failure}` : ''}`), chunks: chunks!.n, embedded: chunks!.embedded, coverage };
 }
 
 /**

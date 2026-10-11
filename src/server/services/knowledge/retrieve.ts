@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { figureDescriptions, knowledgeChunks, knowledgeSections, materials, materialVersions, sectionLinks } from '../../db/schema';
+import { knowledgeChunks, knowledgeSections, materials, materialVersions, sectionLinks } from '../../db/schema';
 import type { BackendBindings } from '../../config';
 import { embed, type CallContext } from '../../ai/engine';
 import type { Language } from '../../ai/types';
@@ -81,20 +81,16 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { c
   if (!picked.length) return { passages: [], sufficient: false, via };
 
   const versionIds = [...new Set(picked.map(p => p.versionId))];
-  const [titles, summaries, figures] = await Promise.all([
+  // Figure descriptions are chunks of their own, labelled in their text as generated.
+  const [titles, summaries] = await Promise.all([
     db.select({ id: materials.id, title: materials.title }).from(materials).where(inArray(materials.id, [...new Set(picked.map(p => p.materialId))])),
     db.select({ versionId: knowledgeSections.versionId, sectionBlockId: knowledgeSections.sectionBlockId, summary: knowledgeSections.summary }).from(knowledgeSections).where(inArray(knowledgeSections.versionId, versionIds)),
-    db.select({ blockId: figureDescriptions.blockId, description: figureDescriptions.description }).from(figureDescriptions).where(and(inArray(figureDescriptions.versionId, versionIds), sql`${figureDescriptions.description} <> ''`)),
   ]);
-  const passages = picked.map((r, i) => {
-    const described = r.blockIds.flatMap(id => figures.find(f => f.blockId === id)?.description ?? []);
-    return {
-      id: `p${i + 1}`, materialId: r.materialId, versionId: r.versionId, blockIds: r.blockIds,
-      materialTitle: titles.find(t => t.id === r.materialId)?.title ?? '', heading: r.heading,
-      text: described.length ? `${r.text}\n\n${described.map(d => `[Figure description: ${d}]`).join('\n')}` : r.text,
-      sectionSummary: summaries.find(s => s.versionId === r.versionId && s.sectionBlockId === r.sectionBlockId)?.summary ?? null,
-    };
-  });
+  const passages = picked.map((r, i) => ({
+    id: `p${i + 1}`, materialId: r.materialId, versionId: r.versionId, blockIds: r.blockIds,
+    materialTitle: titles.find(t => t.id === r.materialId)?.title ?? '', heading: r.heading, text: r.text,
+    sectionSummary: summaries.find(s => s.versionId === r.versionId && s.sectionBlockId === r.sectionBlockId)?.summary ?? null,
+  }));
   return { passages, sufficient, via };
 }
 

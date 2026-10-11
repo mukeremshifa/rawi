@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { BackendBindings } from '../../config';
 import { transaction, type SocketDb } from '../../db/client';
-import { aiOperations, knowledgeChunks, knowledgeFacts, knowledgeSections, learningSets, materials, questionPool, questionSources, questionVersions, sectionLinks, setItems, topics } from '../../db/schema';
+import { aiOperations, knowledgeFacts, knowledgeSections, learningSets, materials, questionPool, questionSources, questionVersions, sectionLinks, setItems, topics } from '../../db/schema';
 import { ApiError } from '../../errors';
 import { run, type CallContext, type Task } from '../../ai/engine';
 import { DATA_RULE, escapeTags, house, parsed, schemaOf } from '../../ai/style';
@@ -16,6 +16,7 @@ import { hash } from '../materials';
 import { bumpPlanner } from '../planning';
 import { blockTopics, sectionTopic } from '../outline/links';
 import { sections as versionSections, versionBlocks } from '../outline/sections';
+import { blockMarkdown } from '../../../shared/domain/document-text';
 import type { PoolFormat, PoolQuestion, PoolVerification } from '../knowledge/types';
 
 export const QUESTIONS_PROMPT_VERSION = 'questions-v1';
@@ -166,14 +167,14 @@ export async function generateSet(env: BackendBindings, db: SocketDb, workspaceI
 async function fillPool(env: BackendBindings, ctx: CallContext, courseId: string, format: PoolFormat, short: { section: Section; difficulty: Difficulty; count: number; key: string }[]) {
   const { db } = ctx;
   const versionIds = [...new Set(short.map(s => s.section.versionId))];
-  const [facts, chunks, titles] = await Promise.all([
+  const [facts, versions, titles] = await Promise.all([
     db.select().from(knowledgeFacts).where(inArray(knowledgeFacts.versionId, versionIds)),
-    db.select({ versionId: knowledgeChunks.versionId, blockIds: knowledgeChunks.blockIds, text: knowledgeChunks.text }).from(knowledgeChunks).where(inArray(knowledgeChunks.versionId, versionIds)),
+    Promise.all(versionIds.map(id => versionBlocks(db, ctx.workspaceId, id))),
     db.select({ id: materials.id, title: materials.title }).from(materials).where(inArray(materials.id, [...new Set(short.map(s => s.section.materialId))])),
   ]);
-  // Block text comes from the chunks, split back to blocks by the chunk's own order.
+  // Each block's own text, whole. Text conversion was unsure of is not used to write questions.
   const blockText = new Map<string, string>();
-  for (const c of chunks) { const parts = c.text.split('\n\n'); c.blockIds.forEach((id, i) => blockText.set(id, parts[i] ?? '')); }
+  for (const b of versions.flat()) if (b.type !== 'heading' && !b.flags?.uncertain) blockText.set(b.id, blockMarkdown(b));
   const keys = new Map<string, { blockId: string; target: number }>();
   let n = 0;
   const targets: Target[] = short.map((p, t) => ({

@@ -19,3 +19,22 @@ export interface PoolVerification {
   rules: string[];
   checker: { model: string; supported: boolean; answerCorrect: boolean; reason: string } | null;
 }
+
+/**
+ * What a version's knowledge layer holds against what it should. Counts are blocks, chunks,
+ * sections and figures. Warnings name what conversion was unsure of, by code.
+ */
+export interface KnowledgeCoverage {
+  blocks?: number;
+  chunked?: number;
+  chunks?: number;
+  embedded?: number;
+  sections?: number;
+  digested?: number;
+  figures?: number;
+  described?: number;
+  /** Figures with an image that no description has been tried for, such as without storage. */
+  undescribed?: number;
+  uncertainBlocks?: number;
+  warnings?: string[];
+}
