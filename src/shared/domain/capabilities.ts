@@ -1,11 +1,4 @@
-import type {
-  ActivityType,
-  StudyMaterial,
-  Question,
-  QuestionFormat,
-  SessionActivity,
-  StudyTopic,
-} from './types';
+import type { ActivityType, StudyMaterial, SessionActivity, StudyTopic } from './types';
 
 /** Material whose current version converted to readable blocks. */
 export function isUsableMaterial(material: StudyMaterial): boolean {
@@ -45,59 +38,28 @@ export function materialsForTopic(topic: StudyTopic, materials: StudyMaterial[])
  * of them is the only way that holds as any of them changes.
  */
 
-/** The question formats each practice activity draws on. */
-export const ACTIVITY_QUESTION_FORMATS: Record<ActivityType, QuestionFormat[]> = {
-  flashcards: ['flashcard'],
-  quiz: ['multiple-choice', 'multiple-select', 'matching', 'ordering', 'fill-blank'],
-  'written-recall': ['written-recall'],
-  'source-analysis': ['source-analysis'],
-  essay: ['essay'],
-};
 
 export interface TopicCapabilities {
   /** Readable course material relates to this topic, so the tutor can teach it. */
   tutor: boolean;
   /** A readable material in this course is linked to the topic. */
   read: boolean;
-  /** Practice activities that have at least one matching question. */
+  /** Practice activities possible now. Questions are made from readable material on demand. */
   activities: ActivityType[];
-  /** Any question at all, in any format. */
+  /** Any question can be practised. */
   anyQuestion: boolean;
 }
 
+const ALL_ACTIVITIES: ActivityType[] = ['quiz', 'flashcards', 'self-check'];
+
 /**
- * What is possible for one topic.
- *
- * `questions` and `materials` should already be this topic's course. Passing a
- * wider pool would let a history topic report that it can be practised because
- * a statistics question happens to match, which is the leak the course scoping
- * exists to prevent.
+ * What is possible for one topic. Questions are drawn or made from the topic's readable material
+ * when practice starts, so readable material is what makes practice possible. `materials` should
+ * already be this topic's course.
  */
-export function topicCapabilities(
-  topic: StudyTopic,
-  questions: Question[],
-  materials: StudyMaterial[],
-): TopicCapabilities {
-  const topicId = topic.id;
-  const forTopic = questions.filter((q) => q.topicId === topicId);
-  const formats = new Set(forTopic.map((q) => q.format));
-
-  const activities = (
-    Object.keys(ACTIVITY_QUESTION_FORMATS) as ActivityType[]
-  ).filter((activity) =>
-    ACTIVITY_QUESTION_FORMATS[activity].some((format) => formats.has(format)),
-  );
-
-  return {
-    tutor: materialsForTopic(topic, materials).length > 0,
-    read: materials.some(
-      (m) =>
-        isUsableMaterial(m) &&
-        m.topicIds.includes(topicId),
-    ),
-    activities,
-    anyQuestion: forTopic.length > 0,
-  };
+export function topicCapabilities(topic: StudyTopic, materials: StudyMaterial[]): TopicCapabilities {
+  const readable = materialsForTopic(topic, materials).length > 0;
+  return { tutor: readable, read: readable, activities: readable ? ALL_ACTIVITIES : [], anyQuestion: readable };
 }
 
 /**
@@ -169,19 +131,8 @@ export function substitutionNote(
 export const NO_CONTENT_REASON =
   'There is no readable material or question behind this topic yet, so there is nothing to study it with. Add a reading or link this topic to material first.';
 
-/**
- * What is possible for one material, for work that is not in the outline.
- * The tutor and reading need its current version to be readable, and
- * practice needs questions whose source is this material.
- */
-export function materialCapabilities(material: StudyMaterial, questions: Question[]): TopicCapabilities {
-  const own = questions.filter((q) => q.source?.materialId === material.id);
-  const formats = new Set(own.map((q) => q.format));
+/** What is possible for one material, for work that is not in the outline. */
+export function materialCapabilities(material: StudyMaterial): TopicCapabilities {
   const usable = isUsableMaterial(material);
-  return {
-    tutor: usable,
-    read: usable,
-    activities: (Object.keys(ACTIVITY_QUESTION_FORMATS) as ActivityType[]).filter((activity) => ACTIVITY_QUESTION_FORMATS[activity].some((format) => formats.has(format))),
-    anyQuestion: own.length > 0,
-  };
+  return { tutor: usable, read: usable, activities: usable ? ALL_ACTIVITIES : [], anyQuestion: usable };
 }

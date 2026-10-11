@@ -84,16 +84,18 @@ export interface StudyMaterial {
 
 /* ── Questions ────────────────────────────────────────────────────────── */
 
+/**
+ * Every format is marked by code except two the student marks: a flashcard is rated for recall,
+ * and a self-check answer is compared with a model answer. Nothing is marked by a model.
+ */
 export type QuestionFormat =
   | 'flashcard'
   | 'multiple-choice'
-  | 'multiple-select'
-  | 'matching'
+  | 'numeric'
+  | 'cloze'
   | 'ordering'
-  | 'fill-blank'
-  | 'written-recall'
-  | 'source-analysis'
-  | 'essay';
+  | 'matching'
+  | 'self-check';
 
 export type Difficulty = 'recall' | 'reasoning' | 'stretch';
 
@@ -125,24 +127,22 @@ export interface Question {
   /** Marks this question is worth in an exam. Practice ignores it. */
   marks: number;
   prompt: string;
-  /** Flashcard back, or the model answer's headline for other formats. */
+  /** Flashcard back, or the model answer a self-check is compared with. */
   answer?: string;
-  /** multiple-choice / multiple-select. */
+  /** multiple-choice. */
   options?: string[];
   /** Indices into `options`. One entry for multiple-choice. */
   correctIndices?: number[];
   /** matching. */
   pairs?: MatchPair[];
-  /** ordering — the correct sequence, top to bottom. */
+  /** ordering: the correct sequence, top to bottom. */
   sequence?: string[];
-  /** fill-blank — the text with `___` marking each blank. */
+  /** cloze: the text with `___` marking each blank. */
   template?: string;
-  /** fill-blank — accepted answers per blank, lowercased on comparison. */
+  /** cloze: accepted answers per blank, compared without case. */
   blanks?: string[][];
-  /** source-analysis / essay — the passage or extract the question is about. */
-  extract?: string;
-  /** The rubric points a written answer is marked against. */
-  rubric?: RubricPoint[];
+  /** numeric: the computed answer, how far off still counts, and the unit. */
+  numeric?: { value: number; tolerance: number; unit?: string };
   /** Shown after marking, for every format. */
   explanation: string;
   source?: SourceRef;
@@ -151,31 +151,17 @@ export interface Question {
 }
 
 /**
- * Where a generated question came from. Kept with the question so a saved
- * set can always say which model wrote it and from which material.
+ * How a question was made: built by code from the material's facts, or written by a model and
+ * checked against the source. Kept with the question so a set can say where it came from.
  */
 export interface QuestionProvenance {
-  kind: 'generated';
-  model: string;
+  kind: 'built' | 'generated';
+  /** The model that wrote it, when one did. */
+  model?: string;
   generatedAt: string;
   materialIds: string[];
-  /** The checked pool question it was taken from, so one workspace is not given the same question twice. */
-  poolId?: string;
-}
-
-export interface RubricPoint {
-  id: string;
-  /** What the marker is looking for. Shown to the student after submission. */
-  label: string;
-  marks: number;
-  /**
-   * Lowercased keywords used by the old simulated marker. Kept on authored
-   * questions so historical grades still explain themselves. Generated
-   * questions have none, and new answers are never marked by keyword.
-   */
-  keywords: string[];
-  /** Said when the point was missed. */
-  missedAdvice: string;
+  /** The facts it tests. */
+  factIds?: string[];
 }
 
 /* ── Attempts: the single record of everything a student does ─────────── */
@@ -192,12 +178,7 @@ export interface RubricPoint {
  */
 export type AttemptMode = 'tutored' | 'practice' | 'self-rated' | 'exam';
 
-/**
- * `pending` is a written answer that has been submitted and is waiting for
- * feedback, or whose feedback request failed. It is neither a success nor a
- * failure, and progress ignores it until it is graded.
- */
-export type Outcome = 'correct' | 'partial' | 'incorrect' | 'skipped' | 'pending';
+export type Outcome = 'correct' | 'partial' | 'incorrect' | 'skipped';
 
 export interface QuestionAttempt {
   questionId: string;
@@ -209,26 +190,6 @@ export interface QuestionAttempt {
   marksAwarded: number;
   marksAvailable: number;
   usedHint: boolean;
-  /** Rubric point ids credited, for written formats. */
-  creditedRubricIds?: string[];
-  /**
-   * How a written answer was marked. Absent on written answers from earlier
-   * builds, which were marked by the simulated keyword checker and keep that
-   * grade and that label.
-   */
-  grading?: WrittenGrading;
-}
-
-export interface WrittenGrading {
-  method: 'ai' | 'sample';
-  status: 'pending' | 'graded' | 'failed';
-  model?: string;
-  gradedAt?: string;
-  summary?: string;
-  /** `evidence` quotes the words of the answer that earned the point. */
-  points?: { rubricId: string; awarded: number; max: number; feedback: string; evidence?: string }[];
-  /** The last failure, shown with a retry. The answer itself is never lost. */
-  error?: string;
 }
 
 /** Every shape an answer can take, across every format. */
@@ -239,9 +200,13 @@ export type AnswerValue =
   | { kind: 'blanks'; values: string[] }
   | { kind: 'ordering'; sequence: string[] }
   | { kind: 'matching'; assignments: Record<string, string> }
-  | { kind: 'self-rating'; rating: SelfRating };
+  | { kind: 'number'; value: string }
+  | { kind: 'self-rating'; rating: SelfRating }
+  | { kind: 'self-check'; text: string; mark: SelfMark | null };
 
 export type SelfRating = 'again' | 'hard' | 'good' | 'easy';
+/** How a student marks their own answer against the model answer. */
+export type SelfMark = 'got' | 'partly' | 'missed';
 
 export type AttemptKind = 'practice' | 'exam' | 'tutor';
 
@@ -385,89 +350,13 @@ export interface AnswerReview {
   marksAwarded: number;
   marksAvailable: number;
   usedHint: boolean;
-  pending: boolean;
 }
 
 /* ── Practice ─────────────────────────────────────────────────────────── */
 
-export type ActivityType =
-  | 'flashcards'
-  | 'quiz'
-  | 'written-recall'
-  | 'source-analysis'
-  | 'essay';
+export type ActivityType = 'flashcards' | 'quiz' | 'self-check';
 
 export type FeedbackTiming = 'immediate' | 'end';
-
-export interface PracticeConfig {
-  activity: ActivityType;
-  topicIds: string[];
-  materialIds: string[];
-  /** Number of questions requested. Clamped to the authored pool. */
-  length: number;
-  difficulties: Difficulty[];
-  hintsAllowed: boolean;
-  feedback: FeedbackTiming;
-}
-
-/**
- * A generated practice set, saved the moment it is generated.
- *
- * ── Why the question ids are stored and not re-derived ────────────────────
- *
- * The config is kept so the set can say how it was made, but `questionIds` is
- * what the set *is*. Re-running the filter on each attempt would quietly
- * produce a different set after a material is deleted or a topic renamed, so
- * "another attempt at the same set" would be a different paper. Resolving once
- * and storing the result is what makes repeat attempts comparable.
- */
-export interface SavedPracticeSet {
-  fromTutorId?: string;
-  fromAttemptId?: string;
-  archived?: boolean;
-  id: string;
-  courseId: string;
-  name: string;
-  config: PracticeConfig;
-  /** Resolved at generation. The set's actual content. */
-  questionIds: string[];
-  savedAt: string;
-}
-
-/**
- * Work in progress on a practice set.
- *
- * Separate from the `Attempt` it eventually becomes, because an attempt is a
- * finished record and this is a resumable position: answers so far, which
- * questions have been checked, which flashcards are queued for a second pass.
- * Keeping them apart is what lets a half-finished set survive a reload without
- * appearing in history as a completed attempt.
- */
-export interface PracticeAttemptState {
-  remediatesAttemptId?: string;
-  fromTutorId?: string;
-  id: string;
-  courseId: string;
-  setId: string;
-  /** Resolved at start, so the run is stable even if the set is renamed. */
-  questionIds: string[];
-  answers: Record<string, AnswerValue>;
-  /** Question ids whose answer has been checked and feedback shown. */
-  checkedIds: string[];
-  hintedIds: string[];
-  index: number;
-  /** Flashcards rated `again` or `hard`, queued for a second pass. */
-  revisitIds: string[];
-  secondPass: boolean;
-  hintsAllowed: boolean;
-  feedback: FeedbackTiming;
-  startedAt: string;
-  updatedAt: string;
-  /** Set when this run was started from a planner session. */
-  plannedSessionId?: string;
-  /** Feedback on written answers checked during the run, by question id. */
-  gradings?: Record<string, WrittenGrading>;
-}
 
 /* ── Exams ────────────────────────────────────────────────────────────── */
 

@@ -215,7 +215,7 @@ export function Tutor() {
               <p className="font-serif">{s.review.prompt}</p>
               <div className="rounded-md border bg-card px-3 py-2 font-serif whitespace-pre-wrap">{s.review.response}</div>
               {s.review.feedback && <p className="text-muted-foreground">{s.review.feedback}</p>}
-              <p className="text-muted-foreground text-sm">{s.review.pending ? 'Awaiting feedback' : `${s.review.marksAwarded} of ${s.review.marksAvailable} marks`}{s.review.usedHint ? ' · Hint used' : ''}</p>
+              <p className="text-muted-foreground text-sm">{`${s.review.marksAwarded} of ${s.review.marksAvailable} marks`}{s.review.usedHint ? ' · Hint used' : ''}</p>
             </div>
           </details>
         )}

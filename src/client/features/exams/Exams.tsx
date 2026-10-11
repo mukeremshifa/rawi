@@ -34,7 +34,7 @@ type Config = z.infer<typeof createExamInput>['config'];
 type Section = Config['sections'][number];
 const newSection = (n: number): Section => ({ id: crypto.randomUUID(), title: `Section ${n}`, instructions: '', formats: ['multiple-choice'], topicIds: [], count: 5, minutes: 15 });
 const blank = (): Config => ({ name: '', sections: [newSection(1)], timing: 'overall', totalMinutes: 30, extraTimePercent: 0, book: 'closed', allowedMaterialIds: [], navigation: 'free', flaggingEnabled: true, lockSectionsOnFinish: false });
-const EXAM_FORMATS = formats.filter(f => f !== 'flashcard').map(f => ({ value: f, label: FORMAT_LABEL[f as QuestionFormat] }));
+const EXAM_FORMATS = formats.filter(f => f !== 'flashcard' && f !== 'self-check').map(f => ({ value: f, label: FORMAT_LABEL[f as QuestionFormat] }));
 
 /** Exams: saved rehearsals with Start, and New rehearsal in a sheet. */
 export function Exams() {

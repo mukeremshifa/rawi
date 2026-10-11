@@ -2,16 +2,15 @@ import { sql } from 'drizzle-orm';
 import { pgTable, date, text, boolean, timestamp, uuid, integer, bigint, jsonb, unique, index, foreignKey, primaryKey, check, vector, customType, doublePrecision, real, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { CallState, Language, Limits, ServiceTier, Usage, Validation, Vendor } from '../ai/types';
 import type { Sealed } from '../ai/funding';
-import type { FactKind, IngestStage, KnowledgeCoverage, PoolQuestion, PoolVerification, Readiness } from '../services/knowledge/types';
+import type { FactKind, IngestStage, KnowledgeCoverage, Readiness } from '../services/knowledge/types';
+import type { ItemVerification, NumericTemplate } from '../services/questions/types';
 import type { PreferenceFields } from '../../shared/contracts/workspace';
 import type { VersionedQuestion, LearningAttempt, FlashcardReview } from '../../shared/contracts/learning';
-import type { AnswerValue } from '../../shared/domain/types';
+import type { AnswerValue, Difficulty, QuestionFormat } from '../../shared/domain/types';
 import type { ExamConfig } from '../../shared/domain/types';
 import type { ExamRuntime } from '../../shared/contracts/exams';
 import type { Availability, PlannedAssessment, PlannedSession, PlanProposal, CheckIn } from '../../shared/domain/types';
 import type { TutorSession, TutorMessage, TutorMessageProvenance } from '../../shared/contracts/tutor';
-/** Review summary kept with legacy workspace imports. */
-type ImportReview = { id: string; state: 'review' | 'complete'; courses: number; materials: number; questions: number; sets: number; attempts: number; unsupported: string[]; courseIds?: string[] };
 import type { BlockType, Citation, ConversionStatus, ConversionWarning, Pagination, ParsedBlock } from '../../shared/contracts/document';
 import type { OutlineJobKind, OutlineJobResult, ScopeKind, ScopeSection, TopicDepth, TopicOrigin } from '../../shared/contracts/outline';
 
@@ -202,18 +201,30 @@ export const uploadCandidates = pgTable('upload_candidates', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(), cleanedAt: timestamp('cleaned_at', { withTimezone: true }),
 }, t => [check('candidates_state_valid', sql`${t.state} in ('candidate', 'published', 'deleting')`)]);
 
-export const questionVersions = pgTable('question_versions', {
+/**
+ * Each student's own question bank. An item tests one section of one material, named by key, and
+ * stays valid while that section's text is unchanged, so replacing a material retires only the
+ * questions on what changed. Code builds most items from the section's facts. A model writes the
+ * rest, and only what passes verification is saved. A numeric template is never shown: each
+ * draw computes a fresh variant from it.
+ */
+export const bankItems = pgTable('bank_items', {
   id: uuid('id').primaryKey(), ...materialScope(), content: jsonb('content').$type<VersionedQuestion>().notNull(),
+  materialId: uuid('material_id'), sectionKey: text('section_key'), contentHash: text('content_hash'),
+  factIds: jsonb('fact_ids').$type<string[]>().notNull().default([]),
+  format: text('format').$type<QuestionFormat>().notNull(), difficulty: text('difficulty').$type<Difficulty>().notNull(),
+  origin: text('origin').$type<'built' | 'generated'>().notNull(),
+  state: text('state').$type<'active' | 'template' | 'retired'>().notNull().default('active'),
+  templateId: uuid('template_id'), template: jsonb('template').$type<NumericTemplate>(),
+  verification: jsonb('verification').$type<ItemVerification>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-}, t => [unique('questions_scope_unique').on(t.workspaceId, t.courseId, t.id),
-  foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
-  index('questions_course_idx').on(t.workspaceId, t.courseId, t.id)]);
-export const questionSources = pgTable('question_sources', {
-  ...materialScope(), questionId: uuid('question_id').primaryKey(), materialId: uuid('material_id').notNull(), versionId: uuid('version_id').notNull(),
-  // Validated against the version's blocks on insert. An array cannot carry a foreign key.
-  blockIds: uuid('block_ids').array().notNull(),
-}, t => [foreignKey({ columns: [t.workspaceId, t.courseId, t.questionId], foreignColumns: [questionVersions.workspaceId, questionVersions.courseId, questionVersions.id] }),
-  foreignKey({ columns: [t.workspaceId, t.courseId, t.materialId, t.versionId], foreignColumns: [materialVersions.workspaceId, materialVersions.courseId, materialVersions.materialId, materialVersions.id] })]);
+}, t => [
+  unique('bank_items_scope_unique').on(t.workspaceId, t.courseId, t.id),
+  foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete('cascade'),
+  index('bank_items_draw_idx').on(t.workspaceId, t.materialId, t.sectionKey, t.format, t.state),
+  check('bank_items_state_valid', sql`${t.state} in ('active', 'template', 'retired')`),
+  check('bank_items_origin_valid', sql`${t.origin} in ('built', 'generated')`),
+]);
 export const learningSets = pgTable('learning_sets', {
   id: uuid('id').primaryKey(), ...materialScope(), name: text('name').notNull(), archived: boolean('archived').notNull().default(false),
   revision: integer('revision').notNull().default(1), fingerprint: text('fingerprint').notNull(),
@@ -227,15 +238,16 @@ export const setItems = pgTable('set_items', {
   id: uuid('id').primaryKey(), ...materialScope(), setId: uuid('set_id').notNull(), questionId: uuid('question_id').notNull(), position: integer('position').notNull(),
 }, t => [unique('set_items_scope_unique').on(t.workspaceId, t.courseId, t.setId, t.id), unique('set_items_order_unique').on(t.setId, t.position),
   foreignKey({ columns: [t.workspaceId, t.courseId, t.setId], foreignColumns: [learningSets.workspaceId, learningSets.courseId, learningSets.id] }),
-  foreignKey({ columns: [t.workspaceId, t.courseId, t.questionId], foreignColumns: [questionVersions.workspaceId, questionVersions.courseId, questionVersions.id] })]);
+  foreignKey({ columns: [t.workspaceId, t.courseId, t.questionId], foreignColumns: [bankItems.workspaceId, bankItems.courseId, bankItems.id] })]);
 export const learningRuns = pgTable('learning_runs', {
   id: uuid('id').primaryKey(), ...materialScope(), setId: uuid('set_id').notNull(), title: text('title').notNull(),
   state: text('state').$type<'active' | 'submitted'>().notNull().default('active'), revision: integer('revision').notNull().default(1), position: integer('position').notNull().default(0),
   startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(), completedAt: timestamp('completed_at', { withTimezone: true }),
   plannedSessionId: uuid('planned_session_id'),
-  sampleDataset: text('sample_dataset'),
   flashcardReview: jsonb('flashcard_review').$type<FlashcardReview>(),
   exam: jsonb('exam').$type<ExamRuntime>(), deadlineAt: timestamp('deadline_at', { withTimezone: true }),
+  // The scope a practice run was drawn from, and questions still being written for it.
+  scopeId: uuid('scope_id'), pendingItems: integer('pending_items').notNull().default(0), pendingNote: text('pending_note'),
 }, t => [unique('runs_scope_unique').on(t.workspaceId, t.courseId, t.setId, t.id),
   foreignKey({ name: 'runs_planner_scope_fk', columns: [t.workspaceId, t.courseId, t.plannedSessionId], foreignColumns: [plannedSessions.workspaceId, plannedSessions.courseId, plannedSessions.id] }),
   foreignKey({ columns: [t.workspaceId, t.courseId, t.setId], foreignColumns: [learningSets.workspaceId, learningSets.courseId, learningSets.id] }),
@@ -251,6 +263,23 @@ export const learningAttempts = pgTable('learning_attempts', {
   snapshot: jsonb('snapshot').$type<LearningAttempt>().notNull(), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [unique('attempts_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ columns: [t.workspaceId, t.courseId, t.setId, t.runId], foreignColumns: [learningRuns.workspaceId, learningRuns.courseId, learningRuns.setId, learningRuns.id] }),
   index('attempts_course_idx').on(t.workspaceId, t.courseId, t.id), index('attempts_chronology_idx').on(t.workspaceId, t.courseId, sql`(${t.snapshot}->>'completedAt')`, t.id)]);
+/**
+ * Every marked answer, one row per item and run. Learner state per fact, section and topic is read
+ * from these, and they are trustworthy because code marked them. Self-marked answers say so.
+ */
+export const itemResults = pgTable('item_results', {
+  id: uuid('id').primaryKey(), ...materialScope(), runId: uuid('run_id').notNull(), itemId: uuid('item_id').notNull(),
+  materialId: uuid('material_id'), sectionKey: text('section_key'), factIds: jsonb('fact_ids').$type<string[]>().notNull().default([]),
+  format: text('format').$type<QuestionFormat>().notNull(), mode: text('mode').$type<'practice' | 'exam' | 'self-rated'>().notNull(),
+  score: real('score').notNull(), usedHint: boolean('used_hint').notNull(),
+  at: timestamp('at', { withTimezone: true }).defaultNow().notNull(),
+}, t => [
+  unique('item_results_run_item_unique').on(t.runId, t.itemId),
+  foreignKey({ columns: [t.workspaceId, t.courseId, t.itemId], foreignColumns: [bankItems.workspaceId, bankItems.courseId, bankItems.id] }).onDelete('cascade'),
+  index('item_results_item_idx').on(t.workspaceId, t.itemId, t.at),
+  index('item_results_section_idx').on(t.workspaceId, t.materialId, t.sectionKey, t.at),
+  check('item_results_score_range', sql`${t.score} >= 0 and ${t.score} <= 1`),
+]);
 export const learningOperations = pgTable('learning_operations', {
   workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id), id: uuid('id').notNull(),
   fingerprint: text('fingerprint').notNull(), result: jsonb('result').$type<unknown>().notNull(),
@@ -300,10 +329,6 @@ export const tutorMessages = pgTable('tutor_messages', {
   operationId: uuid('operation_id').notNull().unique(), failure: text('failure'), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   provenance: jsonb('provenance').$type<TutorMessageProvenance>(),
 }, t => [unique('tutor_message_order_unique').on(t.sessionId, t.ordinal), foreignKey({ columns: [t.workspaceId, t.courseId, t.sessionId], foreignColumns: [tutorSessions.workspaceId, tutorSessions.courseId, tutorSessions.id] })]);
-export const workspaceImports = pgTable('workspace_imports', {
-  id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id), fingerprint: text('fingerprint').notNull(),
-  original: jsonb('original').$type<unknown>().notNull(), review: jsonb('review').$type<ImportReview>().notNull(), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-}, t => [unique('imports_deduplicate').on(t.workspaceId, t.fingerprint)]);
 export const reminderStates = pgTable('reminder_states', {
   workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id), key: text('key').notNull(), status: text('status').$type<'read' | 'dismissed'>().notNull(),
 }, t => [primaryKey({ columns: [t.workspaceId, t.key] })]);
@@ -348,13 +373,6 @@ export const developmentSeeds = pgTable('development_seeds', {
   version: text('version').notNull(), anchorDate: date('anchor_date', { mode: 'string' }).notNull(),
   timezone: text('timezone').notNull(), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [primaryKey({ columns: [t.workspaceId, t.version] })]);
-export const developmentSeedRecords = pgTable('development_seed_records', {
-  workspaceId: uuid('workspace_id').notNull(), version: text('version').notNull(), key: text('key').notNull(),
-  entityType: text('entity_type').notNull(), entityId: uuid('entity_id').notNull(),
-  baseline: text('baseline').notNull(), result: jsonb('result').$type<unknown>().notNull(),
-}, t => [primaryKey({ columns: [t.workspaceId, t.version, t.key] }),
-  foreignKey({ columns: [t.workspaceId, t.version], foreignColumns: [developmentSeeds.workspaceId, developmentSeeds.version] }),
-  index('seed_records_entity_idx').on(t.workspaceId, t.entityType, t.entityId)]);
 
 /**
  * Who pays for AI work and on what terms: the platform, an institution's account or quota, or a
@@ -507,17 +525,6 @@ export const figureDescriptions = pgTable('figure_descriptions', {
   blockId: uuid('block_id').primaryKey(), ...versionScope(), description: text('description').notNull(),
   language: text('language').$type<Language>().notNull(), model: text('model').notNull(),
 }, t => [versionFk(t)]);
-/**
- * Checked candidate questions. The key is version, section, format, difficulty and prompt version,
- * never the workspace, so a cohort can share a pool once organisations exist.
- */
-export const questionPool = pgTable('question_pool', {
-  id: uuid('id').primaryKey(), ...versionScope(), sectionBlockId: uuid('section_block_id'),
-  cacheKey: text('cache_key').notNull(), format: text('format').notNull(), difficulty: text('difficulty').notNull(),
-  language: text('language').$type<Language>().notNull(), content: jsonb('content').$type<PoolQuestion>().notNull(),
-  blockIds: jsonb('block_ids').$type<string[]>().notNull(), verification: jsonb('verification').$type<PoolVerification>().notNull(),
-  state: text('state').$type<'verified' | 'rejected'>().notNull(), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-}, t => [versionFk(t), index('question_pool_key_idx').on(t.cacheKey, t.state), check('question_pool_state_valid', sql`${t.state} in ('verified', 'rejected')`)]);
 /**
  * What a student is working on: a topic, a selection of sections, an assessment or the whole
  * course. Tutor sessions and practice take a scope. A scope ranks its sections first and never

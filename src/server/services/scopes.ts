@@ -37,6 +37,16 @@ export async function ensureScope(db: SocketDb, workspaceId: string, courseId: s
     if (!row) throw notFound();
     name = row.content.title;
   } else if (input.kind === 'sections') name = input.name;
+  if (input.kind === 'material') {
+    const list = (await courseSections(db, { workspaceId, courseId })).filter(s => s.materialId === input.materialId);
+    if (!list.length) throw new ApiError(409, 'scope_empty', 'Rawi has not finished reading this material. Try again in a minute.');
+    const sections = list.map(s => ({ materialId: s.materialId, key: s.key }));
+    const same = (await db.select().from(scopes).where(and(own, eq(scopes.kind, 'sections'), eq(scopes.name, list[0]!.title), eq(scopes.archived, false)))).find(r => JSON.stringify(r.sections) === JSON.stringify(sections));
+    if (same) return scopeView(db, workspaceId, same.id);
+    const id = crypto.randomUUID();
+    await db.insert(scopes).values({ id, workspaceId, courseId, name: list[0]!.title, kind: 'sections', sections });
+    return scopeView(db, workspaceId, id);
+  }
   const values = { id: input.kind === 'sections' ? input.id : crypto.randomUUID(), workspaceId, courseId, name, kind: input.kind, topicId: input.kind === 'topic' ? input.topicId : null, assessmentId: input.kind === 'assessment' ? input.assessmentId : null, sections: input.kind === 'sections' ? input.sections : [] };
   await db.insert(scopes).values(values).onConflictDoNothing();
   const [row] = await db.select().from(scopes).where(and(own, input.kind === 'sections' ? eq(scopes.id, input.id) : input.kind === 'topic' ? and(eq(scopes.kind, 'topic'), eq(scopes.topicId, input.topicId)) : input.kind === 'assessment' ? and(eq(scopes.kind, 'assessment'), eq(scopes.assessmentId, input.assessmentId)) : eq(scopes.kind, 'course')));

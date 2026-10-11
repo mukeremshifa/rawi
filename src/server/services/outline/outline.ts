@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
-import { assessments, courses, materialVersions, outlineChanges, outlineJobs, plannedSessions, prerequisites, questionVersions, topics, topicSections, tutorSessions } from '../../db/schema';
+import { assessments, courses, materialVersions, outlineChanges, outlineJobs, plannedSessions, prerequisites, bankItems, topics, topicSections, tutorSessions } from '../../db/schema';
 import type { ReadDb, SocketDb, Transaction } from '../../db/client';
 import type { Citation } from '../../../shared/contracts/document';
 import { type Covers, type OutlineCorrection, type TopicDepth, type TopicOrigin } from '../../../shared/contracts/outline';
@@ -76,7 +76,7 @@ export async function protectedTopics(tx: Transaction, scope: Scope) {
   const own = (table: { workspaceId: AnyPgColumn; courseId: AnyPgColumn }) => and(eq(table.workspaceId, scope.workspaceId), eq(table.courseId, scope.courseId));
   const ids = new Set<string>();
   for (const t of await tx.select({ id: topics.id }).from(topics).where(and(own(topics), or(eq(topics.edited, true), eq(topics.origin, 'student'))))) ids.add(t.id);
-  for (const q of await tx.selectDistinct({ id: sql<string>`${questionVersions.content}->>'topicId'` }).from(questionVersions).where(own(questionVersions))) if (q.id) ids.add(q.id);
+  for (const q of await tx.selectDistinct({ id: sql<string>`${bankItems.content}->>'topicId'` }).from(bankItems).where(own(bankItems))) if (q.id) ids.add(q.id);
   for (const s of await tx.selectDistinct({ id: tutorSessions.topicId }).from(tutorSessions).where(own(tutorSessions))) if (s.id) ids.add(s.id);
   for (const p of await tx.select({ content: plannedSessions.content }).from(plannedSessions).where(own(plannedSessions))) for (const id of p.content.topicIds) ids.add(id);
   for (const a of await tx.select({ content: assessments.content }).from(assessments).where(and(own(assessments), eq(assessments.edited, true)))) for (const id of a.content.topicIds) ids.add(id);
@@ -278,9 +278,9 @@ export async function correctOutline(db: SocketDb, workspaceId: string, courseId
 /** Questions, tutor sessions, planned sessions and assessment coverage follow a merged topic. */
 async function moveReferences(tx: Transaction, scope: Scope, from: string, to: TopicRow, undo: Undo) {
   const own = (table: { workspaceId: AnyPgColumn; courseId: AnyPgColumn }) => and(eq(table.workspaceId, scope.workspaceId), eq(table.courseId, scope.courseId));
-  for (const q of await tx.select().from(questionVersions).where(and(own(questionVersions), sql`${questionVersions.content}->>'topicId' = ${from}`))) {
+  for (const q of await tx.select().from(bankItems).where(and(own(bankItems), sql`${bankItems.content}->>'topicId' = ${from}`))) {
     undo.questions.push({ id: q.id, topicId: q.content.topicId, topicLabel: q.content.topicLabel });
-    await tx.update(questionVersions).set({ content: { ...q.content, topicId: to.id, topicLabel: to.title } }).where(eq(questionVersions.id, q.id));
+    await tx.update(bankItems).set({ content: { ...q.content, topicId: to.id, topicLabel: to.title } }).where(eq(bankItems.id, q.id));
   }
   for (const s of await tx.select().from(tutorSessions).where(and(own(tutorSessions), eq(tutorSessions.topicId, from)))) {
     undo.tutor.push({ id: s.id, topicId: s.topicId, topicLabel: s.topicLabel });
@@ -314,8 +314,8 @@ export async function undoCorrection(db: SocketDb, workspaceId: string, courseId
     for (const t of undo.topics) await tx.insert(topics).values(revive(t)).onConflictDoUpdate({ target: topics.id, set: { title: t.title, summary: t.summary, module: t.module, order: t.order, edited: t.edited, source: t.source, updatedAt: new Date() } });
     if (undo.links.length) await tx.insert(topicSections).values(undo.links.map(l => ({ ...l, createdAt: new Date(l.createdAt) }))).onConflictDoNothing();
     for (const q of undo.questions) {
-      const [row] = await tx.select().from(questionVersions).where(eq(questionVersions.id, q.id));
-      if (row) await tx.update(questionVersions).set({ content: { ...row.content, topicId: q.topicId, topicLabel: q.topicLabel } }).where(eq(questionVersions.id, q.id));
+      const [row] = await tx.select().from(bankItems).where(eq(bankItems.id, q.id));
+      if (row) await tx.update(bankItems).set({ content: { ...row.content, topicId: q.topicId, topicLabel: q.topicLabel } }).where(eq(bankItems.id, q.id));
     }
     for (const s of undo.tutor) await tx.update(tutorSessions).set({ topicId: s.topicId, topicLabel: s.topicLabel }).where(eq(tutorSessions.id, s.id));
     for (const p of undo.planned) {

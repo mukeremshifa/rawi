@@ -185,7 +185,7 @@ function Gallery() {
       <Specimen title="Status">
         <div className="flex flex-wrap items-center gap-tight">
           <Badge>Archived</Badge><Badge variant="outline">Draft</Badge><Badge variant="accent">Current</Badge><Badge variant="success">Correct</Badge><Badge variant="warning">Partly right</Badge><Badge variant="danger">Failed</Badge>
-          <OutcomeBadge outcome="correct" /><OutcomeBadge outcome="partial" /><OutcomeBadge outcome="incorrect" /><OutcomeBadge outcome="pending" />
+          <OutcomeBadge outcome="correct" /><OutcomeBadge outcome="partial" /><OutcomeBadge outcome="incorrect" /><OutcomeBadge outcome="skipped" />
         </div>
         <div className="flex flex-col gap-tight">
           <EvidenceMeter level="not-checked" /><EvidenceMeter level="practising" /><EvidenceMeter level="independent-once" /><EvidenceMeter level="retained" />

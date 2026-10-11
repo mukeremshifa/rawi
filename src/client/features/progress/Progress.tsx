@@ -77,7 +77,6 @@ export function Progress() {
       <div className="grid grid-cols-2 gap-gutter sm:grid-cols-4">
         <Stat value={r.streak} label="Day streak" />
         <Stat value={history.length} label="Finished activities" />
-        <Stat value={r.pending} label="Answers awaiting feedback" />
         <div className="flex flex-col gap-1.5">
           <Stat value={`${solid}/${topics.length}`} label="Topics answered unaided" />
           {topics.length > 0 && <Meter value={solid / topics.length} label="Topics answered unaided" />}

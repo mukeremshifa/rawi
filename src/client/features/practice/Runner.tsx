@@ -26,7 +26,7 @@ import { usePageMeta } from '@/lib/shell';
 import { cn } from '@/lib/utils';
 
 type Write = { path: string; method: string; body: { operationId: string } & Record<string, unknown> };
-const answered = (a: AnswerValue | undefined) => !!a && a.kind !== 'none' && !(a.kind === 'text' && !a.text.trim()) && !(a.kind === 'choice' && !a.indices.length);
+const answered = (a: AnswerValue | undefined) => !!a && a.kind !== 'none' && !((a.kind === 'text' || a.kind === 'self-check') && !a.text.trim()) && !(a.kind === 'number' && !a.value.trim()) && !(a.kind === 'choice' && !a.indices.length);
 
 /**
  * The runner, for practice and exam rehearsals. Focus mode: exit, progress,
@@ -57,13 +57,15 @@ export function Run() {
 
   useEffect(() => { if (run?.serverNow) clockBase.current = { server: Date.parse(run.serverNow), mono: performance.now() }; }, [run?.serverNow]);
   useEffect(() => { if (!exam || run?.state !== 'active') return; const t = setInterval(() => setClock(clockBase.current.server + performance.now() - clockBase.current.mono), 1000); return () => clearInterval(t); }, [run?.id, run?.state, !!exam]);
-  // Exams re-read the run so section locks and expiry from the server apply.
+  // Exams re-read the run so section locks and expiry from the server apply. Practice re-reads it
+  // while questions are still being written, so each joins the set as it passes its checks.
+  const writing = !!run && run.pendingItems > 0;
   useEffect(() => {
-    if (!exam || run?.state !== 'active' || save.busy || pending.current) return;
+    if ((!exam && !writing) || run?.state !== 'active' || save.busy || pending.current) return;
     const abort = new AbortController();
-    const t = setInterval(() => { void request<LearningRun>(`/v1/runs/${id}`, user.id, undefined, 'GET', abort.signal).then(record.setData).catch(() => {}); }, 5000);
+    const t = setInterval(() => { void request<LearningRun>(`/v1/runs/${id}`, user.id, undefined, 'GET', abort.signal).then(record.setData).catch(() => {}); }, exam ? 5000 : 2500);
     return () => { clearInterval(t); abort.abort(); };
-  }, [run?.id, run?.state, save.busy, !!exam]);
+  }, [run?.id, run?.state, save.busy, !!exam, writing]);
 
   function accept(saved: LearningRun) {
     // Answers can change while a save is in flight. Those stay as drafts for the next autosave.
@@ -104,7 +106,9 @@ export function Run() {
   const canBack = !!run && run.position > 0 && !blocked && !(exam && (dirty || sequential));
   const canNext = !!run && run.position + 1 < run.items.length && !blocked && !(exam && dirty);
   const go = (position: number) => exam ? examAction('navigate', position) : saveAnswers(false, position);
-  const canCheck = !!item && run?.feedback === 'immediate' && !exam && item.question.format !== 'flashcard' && !item.checked;
+  const selfMarked = item?.question.format === 'flashcard' || item?.question.format === 'self-check';
+  const canCheck = !!item && run?.feedback === 'immediate' && !exam && !selfMarked && !item.checked;
+  const canReveal = !!item && item.question.format === 'self-check' && !item.revealed && !exam;
   const submit = async () => {
     if (!run) return;
     const ok = await confirm({
@@ -141,6 +145,9 @@ export function Run() {
   if (record.error) return <div className="mx-auto max-w-2xl px-4 py-16"><ErrorState error={record.error} onRetry={() => void record.refetch()} /></div>;
   const r = record.data;
   const exitTo = `/course/${r.courseId}/practice`;
+  if (r.state === 'active' && !item && r.pendingItems > 0) {
+    return <div className="mx-auto max-w-2xl px-4 py-16"><PageLoading label={`Writing ${r.pendingItems === 1 ? 'a question' : `${r.pendingItems} questions`} for this scope and checking ${r.pendingItems === 1 ? 'it' : 'them'} against your material`} /></div>;
+  }
   if (r.state !== 'active' || !item) {
     return (
       <div className="mx-auto flex max-w-2xl flex-col items-start gap-snug px-4 py-16">
@@ -175,6 +182,8 @@ export function Run() {
           </div>
         )}
         {r.flashcardReview && r.position === 0 && <p className="text-muted-foreground text-sm">A second look at the cards you found hard. Your first ratings are kept.</p>}
+        {r.pendingItems > 0 && <p className="text-muted-foreground flex items-center gap-2 text-sm" role="status"><span className="bg-primary size-1.5 animate-pulse rounded-full" aria-hidden />{r.pendingItems === 1 ? 'One more question is being written. It joins this set once it passes its checks.' : `${r.pendingItems} more questions are being written. Each joins this set once it passes its checks.`}</p>}
+        {r.pendingNote && r.position + 1 === r.items.length && <p className="text-muted-foreground text-sm">{r.pendingNote}</p>}
         {item.question.format === 'flashcard' && !item.revealed ? (
           <div className="flex flex-col gap-gutter">
             <div className="font-serif text-lg leading-snug">{item.question.prompt}</div>
@@ -202,15 +211,16 @@ export function Run() {
           <Button variant="ghost" disabled={!canBack} onClick={() => go(r.position - 1)}><ArrowLeftIcon />Previous</Button>
           {exam && <ExamNavigator run={r} drafts={drafts} disabled={dirty || blocked} onGo={position => examAction('navigate', position)} />}
           {exam?.configSnapshot.flaggingEnabled && <Hint label={flagged ? 'Remove flag' : 'Flag for later'}><Button variant="ghost" size="icon" aria-pressed={flagged} aria-label={flagged ? 'Remove flag' : 'Flag this question'} disabled={dirty || blocked} onClick={() => examAction('flag')}><FlagIcon className={cn(flagged && 'fill-current text-primary-text')} /></Button></Hint>}
-          {r.hintsAllowed && !item.hinted && !item.checked && item.question.format !== 'flashcard' && !exam && <Button variant="ghost" disabled={dirty || blocked} onClick={() => transition('hint')}><LightbulbIcon />Hint</Button>}
+          {r.hintsAllowed && !item.hinted && !item.checked && !selfMarked && !exam && <Button variant="ghost" disabled={dirty || blocked} onClick={() => transition('hint')}><LightbulbIcon />Hint</Button>}
           <div className="ml-auto flex items-center gap-tight">
             {r.position + 1 < r.items.length && <Button variant="ghost" disabled={blocked} onClick={() => void submit()}>{exam ? 'Submit paper' : 'Finish'}</Button>}
             {exam && <Button variant="secondary" disabled={dirty || blocked} onClick={() => examAction('finish-section')}>Finish section</Button>}
             {revisitable && <Button variant="secondary" disabled={dirty || blocked} onClick={() => send({ path: `/v1/runs/${id}/revisit`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: r.revision } })}>Revisit hard cards</Button>}
+            {canReveal && <Button loading={save.busy} disabled={dirty || blocked || !answered(responseOf(item))} onClick={() => transition('reveal')}>Show model answer</Button>}
             {canCheck && <Button loading={save.busy} disabled={dirty || blocked || !answered(responseOf(item))} onClick={() => transition('check')}>Check answer<Kbd className="bg-primary-foreground/20 text-primary-foreground hidden border-transparent sm:inline-flex">Enter</Kbd></Button>}
             {r.position + 1 < r.items.length
-              ? <Button variant={canCheck ? 'secondary' : 'primary'} disabled={!canNext} onClick={() => go(r.position + 1)}>Next<ArrowRightIcon /></Button>
-              : <Button variant={canCheck ? 'secondary' : 'primary'} loading={save.busy && pending.current?.path.endsWith('/submit')} disabled={blocked} onClick={() => void submit()}>{exam ? 'Submit paper' : 'Finish'}</Button>}
+              ? <Button variant={canCheck || canReveal ? 'secondary' : 'primary'} disabled={!canNext} onClick={() => go(r.position + 1)}>Next<ArrowRightIcon /></Button>
+              : <Button variant={canCheck || canReveal ? 'secondary' : 'primary'} loading={save.busy && pending.current?.path.endsWith('/submit')} disabled={blocked} onClick={() => void submit()}>{exam ? 'Submit paper' : 'Finish'}</Button>}
           </div>
         </div>
       </footer>

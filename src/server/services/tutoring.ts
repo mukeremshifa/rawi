@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { newTutorInput, tutorMessageInput, tutorMetadataInput } from '../../shared/contracts/tutor';
-import { responseText } from '../../shared/domain/answer-review';
+import { answerKey, responseText } from '../../shared/domain/answer-review';
 import { tutorMessages, tutorSessions, topics, aiOperations, plannedSessions } from '../db/schema';
 import { citationBlocks, validateCitation } from './materials';
 import { spansText } from '../../shared/domain/document-text';
@@ -58,7 +58,7 @@ export async function createSession(db: SocketDb, workspaceId: string, courseId:
       const question = q.question; const result = q.result;
       topicId ??= question.topicId ?? null;
       topicLabel ??= question.topicLabel ?? null;
-      review = { attemptId: a.id, questionId: question.id, courseId, ...(topicId ? { topicId } : {}), prompt: question.prompt, response: responseText(result.response, question), answerKey: question.correctIndices?.map(i => question.options?.[i]).join('\n') ?? question.answer ?? question.sequence?.join('\n') ?? question.blanks?.map(b => b.join(' or ')).join('\n') ?? question.pairs?.map(p => `${p.left}: ${p.right}`).join('\n') ?? '', feedback: question.explanation, marksAwarded: result.marksAwarded, marksAvailable: result.marksAvailable, usedHint: result.usedHint, pending: result.outcome === 'pending' };
+      review = { attemptId: a.id, questionId: question.id, courseId, ...(topicId ? { topicId } : {}), prompt: question.prompt, response: responseText(result.response, question), answerKey: answerKey(question), feedback: question.explanation, marksAwarded: result.marksAwarded, marksAvailable: result.marksAvailable, usedHint: result.usedHint };
     }
     if (input.topicId && !topicLabel) throw notFound();
     const focus = input.source ? await citationBlocks(tx, workspaceId, courseId, input.source) : null;

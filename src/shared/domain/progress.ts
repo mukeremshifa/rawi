@@ -93,7 +93,7 @@ export function deriveEvidence(topicId: string, attempts: Attempt[], timezone?: 
     .filter(
       (a) =>
         a.completedAt &&
-        a.questions.some((q) => q.topicId === topicId && q.outcome !== 'pending'),
+        a.questions.some((q) => q.topicId === topicId),
     )
     .sort((a, b) => (a.completedAt! < b.completedAt! ? 1 : -1));
 
@@ -109,8 +109,7 @@ export function deriveEvidence(topicId: string, attempts: Attempt[], timezone?: 
   for (const attempt of relevant) {
     for (const qa of attempt.questions) {
       if (qa.topicId !== topicId) continue;
-      if (qa.outcome === 'pending') continue;
-      if (qa.format === 'flashcard') { selfRated += 1; continue; }
+      if (qa.format === 'flashcard' || qa.format === 'self-check') { selfRated += 1; continue; }
       switch (attempt.mode) {
         case 'tutored':
           tutored += 1;
@@ -246,7 +245,6 @@ export function recurringMistakes(
     for (const qa of attempt.questions) {
       if (qa.outcome === 'correct') continue;
       if (qa.outcome === 'skipped') continue;
-      if (qa.outcome === 'pending') continue;
       const existing = byQuestion.get(qa.questionId);
       byQuestion.set(qa.questionId, {
         courseId: attempt.courseId,
@@ -536,16 +534,11 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   const active = courses.filter((c) => !c.archived);
   const courseName = new Map(active.map((c) => [c.id, c.name]));
 
-  const allQuestions = input.questions ?? [];
   const allMaterials = input.materials ?? [];
 
   /** What a topic supports, scoped to its own course. */
   const capabilitiesOf = (topic: StudyTopic) =>
-    topicCapabilities(
-      topic,
-      allQuestions.filter((q) => q.courseId === topic.courseId),
-      allMaterials.filter((m) => m.courseId === topic.courseId),
-    );
+    topicCapabilities(topic, allMaterials.filter((m) => m.courseId === topic.courseId));
 
   /* 1 — Resume. Nothing outranks work already started. */
   if (input.resumable) {

@@ -45,7 +45,6 @@ export const keys = {
     sets: pathKey(`/v1/courses/${id}/sets`),
     runs: pathKey(`/v1/courses/${id}/runs`),
     attempts: pathKey(`/v1/courses/${id}/attempts`),
-    questions: pathKey(`/v1/courses/${id}/questions`),
     exams: pathKey(`/v1/courses/${id}/exams`),
     tutor: pathKey(`/v1/courses/${id}/tutor`),
   }),

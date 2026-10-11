@@ -368,7 +368,6 @@ function candidates(input: PlanInputs): Candidate[] {
     const courseTopics = topics.filter((t) => t.courseId === course.id);
     /* Scoped per course, so one subject's content can never make another
        subject's topic look practisable. */
-    const courseQuestions = input.questions.filter((q) => q.courseId === course.id);
     const courseMaterials = input.materials.filter((m) => m.courseId === course.id);
     const upcoming = assessments
       .filter((a) => a.courseId === course.id && stillAhead(a))
@@ -409,7 +408,7 @@ function candidates(input: PlanInputs): Candidate[] {
        * when there is nothing, which becomes an honest setup prompt below
        * rather than a session that opens onto an apology.
        */
-      const capabilities = topicCapabilities(topic, courseQuestions, courseMaterials);
+      const capabilities = topicCapabilities(topic, courseMaterials);
       const preferred: SessionActivity =
         evidence.level === 'not-checked' ? 'tutor' : 'practice';
       const activity = bestActivity(preferred, capabilities);
@@ -493,7 +492,7 @@ function candidates(input: PlanInputs): Candidate[] {
          practice the topic does support when they do not. "Any question for
          this topic" was the old test and it proposed flashcard sessions for
          topics whose only questions were essays. */
-      const capabilities = topicCapabilities(topic, courseQuestions, courseMaterials);
+      const capabilities = topicCapabilities(topic, courseMaterials);
       const activity = bestActivity('flashcards', capabilities);
       if (!activity || activity === 'read' || activity === 'tutor') continue;
       out.push({

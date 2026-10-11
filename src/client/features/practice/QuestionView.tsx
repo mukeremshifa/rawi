@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
 import { ArrowDownIcon, ArrowUpIcon, CheckIcon } from 'lucide-react';
 
-import type { AnswerValue, Question, SelfRating } from '@shared/domain/types';
+import type { AnswerValue, Question, SelfMark, SelfRating } from '@shared/domain/types';
 
 import { Prose } from '@/components/Prose';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Kbd } from '@/components/ui/kbd';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -25,11 +26,6 @@ export function QuestionView({ question, answer, onChange, readOnly = false, rev
 }) {
   return (
     <div className="flex flex-col gap-gutter">
-      {question.extract && (
-        <blockquote className="bg-surface rounded-md border-l-2 border-border-strong px-4 py-3 font-serif">
-          <Prose text={question.extract} />
-        </blockquote>
-      )}
       <div className="font-serif text-lg leading-snug [&_.rawi-prose]:text-[length:inherit] [&_.rawi-prose]:leading-[inherit]">
         <Prose text={question.prompt} />
       </div>
@@ -41,42 +37,35 @@ export function QuestionView({ question, answer, onChange, readOnly = false, rev
 function AnswerInput({ question, answer, onChange, readOnly, revealed }: { question: Question; answer: AnswerValue | undefined; onChange: (answer: AnswerValue) => void; readOnly: boolean; revealed: boolean }) {
   switch (question.format) {
     case 'multiple-choice':
-    case 'multiple-select':
-      return <ChoiceInput options={question.options ?? []} selected={answer?.kind === 'choice' ? answer.indices : []} multiple={question.format === 'multiple-select'} readOnly={readOnly} onChange={indices => onChange({ kind: 'choice', indices })} />;
-    case 'fill-blank':
+      return <ChoiceInput options={question.options ?? []} selected={answer?.kind === 'choice' ? answer.indices : []} readOnly={readOnly} onChange={indices => onChange({ kind: 'choice', indices })} />;
+    case 'numeric':
+      return <NumberInput unit={question.numeric?.unit} value={answer?.kind === 'number' ? answer.value : ''} readOnly={readOnly} onChange={value => onChange({ kind: 'number', value })} />;
+    case 'cloze':
       return <BlanksInput template={question.template ?? question.prompt} values={answer?.kind === 'blanks' ? answer.values : []} readOnly={readOnly} onChange={values => onChange({ kind: 'blanks', values })} />;
     case 'ordering':
       return <OrderingInput items={question.sequence ?? []} current={answer?.kind === 'ordering' ? answer.sequence : []} readOnly={readOnly} onChange={sequence => onChange({ kind: 'ordering', sequence })} />;
     case 'matching':
       return <MatchingInput pairs={question.pairs ?? []} assignments={answer?.kind === 'matching' ? answer.assignments : {}} readOnly={readOnly} onChange={assignments => onChange({ kind: 'matching', assignments })} />;
-    case 'written-recall':
-    case 'source-analysis':
-    case 'essay':
-      return <WrittenInput question={question} text={answer?.kind === 'text' ? answer.text : ''} readOnly={readOnly} onChange={text => onChange({ kind: 'text', text })} />;
+    case 'self-check':
+      return <SelfCheckInput question={question} answer={answer} revealed={revealed} readOnly={readOnly} onChange={onChange} />;
     case 'flashcard':
       return <FlashcardInput initiallyRevealed={revealed} question={question} rating={answer?.kind === 'self-rating' ? answer.rating : undefined} readOnly={readOnly} onChange={rating => onChange({ kind: 'self-rating', rating })} />;
   }
 }
 
 /** Choices as cards. The runner maps keys 1 to 9 onto them. */
-function ChoiceInput({ options, selected, multiple, readOnly, onChange }: { options: string[]; selected: number[]; multiple: boolean; readOnly: boolean; onChange: (indices: number[]) => void }) {
-  const toggle = (index: number) => {
-    if (readOnly) return;
-    if (!multiple) onChange([index]);
-    else onChange(selected.includes(index) ? selected.filter(i => i !== index) : [...selected, index].sort((a, b) => a - b));
-  };
+function ChoiceInput({ options, selected, readOnly, onChange }: { options: string[]; selected: number[]; readOnly: boolean; onChange: (indices: number[]) => void }) {
   return (
-    <div role={multiple ? 'group' : 'radiogroup'} aria-label={multiple ? 'Select every answer that applies' : 'Select one answer'} className="flex flex-col gap-tight" data-choices>
-      {multiple && <p className="text-muted-foreground text-sm">Select every answer that applies. Wrong selections reduce the mark.</p>}
+    <div role="radiogroup" aria-label="Select one answer" className="flex flex-col gap-tight" data-choices>
       {options.map((option, index) => {
         const checked = selected.includes(index);
         return (
-          <button key={index} type="button" role={multiple ? 'checkbox' : 'radio'} aria-checked={checked} disabled={readOnly} onClick={() => toggle(index)}
+          <button key={index} type="button" role="radio" aria-checked={checked} disabled={readOnly} onClick={() => { if (!readOnly) onChange([index]); }}
             className={cn('bg-card flex w-full items-start gap-snug rounded-lg border px-3.5 py-3 text-left text-md shadow-raised outline-none transition-colors',
               'focus-visible:ring-ring/30 focus-visible:border-ring focus-visible:ring-3 disabled:cursor-default',
               checked ? 'border-primary bg-primary-subtle ring-1 ring-primary' : !readOnly && 'hover:bg-accent')}>
-            <span className={cn('mt-0.5 flex size-5 shrink-0 items-center justify-center border text-xs font-medium',
-              multiple ? 'rounded-[5px]' : 'rounded-full', checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border-strong text-muted-foreground')}>
+            <span className={cn('mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border text-xs font-medium',
+              checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border-strong text-muted-foreground')}>
               {checked ? <CheckIcon className="size-3" strokeWidth={3} aria-hidden /> : index < 9 ? index + 1 : ''}
             </span>
             <span className="min-w-0 flex-1 leading-relaxed">{option}</span>
@@ -159,19 +148,59 @@ function MatchingInput({ pairs, assignments, readOnly, onChange }: { pairs: { le
   );
 }
 
-function WrittenInput({ question, text, readOnly, onChange }: { question: Question; text: string; readOnly: boolean; onChange: (text: string) => void }) {
-  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-  const target = question.format === 'essay' ? 300 : 90;
+/** A number, typed as the student writes it. Commas, spaces and a unit after it are read correctly. */
+function NumberInput({ unit, value, readOnly, onChange }: { unit?: string; value: string; readOnly: boolean; onChange: (value: string) => void }) {
   return (
-    <div className="flex flex-col gap-tight">
-      <Textarea aria-label="Your answer" value={text} disabled={readOnly} onChange={e => onChange(e.target.value)}
-        rows={question.format === 'essay' ? 14 : 7}
-        placeholder={question.format === 'essay' ? 'Start with your argument, then the evidence for it.' : question.format === 'source-analysis' ? 'Work from the extract and point to the lines you rely on.' : 'Write it from memory.'}
-        className="min-h-40 font-serif text-md leading-relaxed" />
-      <p className="text-muted-foreground flex flex-wrap justify-between gap-tight text-sm">
-        <span className="tabular">{words} {words === 1 ? 'word' : 'words'}</span>
-        <span>A full answer is usually around {target} words.</span>
-      </p>
+    <label className="flex items-center gap-snug">
+      <span className="sr-only">Your answer</span>
+      <Input inputMode="decimal" autoComplete="off" className="w-48 font-sans text-md tabular" value={value} disabled={readOnly} onChange={e => onChange(e.target.value)} placeholder="Your answer" />
+      {unit && <span className="text-muted-foreground text-md">{unit}</span>}
+    </label>
+  );
+}
+
+const MARKS: { value: SelfMark; label: string; blurb: string }[] = [
+  { value: 'missed', label: 'Missed', blurb: 'My answer misses the point' },
+  { value: 'partly', label: 'Partly', blurb: 'Some of it, not all' },
+  { value: 'got', label: 'Got it', blurb: 'It says what the model answer says' },
+];
+
+/**
+ * Write, then compare with the model answer and mark yourself. The model answer stays hidden until
+ * the answer is written and saved, so comparing never replaces recalling.
+ */
+function SelfCheckInput({ question, answer, revealed, readOnly, onChange }: { question: Question; answer: AnswerValue | undefined; revealed: boolean; readOnly: boolean; onChange: (answer: AnswerValue) => void }) {
+  const text = answer?.kind === 'text' || answer?.kind === 'self-check' ? answer.text : '';
+  const mark = answer?.kind === 'self-check' ? answer.mark : null;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  return (
+    <div className="flex flex-col gap-gutter">
+      <div className="flex flex-col gap-tight">
+        <Textarea aria-label="Your answer" value={text} disabled={readOnly || revealed} onChange={e => onChange({ kind: 'text', text: e.target.value })} rows={6} placeholder="Write it from memory." className="min-h-36 font-serif text-md leading-relaxed" />
+        <p className="text-muted-foreground tabular text-sm">{words} {words === 1 ? 'word' : 'words'}</p>
+      </div>
+      {revealed && question.answer && (
+        <div className="flex flex-col gap-gutter border-t pt-gutter">
+          <div className="font-serif">
+            <p className="text-muted-foreground mb-1 font-sans text-sm font-medium">Model answer</p>
+            <Prose text={question.answer} />
+          </div>
+          <fieldset disabled={readOnly} className="flex flex-col gap-tight">
+            <legend className="mb-1 text-base font-medium">How does your answer compare?</legend>
+            <div className="grid grid-cols-1 gap-tight sm:grid-cols-3" data-choices>
+              {MARKS.map((option, i) => (
+                <button key={option.value} type="button" aria-pressed={mark === option.value} onClick={() => onChange({ kind: 'self-check', text, mark: option.value })}
+                  className={cn('bg-card flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left shadow-raised outline-none transition-colors focus-visible:ring-ring/30 focus-visible:ring-3 disabled:cursor-default',
+                    mark === option.value ? 'border-primary bg-primary-subtle ring-1 ring-primary' : 'hover:bg-accent')}>
+                  <span className="flex w-full items-center justify-between text-base font-medium">{option.label}<Kbd className="hidden sm:inline-flex">{i + 1}</Kbd></span>
+                  <span className="text-muted-foreground text-sm">{option.blurb}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-muted-foreground text-sm">Self-marked, so it counts separately from answers that are marked.</p>
+          </fieldset>
+        </div>
+      )}
     </div>
   );
 }

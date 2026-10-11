@@ -13,6 +13,7 @@ import type {
   Difficulty,
   Outcome,
   QuestionFormat,
+  SelfMark,
   SessionActivity,
   SourceRef,
 } from '@shared/domain/types';
@@ -34,14 +35,14 @@ import { cn } from '@/lib/utils';
 export const FORMAT_LABEL: Record<QuestionFormat, string> = {
   flashcard: 'Flashcard',
   'multiple-choice': 'Multiple choice',
-  'multiple-select': 'Multiple select',
-  matching: 'Matching',
+  numeric: 'Numeric',
+  cloze: 'Fill in the blank',
   ordering: 'Ordering',
-  'fill-blank': 'Fill in the blank',
-  'written-recall': 'Written recall',
-  'source-analysis': 'Source analysis',
-  essay: 'Essay',
+  matching: 'Matching',
+  'self-check': 'Self-check',
 };
+
+export const SELF_MARK_LABEL: Record<SelfMark, string> = { got: 'right', partly: 'partly right', missed: 'missed' };
 
 export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
   recall: 'Recall',
@@ -54,7 +55,6 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   partial: 'Partly right',
   incorrect: 'Incorrect',
   skipped: 'Not answered',
-  pending: 'Awaiting feedback',
 };
 
 export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
@@ -63,7 +63,6 @@ export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
     partial: 'bg-warning-subtle text-warning-text border-transparent',
     incorrect: 'bg-danger-subtle text-danger-text border-transparent',
     skipped: 'bg-muted text-muted-foreground border-transparent',
-    pending: 'bg-muted text-muted-foreground border-dashed border-border',
   };
   return (
     <span

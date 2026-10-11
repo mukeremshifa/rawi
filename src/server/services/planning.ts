@@ -5,7 +5,7 @@ import type { Attempt, StudyMaterial, StudyTopic } from '../../shared/domain/typ
 import { planWeek, replacedByPlan, addDays } from '../../shared/domain/planner';
 import { deriveAllEvidence, dueReviews, recurringMistakes, buildPlan } from '../../shared/domain/progress';
 import { zonedParts, type plannerWrite, type scheduleWrite, type assessmentWrite, type proposalInput, type checkInInput } from '../../shared/contracts/planner';
-import { plannerState, plannedSessions, assessments, checkIns, planProposals, courses, topics, learningAttempts, learningRuns, materials, materialVersions, questionVersions, preferences, tutorSessions } from '../db/schema';
+import { plannerState, plannedSessions, assessments, checkIns, planProposals, courses, topics, learningAttempts, learningRuns, materials, materialVersions, bankItems, preferences, tutorSessions } from '../db/schema';
 import { operation } from './learning';
 import { hash, validateTopics } from './materials';
 import { usableStatus } from '../../shared/contracts/document';
@@ -26,10 +26,11 @@ export async function bumpPlanner(tx: Transaction, workspaceId: string) {
 export async function learningData(db: ReadDb | Transaction, workspaceId: string) {
   const original = await db.select({ snapshot: learningAttempts.snapshot, setId: learningAttempts.setId }).from(learningAttempts).where(eq(learningAttempts.workspaceId, workspaceId));
   // A question's topic is its current one, so a merged or corrected topic carries its history.
-  const topicOf = new Map((await db.select({ id: questionVersions.id, topicId: sql<string | null>`${questionVersions.content}->>'topicId'` }).from(questionVersions).where(eq(questionVersions.workspaceId, workspaceId))).map(q => [q.id, q.topicId ?? undefined]));
+  const asked = [...new Set(original.flatMap(r => r.snapshot.questions.map(q => q.question.id)))];
+  const topicOf = new Map(asked.length ? (await db.select({ id: bankItems.id, topicId: sql<string | null>`${bankItems.content}->>'topicId'` }).from(bankItems).where(and(eq(bankItems.workspaceId, workspaceId), inArray(bankItems.id, asked)))).map(q => [q.id, q.topicId ?? undefined]) : []);
   const current = original.map(r => r.snapshot).map(a => ({ ...a, questions: a.questions.map(q => topicOf.has(q.question.id) ? { question: { ...q.question, topicId: topicOf.get(q.question.id) }, result: { ...q.result, topicId: topicOf.get(q.question.id) } } : q) }));
   const rows = original.map((r, i) => ({ ...r, snapshot: current[i]! }));
-  const attempts: Attempt[] = rows.map(({ snapshot: a, setId }) => a.imported ? { ...a.imported, assistanceRecord: 'unknown', marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable } : ({ id: a.id, courseId: a.courseId, kind: a.exam ? 'exam' : 'practice', mode: a.exam ? 'exam' : a.questions.every(q => q.question.format === 'flashcard') ? 'self-rated' : 'practice', title: a.title, topicIds: [...new Set(a.questions.flatMap(q => q.question.topicId ?? []))], startedAt: a.startedAt, completedAt: a.completedAt, questions: a.questions.map(q => q.result), marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable, assistanceRecord: 'tracked', practiceSetId: a.exam ? undefined : setId, examConfigSnapshot: a.exam?.configSnapshot, finish: a.finish, plannedSessionId: a.plannedSessionId, remediatesAttemptId: a.remediatesAttemptId }));
+  const attempts: Attempt[] = rows.map(({ snapshot: a, setId }) => ({ id: a.id, courseId: a.courseId, kind: a.exam ? 'exam' : 'practice', mode: a.exam ? 'exam' : a.questions.every(q => q.question.format === 'flashcard' || q.question.format === 'self-check') ? 'self-rated' : 'practice', title: a.title, topicIds: [...new Set(a.questions.flatMap(q => q.question.topicId ?? []))], startedAt: a.startedAt, completedAt: a.completedAt, questions: a.questions.map(q => q.result), marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable, assistanceRecord: 'tracked', practiceSetId: a.exam ? undefined : setId, examConfigSnapshot: a.exam?.configSnapshot, finish: a.finish, plannedSessionId: a.plannedSessionId, remediatesAttemptId: a.remediatesAttemptId }));
   return { attempts, snapshots: rows.map(r => r.snapshot) };
 }
 export async function planningData(tx: Transaction, workspaceId: string, options: { calendarOnly?: boolean } = {}) {
@@ -44,14 +45,13 @@ export async function planningData(tx: Transaction, workspaceId: string, options
   const tutorLinks = await tx.select({ id: tutorSessions.plannedSessionId, endedAt: tutorSessions.endedAt }).from(tutorSessions).where(eq(tutorSessions.workspaceId, workspaceId));
   for (const row of sessionRows) if (activeLinks.some(r => r.id === row.id) || tutorLinks.some(r => !r.endedAt && r.id === row.id)) row.content = { ...row.content, locked: true };
   const checkInRows = await tx.select().from(checkIns).where(eq(checkIns.workspaceId, workspaceId));
-  const questionRows = options.calendarOnly ? [] : await tx.select({ content: questionVersions.content }).from(questionVersions).where(eq(questionVersions.workspaceId, workspaceId));
   // Planning needs to know which materials are readable, never their text.
   const materialRows = options.calendarOnly ? [] : await tx.select({ material: materials, status: materialVersions.status }).from(materials).leftJoin(materialVersions, eq(materialVersions.id, materials.currentVersionId)).where(eq(materials.workspaceId, workspaceId));
   const links = options.calendarOnly ? new Map<string, string[]>() : await materialTopics(tx, { workspaceId });
   // The syllabus is a source for the outline, not teaching material.
   const materialData: StudyMaterial[] = materialRows.filter(r => r.material.kind !== 'syllabus').map(({ material: m, status }) => ({ id: m.id, courseId: m.courseId, title: m.title, kind: m.kind === 'slides' ? 'lecture-notes' : 'reading', archived: m.archived, addedAt: m.createdAt.toISOString(), topicIds: links.get(m.id) ?? [], readable: usableStatus(status) }));
   const { attempts, snapshots } = options.calendarOnly ? { attempts: [], snapshots: [] } : await learningData(tx, workspaceId);
-  return { revision: planner.revision, availability: planner.availability, timezone: prefs?.timezone ?? 'UTC', courses: courseRows.map(c => ({ ...c, createdAt: c.createdAt.toISOString() })), topics: topicData, assessments: assessmentRows.map(r => ({ ...r.content, revision: r.revision, source: r.source })), sessions: sessionRows.map(r => ({ ...r.content, revision: r.revision })), checkIns: checkInRows.map(r => r.content), questions: questionRows.map(r => r.content), materials: materialData, attempts, snapshots };
+  return { revision: planner.revision, availability: planner.availability, timezone: prefs?.timezone ?? 'UTC', courses: courseRows.map(c => ({ ...c, createdAt: c.createdAt.toISOString() })), topics: topicData, assessments: assessmentRows.map(r => ({ ...r.content, revision: r.revision, source: r.source })), sessions: sessionRows.map(r => ({ ...r.content, revision: r.revision })), checkIns: checkInRows.map(r => r.content), questions: [...new Map(snapshots.flatMap(a => a.questions.map(q => [q.question.id, q.question] as const))).values()], materials: materialData, attempts, snapshots };
 }
 export async function plannerView(db: SocketDb, workspaceId: string) {
   return transaction(db, async tx => {
@@ -137,7 +137,7 @@ export async function progress(db: SocketDb, workspaceId: string) {
     };
     for (const a of data.attempts) for (const q of a.questions) {
       const materialId = sourceOf.get(q.questionId);
-      if ((q.topicId && known.has(q.topicId)) || !materialId || q.outcome === 'pending') continue;
+      if ((q.topicId && known.has(q.topicId)) || !materialId) continue;
       const entry = bucket(a.courseId, materialId); entry.answered++; if (q.outcome === 'correct') entry.correct++;
     }
     const looseSessions = await tx.select({ courseId: tutorSessions.courseId, source: tutorSessions.source }).from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), isNull(tutorSessions.topicId)));
@@ -147,6 +147,6 @@ export async function progress(db: SocketDb, workspaceId: string) {
       const path = s.sessionId ? `/planner?session=${s.sessionId}` : `/course/${s.courseId}/${s.kind === 'exam' ? 'exams' : ['tutor', 'materials', 'setup'].includes(s.kind) ? 'materials' : 'practice'}${s.topicId ? `?topicId=${s.topicId}` : ''}`;
       return { ...s, to: path, ...(s.kind === 'tutor' ? { title: s.title.replace(/^Learn /, 'Read about '), reason: `${s.reason} Tutor replies are unavailable, so open the material to continue.` } : {}) };
     });
-    return { suggestions, unlinked, tutorActivity, rulesVersion: 'evidence-v1', today: now.date, timezone: data.timezone, streak, topics: data.topics, courses: data.courses, evidence: [...deriveAllEvidence(data.topics, data.attempts, data.timezone).values()], due: dueReviews(data.topics, data.attempts, new Date(), data.timezone), mistakes: recurringMistakes(data.attempts, id => data.questions.find(q => q.id === id)?.prompt), attempts: data.attempts, pending: data.snapshots.reduce((n, a) => n + a.pending, 0), runs, sessions: data.sessions.filter(s => s.date === now.date), assessments: data.assessments.filter(isDated).filter(a => a.date >= now.date), checkIns: data.checkIns.filter(c => zonedParts(new Date(c.at), data.timezone).date === now.date) };
+    return { suggestions, unlinked, tutorActivity, rulesVersion: 'evidence-v1', today: now.date, timezone: data.timezone, streak, topics: data.topics, courses: data.courses, evidence: [...deriveAllEvidence(data.topics, data.attempts, data.timezone).values()], due: dueReviews(data.topics, data.attempts, new Date(), data.timezone), mistakes: recurringMistakes(data.attempts, id => data.questions.find(q => q.id === id)?.prompt), attempts: data.attempts, runs, sessions: data.sessions.filter(s => s.date === now.date), assessments: data.assessments.filter(isDated).filter(a => a.date >= now.date), checkIns: data.checkIns.filter(c => zonedParts(new Date(c.at), data.timezone).date === now.date) };
   }, { isolationLevel: 'repeatable read' });
 }

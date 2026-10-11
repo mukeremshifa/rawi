@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { uuid } from '../../shared/contracts/workspace';
 import * as ai from '../services/ai/operations';
 import * as keys from '../services/ai/keys';
-import { generateInput, generateSet } from '../services/ai/questions';
 import { jsonInput, type BackendContext } from '../http';
 
 export const aiRoutes = new Hono<BackendContext>();
@@ -14,4 +13,3 @@ aiRoutes.delete('/ai/funding/key', async c => c.json(await keys.removeOwnKey(c.g
 aiRoutes.post('/ai/funding/use', async c => c.json(await keys.useSource(c.get('socket'), c.get('workspaceId'), await jsonInput(c, keys.useSourceInput))));
 aiRoutes.post('/ai/operations/:id/cancel', async c => { const body = await jsonInput(c, z.strictObject({ operationId: uuid })); return c.json(await ai.cancelOperation(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), body.operationId)); });
 aiRoutes.get('/ai/operations/:id', async c => c.json(await ai.viewOperation(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
-aiRoutes.post('/courses/:id/generate', async c => c.json(await generateSet(c.env, c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, generateInput))));

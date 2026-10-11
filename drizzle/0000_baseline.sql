@@ -75,6 +75,28 @@ CREATE TABLE "assessments" (
 	CONSTRAINT "assessments_scope_unique" UNIQUE("workspace_id","course_id","id")
 );
 --> statement-breakpoint
+CREATE TABLE "bank_items" (
+	"id" uuid PRIMARY KEY NOT NULL,
+	"workspace_id" uuid NOT NULL,
+	"course_id" uuid NOT NULL,
+	"content" jsonb NOT NULL,
+	"material_id" uuid,
+	"section_key" text,
+	"content_hash" text,
+	"fact_ids" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"format" text NOT NULL,
+	"difficulty" text NOT NULL,
+	"origin" text NOT NULL,
+	"state" text DEFAULT 'active' NOT NULL,
+	"template_id" uuid,
+	"template" jsonb,
+	"verification" jsonb,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "bank_items_scope_unique" UNIQUE("workspace_id","course_id","id"),
+	CONSTRAINT "bank_items_state_valid" CHECK ("bank_items"."state" in ('active', 'template', 'retired')),
+	CONSTRAINT "bank_items_origin_valid" CHECK ("bank_items"."origin" in ('built', 'generated'))
+);
+--> statement-breakpoint
 CREATE TABLE "blocks" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"workspace_id" uuid NOT NULL,
@@ -115,17 +137,6 @@ CREATE TABLE "courses" (
 	"outline_revision" integer DEFAULT 1 NOT NULL,
 	CONSTRAINT "courses_workspace_id_unique" UNIQUE("workspace_id","id"),
 	CONSTRAINT "courses_revision_positive" CHECK ("courses"."revision" > 0)
-);
---> statement-breakpoint
-CREATE TABLE "development_seed_records" (
-	"workspace_id" uuid NOT NULL,
-	"version" text NOT NULL,
-	"key" text NOT NULL,
-	"entity_type" text NOT NULL,
-	"entity_id" uuid NOT NULL,
-	"baseline" text NOT NULL,
-	"result" jsonb NOT NULL,
-	CONSTRAINT "development_seed_records_workspace_id_version_key_pk" PRIMARY KEY("workspace_id","version","key")
 );
 --> statement-breakpoint
 CREATE TABLE "development_seeds" (
@@ -244,6 +255,24 @@ CREATE TABLE "ingest_jobs" (
 	CONSTRAINT "ingest_jobs_readiness_valid" CHECK ("ingest_jobs"."readiness" in ('readable', 'searchable', 'enriched'))
 );
 --> statement-breakpoint
+CREATE TABLE "item_results" (
+	"id" uuid PRIMARY KEY NOT NULL,
+	"workspace_id" uuid NOT NULL,
+	"course_id" uuid NOT NULL,
+	"run_id" uuid NOT NULL,
+	"item_id" uuid NOT NULL,
+	"material_id" uuid,
+	"section_key" text,
+	"fact_ids" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"format" text NOT NULL,
+	"mode" text NOT NULL,
+	"score" real NOT NULL,
+	"used_hint" boolean NOT NULL,
+	"at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "item_results_run_item_unique" UNIQUE("run_id","item_id"),
+	CONSTRAINT "item_results_score_range" CHECK ("item_results"."score" >= 0 and "item_results"."score" <= 1)
+);
+--> statement-breakpoint
 CREATE TABLE "knowledge_chunks" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"workspace_id" uuid NOT NULL,
@@ -299,10 +328,12 @@ CREATE TABLE "learning_runs" (
 	"started_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"completed_at" timestamp with time zone,
 	"planned_session_id" uuid,
-	"sample_dataset" text,
 	"flashcard_review" jsonb,
 	"exam" jsonb,
 	"deadline_at" timestamp with time zone,
+	"scope_id" uuid,
+	"pending_items" integer DEFAULT 0 NOT NULL,
+	"pending_note" text,
 	CONSTRAINT "runs_scope_unique" UNIQUE("workspace_id","course_id","set_id","id"),
 	CONSTRAINT "runs_state_valid" CHECK ("learning_runs"."state" in ('active', 'submitted'))
 );
@@ -459,43 +490,6 @@ CREATE TABLE "prerequisites" (
 	"detail" text NOT NULL,
 	CONSTRAINT "prerequisites_section_id_requires_id_pk" PRIMARY KEY("section_id","requires_id"),
 	CONSTRAINT "prerequisites_reason_valid" CHECK ("prerequisites"."reason" in ('term', 'reference'))
-);
---> statement-breakpoint
-CREATE TABLE "question_pool" (
-	"id" uuid PRIMARY KEY NOT NULL,
-	"workspace_id" uuid NOT NULL,
-	"course_id" uuid NOT NULL,
-	"material_id" uuid NOT NULL,
-	"version_id" uuid NOT NULL,
-	"section_block_id" uuid,
-	"cache_key" text NOT NULL,
-	"format" text NOT NULL,
-	"difficulty" text NOT NULL,
-	"language" text NOT NULL,
-	"content" jsonb NOT NULL,
-	"block_ids" jsonb NOT NULL,
-	"verification" jsonb NOT NULL,
-	"state" text NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "question_pool_state_valid" CHECK ("question_pool"."state" in ('verified', 'rejected'))
-);
---> statement-breakpoint
-CREATE TABLE "question_sources" (
-	"workspace_id" uuid NOT NULL,
-	"course_id" uuid NOT NULL,
-	"question_id" uuid PRIMARY KEY NOT NULL,
-	"material_id" uuid NOT NULL,
-	"version_id" uuid NOT NULL,
-	"block_ids" uuid[] NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "question_versions" (
-	"id" uuid PRIMARY KEY NOT NULL,
-	"workspace_id" uuid NOT NULL,
-	"course_id" uuid NOT NULL,
-	"content" jsonb NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "questions_scope_unique" UNIQUE("workspace_id","course_id","id")
 );
 --> statement-breakpoint
 CREATE TABLE "reminder_states" (
@@ -717,16 +711,6 @@ CREATE TABLE "verification" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "workspace_imports" (
-	"id" uuid PRIMARY KEY NOT NULL,
-	"workspace_id" uuid NOT NULL,
-	"fingerprint" text NOT NULL,
-	"original" jsonb NOT NULL,
-	"review" jsonb NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "imports_deduplicate" UNIQUE("workspace_id","fingerprint")
-);
---> statement-breakpoint
 CREATE TABLE "workspace_storage" (
 	"workspace_id" uuid PRIMARY KEY NOT NULL,
 	"used_bytes" bigint DEFAULT 0 NOT NULL,
@@ -749,12 +733,12 @@ ALTER TABLE "ai_calls" ADD CONSTRAINT "ai_calls_workspace_id_workspaces_id_fk" F
 ALTER TABLE "ai_calls" ADD CONSTRAINT "ai_calls_funding_source_id_funding_sources_id_fk" FOREIGN KEY ("funding_source_id") REFERENCES "public"."funding_sources"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ai_operations" ADD CONSTRAINT "ai_operations_workspace_id_course_id_courses_workspace_id_id_fk" FOREIGN KEY ("workspace_id","course_id") REFERENCES "public"."courses"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "assessments" ADD CONSTRAINT "assessments_workspace_id_course_id_courses_workspace_id_id_fk" FOREIGN KEY ("workspace_id","course_id") REFERENCES "public"."courses"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bank_items" ADD CONSTRAINT "bank_items_workspace_id_course_id_courses_workspace_id_id_fk" FOREIGN KEY ("workspace_id","course_id") REFERENCES "public"."courses"("workspace_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "blocks" ADD CONSTRAINT "blocks_workspace_id_course_id_material_id_version_id_material_versions_workspace_id_course_id_material_id_id_fk" FOREIGN KEY ("workspace_id","course_id","material_id","version_id") REFERENCES "public"."material_versions"("workspace_id","course_id","material_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "check_ins" ADD CONSTRAINT "check_ins_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "check_ins" ADD CONSTRAINT "check_in_course_scope_fk" FOREIGN KEY ("workspace_id","course_id") REFERENCES "public"."courses"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "courses" ADD CONSTRAINT "courses_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "courses" ADD CONSTRAINT "courses_syllabus_fk" FOREIGN KEY ("workspace_id","id","syllabus_material_id") REFERENCES "public"."materials"("workspace_id","course_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "development_seed_records" ADD CONSTRAINT "development_seed_records_workspace_id_version_development_seeds_workspace_id_version_fk" FOREIGN KEY ("workspace_id","version") REFERENCES "public"."development_seeds"("workspace_id","version") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "development_seeds" ADD CONSTRAINT "development_seeds_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "exam_configs" ADD CONSTRAINT "exam_configs_workspace_id_course_id_courses_workspace_id_id_fk" FOREIGN KEY ("workspace_id","course_id") REFERENCES "public"."courses"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "facts" ADD CONSTRAINT "facts_section_id_sections_id_fk" FOREIGN KEY ("section_id") REFERENCES "public"."sections"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -763,6 +747,7 @@ ALTER TABLE "figure_descriptions" ADD CONSTRAINT "figure_descriptions_workspace_
 ALTER TABLE "file_objects" ADD CONSTRAINT "file_objects_workspace_id_course_id_courses_workspace_id_id_fk" FOREIGN KEY ("workspace_id","course_id") REFERENCES "public"."courses"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "funding_sources" ADD CONSTRAINT "funding_sources_owner_workspace_id_workspaces_id_fk" FOREIGN KEY ("owner_workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ingest_jobs" ADD CONSTRAINT "ingest_jobs_workspace_id_course_id_material_id_version_id_material_versions_workspace_id_course_id_material_id_id_fk" FOREIGN KEY ("workspace_id","course_id","material_id","version_id") REFERENCES "public"."material_versions"("workspace_id","course_id","material_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "item_results" ADD CONSTRAINT "item_results_workspace_id_course_id_item_id_bank_items_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","item_id") REFERENCES "public"."bank_items"("workspace_id","course_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "knowledge_chunks" ADD CONSTRAINT "knowledge_chunks_section_id_sections_id_fk" FOREIGN KEY ("section_id") REFERENCES "public"."sections"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "knowledge_chunks" ADD CONSTRAINT "knowledge_chunks_workspace_id_course_id_material_id_version_id_material_versions_workspace_id_course_id_material_id_id_fk" FOREIGN KEY ("workspace_id","course_id","material_id","version_id") REFERENCES "public"."material_versions"("workspace_id","course_id","material_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "learning_attempts" ADD CONSTRAINT "learning_attempts_workspace_id_course_id_set_id_run_id_learning_runs_workspace_id_course_id_set_id_id_fk" FOREIGN KEY ("workspace_id","course_id","set_id","run_id") REFERENCES "public"."learning_runs"("workspace_id","course_id","set_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -786,10 +771,6 @@ ALTER TABLE "workspace_preferences" ADD CONSTRAINT "workspace_preferences_worksp
 ALTER TABLE "prerequisites" ADD CONSTRAINT "prerequisites_section_id_sections_id_fk" FOREIGN KEY ("section_id") REFERENCES "public"."sections"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "prerequisites" ADD CONSTRAINT "prerequisites_requires_id_sections_id_fk" FOREIGN KEY ("requires_id") REFERENCES "public"."sections"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "prerequisites" ADD CONSTRAINT "prerequisites_workspace_id_course_id_courses_workspace_id_id_fk" FOREIGN KEY ("workspace_id","course_id") REFERENCES "public"."courses"("workspace_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "question_pool" ADD CONSTRAINT "question_pool_workspace_id_course_id_material_id_version_id_material_versions_workspace_id_course_id_material_id_id_fk" FOREIGN KEY ("workspace_id","course_id","material_id","version_id") REFERENCES "public"."material_versions"("workspace_id","course_id","material_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "question_sources" ADD CONSTRAINT "question_sources_workspace_id_course_id_question_id_question_versions_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","question_id") REFERENCES "public"."question_versions"("workspace_id","course_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "question_sources" ADD CONSTRAINT "question_sources_workspace_id_course_id_material_id_version_id_material_versions_workspace_id_course_id_material_id_id_fk" FOREIGN KEY ("workspace_id","course_id","material_id","version_id") REFERENCES "public"."material_versions"("workspace_id","course_id","material_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "question_versions" ADD CONSTRAINT "question_versions_workspace_id_course_id_courses_workspace_id_id_fk" FOREIGN KEY ("workspace_id","course_id") REFERENCES "public"."courses"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reminder_states" ADD CONSTRAINT "reminder_states_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "run_answers" ADD CONSTRAINT "run_answers_workspace_id_course_id_set_id_run_id_learning_runs_workspace_id_course_id_set_id_id_fk" FOREIGN KEY ("workspace_id","course_id","set_id","run_id") REFERENCES "public"."learning_runs"("workspace_id","course_id","set_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "run_answers" ADD CONSTRAINT "run_answers_workspace_id_course_id_set_id_item_id_set_items_workspace_id_course_id_set_id_id_fk" FOREIGN KEY ("workspace_id","course_id","set_id","item_id") REFERENCES "public"."set_items"("workspace_id","course_id","set_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -799,7 +780,7 @@ ALTER TABLE "scopes" ADD CONSTRAINT "scopes_assessment_fk" FOREIGN KEY ("workspa
 ALTER TABLE "sections" ADD CONSTRAINT "sections_workspace_id_course_id_material_id_version_id_material_versions_workspace_id_course_id_material_id_id_fk" FOREIGN KEY ("workspace_id","course_id","material_id","version_id") REFERENCES "public"."material_versions"("workspace_id","course_id","material_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "set_items" ADD CONSTRAINT "set_items_workspace_id_course_id_set_id_learning_sets_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","set_id") REFERENCES "public"."learning_sets"("workspace_id","course_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "set_items" ADD CONSTRAINT "set_items_workspace_id_course_id_question_id_question_versions_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","question_id") REFERENCES "public"."question_versions"("workspace_id","course_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "set_items" ADD CONSTRAINT "set_items_workspace_id_course_id_question_id_bank_items_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","question_id") REFERENCES "public"."bank_items"("workspace_id","course_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "topic_sections" ADD CONSTRAINT "topic_sections_workspace_id_course_id_topic_id_topics_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","topic_id") REFERENCES "public"."topics"("workspace_id","course_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "topic_sections" ADD CONSTRAINT "topic_sections_workspace_id_course_id_material_id_materials_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","material_id") REFERENCES "public"."materials"("workspace_id","course_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "topics" ADD CONSTRAINT "topics_workspace_id_course_id_courses_workspace_id_id_fk" FOREIGN KEY ("workspace_id","course_id") REFERENCES "public"."courses"("workspace_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -809,7 +790,6 @@ ALTER TABLE "tutor_sessions" ADD CONSTRAINT "tutor_sessions_workspace_id_course_
 ALTER TABLE "upload_candidates" ADD CONSTRAINT "upload_candidates_upload_id_uploads_id_fk" FOREIGN KEY ("upload_id") REFERENCES "public"."uploads"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "uploads" ADD CONSTRAINT "uploads_workspace_id_course_id_courses_workspace_id_id_fk" FOREIGN KEY ("workspace_id","course_id") REFERENCES "public"."courses"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "uploads" ADD CONSTRAINT "uploads_workspace_id_course_id_material_id_result_version_id_material_versions_workspace_id_course_id_material_id_id_fk" FOREIGN KEY ("workspace_id","course_id","material_id","result_version_id") REFERENCES "public"."material_versions"("workspace_id","course_id","material_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "workspace_imports" ADD CONSTRAINT "workspace_imports_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_storage" ADD CONSTRAINT "workspace_storage_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspaces" ADD CONSTRAINT "workspaces_owner_user_id_user_id_fk" FOREIGN KEY ("owner_user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspaces" ADD CONSTRAINT "workspaces_funding_source_id_funding_sources_id_fk" FOREIGN KEY ("funding_source_id") REFERENCES "public"."funding_sources"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -821,12 +801,14 @@ CREATE INDEX "ai_calls_health_idx" ON "ai_calls" USING btree ("vendor","model","
 CREATE INDEX "ai_calls_operation_idx" ON "ai_calls" USING btree ("operation_id");--> statement-breakpoint
 CREATE INDEX "ai_operations_target_idx" ON "ai_operations" USING btree ("workspace_id","target_id","created_at");--> statement-breakpoint
 CREATE INDEX "assessments_scope_idx" ON "assessments" USING btree ("workspace_id","course_id");--> statement-breakpoint
+CREATE INDEX "bank_items_draw_idx" ON "bank_items" USING btree ("workspace_id","material_id","section_key","format","state");--> statement-breakpoint
 CREATE INDEX "check_ins_scope_idx" ON "check_ins" USING btree ("workspace_id");--> statement-breakpoint
 CREATE INDEX "courses_workspace_list_idx" ON "courses" USING btree ("workspace_id","archived","id");--> statement-breakpoint
-CREATE INDEX "seed_records_entity_idx" ON "development_seed_records" USING btree ("workspace_id","entity_type","entity_id");--> statement-breakpoint
 CREATE INDEX "exam_configs_scope_idx" ON "exam_configs" USING btree ("workspace_id","course_id","id");--> statement-breakpoint
 CREATE INDEX "facts_section_idx" ON "facts" USING btree ("section_id","kind");--> statement-breakpoint
 CREATE INDEX "ingest_jobs_due_idx" ON "ingest_jobs" USING btree ("state","next_run_at");--> statement-breakpoint
+CREATE INDEX "item_results_item_idx" ON "item_results" USING btree ("workspace_id","item_id","at");--> statement-breakpoint
+CREATE INDEX "item_results_section_idx" ON "item_results" USING btree ("workspace_id","material_id","section_key","at");--> statement-breakpoint
 CREATE INDEX "knowledge_chunks_scope_idx" ON "knowledge_chunks" USING btree ("workspace_id","course_id","version_id");--> statement-breakpoint
 CREATE INDEX "knowledge_chunks_section_idx" ON "knowledge_chunks" USING btree ("section_id");--> statement-breakpoint
 CREATE INDEX "knowledge_chunks_search_idx" ON "knowledge_chunks" USING gin ("search");--> statement-breakpoint
@@ -842,8 +824,6 @@ CREATE INDEX "outline_jobs_due_idx" ON "outline_jobs" USING btree ("state","next
 CREATE INDEX "outline_jobs_course_idx" ON "outline_jobs" USING btree ("workspace_id","course_id","created_at");--> statement-breakpoint
 CREATE INDEX "planned_sessions_scope_idx" ON "planned_sessions" USING btree ("workspace_id","course_id");--> statement-breakpoint
 CREATE INDEX "prerequisites_course_idx" ON "prerequisites" USING btree ("workspace_id","course_id");--> statement-breakpoint
-CREATE INDEX "question_pool_key_idx" ON "question_pool" USING btree ("cache_key","state");--> statement-breakpoint
-CREATE INDEX "questions_course_idx" ON "question_versions" USING btree ("workspace_id","course_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "scopes_topic_unique" ON "scopes" USING btree ("course_id","topic_id") WHERE "scopes"."kind" = 'topic';--> statement-breakpoint
 CREATE UNIQUE INDEX "scopes_assessment_unique" ON "scopes" USING btree ("course_id","assessment_id") WHERE "scopes"."kind" = 'assessment';--> statement-breakpoint
 CREATE UNIQUE INDEX "scopes_course_unique" ON "scopes" USING btree ("course_id") WHERE "scopes"."kind" = 'course';--> statement-breakpoint

@@ -1,4 +1,4 @@
-import type { ActivityType, Difficulty, Question, QuestionFormat, SavedPracticeSet } from './types';
+import type { ActivityType, Difficulty, Question, QuestionFormat } from './types';
 
 export interface QuestionFilter {
   topicIds?: string[];
@@ -115,50 +115,9 @@ export function selectQuestions(
   return out;
 }
 
-/**
- * Which question formats each practice activity draws on.
- *
- * Shared rather than owned by the setup screen, because two places now resolve
- * a `PracticeConfig` into questions: generation, and the recovery that repairs
- * a saved set which stored only its settings. They have to agree, or a
- * recovered set is a different set from the one the student generated.
- */
+/** Which question formats each practice activity draws on. */
 export const ACTIVITY_FORMATS: Record<ActivityType, QuestionFormat[]> = {
   flashcards: ['flashcard'],
-  quiz: ['multiple-choice', 'multiple-select', 'matching', 'ordering', 'fill-blank'],
-  'written-recall': ['written-recall'],
-  'source-analysis': ['source-analysis'],
-  essay: ['essay'],
+  quiz: ['multiple-choice', 'numeric', 'cloze', 'ordering', 'matching'],
+  'self-check': ['self-check'],
 };
-
-/**
- * The questions a saved set's configuration resolves to.
- *
- * `pool` must already be that set's own course, which is what stops a recovery
- * attaching another subject's questions to a history set.
- */
-export function resolveSetQuestions(
-  set: SavedPracticeSet,
-  pool: Question[],
-): Question[] {
-  return selectQuestions(
-    pool,
-    {
-      formats: ACTIVITY_FORMATS[set.config.activity],
-      ...(set.config.topicIds.length ? { topicIds: set.config.topicIds } : {}),
-      ...(set.config.difficulties.length
-        ? { difficulties: set.config.difficulties }
-        : {}),
-      ...(set.config.materialIds.length
-        ? { materialIds: set.config.materialIds }
-        : {}),
-    },
-    set.config.length || undefined,
-  );
-}
-
-/** How many questions match a filter — the number the setup UI clamps to. */
-export function countAvailable(pool: Question[], filter: QuestionFilter): number {
-  return selectQuestions(pool, filter).length;
-}
-

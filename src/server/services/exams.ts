@@ -3,14 +3,16 @@ import type { z } from 'zod';
 import { buildRun, flatQuestionIds, locate, sectionLocked, validateConfig, withExtraTime } from '../../shared/domain/exam';
 import type { createExamInput, examTransitionInput, ExamRuntime } from '../../shared/contracts/exams';
 import type { metadataInput } from '../../shared/contracts/learning';
-import { assessments, examConfigs, learningRuns, learningSets, materials, questionVersions, setItems } from '../db/schema';
+import { assessments, examConfigs, learningRuns, learningSets, materials, setItems } from '../db/schema';
+import type { BackendBindings } from '../config';
+import { examPool } from './questions/practice';
 import { operation, ownRun, reconcileRun, runView, validatePlannedLink, getRun } from './learning';
 import { lockCourse, validateTopics } from './materials';
 import { getCourse } from './workspace';
 import { ApiError, conflict, notFound } from '../errors';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
 
-async function ownConfig(db: ReadDb | Transaction, workspaceId: string, id: string) {
+async function ownConfig(db: ReadDb | SocketDb | Transaction, workspaceId: string, id: string) {
   const [row] = await db.select().from(examConfigs).where(and(eq(examConfigs.workspaceId, workspaceId), eq(examConfigs.id, id)));
   if (!row) throw notFound(); return row;
 }
@@ -41,10 +43,20 @@ export async function patchExam(db: SocketDb, workspaceId: string, id: string, i
     const [saved] = await tx.update(examConfigs).set({ config: { ...row.config, name: input.name }, archived: input.archived, revision: row.revision + 1, updatedAt: new Date() }).where(eq(examConfigs.id, id)).returning(); return saved!;
   });
 }
-export async function startExam(db: SocketDb, workspaceId: string, configId: string, id: string, plannedSessionId?: string) {
+/**
+ * Start a rehearsal. Its questions are made ready first, from the bank, by code and, for any
+ * shortfall, by a model, since a timed paper cannot wait for them. Then the paper is fixed.
+ */
+export async function startExam(env: BackendBindings, db: SocketDb, workspaceId: string, configId: string, id: string, plannedSessionId?: string) {
+  // A repeated start returns the paper already made, without drawing again.
+  const [started] = await db.select({ id: learningRuns.id }).from(learningRuns).where(and(eq(learningRuns.workspaceId, workspaceId), eq(learningRuns.id, id)));
+  if (started) return getRun(db, workspaceId, id);
+  const config = await ownConfig(db, workspaceId, configId);
+  if (config.archived) throw new ApiError(409, 'archived', 'Restore this rehearsal before starting it.');
+  const questions = await examPool(env, db, workspaceId, config.courseId, config.config);
   return operation(db, workspaceId, id, { action: 'start-exam', configId, id, plannedSessionId }, async tx => {
-    const row = await ownConfig(tx, workspaceId, configId); if (row.archived) throw new ApiError(409, 'archived', 'Restore this rehearsal before starting it.');
-    const pool = await tx.select({ content: questionVersions.content }).from(questionVersions).where(and(eq(questionVersions.workspaceId, workspaceId), eq(questionVersions.courseId, row.courseId))).orderBy(asc(questionVersions.id));
+    const row = await ownConfig(tx, workspaceId, configId);
+    const pool = questions.map(content => ({ content }));
     const problems = validateConfig(row.config, pool.map(q => q.content)).problems;
     if (problems.length) throw new ApiError(400, 'invalid_exam', problems.join(' '));
     if (plannedSessionId) await validatePlannedLink(tx, workspaceId, row.courseId, plannedSessionId, true);

@@ -12,7 +12,7 @@ export interface DigestInput {
 }
 const factSchema = z.object({
   kind: z.enum(['fact', 'definition', 'number', 'steps', 'formula']),
-  subject: z.string().describe('definition: the term. number: what is measured. steps: the process. formula: what it computes. fact: what the claim is about, in a few words'),
+  subject: z.string().describe('definition: the term. number: what is measured, as a noun phrase such as "the population of Lisbon in 1550". steps: the process, as a noun phrase. formula: what it computes. fact: what the claim is about, in a few words'),
   text: z.string().describe('The claim, definition, formula or summary of the steps, readable on its own'),
   value: z.number().nullable().describe('number only: the value exactly as the text gives it, otherwise null'),
   unit: z.string().nullable().describe('number only: the unit, otherwise null'),

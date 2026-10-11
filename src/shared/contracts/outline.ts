@@ -73,6 +73,8 @@ export const scopeInput = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('topic'), topicId: uuid }),
   z.strictObject({ kind: z.literal('assessment'), assessmentId: uuid }),
   z.strictObject({ kind: z.literal('course') }),
+  // A material's current sections, saved as a selection named after it.
+  z.strictObject({ kind: z.literal('material'), materialId: uuid }),
   z.strictObject({ kind: z.literal('sections'), id: uuid, name: z.string().trim().min(1).max(200), sections: z.array(scopeSection).min(1).max(200) }),
 ]);
 export const scopePatch = z.strictObject({ operationId: uuid, expectedRevision: z.number().int().positive(), name: z.string().trim().min(1).max(200).optional(), sections: z.array(scopeSection).min(1).max(200).optional(), archived: z.boolean().optional() });
