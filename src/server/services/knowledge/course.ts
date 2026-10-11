@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { facts, knowledgeChunks, materials, prerequisites, sections } from '../../db/schema';
 import { transaction, type ReadDb, type SocketDb, type Transaction } from '../../db/client';
 import { sequenceNumber } from '../outline/provider';
+import { enqueueJob } from '../outline/queue';
 
 type Scope = { workspaceId: string; courseId: string };
 type Db = ReadDb | SocketDb | Transaction;
@@ -81,7 +82,11 @@ export async function relateCourse(db: SocketDb, scope: Scope) {
   return links.size;
 }
 
-/** Course work that follows a version finishing its knowledge layer. */
+/**
+ * Course work that follows a version finishing its knowledge layer: prerequisites are read again,
+ * and topics are assigned to its sections, now that they have summaries and terms.
+ */
 export async function afterIngest(db: SocketDb, scope: Scope) {
   await relateCourse(db, scope);
+  await transaction(db, tx => enqueueJob(tx, scope, 'assign_topics'));
 }

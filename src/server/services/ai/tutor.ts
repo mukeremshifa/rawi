@@ -291,7 +291,7 @@ export async function prepare(env: BackendBindings, ctx: CallContext, sessionId:
   // One retrieval. The session's own passage anchors it, and a follow-up is read with the
   // exchange it leans on before searching.
   const resolved = resolveQuery(saved.text, history, language);
-  const found = await retrieve(env, ctx, { courseId: session.courseId, query: resolved.query, context: resolved.context, language, topicId: session.topicId, focus: session.source });
+  const found = await retrieve(env, ctx, { courseId: session.courseId, query: resolved.query, context: resolved.context, language, focus: session.source, scope: null });
   const input: TutorInput = {
     language, courseName: course?.name ?? '', topic: topic ? { title: topic.title, summary: topic.summary } : null,
     focusLabel: session.title, anchor: found.passages.filter(p => p.focus), review: session.review, olderSummary: session.historySummary,

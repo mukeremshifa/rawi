@@ -2,9 +2,9 @@ import { z } from 'zod';
 import { OUTLINE_MAX, OUTLINE_MIN, type OutlineJobKind } from '../../../shared/contracts/outline';
 import type { Task } from '../../ai/engine';
 import { DATA_RULE, escapeTags as escape, house, parsed, schemaOf } from '../../ai/style';
-import type { DraftInput, Draft, MappingInput, Mapping, SyllabusInput, SyllabusReading } from './provider';
+import type { AssignInput, Assignment, SyllabusInput, SyllabusReading } from './provider';
 
-export const OUTLINE_PROMPT_VERSION = 'outline-v2';
+export const OUTLINE_PROMPT_VERSION = 'outline-v3';
 const HOUSE = (input: { language: string }) => `${house(input.language)} Copy titles exactly as the document writes them.`;
 const DATA = DATA_RULE;
 
@@ -23,12 +23,9 @@ const readingSchema = z.object({
     blocks: z.array(z.string()),
   })),
 });
-const mappingSchema = z.object({
-  links: z.array(z.object({ section: z.string(), topics: z.array(z.string()) })),
-  newTopics: z.array(z.object({ title: z.string(), summary: z.string(), sections: z.array(z.string()) })),
-});
-const draftSchema = z.object({
-  topics: z.array(z.object({ title: z.string(), module: z.string(), summary: z.string(), material: z.string(), heading: z.string().nullable().default(null) })),
+const assignSchema = z.object({
+  links: z.array(z.object({ section: z.string(), topics: z.array(z.object({ topic: z.string().describe('A topic key, or the key of a new topic you propose'), depth: z.enum(['covers', 'mentions']) })) })),
+  newTopics: z.array(z.object({ key: z.string().describe('n0, n1 and so on'), title: z.string(), module: z.string().describe('Week or unit label when the material has one, otherwise an empty string'), summary: z.string() })),
 });
 
 export function syllabusPrompt(input: SyllabusInput) {
@@ -45,44 +42,31 @@ export function syllabusPrompt(input: SyllabusInput) {
   const prompt = `${current}\n\n<document>\n${input.blocks.map(b => `<block key="${b.key}">\n${escape(b.text)}\n</block>`).join('\n')}\n</document>`;
   return { system, prompt };
 }
-export function mappingPrompt(input: MappingInput) {
+export function assignPrompt(input: AssignInput) {
   const system = [
-    'You match the sections of a course material to the topics of the course outline.',
-    'Link a section to a topic only when the section teaches that topic. A section may fit one or two topics, or none.',
-    input.newTopics ? `When a substantial section fits no topic, you may propose up to ${input.newTopics} new topics, each citing its sections. Never propose one for a section marked parent="true", which only holds its subsections. Otherwise return no new topics.` : 'Return no new topics.',
+    `You organise the sections of the course "${input.courseName}" by topic.`,
+    'A topic is a subject a student would study and be assessed on. For each section, list the topics it teaches. Use "covers" when the section teaches the topic and "mentions" when it only touches on it. A section may belong to several topics, or to none, such as a reading list or a title page.',
+    input.room ? `When substantial sections teach a subject no current topic names, propose up to ${input.room} new topics with keys n0, n1 and so on, each with a short title, a one-sentence summary written from the sections, and its week or unit label when there is one. Prefer a few broad topics to many narrow ones.` : 'Propose no new topics.',
     'Use only the section and topic keys supplied.',
     DATA, HOUSE(input),
   ].join('\n');
-  const prompt = `Topics:\n${input.topics.map(t => `- ${t.key}: ${t.title}${t.summary ? `. ${t.summary}` : ''}`).join('\n')}\n\n<document title="${escape(input.materialTitle)}">\n${input.sections.map(s => `<section key="${s.key}" heading="${escape(s.heading)}" parent="${s.parent}">\n${escape(s.excerpt)}\n</section>`).join('\n')}\n</document>`;
-  return { system, prompt };
-}
-export function draftPrompt(input: DraftInput) {
-  const system = [
-    `You draft the outline of the course "${input.courseName}" from its materials' titles and section headings.`,
-    `Return ${OUTLINE_MIN} to ${OUTLINE_MAX} topics in teaching order, ordered by lecture or week number when the materials have one. Fold finer headings into a topic's summary.`,
-    'Each topic cites one material key and the heading key it comes from, or null for the material as a whole. Use only supplied keys.',
-    'The module is the lecture or week label when there is one, otherwise an empty string. The summary is one short sentence drawn from the headings.',
-    DATA, HOUSE(input),
-  ].join('\n');
-  const prompt = `<document>\n${input.materials.map(m => `<material key="${m.key}" title="${escape(m.title)}">\n${m.headings.map(h => `${'  '.repeat(Math.max(0, h.level - 1))}<heading key="${h.key}">${escape(h.text)}</heading>`).join('\n')}\n</material>`).join('\n')}\n</document>`;
+  const topics = input.topics.length ? input.topics.map(t => `- ${t.key}: ${t.title}${t.summary ? `. ${t.summary}` : ''}`).join('\n') : '(none yet)';
+  const sections = input.sections.map(s => `<section key="${s.key}" material="${escape(s.material)}" heading="${escape(s.path)}" words="${s.words}">\n${escape(s.summary)}${s.terms.length ? `\nTerms: ${escape(s.terms.join(', '))}` : ''}\n</section>`).join('\n');
+  const prompt = `Topics:\n${topics}\n\n<document>\n${sections}\n</document>`;
   return { system, prompt };
 }
 
 /**
- * Outline tasks. Reading the syllabus is rare and decides the whole outline, so it starts on the
- * strong tier. Mapping and drafting are small structured jobs in the background, on flex.
+ * Outline tasks. Both read structure in the background. Reading the syllabus is rare and decides
+ * the outline, so it may try one more route when a reading fails its check.
  */
-export const outlineTasks: { [K in OutlineJobKind]: Task<K extends 'read_syllabus' ? SyllabusInput : K extends 'map_material' ? MappingInput : DraftInput, K extends 'read_syllabus' ? SyllabusReading : K extends 'map_material' ? Mapping : Draft> } = {
+export const outlineTasks: { [K in OutlineJobKind]: Task<K extends 'read_syllabus' ? SyllabusInput : AssignInput, K extends 'read_syllabus' ? SyllabusReading : Assignment> } = {
   read_syllabus: {
     name: 'outline.read_syllabus', promptVersion: OUTLINE_PROMPT_VERSION, temperature: 0, needs: { skill: 'extract', data: 'institution', lane: 'background', maxOutput: 8000, cache: 'none', attempts: 3 },
     language: i => i.language, build: i => ({ ...syllabusPrompt(i), schema: schemaOf(readingSchema) }), check: r => parsed(readingSchema, r.json),
   },
-  map_material: {
-    name: 'outline.map_material', promptVersion: OUTLINE_PROMPT_VERSION, temperature: 0, needs: { skill: 'extract', data: 'institution', lane: 'background', maxOutput: 4000, cache: 'none' },
-    language: i => i.language, build: i => ({ ...mappingPrompt(i), schema: schemaOf(mappingSchema) }), check: r => parsed(mappingSchema, r.json),
-  },
-  draft_outline: {
-    name: 'outline.draft_outline', promptVersion: OUTLINE_PROMPT_VERSION, temperature: 0, needs: { skill: 'extract', data: 'institution', lane: 'background', maxOutput: 4000, cache: 'none' },
-    language: i => i.language, build: i => ({ ...draftPrompt(i), schema: schemaOf(draftSchema) }), check: r => parsed(draftSchema, r.json),
+  assign_topics: {
+    name: 'outline.assign_topics', promptVersion: OUTLINE_PROMPT_VERSION, temperature: 0, needs: { skill: 'extract', data: 'institution', lane: 'background', maxOutput: 6000, cache: 'none', attempts: 3 },
+    language: i => i.language, build: i => ({ ...assignPrompt(i), schema: schemaOf(assignSchema) }), check: r => parsed(assignSchema, r.json),
   },
 };

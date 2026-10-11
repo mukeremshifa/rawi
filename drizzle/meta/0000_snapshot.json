@@ -1,5 +1,5 @@
 {
-  "id": "c897f46c-c67f-4296-ac7d-ed27c225a01e",
+  "id": "9dd05478-aa2e-4009-8995-7525b6aefafb",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -3651,7 +3651,7 @@
       "checkConstraints": {
         "outline_jobs_kind_valid": {
           "name": "outline_jobs_kind_valid",
-          "value": "\"outline_jobs\".\"kind\" in ('read_syllabus', 'map_material', 'draft_outline')"
+          "value": "\"outline_jobs\".\"kind\" in ('read_syllabus', 'assign_topics')"
         },
         "outline_jobs_state_valid": {
           "name": "outline_jobs_state_valid",
@@ -4618,16 +4618,15 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.section_links": {
-      "name": "section_links",
+    "public.scopes": {
+      "name": "scopes",
       "schema": "",
       "columns": {
         "id": {
           "name": "id",
           "type": "uuid",
           "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
+          "notNull": true
         },
         "workspace_id": {
           "name": "workspace_id",
@@ -4641,48 +4640,56 @@
           "primaryKey": false,
           "notNull": true
         },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "topic_id": {
           "name": "topic_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
-        "material_id": {
-          "name": "material_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version_id": {
-          "name": "version_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "heading_block_id": {
-          "name": "heading_block_id",
+        "assessment_id": {
+          "name": "assessment_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
-        "heading_text": {
-          "name": "heading_text",
-          "type": "text",
+        "sections": {
+          "name": "sections",
+          "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'[]'::jsonb"
         },
-        "origin": {
-          "name": "origin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "removed": {
-          "name": "removed",
+        "archived": {
+          "name": "archived",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -4690,11 +4697,78 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {
-        "section_links_course_idx": {
-          "name": "section_links_course_idx",
+        "scopes_topic_unique": {
+          "name": "scopes_topic_unique",
+          "columns": [
+            {
+              "expression": "course_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "topic_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"scopes\".\"kind\" = 'topic'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "scopes_assessment_unique": {
+          "name": "scopes_assessment_unique",
+          "columns": [
+            {
+              "expression": "course_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "assessment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"scopes\".\"kind\" = 'assessment'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "scopes_course_unique": {
+          "name": "scopes_course_unique",
+          "columns": [
+            {
+              "expression": "course_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"scopes\".\"kind\" = 'course'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "scopes_list_idx": {
+          "name": "scopes_list_idx",
           "columns": [
             {
               "expression": "workspace_id",
@@ -4709,7 +4783,7 @@
               "nulls": "last"
             },
             {
-              "expression": "topic_id",
+              "expression": "archived",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4722,9 +4796,24 @@
         }
       },
       "foreignKeys": {
-        "section_links_workspace_id_course_id_topic_id_topics_workspace_id_course_id_id_fk": {
-          "name": "section_links_workspace_id_course_id_topic_id_topics_workspace_id_course_id_id_fk",
-          "tableFrom": "section_links",
+        "scopes_workspace_id_course_id_courses_workspace_id_id_fk": {
+          "name": "scopes_workspace_id_course_id_courses_workspace_id_id_fk",
+          "tableFrom": "scopes",
+          "tableTo": "courses",
+          "columnsFrom": [
+            "workspace_id",
+            "course_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "scopes_workspace_id_course_id_topic_id_topics_workspace_id_course_id_id_fk": {
+          "name": "scopes_workspace_id_course_id_topic_id_topics_workspace_id_course_id_id_fk",
+          "tableFrom": "scopes",
           "tableTo": "topics",
           "columnsFrom": [
             "workspace_id",
@@ -4739,43 +4828,41 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "section_links_workspace_id_course_id_material_id_version_id_material_versions_workspace_id_course_id_material_id_id_fk": {
-          "name": "section_links_workspace_id_course_id_material_id_version_id_material_versions_workspace_id_course_id_material_id_id_fk",
-          "tableFrom": "section_links",
-          "tableTo": "material_versions",
+        "scopes_assessment_fk": {
+          "name": "scopes_assessment_fk",
+          "tableFrom": "scopes",
+          "tableTo": "assessments",
           "columnsFrom": [
             "workspace_id",
             "course_id",
-            "material_id",
-            "version_id"
+            "assessment_id"
           ],
           "columnsTo": [
             "workspace_id",
             "course_id",
-            "material_id",
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "section_links_unique": {
-          "name": "section_links_unique",
-          "nullsNotDistinct": true,
+        "scopes_scope_unique": {
+          "name": "scopes_scope_unique",
+          "nullsNotDistinct": false,
           "columns": [
-            "version_id",
-            "heading_block_id",
-            "topic_id"
+            "workspace_id",
+            "course_id",
+            "id"
           ]
         }
       },
       "policies": {},
       "checkConstraints": {
-        "section_links_origin_valid": {
-          "name": "section_links_origin_valid",
-          "value": "\"section_links\".\"origin\" in ('suggested', 'student')"
+        "scopes_kind_valid": {
+          "name": "scopes_kind_valid",
+          "value": "\"scopes\".\"kind\" in ('topic', 'sections', 'assessment', 'course')"
         }
       },
       "isRLSEnabled": false
@@ -4892,6 +4979,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "topics_at": {
+          "name": "topics_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -5196,6 +5289,156 @@
       },
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.topic_sections": {
+      "name": "topic_sections",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "course_id": {
+          "name": "course_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "topic_id": {
+          "name": "topic_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "material_id": {
+          "name": "material_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "section_key": {
+          "name": "section_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "depth": {
+          "name": "depth",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "removed": {
+          "name": "removed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "topic_sections_material_idx": {
+          "name": "topic_sections_material_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "material_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "section_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "topic_sections_workspace_id_course_id_topic_id_topics_workspace_id_course_id_id_fk": {
+          "name": "topic_sections_workspace_id_course_id_topic_id_topics_workspace_id_course_id_id_fk",
+          "tableFrom": "topic_sections",
+          "tableTo": "topics",
+          "columnsFrom": [
+            "workspace_id",
+            "course_id",
+            "topic_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "course_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "topic_sections_workspace_id_course_id_material_id_materials_workspace_id_course_id_id_fk": {
+          "name": "topic_sections_workspace_id_course_id_material_id_materials_workspace_id_course_id_id_fk",
+          "tableFrom": "topic_sections",
+          "tableTo": "materials",
+          "columnsFrom": [
+            "workspace_id",
+            "course_id",
+            "material_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "course_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "topic_sections_topic_id_material_id_section_key_pk": {
+          "name": "topic_sections_topic_id_material_id_section_key_pk",
+          "columns": [
+            "topic_id",
+            "material_id",
+            "section_key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "topic_sections_depth_valid": {
+          "name": "topic_sections_depth_valid",
+          "value": "\"topic_sections\".\"depth\" in ('introduces', 'covers', 'mentions')"
+        },
+        "topic_sections_origin_valid": {
+          "name": "topic_sections_origin_valid",
+          "value": "\"topic_sections\".\"origin\" in ('suggested', 'student')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.topics": {

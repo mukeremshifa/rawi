@@ -122,8 +122,9 @@ try {
         return {oldId:p.id,materialId:material.id,versionId,blockIds:blocks.slice(start,end<0?undefined:end).slice(0,200).map(b=>b.id)};
       });
       // The authored sections name their topics, so they are linked as the student would link them.
-      const links=m.sections.flatMap((p,i)=>p.topicIds.map(t=>({workspaceId:wid,courseId:id(m.courseId),materialId:material.id,versionId,topicId:id(`topic:${t}`),headingBlockId:refs[i]!.blockIds[0]!,headingText:p.heading,origin:'student' as const})));
-      if(links.length) await db.insert(s.sectionLinks).values(links).onConflictDoNothing();
+      const sectionKey=(heading:string)=>heading.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+      const links=m.sections.flatMap(p=>p.topicIds.map(t=>({workspaceId:wid,courseId:id(m.courseId),materialId:material.id,topicId:id(`topic:${t}`),sectionKey:sectionKey(p.heading),depth:'covers' as const,origin:'student' as const})));
+      if(links.length) await db.insert(s.topicSections).values(links).onConflictDoNothing();
       return {id:material.id,refs};
     });
     for(const {oldId,...r} of result.refs) sources.set(`${m.id}:${oldId}`,r);

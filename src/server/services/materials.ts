@@ -2,7 +2,7 @@ import { transaction } from '../db/client';
 import { and, asc, desc, eq, exists, gt, inArray, ne, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { createMaterialInput, materialPatch, materialListInput } from '../../shared/contracts/materials';
-import { materials, materialVersions, blocks, sectionLinks, topics, courses } from '../db/schema';
+import { materials, materialVersions, blocks, ingestJobs, topicSections, topics, courses } from '../db/schema';
 import { blockInput, DOCUMENT_SCHEMA_VERSION, usableStatus, type BlockBody, type BlockInput, type Citation, type ConversionWarning, type DocumentBlock, type Pagination, type ParsedBlock } from '../../shared/contracts/document';
 import { blockMarkdown, spansText } from '../../shared/domain/document-text';
 import { markdownBlocks, MARKDOWN_ADAPTER_VERSION } from './documents/markdown';
@@ -38,9 +38,9 @@ export async function ownMaterial(db: Db, workspaceId: string, id: string) {
 export async function materialDetail(db: Db, workspaceId: string, id: string) {
   const row = await ownMaterial(db, workspaceId, id);
   const links = await materialTopics(db, { workspaceId, courseId: row.courseId }, [id]);
-  const [version] = row.currentVersionId ? await db.select({ status: materialVersions.status }).from(materialVersions).where(eq(materialVersions.id, row.currentVersionId)) : [];
+  const [version] = row.currentVersionId ? await db.select({ status: materialVersions.status, readiness: ingestJobs.readiness }).from(materialVersions).leftJoin(ingestJobs, eq(ingestJobs.versionId, materialVersions.id)).where(eq(materialVersions.id, row.currentVersionId)) : [];
   const { createFingerprint: _private, workspaceId: _workspace, ...visible } = row;
-  return { ...visible, topicIds: links.get(id) ?? [], status: version?.status ?? null };
+  return { ...visible, topicIds: links.get(id) ?? [], status: version?.status ?? null, readiness: version?.readiness ?? null };
 }
 export async function validateTopics(tx: Transaction, workspaceId: string, courseId: string, ids: string[]) {
   if (!ids.length) return;
@@ -165,13 +165,13 @@ export async function listMaterials(db: ReadDb, workspaceId: string, courseId: s
     if (!topic) throw notFound();
   }
   // The syllabus has its own slot on the course page and is not listed here.
-  const rows = await db.select({ material: materials, status: materialVersions.status }).from(materials).leftJoin(materialVersions, eq(materialVersions.id, materials.currentVersionId)).where(and(eq(materials.workspaceId, workspaceId), eq(materials.courseId, courseId), ne(materials.kind, 'syllabus'),
+  const rows = await db.select({ material: materials, status: materialVersions.status, readiness: ingestJobs.readiness }).from(materials).leftJoin(materialVersions, eq(materialVersions.id, materials.currentVersionId)).leftJoin(ingestJobs, eq(ingestJobs.versionId, materials.currentVersionId)).where(and(eq(materials.workspaceId, workspaceId), eq(materials.courseId, courseId), ne(materials.kind, 'syllabus'),
     input.archived === 'all' ? undefined : eq(materials.archived, input.archived === 'true'), input.cursor ? gt(materials.id, input.cursor) : undefined,
-    input.topicId ? exists(db.select({ id: sectionLinks.id }).from(sectionLinks).where(and(eq(sectionLinks.versionId, materials.currentVersionId), eq(sectionLinks.topicId, input.topicId), eq(sectionLinks.removed, false)))) : undefined,
+    input.topicId ? exists(db.select({ id: topicSections.topicId }).from(topicSections).where(and(eq(topicSections.materialId, materials.id), eq(topicSections.topicId, input.topicId), eq(topicSections.removed, false)))) : undefined,
   )).orderBy(asc(materials.id)).limit(input.limit + 1);
   const page = rows.slice(0, input.limit);
   const links = page.length ? await materialTopics(db, { workspaceId, courseId }, page.map(r => r.material.id)) : new Map<string, string[]>();
-  return { materials: page.map(({ material: { createFingerprint: _hash, workspaceId: _workspace, ...material }, status }) => ({ ...material, status, topicIds: links.get(material.id) ?? [] })), nextCursor: rows.length > input.limit ? rows[input.limit - 1]!.material.id : null };
+  return { materials: page.map(({ material: { createFingerprint: _hash, workspaceId: _workspace, ...material }, status, readiness }) => ({ ...material, status, readiness, topicIds: links.get(material.id) ?? [] })), nextCursor: rows.length > input.limit ? rows[input.limit - 1]!.material.id : null };
 }
 export async function ownVersion(db: Db, workspaceId: string, materialId: string, id: string) {
   const [row] = await db.select().from(materialVersions).where(and(eq(materialVersions.workspaceId, workspaceId), eq(materialVersions.materialId, materialId), eq(materialVersions.id, id)));

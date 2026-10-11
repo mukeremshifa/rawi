@@ -1,30 +1,33 @@
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
-import { assessments, courses, materials, materialVersions, outlineChanges, outlineJobs, plannedSessions, questionVersions, sectionLinks, topics, tutorSessions } from '../../db/schema';
+import { assessments, courses, materialVersions, outlineChanges, outlineJobs, plannedSessions, prerequisites, questionVersions, topics, topicSections, tutorSessions } from '../../db/schema';
 import type { ReadDb, SocketDb, Transaction } from '../../db/client';
 import type { Citation } from '../../../shared/contracts/document';
-import { OUTLINE_MAX, type Covers, type OutlineCorrection, type TopicOrigin } from '../../../shared/contracts/outline';
+import { type Covers, type OutlineCorrection, type TopicDepth, type TopicOrigin } from '../../../shared/contracts/outline';
 import type { PlannedAssessment, AssessmentType } from '../../../shared/domain/types';
 import { ApiError, conflict, notFound } from '../../errors';
 import { operation } from '../learning';
 import { materialDetail, ownMaterial, publicVersion } from '../materials';
 import { bumpPlanner } from '../planning';
 import { getCourse } from '../workspace';
-import { readingPlaces, readyMaterials, setCover } from './links';
+import { liveLinks, readingPlaces, readyMaterials, setCover } from './links';
 import { normalTitle } from './provider';
 
 type Db = ReadDb | SocketDb | Transaction;
 type Scope = { workspaceId: string; courseId: string };
 type TopicRow = typeof topics.$inferSelect;
-type LinkRow = typeof sectionLinks.$inferSelect;
+type LinkRow = typeof topicSections.$inferSelect;
 
 export async function outlineView(db: Db, workspaceId: string, courseId: string) {
   const course = await getCourse(db, workspaceId, courseId);
   const scope = { workspaceId, courseId };
   const rows = await db.select().from(topics).where(and(eq(topics.workspaceId, workspaceId), eq(topics.courseId, courseId))).orderBy(asc(topics.order), asc(topics.id));
-  const places = await readingPlaces(db, scope);
-  const sourceIds = [...new Set(rows.flatMap(t => t.source ? [t.source.materialId] : []))];
-  const titles = new Map(sourceIds.length ? (await db.select({ id: materials.id, title: materials.title }).from(materials).where(inArray(materials.id, sourceIds))).map(m => [m.id, m.title]) : []);
+  const [places, links, requires] = await Promise.all([
+    readingPlaces(db, scope), liveLinks(db, scope),
+    db.select({ sectionId: prerequisites.sectionId, requiresId: prerequisites.requiresId }).from(prerequisites).where(and(eq(prerequisites.workspaceId, workspaceId), eq(prerequisites.courseId, courseId))),
+  ]);
+  const titles = new Map(links.map(l => [l.section.materialId, l.section.title]));
+  const buildsOn = topicDependencies(links, requires);
   let syllabus: { material: Awaited<ReturnType<typeof materialDetail>>; version: ReturnType<typeof publicVersion> | null } | null = null;
   if (course.syllabusMaterialId) {
     const material = await materialDetail(db, workspaceId, course.syllabusMaterialId);
@@ -33,15 +36,35 @@ export async function outlineView(db: Db, workspaceId: string, courseId: string)
   }
   const jobs = await db.select().from(outlineJobs).where(and(eq(outlineJobs.workspaceId, workspaceId), eq(outlineJobs.courseId, courseId))).orderBy(desc(outlineJobs.createdAt)).limit(30);
   const open = jobs.filter(j => j.state === 'queued' || j.state === 'running');
-  const pending = open.find(j => j.kind !== 'map_material')?.kind ?? open[0]?.kind ?? null;
-  const finished = jobs.find(j => (j.state === 'done' || j.state === 'failed') && j.kind !== 'map_material');
+  const pending = open.find(j => j.kind === 'read_syllabus')?.kind ?? open[0]?.kind ?? null;
+  const finished = jobs.find(j => j.state === 'done' || j.state === 'failed');
   const assessmentRows = await db.select().from(assessments).where(and(eq(assessments.workspaceId, workspaceId), eq(assessments.courseId, courseId)));
   return {
     course, pending, readyMaterials: (await readyMaterials(db, scope, course.syllabusMaterialId)).length, syllabus,
-    topics: rows.map(t => ({ ...t, places: places.get(t.id) ?? [], sourceTitle: t.source ? titles.get(t.source.materialId) ?? null : null })),
+    topics: rows.map(t => ({ ...t, places: places.get(t.id) ?? [], sourceTitle: t.source ? titles.get(t.source.materialId) ?? null : null, buildsOn: buildsOn.get(t.id) ?? [] })),
     latest: finished ? { id: finished.id, kind: finished.kind, result: finished.result, failure: finished.failure, finishedAt: finished.updatedAt.toISOString() } : null,
     assessments: assessmentRows.map(r => ({ ...r.content, source: r.source, edited: r.edited })),
   };
+}
+
+/**
+ * Which topics each topic builds on: a section of the topic requires a section that introduces or
+ * covers another topic, read from the material. Mentions do not count.
+ */
+function topicDependencies(links: Awaited<ReturnType<typeof liveLinks>>, requires: { sectionId: string; requiresId: string }[]) {
+  const topicsOf = new Map<string, Set<string>>();
+  for (const l of links) if (l.depth !== 'mentions') topicsOf.set(l.section.id, (topicsOf.get(l.section.id) ?? new Set()).add(l.topicId));
+  const out = new Map<string, string[]>();
+  for (const r of requires) {
+    for (const topic of topicsOf.get(r.sectionId) ?? []) {
+      for (const earlier of topicsOf.get(r.requiresId) ?? []) {
+        if (earlier === topic || topicsOf.get(r.sectionId)!.has(earlier)) continue;
+        const list = out.get(topic) ?? [];
+        if (!list.includes(earlier)) out.set(topic, [...list, earlier]);
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -66,7 +89,7 @@ async function bumpOutline(tx: Transaction, scope: Scope) {
   return row!.revision;
 }
 
-export interface ProposedTopic { existingId: string | null; title: string; module: string; summary: string; source: Citation }
+export interface ProposedTopic { existingId: string | null; title: string; module: string; summary: string; source: Citation | null }
 
 /**
  * Merge a job's outline into the current one. A proposed topic matches by
@@ -85,7 +108,7 @@ export async function applyTopics(tx: Transaction, scope: Scope, proposed: Propo
   // Final order: the reading's order, with kept topics it no longer contains after their old neighbour.
   const kept = current.filter(t => !used.has(t.id) && locked.has(t.id));
   const removed = current.filter(t => !used.has(t.id) && !locked.has(t.id));
-  type Slot = { key: number; id: string; write?: { title: string; module: string; summary: string; source: Citation } };
+  type Slot = { key: number; id: string; write?: { title: string; module: string; summary: string; source: Citation | null } };
   const slots: Slot[] = proposed.map((p, i) => {
     const hit = matched.get(String(i));
     const write = { title: p.title.slice(0, 200), module: p.module.slice(0, 200), summary: p.summary.slice(0, 1000), source: p.source };
@@ -117,17 +140,23 @@ export async function applyTopics(tx: Transaction, scope: Scope, proposed: Propo
   return { ids: proposed.map((_p, i) => slots.find(s => s.key === i)!.id), added: slots.filter(s => !current.some(t => t.id === s.id)).length, removed: removed.length };
 }
 
-/** Add topics from a mapping, after the existing ones, within the cap. */
+/**
+ * Add topics an assignment proposed, after the existing ones. A proposal with the title of an
+ * existing topic is that topic, so its sections join it instead of making a duplicate.
+ */
 export async function addTopics(tx: Transaction, scope: Scope, add: Omit<ProposedTopic, 'existingId'>[]) {
   const current = await tx.select({ id: topics.id, title: topics.title }).from(topics).where(and(eq(topics.workspaceId, scope.workspaceId), eq(topics.courseId, scope.courseId)));
-  const room = Math.max(0, OUTLINE_MAX - current.length);
-  const fresh = add.filter(a => !current.some(t => normalTitle(t.title) === normalTitle(a.title))).slice(0, room);
-  const ids = fresh.map(() => crypto.randomUUID());
-  if (fresh.length) {
-    await tx.insert(topics).values(fresh.map((a, i) => ({ id: ids[i]!, ...scope, title: a.title.slice(0, 200), module: a.module, summary: a.summary.slice(0, 1000), source: a.source, order: current.length + i, origin: 'materials' as const })));
-    await bumpOutline(tx, scope);
+  const out: (Omit<ProposedTopic, 'existingId'> & { id: string })[] = [];
+  let order = current.length, added = 0;
+  for (const a of add) {
+    const same = current.find(t => normalTitle(t.title) === normalTitle(a.title)) ?? out.find(t => normalTitle(t.title) === normalTitle(a.title));
+    if (same) { out.push({ ...a, id: same.id }); continue; }
+    const id = crypto.randomUUID();
+    await tx.insert(topics).values({ id, ...scope, title: a.title.slice(0, 200), module: a.module.slice(0, 200), summary: a.summary.slice(0, 1000), source: a.source, order: order++, origin: 'materials' });
+    out.push({ ...a, id }); added++;
   }
-  return fresh.map((a, i) => ({ ...a, id: ids[i]! }));
+  if (added) await bumpOutline(tx, scope);
+  return out;
 }
 
 async function renumber(tx: Transaction, scope: Scope) {
@@ -168,14 +197,15 @@ export async function applyAssessments(tx: Transaction, scope: Scope, syllabusId
 
 /* ── Corrections ─────────────────────────────────────────────────────── */
 
+type LinkKey = { topicId: string; materialId: string; sectionKey: string };
 interface Undo {
-  topics: TopicRow[]; deleteTopicIds: string[]; links: LinkRow[]; deleteLinkIds: string[];
+  topics: TopicRow[]; deleteTopicIds: string[]; links: LinkRow[]; deleteLinks: LinkKey[];
   questions: { id: string; topicId?: string; topicLabel?: string }[];
   tutor: { id: string; topicId: string | null; topicLabel: string | null }[];
   planned: { id: string; topicIds: string[]; link?: unknown }[];
   assessments: { id: string; topicIds: string[] }[];
 }
-const emptyUndo = (): Undo => ({ topics: [], deleteTopicIds: [], links: [], deleteLinkIds: [], questions: [], tutor: [], planned: [], assessments: [] });
+const emptyUndo = (): Undo => ({ topics: [], deleteTopicIds: [], links: [], deleteLinks: [], questions: [], tutor: [], planned: [], assessments: [] });
 
 async function outlineTopic(tx: Transaction, scope: Scope, id: string) {
   const [row] = await tx.select().from(topics).where(and(eq(topics.workspaceId, scope.workspaceId), eq(topics.courseId, scope.courseId), eq(topics.id, id)));
@@ -218,18 +248,18 @@ export async function correctOutline(db: SocketDb, workspaceId: string, courseId
     } else if (input.action === 'remove') {
       const topic = await outlineTopic(tx, scope, input.topicId);
       undo.topics.push(topic);
-      undo.links.push(...await tx.select().from(sectionLinks).where(eq(sectionLinks.topicId, topic.id)));
+      undo.links.push(...await tx.select().from(topicSections).where(eq(topicSections.topicId, topic.id)));
       await tx.delete(topics).where(eq(topics.id, topic.id));
       message = `Removed ${topic.title}`;
     } else {
       if (input.topicId === input.targetId) throw new ApiError(400, 'invalid_input', 'Choose a different topic to merge into.');
       const source = await outlineTopic(tx, scope, input.topicId), target = await outlineTopic(tx, scope, input.targetId);
       undo.topics.push(source, target);
-      const links = await tx.select().from(sectionLinks).where(eq(sectionLinks.topicId, source.id));
+      const links = await tx.select().from(topicSections).where(eq(topicSections.topicId, source.id));
       undo.links.push(...links);
       if (links.length) {
-        const moved = await tx.insert(sectionLinks).values(links.map(({ id: _id, createdAt: _c, ...l }) => ({ ...l, topicId: target.id }))).onConflictDoNothing().returning({ id: sectionLinks.id });
-        undo.deleteLinkIds.push(...moved.map(m => m.id));
+        const moved = await tx.insert(topicSections).values(links.map(({ createdAt: _c, ...l }) => ({ ...l, topicId: target.id }))).onConflictDoNothing().returning({ topicId: topicSections.topicId, materialId: topicSections.materialId, sectionKey: topicSections.sectionKey });
+        undo.deleteLinks.push(...moved);
       }
       await moveReferences(tx, scope, source.id, target, undo);
       await tx.delete(topics).where(eq(topics.id, source.id));
@@ -279,10 +309,10 @@ export async function undoCorrection(db: SocketDb, workspaceId: string, courseId
     if (change.undone || course.outlineRevision !== change.afterRevision) throw new ApiError(409, 'undo_unavailable', 'The outline changed after this, so it can no longer be undone.');
     const undo = change.undo as Undo;
     const revive = (t: TopicRow) => ({ ...t, createdAt: new Date(t.createdAt), updatedAt: new Date() });
-    if (undo.deleteLinkIds.length) await tx.delete(sectionLinks).where(inArray(sectionLinks.id, undo.deleteLinkIds));
+    for (const l of undo.deleteLinks ?? []) await tx.delete(topicSections).where(and(eq(topicSections.topicId, l.topicId), eq(topicSections.materialId, l.materialId), eq(topicSections.sectionKey, l.sectionKey)));
     if (undo.deleteTopicIds.length) await tx.delete(topics).where(inArray(topics.id, undo.deleteTopicIds));
     for (const t of undo.topics) await tx.insert(topics).values(revive(t)).onConflictDoUpdate({ target: topics.id, set: { title: t.title, summary: t.summary, module: t.module, order: t.order, edited: t.edited, source: t.source, updatedAt: new Date() } });
-    if (undo.links.length) await tx.insert(sectionLinks).values(undo.links.map(l => ({ ...l, createdAt: new Date(l.createdAt) }))).onConflictDoNothing();
+    if (undo.links.length) await tx.insert(topicSections).values(undo.links.map(l => ({ ...l, createdAt: new Date(l.createdAt) }))).onConflictDoNothing();
     for (const q of undo.questions) {
       const [row] = await tx.select().from(questionVersions).where(eq(questionVersions.id, q.id));
       if (row) await tx.update(questionVersions).set({ content: { ...row.content, topicId: q.topicId, topicLabel: q.topicLabel } }).where(eq(questionVersions.id, q.id));
@@ -307,20 +337,23 @@ export async function undoCorrection(db: SocketDb, workspaceId: string, courseId
 
 /* ── Covers ──────────────────────────────────────────────────────────── */
 
+const DEPTH_RANK: Record<TopicDepth, number> = { introduces: 0, covers: 1, mentions: 2 };
+
 export async function getCovers(db: Db, workspaceId: string, materialId: string): Promise<Covers> {
   const material = await ownMaterial(db, workspaceId, materialId);
   if (!material.currentVersionId) return { versionId: '', topics: [], mapping: false };
-  const links = await db.select({ link: sectionLinks, title: topics.title, order: topics.order }).from(sectionLinks).innerJoin(topics, eq(topics.id, sectionLinks.topicId))
-    .where(and(eq(sectionLinks.workspaceId, workspaceId), eq(sectionLinks.versionId, material.currentVersionId))).orderBy(asc(topics.order));
-  const dropped = new Set(links.filter(l => l.link.removed && l.link.headingBlockId === null).map(l => l.link.topicId));
-  const live = links.filter(l => !l.link.removed && !dropped.has(l.link.topicId));
-  const seen = new Map<string, Covers['topics'][number]>();
-  for (const l of live) {
-    const prior = seen.get(l.link.topicId);
-    if (!prior || l.link.origin === 'student') seen.set(l.link.topicId, { id: l.link.topicId, title: l.title, origin: l.link.origin });
+  const scope = { workspaceId, courseId: material.courseId };
+  const [links, rows, [job]] = await Promise.all([
+    liveLinks(db, scope, [materialId]),
+    db.select({ id: topics.id, title: topics.title, order: topics.order }).from(topics).where(and(eq(topics.workspaceId, workspaceId), eq(topics.courseId, material.courseId))).orderBy(asc(topics.order)),
+    db.select({ id: outlineJobs.id }).from(outlineJobs).where(and(eq(outlineJobs.workspaceId, workspaceId), eq(outlineJobs.courseId, material.courseId), inArray(outlineJobs.state, ['queued', 'running']))).limit(1),
+  ]);
+  const out: Covers['topics'] = [];
+  for (const t of rows) {
+    const own = links.filter(l => l.topicId === t.id).sort((a, b) => DEPTH_RANK[a.depth] - DEPTH_RANK[b.depth]);
+    if (own.length) out.push({ id: t.id, title: t.title, origin: own.some(l => l.origin === 'student') ? 'student' : 'suggested', depth: own[0]!.depth });
   }
-  const [job] = await db.select({ id: outlineJobs.id }).from(outlineJobs).where(and(eq(outlineJobs.workspaceId, workspaceId), eq(outlineJobs.versionId, material.currentVersionId), inArray(outlineJobs.state, ['queued', 'running']))).limit(1);
-  return { versionId: material.currentVersionId, topics: [...seen.values()], mapping: !!job };
+  return { versionId: material.currentVersionId, topics: out, mapping: !!job };
 }
 
 export async function changeCovers(db: SocketDb, workspaceId: string, materialId: string, input: { operationId: string; versionId: string; topicId: string; action: 'add' | 'remove' }) {
@@ -329,7 +362,7 @@ export async function changeCovers(db: SocketDb, workspaceId: string, materialId
     if (material.currentVersionId !== input.versionId) throw conflict();
     if (material.kind === 'syllabus') throw new ApiError(400, 'invalid_input', 'The syllabus is not linked to topics.');
     await outlineTopic(tx, { workspaceId, courseId: material.courseId }, input.topicId);
-    await setCover(tx, { workspaceId, courseId: material.courseId, materialId, versionId: input.versionId }, input.topicId, input.action === 'add');
+    await setCover(tx, { workspaceId, courseId: material.courseId, materialId }, input.topicId, input.action === 'add');
     await bumpPlanner(tx, workspaceId);
     return getCovers(tx, workspaceId, materialId);
   });

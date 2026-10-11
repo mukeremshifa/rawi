@@ -116,6 +116,11 @@ export function Materials() {
                               {converting(m) && <span className="bg-primary size-1.5 animate-pulse rounded-full" aria-hidden />}{VERSION_STATUS_LABEL[m.status]}
                             </Badge>
                           )}
+                          {(m.status === 'ready' || m.status === 'partial') && m.readiness !== 'enriched' && (
+                            <Badge variant="outline" className="shrink-0" title={m.readiness === 'searchable' ? 'The tutor can search it. Summaries and facts for practice are still being read.' : 'Rawi is reading it so the tutor can search it.'}>
+                              <span className="bg-primary size-1.5 animate-pulse rounded-full" aria-hidden />{m.readiness === 'searchable' ? 'Searchable' : 'Reading'}
+                            </Badge>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground hidden sm:table-cell">{MATERIAL_KIND_LABEL[m.kind]}</TableCell>

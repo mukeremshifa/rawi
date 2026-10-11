@@ -20,33 +20,26 @@ export interface SyllabusReading {
   topics: { existing: string | null; title: string; module: string; summary: string; blocks: string[] }[];
   assessments: { title: string; type: AssessmentType; date: string | null; weight: number | null; topics: number[]; blocks: string[] }[];
 }
-export interface MappingInput {
-  materialTitle: string;
-  language: Language;
-  /** `parent` marks a section that holds subsections, such as a document title. It is never a new topic. */
-  sections: { key: string; heading: string; excerpt: string; parent: boolean }[];
-  topics: { key: string; title: string; summary: string }[];
-  /** How many new topics the mapping may add for substantial sections that fit nothing. */
-  newTopics: number;
-}
-export interface Mapping {
-  links: { section: string; topics: string[] }[];
-  newTopics: { title: string; summary: string; sections: string[] }[];
-}
-export interface DraftInput {
+/**
+ * Sections in reading order, each with its material, heading path, summary and key terms, matched
+ * to the current topics. `room` is how many new topics may be proposed for sections that fit none.
+ */
+export interface AssignInput {
   courseName: string;
   language: Language;
-  materials: { key: string; title: string; order: number | null; headings: { key: string; text: string; level: number }[]; lead: string | null }[];
+  topics: { key: string; title: string; summary: string }[];
+  sections: { key: string; material: string; path: string; summary: string; terms: string[]; words: number }[];
+  room: number;
 }
-export interface Draft {
-  topics: { title: string; module: string; summary: string; material: string; heading: string | null }[];
+export interface Assignment {
+  links: { section: string; topics: { topic: string; depth: 'covers' | 'mentions' }[] }[];
+  newTopics: { key: string; title: string; module: string; summary: string }[];
 }
 
 /** The rules pass. It runs when no model is available, and the outline says so. */
 export interface OutlineProvider {
   readSyllabus(input: SyllabusInput): Promise<{ value: SyllabusReading }>;
-  mapMaterial(input: MappingInput): Promise<{ value: Mapping }>;
-  draftOutline(input: DraftInput): Promise<{ value: Draft }>;
+  assignTopics(input: AssignInput): Promise<{ value: Assignment }>;
 }
 
 /** Rawi's own sentences follow the house punctuation: no em dashes or semicolons. */

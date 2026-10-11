@@ -1,6 +1,6 @@
 import type { AssessmentType } from '../../../shared/domain/types';
 import { OUTLINE_MAX } from '../../../shared/contracts/outline';
-import { normalTitle, sequenceNumber, type Draft, type DraftInput, type Mapping, type MappingInput, type OutlineProvider, type SyllabusInput, type SyllabusReading } from './provider';
+import { normalTitle, type AssignInput, type Assignment, type OutlineProvider, type SyllabusInput, type SyllabusReading } from './provider';
 
 /**
  * The rules pass, used without a key or budget. It reads structure rather
@@ -128,55 +128,41 @@ export function readSyllabusRules(input: SyllabusInput): SyllabusReading {
 const STOP = new Set('about after again also among because been before being between both could does from have here into more most other over same should some such than that their them then there these they this those through under until very what when where which while with would your introduction overview part week lecture session chapter unit topic module notes reading readings slides'.split(' '));
 const terms = (text: string) => new Set(text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= 4 && !STOP.has(w)).map(w => w.replace(/(ies|es|s)$/, '')));
 
-export function mapMaterialRules(input: MappingInput): Mapping {
-  const links: Mapping['links'] = [], unmatched: MappingInput['sections'] = [];
+/**
+ * Topics by shared words. A section whose heading shares half its words with a topic's title
+ * covers it. One whose summary and terms share two words with the title only mentions it. A
+ * substantial section that fits nothing starts a topic named after its top heading, and later
+ * sections under the same heading join it.
+ */
+export function assignTopicsRules(input: AssignInput): Assignment {
+  const links: Assignment['links'] = [], newTopics: Assignment['newTopics'] = [];
+  const known = input.topics.map(t => ({ key: t.key, title: terms(t.title), summary: terms(t.summary) }));
   for (const section of input.sections) {
-    const heading = terms(section.heading), body = terms(section.excerpt);
-    let best: { key: string; score: number }[] = [];
-    for (const topic of input.topics) {
-      const title = terms(topic.title), summary = terms(topic.summary);
-      // Half the words of the shorter of heading and title must be shared, so one common word is not enough.
-      const shared = [...heading].filter(word => title.has(word)).length;
-      if (!shared || shared / Math.min(heading.size, title.size) < 0.5) continue;
-      let score = shared * 2;
-      for (const word of heading) if (!title.has(word) && summary.has(word)) score += 1;
-      for (const word of title) if (body.has(word)) score += 0.5;
-      best.push({ key: topic.key, score });
+    const parts = section.path.split(' / ').filter(Boolean);
+    const heading = terms(parts.at(-1) ?? ''), body = terms(`${section.summary} ${section.terms.join(' ')}`);
+    const found: Assignment['links'][number]['topics'] = [];
+    for (const topic of known) {
+      const shared = [...heading].filter(w => topic.title.has(w)).length;
+      if (shared && shared / Math.min(heading.size, topic.title.size) >= 0.5) found.push({ topic: topic.key, depth: 'covers' });
+      else if ([...body].filter(w => topic.title.has(w)).length >= 2) found.push({ topic: topic.key, depth: 'mentions' });
     }
-    best = best.sort((a, b) => b.score - a.score).filter((b, i, all) => i === 0 || b.score >= all[0]!.score * 0.8).slice(0, 2);
-    if (best.length) links.push({ section: section.key, topics: best.map(b => b.key) });
-    else if (section.heading && !section.parent && section.excerpt.length >= 400) unmatched.push(section);
+    if (!found.length && parts.length && section.words >= 80) {
+      const name = (parts.length >= 2 ? parts[1]! : parts[0]!).slice(0, 200);
+      if (!NOISE.test(name) && !/^(summary|conclusions?|questions|further reading|key terms)/i.test(name)) {
+        let topic = newTopics.find(t => normalTitle(t.title) === normalTitle(name));
+        if (!topic && newTopics.length < input.room) {
+          topic = { key: `n${newTopics.length}`, title: name, module: '', summary: '' };
+          newTopics.push(topic); known.push({ key: topic.key, title: terms(name), summary: new Set() });
+        }
+        if (topic) found.push({ topic: topic.key, depth: 'covers' });
+      }
+    }
+    if (found.length) links.push({ section: section.key, topics: found.slice(0, 3) });
   }
-  const newTopics = unmatched.slice(0, input.newTopics).map(s => ({ title: s.heading.slice(0, 200), summary: '', sections: [s.key] }));
   return { links, newTopics };
 }
 
-export function draftOutlineRules(input: DraftInput): Draft {
-  const ordered = [...input.materials].sort((a, b) => (a.order ?? 1e6) - (b.order ?? 1e6));
-  const top = ordered.map(m => {
-    const level = Math.min(...m.headings.map(h => h.level), 9);
-    // A single top heading is usually the document title, so its subheadings are the topics.
-    const first = m.headings.filter(h => h.level === level);
-    const next = first.length === 1 ? m.headings.filter(h => h.level === level + 1) : [];
-    return { m, headings: (next.length >= 2 ? next : first).filter(h => !NOISE.test(h.text) && !/^(summary|conclusions?|questions|further reading|key terms)\b/i.test(h.text)) };
-  });
-  const module = (m: DraftInput['materials'][number]) => m.order !== null ? (/week/i.test(m.title) ? `Week ${m.order}` : `Lecture ${m.order}`) : '';
-  const total = top.reduce((n, t) => n + t.headings.length, 0);
-  const topics: Draft['topics'] = [];
-  if (total > OUTLINE_MAX || total === 0) {
-    for (const { m, headings } of top) topics.push({ title: m.title.replace(/^\s*(lecture|week|session|unit|chapter)\s*\d+\s*[:.–—-]?\s*/i, '').trim() || m.title, module: module(m), summary: headings.length ? `Covers ${listOf(headings.slice(0, 4).map(h => h.text))}.` : '', material: m.key, heading: headings[0]?.key ?? m.lead });
-  } else {
-    for (const { m, headings } of top) for (const h of headings) topics.push({ title: h.text.slice(0, 200), module: module(m), summary: '', material: m.key, heading: h.key });
-  }
-  const seen = new Set<string>();
-  return { topics: topics.filter(t => { const k = normalTitle(t.title); if (!k || seen.has(k)) return false; seen.add(k); return true; }).slice(0, OUTLINE_MAX) };
-}
-
-const listOf = (items: string[]) => items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
-
 export const rulesProvider: OutlineProvider = {
   async readSyllabus(input) { return { value: readSyllabusRules(input) }; },
-  async mapMaterial(input) { return { value: mapMaterialRules(input) }; },
-  async draftOutline(input) { return { value: draftOutlineRules(input) }; },
+  async assignTopics(input) { return { value: assignTopicsRules(input) }; },
 };
-export { sequenceNumber };

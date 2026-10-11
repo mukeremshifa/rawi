@@ -1,5 +1,5 @@
-import { and, asc, eq, inArray, isNull, lte, ne, or } from 'drizzle-orm';
-import { courses, materials, outlineJobs, topics } from '../../db/schema';
+import { and, asc, eq, inArray, isNotNull, isNull, lte, ne, or } from 'drizzle-orm';
+import { courses, knowledgeChunks, materials, outlineJobs, sections as sectionRows, topics, topicSections } from '../../db/schema';
 import { socketDb, transaction, type SocketDb } from '../../db/client';
 import type { BackendBindings } from '../../config';
 import { ApiError } from '../../errors';
@@ -11,11 +11,12 @@ import { fundingFor } from '../../ai/funding';
 import { outlineTasks } from './tasks';
 import { runIngest } from '../knowledge/ingest';
 import { rulesProvider } from './rules';
-import { citedOnly, housePunctuation, sequenceNumber, type DraftInput, type MappingInput, type OutlineProvider, type SyllabusInput } from './provider';
-import { readyMaterials, writeSuggestions } from './links';
-import { sections, sectionExcerpt, versionBlocks, type SectionBlock } from './sections';
+import { citedOnly, housePunctuation, type AssignInput, type OutlineProvider, type SyllabusInput } from './provider';
+import { writeSuggestions } from './links';
+import { versionBlocks, type SectionBlock } from './sections';
 import { addTopics, applyAssessments, applyTopics } from './outline';
-import { enqueueJob, remapAll } from './queue';
+import { enqueueJob, reassignAll } from './queue';
+import { courseSections } from '../knowledge/course';
 import { outlineView } from './outline';
 import { usableStatus } from '../../../shared/contracts/document';
 import { materialVersions } from '../../db/schema';
@@ -23,14 +24,19 @@ import { materialVersions } from '../../db/schema';
 /**
  * Outline jobs advance like conversions: from `waitUntil` after the event
  * that queued them, from the outline status read, and from the cron sweep.
- * A job runs under a lease. Reading the syllabus and drafting an outline
- * never run at the same time for one course, and mappings wait for both.
+ * A job runs under a lease, one at a time per course. Reading the syllabus
+ * sets the topics, and assigning topics labels sections that no assignment
+ * has looked at, adding topics for subjects nothing names yet.
  */
 const LEASE_MS = 180_000;
 const MAX_ATTEMPTS = 3;
+/** Sections one assignment call looks at. Each carries a summary and terms, so this stays small. */
+const ASSIGN_BATCH = 60;
+/** Topics a course outline can hold once materials have added theirs. */
+const TOPIC_CAP = 40;
 type Job = typeof outlineJobs.$inferSelect;
 type Scope = { workspaceId: string; courseId: string };
-const OUTLINE_KINDS: OutlineJobKind[] = ['read_syllabus', 'draft_outline'];
+const OUTLINE_KINDS: OutlineJobKind[] = ['read_syllabus', 'assign_topics'];
 
 const due = (now: Date) => and(or(eq(outlineJobs.state, 'queued'), and(eq(outlineJobs.state, 'running'), lte(outlineJobs.leaseExpiresAt, now))), or(isNull(outlineJobs.nextRunAt), lte(outlineJobs.nextRunAt, now)));
 
@@ -80,8 +86,8 @@ async function claim(db: SocketDb, jobId: string) {
     const others = await tx.select({ kind: outlineJobs.kind, state: outlineJobs.state, lease: outlineJobs.leaseExpiresAt, created: outlineJobs.createdAt }).from(outlineJobs)
       .where(and(eq(outlineJobs.workspaceId, row.workspaceId), eq(outlineJobs.courseId, row.courseId), ne(outlineJobs.id, row.id), inArray(outlineJobs.state, ['queued', 'running'])));
     const running = (o: typeof others[number]) => o.state === 'running' && !!o.lease && o.lease > new Date();
+    // One outline job runs at a time for a course, in the order they were queued.
     if (OUTLINE_KINDS.includes(row.kind) && others.some(o => OUTLINE_KINDS.includes(o.kind) && (running(o) || o.created < row.createdAt))) return null;
-    if (row.kind === 'map_material' && others.some(o => OUTLINE_KINDS.includes(o.kind))) return null;
     const token = crypto.randomUUID();
     const [leased] = await tx.update(outlineJobs).set({ state: 'running', leaseToken: token, leaseExpiresAt: new Date(Date.now() + LEASE_MS), attempts: row.attempts + 1, updatedAt: new Date() }).where(eq(outlineJobs.id, jobId)).returning();
     return { job: leased!, token };
@@ -120,7 +126,7 @@ async function step(db: SocketDb, env: BackendBindings, jobId: string) {
 }
 
 type Prepared = {
-  input: SyllabusInput | MappingInput | DraftInput;
+  input: SyllabusInput | AssignInput;
   run: (provider: OutlineProvider) => Promise<{ value: unknown }>;
   apply: (tx: Parameters<Parameters<typeof transaction>[1]>[0], value: unknown) => Promise<Omit<OutlineJobResult, 'provider' | 'fallback'>>;
 };
@@ -172,7 +178,7 @@ async function prepare(db: SocketDb, job: Job): Promise<Prepared | null> {
         if (kept.length) {
           const applied = await applyTopics(tx, scope, kept.map(t => ({ existingId: t.existing ? current.get(t.existing)?.id ?? null : null, title: t.title.trim(), module: t.module.trim(), summary: housePunctuation(t.summary), source: cite(t.blocks) })), 'syllabus');
           ids = applied.ids; added = applied.added;
-          await remapAll(tx, scope, material.id);
+          await reassignAll(tx, scope);
         }
         const position = new Map(kept.map((t, i) => [t.index, ids[i]!]));
         const assessments = citedOnly(reading.assessments, a => a.blocks, known).map(a => ({
@@ -185,71 +191,42 @@ async function prepare(db: SocketDb, job: Job): Promise<Prepared | null> {
     };
   }
 
-  if (job.kind === 'map_material') {
-    const [material] = await db.select().from(materials).where(eq(materials.id, job.materialId!));
-    if (!material || material.currentVersionId !== job.versionId || material.kind === 'syllabus' || material.archived) return null;
-    const room = course.syllabusMaterialId ? 0 : Math.min(2, Math.max(0, OUTLINE_MAX - outline.length));
-    if (!outline.length && !room) return null;
-    const list = await versionBlocks(db, scope.workspaceId, job.versionId!);
-    const all = sections(list);
-    const top = Math.min(...all.filter(s => s.headingBlockId).map(s => s.level), 9);
-    const chosen = all.filter(s => !s.headingBlockId || s.level <= top + 1).slice(0, 120);
-    const keyed = keyMap('s', chosen), topicKeys = keyMap('t', outline);
-    const input: MappingInput = { materialTitle: material.title, language: await versionLanguage(db, job.versionId!), newTopics: room, sections: [...keyed].map(([key, s]) => ({ key, heading: s.heading || material.title, excerpt: sectionExcerpt(list, s, 400), parent: chosen.some(o => o !== s && !!o.headingBlockId && s.blockIds.includes(o.headingBlockId)) })), topics: [...topicKeys].map(([key, t]) => ({ key, title: t.title, summary: t.summary })) };
-    return {
-      input, run: p => p.mapMaterial(input),
-      apply: async (tx, raw) => {
-        const mapping = raw as Awaited<ReturnType<OutlineProvider['mapMaterial']>>['value'];
-        const suggestions: { headingBlockId: string | null; topicId: string }[] = [];
-        for (const link of mapping.links) {
-          const section = keyed.get(link.section);
-          if (section) for (const key of link.topics.slice(0, 2)) { const topic = topicKeys.get(key); if (topic) suggestions.push({ headingBlockId: section.headingBlockId, topicId: topic.id }); }
-        }
-        const fresh = room ? citedOnly(mapping.newTopics, t => t.sections, new Set(keyed.keys()), room) : [];
-        const created = await addTopics(tx, scope, fresh.map(t => {
-          const first = keyed.get(t.sections.find(k => keyed.has(k))!)!;
-          return { title: t.title.trim(), module: '', summary: housePunctuation(t.summary), source: { materialId: material.id, versionId: job.versionId!, blockIds: [first.firstBlockId!] } };
-        }));
-        for (const [i, topic] of created.entries()) for (const key of fresh[i]!.sections) { const s = keyed.get(key); if (s) suggestions.push({ headingBlockId: s.headingBlockId, topicId: topic.id }); }
-        const links = await writeSuggestions(tx, { ...scope, materialId: material.id, versionId: job.versionId! }, all, suggestions);
-        return { links, topics: created.length };
-      },
-    };
-  }
-
-  // draft_outline
-  if (outline.length || course.syllabusMaterialId) return null;
-  const ready = await readyMaterials(db, scope, null);
-  if (ready.length < 2) return null;
-  const docs = await Promise.all(ready.map(async m => ({ m, list: await versionBlocks(db, scope.workspaceId, m.versionId) })));
-  const headingKeys = new Map<string, { materialId: string; versionId: string; blockId: string }>();
-  let n = 0;
-  const input: DraftInput = {
-    courseName: course.name, language: await versionLanguage(db, ready[0]!.versionId),
-    materials: docs.map(({ m, list }, i) => {
-      const heads = sections(list).filter(s => s.headingBlockId && s.level <= 3).slice(0, 60);
-      const lead = list[0] ? `h${n++}` : null;
-      if (lead) headingKeys.set(lead, { materialId: m.id, versionId: m.versionId, blockId: list[0]!.id });
-      return { key: `m${i}`, title: m.title, order: sequenceNumber(m.title), lead, headings: heads.map(h => { const key = `h${n++}`; headingKeys.set(key, { materialId: m.id, versionId: m.versionId, blockId: h.headingBlockId! }); return { key, text: h.heading, level: h.level }; }) };
-    }),
+  // assign_topics: sections no assignment has looked at yet, in reading order, a batch at a time.
+  const list = await courseSections(db, scope);
+  const linked = new Set((await db.selectDistinct({ materialId: topicSections.materialId, key: topicSections.sectionKey }).from(topicSections).where(and(eq(topicSections.workspaceId, scope.workspaceId), eq(topicSections.courseId, scope.courseId)))).map(r => `${r.materialId}:${r.key}`));
+  const looked = new Set((await db.select({ id: sectionRows.id }).from(sectionRows).where(and(eq(sectionRows.workspaceId, scope.workspaceId), eq(sectionRows.courseId, scope.courseId), isNotNull(sectionRows.topicsAt)))).map(r => r.id));
+  const waiting = list.filter(s => !looked.has(s.id) && !linked.has(`${s.materialId}:${s.key}`));
+  const todo = waiting.slice(0, ASSIGN_BATCH);
+  if (!todo.length) return null;
+  const bare = todo.filter(s => !s.summary).map(s => s.id);
+  const excerpts = new Map(bare.length ? (await db.select({ sectionId: knowledgeChunks.sectionId, text: knowledgeChunks.text }).from(knowledgeChunks).where(and(inArray(knowledgeChunks.sectionId, bare), eq(knowledgeChunks.kind, 'text'))).orderBy(asc(knowledgeChunks.ordinal))).reverse().map(r => [r.sectionId, r.text.slice(0, 300)] as const) : []);
+  const topicKeys = keyMap('t', outline), sectionKeys = keyMap('s', todo);
+  // A course without a syllabus grows its outline from its materials. With one, a material that
+  // brings subjects the syllabus never named may still add a few.
+  const room = course.syllabusMaterialId ? Math.max(0, Math.min(3, TOPIC_CAP - outline.length)) : Math.max(0, Math.min(OUTLINE_MAX, TOPIC_CAP - outline.length));
+  const input: AssignInput = {
+    courseName: course.name, language: todo[0]!.language, room,
+    topics: [...topicKeys].map(([key, t]) => ({ key, title: t.title, summary: t.summary })),
+    sections: [...sectionKeys].map(([key, s]) => ({ key, material: s.title, path: s.path.join(' / ') || s.title, summary: s.summary ?? excerpts.get(s.id) ?? '', terms: s.keyTerms, words: Math.round(s.tokens * 0.75) })),
   };
   return {
-    input, run: p => p.draftOutline(input),
+    input, run: p => p.assignTopics(input),
     apply: async (tx, raw) => {
-      const draft = raw as Awaited<ReturnType<OutlineProvider['draftOutline']>>['value'];
-      const materialOf = new Map(input.materials.map((m, i) => [m.key, docs[i]!.m]));
-      const kept = citedOnly(draft.topics, t => [t.material], new Set(materialOf.keys()));
-      // A course outlined meanwhile keeps its outline.
-      const [existing] = await tx.select({ id: topics.id }).from(topics).where(and(eq(topics.workspaceId, scope.workspaceId), eq(topics.courseId, scope.courseId))).limit(1);
-      if (existing || !kept.length) return { topics: 0 };
-      await applyTopics(tx, scope, kept.map(t => {
-        const m = materialOf.get(t.material)!;
-        const heading = t.heading ? headingKeys.get(t.heading) : undefined;
-        const block = heading && heading.materialId === m.id ? heading.blockId : docs.find(d => d.m.id === m.id)!.list[0]!.id;
-        return { existingId: null, title: t.title.trim(), module: t.module.trim(), summary: housePunctuation(t.summary), source: { materialId: m.id, versionId: m.versionId, blockIds: [block] } };
-      }), 'materials');
-      await remapAll(tx, scope, null);
-      return { topics: kept.length };
+      const assignment = raw as Awaited<ReturnType<OutlineProvider['assignTopics']>>['value'];
+      const used = new Set(assignment.links.flatMap(l => l.topics.map(t => t.topic)));
+      const fresh = assignment.newTopics.filter(t => /^n\d+$/.test(t.key) && used.has(t.key) && t.title.trim()).slice(0, room);
+      const created = await addTopics(tx, scope, fresh.map(t => ({ title: t.title.trim(), module: t.module.trim(), summary: housePunctuation(t.summary), source: null })));
+      const ids = new Map<string, string>([...topicKeys].map(([k, t]) => [k, t.id]));
+      created.forEach((t, i) => ids.set(fresh[i]!.key, t.id));
+      const suggestions = assignment.links.flatMap(l => {
+        const s = sectionKeys.get(l.section);
+        return s ? l.topics.slice(0, 3).flatMap(t => ids.has(t.topic) ? [{ materialId: s.materialId, sectionKey: s.key, topicId: ids.get(t.topic)!, depth: t.depth }] : []) : [];
+      });
+      const links = await writeSuggestions(tx, scope, [...new Map(suggestions.map(x => [`${x.topicId}:${x.materialId}:${x.sectionKey}`, x])).values()]);
+      await tx.update(sectionRows).set({ topicsAt: new Date() }).where(inArray(sectionRows.id, todo.map(s => s.id)));
+      // Sections still waiting go in the next batch.
+      if (waiting.length > todo.length) await enqueueJob(tx, scope, 'assign_topics');
+      return { links, topics: created.length };
     },
   };
 }

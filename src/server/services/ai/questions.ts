@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { BackendBindings } from '../../config';
 import { transaction, type SocketDb } from '../../db/client';
-import { aiOperations, facts as factRows, sections as sectionRows, learningSets, materials, questionPool, questionSources, questionVersions, sectionLinks, setItems, topics } from '../../db/schema';
+import { aiOperations, facts as factRows, sections as sectionRows, learningSets, materials, questionPool, questionSources, questionVersions, setItems, topics } from '../../db/schema';
 import { ApiError } from '../../errors';
 import { uncertainBefore } from './operations';
 import { budget, run, type CallContext, type Task } from '../../ai/engine';
@@ -15,8 +15,8 @@ import type { Difficulty } from '../../../shared/domain/types';
 import { promptKey } from '../../../shared/domain/prompt-key';
 import { hash } from '../materials';
 import { bumpPlanner } from '../planning';
-import { blockTopics, sectionTopic } from '../outline/links';
-import { sections as versionSections, versionBlocks } from '../outline/sections';
+import { liveLinks, sectionTopic } from '../outline/links';
+import { versionBlocks } from '../outline/sections';
 import { blockMarkdown } from '../../../shared/domain/document-text';
 import type { PoolFormat, PoolQuestion, PoolVerification } from '../knowledge/types';
 
@@ -147,11 +147,8 @@ async function targetSections(db: SocketDb, workspaceId: string, courseId: strin
   for (const c of input.sections) for (const s of all) if (s.versionId === c.versionId && s.blockIds.some(id => c.blockIds.includes(id))) keep(s);
   for (const s of all) if (input.materialIds.includes(s.materialId)) keep(s);
   if (input.topicIds.length) {
-    const linked = await db.selectDistinct({ versionId: sectionLinks.versionId }).from(sectionLinks).where(and(eq(sectionLinks.workspaceId, workspaceId), eq(sectionLinks.courseId, courseId), inArray(sectionLinks.topicId, input.topicIds), eq(sectionLinks.removed, false)));
-    for (const { versionId } of linked) {
-      const byBlock = await blockTopics(db, scope, versionId, versionSections(await versionBlocks(db, workspaceId, versionId)));
-      for (const s of all) if (s.versionId === versionId && s.blockIds.some(id => byBlock[id]?.some(t => input.topicIds.includes(t)))) keep(s);
-    }
+    const linked = new Set((await liveLinks(db, scope)).filter(l => input.topicIds.includes(l.topicId)).map(l => `${l.section.versionId}:${l.section.blockIds[0]}`));
+    for (const s of all) if (linked.has(`${s.versionId}:${s.blockIds[0]}`)) keep(s);
   }
   return [...chosen.values()];
 }

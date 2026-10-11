@@ -408,7 +408,7 @@ CREATE TABLE "outline_jobs" (
 	"failure" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "outline_jobs_kind_valid" CHECK ("outline_jobs"."kind" in ('read_syllabus', 'map_material', 'draft_outline')),
+	CONSTRAINT "outline_jobs_kind_valid" CHECK ("outline_jobs"."kind" in ('read_syllabus', 'assign_topics')),
 	CONSTRAINT "outline_jobs_state_valid" CHECK ("outline_jobs"."state" in ('queued', 'running', 'done', 'failed'))
 );
 --> statement-breakpoint
@@ -518,20 +518,22 @@ CREATE TABLE "run_answers" (
 	CONSTRAINT "run_answers_run_id_item_id_pk" PRIMARY KEY("run_id","item_id")
 );
 --> statement-breakpoint
-CREATE TABLE "section_links" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+CREATE TABLE "scopes" (
+	"id" uuid PRIMARY KEY NOT NULL,
 	"workspace_id" uuid NOT NULL,
 	"course_id" uuid NOT NULL,
-	"topic_id" uuid NOT NULL,
-	"material_id" uuid NOT NULL,
-	"version_id" uuid NOT NULL,
-	"heading_block_id" uuid,
-	"heading_text" text NOT NULL,
-	"origin" text NOT NULL,
-	"removed" boolean DEFAULT false NOT NULL,
+	"name" text NOT NULL,
+	"kind" text NOT NULL,
+	"topic_id" uuid,
+	"assessment_id" uuid,
+	"sections" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"archived" boolean DEFAULT false NOT NULL,
+	"revision" integer DEFAULT 1 NOT NULL,
+	"last_used_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "section_links_unique" UNIQUE NULLS NOT DISTINCT("version_id","heading_block_id","topic_id"),
-	CONSTRAINT "section_links_origin_valid" CHECK ("section_links"."origin" in ('suggested', 'student'))
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "scopes_scope_unique" UNIQUE("workspace_id","course_id","id"),
+	CONSTRAINT "scopes_kind_valid" CHECK ("scopes"."kind" in ('topic', 'sections', 'assessment', 'course'))
 );
 --> statement-breakpoint
 CREATE TABLE "sections" (
@@ -553,6 +555,7 @@ CREATE TABLE "sections" (
 	"key_terms" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"digested_by" text,
 	"language" text NOT NULL,
+	"topics_at" timestamp with time zone,
 	CONSTRAINT "sections_version_key_unique" UNIQUE("version_id","key"),
 	CONSTRAINT "sections_version_order_unique" UNIQUE("version_id","ordinal")
 );
@@ -578,6 +581,21 @@ CREATE TABLE "set_items" (
 	"position" integer NOT NULL,
 	CONSTRAINT "set_items_scope_unique" UNIQUE("workspace_id","course_id","set_id","id"),
 	CONSTRAINT "set_items_order_unique" UNIQUE("set_id","position")
+);
+--> statement-breakpoint
+CREATE TABLE "topic_sections" (
+	"workspace_id" uuid NOT NULL,
+	"course_id" uuid NOT NULL,
+	"topic_id" uuid NOT NULL,
+	"material_id" uuid NOT NULL,
+	"section_key" text NOT NULL,
+	"depth" text NOT NULL,
+	"origin" text NOT NULL,
+	"removed" boolean DEFAULT false NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "topic_sections_topic_id_material_id_section_key_pk" PRIMARY KEY("topic_id","material_id","section_key"),
+	CONSTRAINT "topic_sections_depth_valid" CHECK ("topic_sections"."depth" in ('introduces', 'covers', 'mentions')),
+	CONSTRAINT "topic_sections_origin_valid" CHECK ("topic_sections"."origin" in ('suggested', 'student'))
 );
 --> statement-breakpoint
 CREATE TABLE "topics" (
@@ -775,12 +793,15 @@ ALTER TABLE "question_versions" ADD CONSTRAINT "question_versions_workspace_id_c
 ALTER TABLE "reminder_states" ADD CONSTRAINT "reminder_states_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "run_answers" ADD CONSTRAINT "run_answers_workspace_id_course_id_set_id_run_id_learning_runs_workspace_id_course_id_set_id_id_fk" FOREIGN KEY ("workspace_id","course_id","set_id","run_id") REFERENCES "public"."learning_runs"("workspace_id","course_id","set_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "run_answers" ADD CONSTRAINT "run_answers_workspace_id_course_id_set_id_item_id_set_items_workspace_id_course_id_set_id_id_fk" FOREIGN KEY ("workspace_id","course_id","set_id","item_id") REFERENCES "public"."set_items"("workspace_id","course_id","set_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "section_links" ADD CONSTRAINT "section_links_workspace_id_course_id_topic_id_topics_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","topic_id") REFERENCES "public"."topics"("workspace_id","course_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "section_links" ADD CONSTRAINT "section_links_workspace_id_course_id_material_id_version_id_material_versions_workspace_id_course_id_material_id_id_fk" FOREIGN KEY ("workspace_id","course_id","material_id","version_id") REFERENCES "public"."material_versions"("workspace_id","course_id","material_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "scopes" ADD CONSTRAINT "scopes_workspace_id_course_id_courses_workspace_id_id_fk" FOREIGN KEY ("workspace_id","course_id") REFERENCES "public"."courses"("workspace_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "scopes" ADD CONSTRAINT "scopes_workspace_id_course_id_topic_id_topics_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","topic_id") REFERENCES "public"."topics"("workspace_id","course_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "scopes" ADD CONSTRAINT "scopes_assessment_fk" FOREIGN KEY ("workspace_id","course_id","assessment_id") REFERENCES "public"."assessments"("workspace_id","course_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sections" ADD CONSTRAINT "sections_workspace_id_course_id_material_id_version_id_material_versions_workspace_id_course_id_material_id_id_fk" FOREIGN KEY ("workspace_id","course_id","material_id","version_id") REFERENCES "public"."material_versions"("workspace_id","course_id","material_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "set_items" ADD CONSTRAINT "set_items_workspace_id_course_id_set_id_learning_sets_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","set_id") REFERENCES "public"."learning_sets"("workspace_id","course_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "set_items" ADD CONSTRAINT "set_items_workspace_id_course_id_question_id_question_versions_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","question_id") REFERENCES "public"."question_versions"("workspace_id","course_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "topic_sections" ADD CONSTRAINT "topic_sections_workspace_id_course_id_topic_id_topics_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","topic_id") REFERENCES "public"."topics"("workspace_id","course_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "topic_sections" ADD CONSTRAINT "topic_sections_workspace_id_course_id_material_id_materials_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","material_id") REFERENCES "public"."materials"("workspace_id","course_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "topics" ADD CONSTRAINT "topics_workspace_id_course_id_courses_workspace_id_id_fk" FOREIGN KEY ("workspace_id","course_id") REFERENCES "public"."courses"("workspace_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tutor_messages" ADD CONSTRAINT "tutor_messages_workspace_id_course_id_session_id_tutor_sessions_workspace_id_course_id_id_fk" FOREIGN KEY ("workspace_id","course_id","session_id") REFERENCES "public"."tutor_sessions"("workspace_id","course_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tutor_sessions" ADD CONSTRAINT "tutor_planner_scope_fk" FOREIGN KEY ("workspace_id","course_id","planned_session_id") REFERENCES "public"."planned_sessions"("workspace_id","course_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -823,10 +844,14 @@ CREATE INDEX "planned_sessions_scope_idx" ON "planned_sessions" USING btree ("wo
 CREATE INDEX "prerequisites_course_idx" ON "prerequisites" USING btree ("workspace_id","course_id");--> statement-breakpoint
 CREATE INDEX "question_pool_key_idx" ON "question_pool" USING btree ("cache_key","state");--> statement-breakpoint
 CREATE INDEX "questions_course_idx" ON "question_versions" USING btree ("workspace_id","course_id","id");--> statement-breakpoint
-CREATE INDEX "section_links_course_idx" ON "section_links" USING btree ("workspace_id","course_id","topic_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "scopes_topic_unique" ON "scopes" USING btree ("course_id","topic_id") WHERE "scopes"."kind" = 'topic';--> statement-breakpoint
+CREATE UNIQUE INDEX "scopes_assessment_unique" ON "scopes" USING btree ("course_id","assessment_id") WHERE "scopes"."kind" = 'assessment';--> statement-breakpoint
+CREATE UNIQUE INDEX "scopes_course_unique" ON "scopes" USING btree ("course_id") WHERE "scopes"."kind" = 'course';--> statement-breakpoint
+CREATE INDEX "scopes_list_idx" ON "scopes" USING btree ("workspace_id","course_id","archived");--> statement-breakpoint
 CREATE INDEX "sections_course_idx" ON "sections" USING btree ("workspace_id","course_id","material_id","key");--> statement-breakpoint
 CREATE INDEX "sections_hash_idx" ON "sections" USING btree ("workspace_id","content_hash");--> statement-breakpoint
 CREATE INDEX "session_user_idx" ON "session" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "topic_sections_material_idx" ON "topic_sections" USING btree ("workspace_id","material_id","section_key");--> statement-breakpoint
 CREATE INDEX "topics_course_order_idx" ON "topics" USING btree ("workspace_id","course_id","order","id");--> statement-breakpoint
 CREATE INDEX "tutor_sessions_scope_idx" ON "tutor_sessions" USING btree ("workspace_id","course_id","id");--> statement-breakpoint
 CREATE INDEX "tutor_chronology_idx" ON "tutor_sessions" USING btree ("workspace_id","course_id","created_at","id");--> statement-breakpoint

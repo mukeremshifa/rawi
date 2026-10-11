@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { blocks, ingestJobs, knowledgeChunks, materials, materialVersions, sectionLinks, sections } from '../../db/schema';
+import { blocks, courses, ingestJobs, knowledgeChunks, materials, materialVersions, sections } from '../../db/schema';
 import type { BackendBindings } from '../../config';
 import { embed, type CallContext } from '../../ai/engine';
 import type { Language } from '../../ai/types';
@@ -33,6 +33,10 @@ export interface Passage {
   focus?: boolean;
   /** From a version the material has since replaced. */
   earlier?: boolean;
+  /** In the scope the student is working on. True when there is no scope. */
+  inScope: boolean;
+  /** The other course a passage comes from, when it is not the session's course. */
+  otherCourse?: string;
 }
 export type Verdict = 'sufficient' | 'partial' | 'absent' | 'conversational';
 export interface Retrieval {
@@ -43,6 +47,8 @@ export interface Retrieval {
   /** Current materials not yet searchable, so absent evidence may only mean not read yet. */
   pending: string[];
   via: string[];
+  /** Evidence was found, but none of it in the scope. The reply says so and points to where it is. */
+  outsideScope: boolean;
 }
 
 /** English words that carry no topic. Other languages fall back to word length alone. */
@@ -90,7 +96,7 @@ const RRF = 20;
 const FAR = 0.5;
 const CLOSE = 0.3;
 
-type Row = { id: string; materialId: string; versionId: string; blockIds: string[]; heading: string; text: string; sectionId: string; ordinal: number; kind: 'text' | 'figure' };
+type Row = { id: string; courseId: string; materialId: string; versionId: string; blockIds: string[]; heading: string; text: string; sectionId: string; ordinal: number; kind: 'text' | 'figure'; materialTitle: string; summary: string | null };
 
 /** Runs of three words. Parts of one long table or ledger share words but not runs. */
 const shingles = (text: string) => { const w = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []; return new Set(w.slice(2).map((x, i) => `${w[i]} ${w[i + 1]} ${x}`)); };
@@ -102,29 +108,56 @@ function overlap(a: string, b: string) {
   return shared / Math.max(1, Math.min(x.size, y.size));
 }
 
-export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { courseId: string; query: string; context?: string; language: Language; topicId?: string | null; focus?: Citation | null }): Promise<Retrieval> {
+/** Ranking boosts. The course comes before the rest of the workspace, and the scope before the course. */
+const COURSE_BOOST = 1.2;
+const SCOPE_BOOST = 1.5;
+
+export interface RetrieveOptions {
+  courseId: string; query: string; context?: string; language: Language; focus?: Citation | null;
+  /** Current section ids of the scope. They rank first and never limit what can be found. */
+  scope?: { name: string; sectionIds: Set<string> } | null;
+}
+
+/**
+ * Search the whole workspace's current materials by text, and by meaning when text leaves the
+ * question's terms uncovered. The course ranks above other courses and the scope above the course,
+ * with a scope-only search alongside so a scope's passages are always considered. Whatever the
+ * scope, the best evidence anywhere wins, and the result says when it lies outside the scope.
+ */
+export async function retrieve(env: BackendBindings, ctx: CallContext, opts: RetrieveOptions): Promise<Retrieval> {
   const { db, workspaceId } = ctx;
   const own = terms(opts.query, opts.language);
   const via: string[] = [];
+  const empty = { missing: [], pending: [], via, outsideScope: false };
   // Nothing to look up, such as "thanks": the reply needs the conversation, not evidence.
-  if (!own.length && !opts.context && !opts.focus) return { passages: [], verdict: 'conversational', missing: [], pending: [], via };
+  if (!own.length && !opts.context && !opts.focus) return { passages: [], verdict: 'conversational', ...empty };
   const searchTerms = [...new Set([...own, ...terms(opts.context ?? '', opts.language)])].slice(0, 24);
-  const current = and(eq(knowledgeChunks.workspaceId, workspaceId), eq(knowledgeChunks.courseId, opts.courseId),
-    sql`${knowledgeChunks.versionId} in (select m.current_version_id from ${materials} m where m.workspace_id = ${workspaceId} and m.course_id = ${opts.courseId} and not m.archived)`);
-  const columns = { id: knowledgeChunks.id, materialId: knowledgeChunks.materialId, versionId: knowledgeChunks.versionId, blockIds: knowledgeChunks.blockIds, heading: knowledgeChunks.heading, text: knowledgeChunks.text, sectionId: knowledgeChunks.sectionId, ordinal: knowledgeChunks.ordinal, kind: knowledgeChunks.kind };
+  const current = and(eq(knowledgeChunks.workspaceId, workspaceId), sql`${knowledgeChunks.versionId} in (select m.current_version_id from ${materials} m where m.workspace_id = ${workspaceId} and not m.archived)`);
+  const columns = {
+    id: knowledgeChunks.id, courseId: knowledgeChunks.courseId, materialId: knowledgeChunks.materialId, versionId: knowledgeChunks.versionId, blockIds: knowledgeChunks.blockIds, heading: knowledgeChunks.heading, text: knowledgeChunks.text,
+    sectionId: knowledgeChunks.sectionId, ordinal: knowledgeChunks.ordinal, kind: knowledgeChunks.kind, materialTitle: materials.title, summary: sections.summary,
+  };
   const config = searchConfig(opts.language);
   const q = searchTerms.length ? searchTerms.join(' | ') : null;
   const rank = q ? sql<number>`ts_rank_cd(${knowledgeChunks.search}, to_tsquery(${config}::regconfig, ${q}), 32)` : sql<number>`0`;
+  const matches = q ? sql`${knowledgeChunks.search} @@ to_tsquery(${config}::regconfig, ${q})` : sql`false`;
+  const textSearch = (where: ReturnType<typeof and>, limit: number) => db.select({ ...columns, rank }).from(knowledgeChunks)
+    .innerJoin(materials, eq(materials.id, knowledgeChunks.materialId)).innerJoin(sections, eq(sections.id, knowledgeChunks.sectionId))
+    .where(and(current, matches, where)).orderBy(sql`${rank} desc`).limit(limit);
+  const scopeIds = opts.scope?.sectionIds.size ? [...opts.scope.sectionIds] : null;
   const embedText = [opts.context?.slice(-600) ?? '', opts.query].join('\n').trim();
 
-  // Everything independent runs together: the focus, text search, the query embedding and the
-  // current materials that cannot be searched yet.
-  const [focus, textRows, pendingRows] = await Promise.all([
+  // Everything independent runs together: the focus, the text searches and the materials that
+  // cannot be searched yet.
+  const [focus, wide, inCourse, inScope, pendingRows] = await Promise.all([
     opts.focus ? focusPassage(db, workspaceId, opts.focus) : Promise.resolve(null),
-    q ? db.select({ ...columns, rank }).from(knowledgeChunks).where(and(current, sql`${knowledgeChunks.search} @@ to_tsquery(${config}::regconfig, ${q})`)).orderBy(sql`${rank} desc`).limit(16) : Promise.resolve([]),
+    q ? textSearch(undefined, 16) : Promise.resolve([]),
+    q ? textSearch(eq(knowledgeChunks.courseId, opts.courseId), 8) : Promise.resolve([]),
+    q && scopeIds ? textSearch(inArray(knowledgeChunks.sectionId, scopeIds), 8) : Promise.resolve([]),
     db.execute(sql`select m.title from ${materials} m join ${materialVersions} v on v.id = m.current_version_id left join ${ingestJobs} j on j.version_id = v.id
       where m.workspace_id = ${workspaceId} and m.course_id = ${opts.courseId} and not m.archived and v.status in ('ready', 'partial') and coalesce(j.readiness, 'readable') = 'readable' limit 5`),
   ]);
+  const textRows = [...new Map([...wide, ...inCourse, ...inScope].sort((a, b) => b.rank - a.rank).map(r => [r.id, r])).values()];
   // Search by meaning only when the best text matches leave the question's terms uncovered.
   // A query embedding costs little but takes one to five seconds, all before the first token.
   const judged = own;
@@ -132,10 +165,11 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { c
   const textCovers = textRows.length > 0 && judged.filter(w => mentions(topText, w)).length >= 0.75 * judged.length;
   // A name no text match mentions decides the verdict as absent whatever vectors find.
   const nameGap = names(opts.query, opts.language).some(w => !textRows.some(r => r.text.toLowerCase().includes(stem(w))));
-  const queryVector = searchTerms.length && !textCovers && !nameGap ?await embed(env, ctx, [embedText], 'query', opts.language, 'student') : null;
+  const queryVector = searchTerms.length && !textCovers && !nameGap ? await embed(env, ctx, [embedText], 'query', opts.language, 'student') : null;
   const vector = queryVector ? `[${queryVector.vectors[0]!.join(',')}]` : null;
   const vectorRows = vector
     ? await db.select({ ...columns, distance: sql<number>`${knowledgeChunks.embedding} <=> ${vector}::vector` }).from(knowledgeChunks)
+      .innerJoin(materials, eq(materials.id, knowledgeChunks.materialId)).innerJoin(sections, eq(sections.id, knowledgeChunks.sectionId))
       .where(and(current, eq(knowledgeChunks.embeddingModel, queryVector!.model))).orderBy(sql`${knowledgeChunks.embedding} <=> ${vector}::vector`).limit(16)
     : [];
   if (focus) via.push('focus');
@@ -151,13 +185,12 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { c
   const exact = [...own.filter(w => /\d/.test(w)), ...names(opts.query, opts.language)];
   for (const r of textRows) { const text = r.text.toLowerCase(); for (const w of exact) if (text.includes(w)) add(r, 1 / RRF); }
   vectorRows.filter(r => r.distance < FAR).forEach((r, i) => add(r, 1 / (RRF + i)));
-  // Topic links raise passages already found. They never add one by themselves.
-  if (opts.topicId && fused.size) {
-    const linked = await db.select({ id: knowledgeChunks.id }).from(knowledgeChunks).innerJoin(sections, eq(sections.id, knowledgeChunks.sectionId)).innerJoin(sectionLinks, and(eq(sectionLinks.versionId, knowledgeChunks.versionId), sql`${sectionLinks.headingBlockId} is not distinct from ${sections.headingBlockId}`))
-      .where(and(inArray(knowledgeChunks.id, [...fused.keys()]), eq(sectionLinks.topicId, opts.topicId), eq(sectionLinks.removed, false)));
-    for (const { id } of linked) fused.get(id)!.score *= 1.25;
-    if (linked.length) via.push('topic');
+  // The course and then the scope rank first. Neither adds a passage nothing else found.
+  for (const f of fused.values()) {
+    if (f.row.courseId === opts.courseId) f.score *= COURSE_BOOST;
+    if (opts.scope?.sectionIds.has(f.row.sectionId)) f.score *= SCOPE_BOOST;
   }
+  if (inScope.length) via.push('scope');
 
   // Fill the budget in score order. Skip near repeats, and take at most two passages from one
   // section, so a second section that says something different still gets in.
@@ -170,9 +203,8 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { c
     // An earlier version is never a reason to leave out the current text.
     if (focus && !focus.earlier && overlap(row.text, focus.text) > 0.6) continue;
     if (chosen.some(c => overlap(c.text, row.text) > 0.6)) continue;
-    const key = row.sectionId;
-    if ((perSection.get(key) ?? 0) >= 2) continue;
-    chosen.push(row); used += row.text.length; perSection.set(key, (perSection.get(key) ?? 0) + 1);
+    if ((perSection.get(row.sectionId) ?? 0) >= 2) continue;
+    chosen.push(row); used += row.text.length; perSection.set(row.sectionId, (perSection.get(row.sectionId) ?? 0) + 1);
   }
   chosen.sort((a, b) => a.versionId === b.versionId ? a.ordinal - b.ordinal : 0);
 
@@ -190,17 +222,21 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { c
     : bare || share >= 0.75 || (close && share >= 0.5) ? 'sufficient'
     : share >= 0.4 ? 'partial' : 'absent';
 
-  const [titles, summaries] = await Promise.all([
-    db.select({ id: materials.id, title: materials.title }).from(materials).where(inArray(materials.id, [...new Set([...chosen.map(p => p.materialId), ...(focus ? [focus.materialId] : [])])])),
-    chosen.length ? db.select({ id: sections.id, summary: sections.summary }).from(sections).where(inArray(sections.id, [...new Set(chosen.map(c => c.sectionId))])) : Promise.resolve([]),
-  ]);
-  const title = (id: string) => titles.find(t => t.id === id)?.title ?? '';
+  const courseNames = new Map((await courseTitles(db, workspaceId, [...new Set(chosen.map(c => c.courseId).filter(id => id !== opts.courseId))])).map(c => [c.id, c.name]));
   const passages: Passage[] = [
-    ...(focus ? [{ id: '', materialId: focus.materialId, versionId: focus.versionId, blockIds: focus.blockIds, materialTitle: title(focus.materialId), heading: focus.heading, text: focus.text, sectionSummary: null, kind: 'text' as const, focus: true, earlier: focus.earlier }] : []),
-    ...chosen.map(r => ({ id: '', materialId: r.materialId, versionId: r.versionId, blockIds: r.blockIds, materialTitle: title(r.materialId), heading: r.heading, text: r.text, kind: r.kind, sectionSummary: summaries.find(s => s.id === r.sectionId)?.summary ?? null })),
+    ...(focus ? [{ id: '', materialId: focus.materialId, versionId: focus.versionId, blockIds: focus.blockIds, materialTitle: focus.materialTitle, heading: focus.heading, text: focus.text, sectionSummary: null, kind: 'text' as const, focus: true, earlier: focus.earlier, inScope: true }] : []),
+    ...chosen.map(r => ({
+      id: '', materialId: r.materialId, versionId: r.versionId, blockIds: r.blockIds, materialTitle: r.materialTitle, heading: r.heading, text: r.text, kind: r.kind, sectionSummary: r.summary,
+      inScope: !opts.scope || opts.scope.sectionIds.has(r.sectionId), ...(courseNames.has(r.courseId) ? { otherCourse: courseNames.get(r.courseId)! } : {}),
+    })),
   ].map((p, i) => ({ ...p, id: `p${i + 1}` }));
-  // The session's own passage is always shown, but only fresh evidence counts as support.
-  return { passages, verdict: verdict === 'absent' && !passages.some(p => !p.focus) ? 'absent' : verdict, missing, pending: (pendingRows.rows as { title: string }[]).map(r => r.title), via };
+  // Found, but not in what the student is working on: the reply says so and shows where it is.
+  const outsideScope = !!opts.scope && verdict !== 'absent' && !passages.some(p => !p.focus && p.inScope);
+  return { passages, verdict, missing, pending: (pendingRows.rows as { title: string }[]).map(r => r.title), via, outsideScope };
+}
+
+async function courseTitles(db: CallContext['db'], workspaceId: string, ids: string[]) {
+  return ids.length ? db.select({ id: courses.id, name: courses.name }).from(courses).where(and(eq(courses.workspaceId, workspaceId), inArray(courses.id, ids))) : [];
 }
 
 /**
@@ -210,14 +246,14 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { c
 async function focusPassage(db: CallContext['db'], workspaceId: string, focus: Citation) {
   // One query: the material, whether this version is still current, and the blocks with a neighbour either side.
   const ids = `{${focus.blockIds.filter(id => /^[0-9a-f-]{36}$/i.test(id)).join(',')}}`;
-  const rows = await db.execute(sql`with v as (select v.material_id, m.current_version_id from ${materialVersions} v join ${materials} m on m.id = v.material_id where v.workspace_id = ${workspaceId} and v.id = ${focus.versionId}),
+  const rows = await db.execute(sql`with v as (select v.material_id, m.current_version_id, m.title from ${materialVersions} v join ${materials} m on m.id = v.material_id where v.workspace_id = ${workspaceId} and v.id = ${focus.versionId}),
       picked as (select min(ordinal) lo, max(ordinal) hi from ${blocks} where version_id = ${focus.versionId} and id = any(${ids}::uuid[]))
-    select v.material_id, v.current_version_id, b.id, b.type, b.content from v, picked, ${blocks} b where b.version_id = ${focus.versionId} and b.ordinal between picked.lo - 1 and picked.hi + 1 order by b.ordinal`);
-  const list = rows.rows as { material_id: string; current_version_id: string; id: string; type: string; content: unknown }[];
+    select v.material_id, v.current_version_id, v.title, b.id, b.type, b.content from v, picked, ${blocks} b where b.version_id = ${focus.versionId} and b.ordinal between picked.lo - 1 and picked.hi + 1 order by b.ordinal`);
+  const list = rows.rows as { material_id: string; current_version_id: string; title: string; id: string; type: string; content: unknown }[];
   if (!list.length) return null;
   const heading = list.find(b => b.type === 'heading');
   const text = list.map(b => blockMarkdown(b as never).trim()).filter(Boolean).join('\n\n').slice(0, BUDGET_CHARS);
-  return { materialId: list[0]!.material_id, versionId: focus.versionId, blockIds: focus.blockIds, heading: heading ? blockMarkdown(heading as never).replace(/^#+\s*/, '') : '', text, earlier: list[0]!.current_version_id !== focus.versionId };
+  return { materialId: list[0]!.material_id, materialTitle: list[0]!.title, versionId: focus.versionId, blockIds: focus.blockIds, heading: heading ? blockMarkdown(heading as never).replace(/^#+\s*/, '') : '', text, earlier: list[0]!.current_version_id !== focus.versionId };
 }
 
 /** Whether the course has any knowledge layer yet. Tutor and generation say so when it does not. */

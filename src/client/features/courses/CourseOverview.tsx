@@ -27,7 +27,7 @@ import { keys } from '@/lib/query';
 import { cn } from '@/lib/utils';
 
 type Change = OutlineCorrection extends infer C ? C extends unknown ? Omit<C, 'operationId' | 'expectedRevision'> : never : never;
-const JOB_LINE = { read_syllabus: 'Reading the syllabus', draft_outline: 'Outlining from your materials', map_material: 'Matching materials to topics' } as const;
+const JOB_LINE = { read_syllabus: 'Reading the syllabus', assign_topics: 'Sorting sections into topics' } as const;
 const placeLink = (p: { materialId: string; versionId: string; blockId: string | null }) => `/materials/${p.materialId}/versions/${p.versionId}${p.blockId ? `#block-${p.blockId}` : ''}`;
 
 /** Course page: the syllabus, the outline it produced, the materials, and readiness by topic. */
@@ -249,7 +249,7 @@ function OutlineSection({ view, onView }: { view: OutlineView; onView: (view: Ou
       {empty && !status && (
         view.syllabus || view.readyMaterials >= 2
           ? <p className="text-muted-foreground text-base">No topics yet.</p>
-          : <p className="text-muted-foreground text-base">Rawi outlines the course from its syllabus, or from your materials once two of them are readable.</p>
+          : <p className="text-muted-foreground text-base">Rawi outlines the course from its syllabus, or from your materials once it has read them.</p>
       )}
       {!empty && (
         <ol className="border-y">
@@ -266,6 +266,7 @@ function OutlineSection({ view, onView }: { view: OutlineView; onView: (view: Ou
                       ? <RenameField topic={topic} busy={save.busy} onCancel={() => setRenaming(null)} onSave={title => correct({ action: 'rename', topicId: topic.id, title }, () => setRenaming(null))} />
                       : <span className="text-base font-medium">{topic.title}</span>}
                     {topic.summary && <span className="text-muted-foreground text-sm">{topic.summary}</span>}
+                    {topic.buildsOn.length > 0 && <span className="text-muted-foreground text-sm">Builds on {topic.buildsOn.map(id => view.topics.find(t => t.id === id)?.title).filter(Boolean).join(', ')}</span>}
                     <span className="text-muted-foreground flex flex-wrap gap-x-snug text-sm">
                       {topic.source && <Link className="hover:underline" to={placeLink({ ...topic.source, blockId: topic.source.blockIds[0] ?? null })}>{sourceLabel(topic)}</Link>}
                       {topic.places.length > 0 && (
@@ -276,7 +277,7 @@ function OutlineSection({ view, onView }: { view: OutlineView; onView: (view: Ou
                     </span>
                     {expanded && (
                       <ul className="mt-1 flex flex-col gap-0.5 border-l pl-3 text-sm">
-                        {topic.places.map(p => <li key={`${p.versionId}:${p.blockId}`}><Link className="hover:underline" to={placeLink(p)}>{p.heading ? `${p.heading}, ` : ''}<span className="text-muted-foreground">{p.materialTitle}</span></Link></li>)}
+                        {topic.places.map(p => <li key={`${p.materialId}:${p.sectionKey}`}><Link className="hover:underline" to={placeLink(p)}>{p.heading ? `${p.heading}, ` : ''}<span className="text-muted-foreground">{p.materialTitle}{p.depth === 'introduces' ? ', introduced here' : p.depth === 'mentions' ? ', mentioned' : ''}</span></Link></li>)}
                       </ul>
                     )}
                   </div>

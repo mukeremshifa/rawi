@@ -4,7 +4,8 @@ import { createCourseInput, coursePatch, uuid } from '../../shared/contracts/wor
 import * as service from '../services/workspace';
 import * as outline from '../services/outline/outline';
 import * as jobs from '../services/outline/jobs';
-import { outlineCorrection, outlineUndo } from '../../shared/contracts/outline';
+import { outlineCorrection, outlineUndo, scopeInput, scopePatch } from '../../shared/contracts/outline';
+import * as scopes from '../services/scopes';
 import { jsonInput, type BackendContext } from '../http';
 import { ingestPending, runIngest } from '../services/knowledge/ingest';
 
@@ -36,3 +37,7 @@ coursesRoutes.post('/courses/:id/outline/read', async c => {
   c.executionCtx.waitUntil(jobs.runCourseJobs(c.env, scope));
   return c.json(view);
 });
+coursesRoutes.get('/courses/:id/scopes', async c => c.json(await scopes.listScopes(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
+coursesRoutes.post('/courses/:id/scopes', async c => c.json(await scopes.ensureScope(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, scopeInput))));
+coursesRoutes.get('/scopes/:id', async c => c.json(await scopes.scopeView(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
+coursesRoutes.patch('/scopes/:id', async c => c.json(await scopes.patchScope(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, scopePatch))));

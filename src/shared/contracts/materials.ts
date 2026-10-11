@@ -28,6 +28,11 @@ export interface Material {
   topicIds: string[];
   /** Conversion status of the current version. */
   status: ConversionStatus | null;
+  /**
+   * How far Rawi has read the current version: readable once converted, searchable once every
+   * block can be found, enriched once its summaries, facts and figures are done. Null before any.
+   */
+  readiness: 'readable' | 'searchable' | 'enriched' | null;
 }
 export interface MaterialVersion {
   id: string; materialId: string; number: number; origin: 'paste' | 'upload';

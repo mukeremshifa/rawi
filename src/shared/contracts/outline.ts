@@ -6,13 +6,17 @@ import type { Material, MaterialVersion } from './materials';
 import type { PlannedAssessment } from '../domain/types';
 
 /**
- * The course outline: topics read from the syllabus or drafted from
- * materials, corrected in place, and linked to sections of materials.
- * A section is a heading and the blocks under it, or the lead before the
- * first heading.
+ * The course outline: topics read from the syllabus or worked out from the
+ * materials, corrected in place, and computed over sections. A section is a
+ * heading and the blocks under it up to the next heading, or the lead before
+ * the first heading. A topic is a label, not a backbone: a course may have
+ * none at first, a new material can bring new ones, and one section can
+ * belong to several topics at different depths.
  */
 export type TopicOrigin = 'syllabus' | 'materials' | 'student';
-export type OutlineJobKind = 'read_syllabus' | 'map_material' | 'draft_outline';
+export type OutlineJobKind = 'read_syllabus' | 'assign_topics';
+/** How deeply a section treats a topic. The first section in reading order that covers it introduces it. */
+export type TopicDepth = 'introduces' | 'covers' | 'mentions';
 /** What a finished job did, for the quiet line under the outline. */
 export interface OutlineJobResult {
   provider: 'model' | 'rules';
@@ -27,8 +31,9 @@ export const OUTLINE_MIN = 8;
 export const OUTLINE_MAX = 20;
 
 /** A place to read about a topic: one section of a material's current version. */
-export interface ReadingPlace { materialId: string; versionId: string; materialTitle: string; heading: string; blockId: string | null }
-export interface OutlineTopic extends Topic { places: ReadingPlace[]; sourceTitle: string | null }
+export interface ReadingPlace { materialId: string; versionId: string; materialTitle: string; heading: string; blockId: string | null; sectionKey: string; depth: TopicDepth }
+/** `buildsOn` lists earlier topics whose sections this topic's sections rely on, read from the material. */
+export interface OutlineTopic extends Topic { places: ReadingPlace[]; sourceTitle: string | null; buildsOn: string[] }
 export interface OutlineView {
   course: Course;
   topics: OutlineTopic[];
@@ -56,4 +61,26 @@ export interface CorrectionResult { outline: OutlineView; changeId: string; mess
 
 /** Covers in the Reader: the topics a material's current version is linked to. */
 export const coversInput = z.strictObject({ operationId: uuid, versionId: uuid, topicId: uuid, action: z.enum(['add', 'remove']) });
-export interface Covers { versionId: string; topics: { id: string; title: string; origin: 'suggested' | 'student' }[]; mapping: boolean }
+export interface Covers { versionId: string; topics: { id: string; title: string; origin: 'suggested' | 'student'; depth: TopicDepth }[]; mapping: boolean }
+
+/* ── Scopes ──────────────────────────────────────────────────────────── */
+
+export type ScopeKind = 'topic' | 'sections' | 'assessment' | 'course';
+/** A section named by its material and key, so it follows the section into new versions. */
+export interface ScopeSection { materialId: string; key: string }
+export const scopeSection = z.strictObject({ materialId: uuid, key: z.string().min(1).max(2000) });
+export const scopeInput = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('topic'), topicId: uuid }),
+  z.strictObject({ kind: z.literal('assessment'), assessmentId: uuid }),
+  z.strictObject({ kind: z.literal('course') }),
+  z.strictObject({ kind: z.literal('sections'), id: uuid, name: z.string().trim().min(1).max(200), sections: z.array(scopeSection).min(1).max(200) }),
+]);
+export const scopePatch = z.strictObject({ operationId: uuid, expectedRevision: z.number().int().positive(), name: z.string().trim().min(1).max(200).optional(), sections: z.array(scopeSection).min(1).max(200).optional(), archived: z.boolean().optional() });
+export interface ScopeSummary { id: string; courseId: string; name: string; kind: ScopeKind; topicId: string | null; assessmentId: string | null; archived: boolean; revision: number; sectionCount: number; lastUsedAt: string | null }
+/** A scope's sections in their current versions, with what they build on outside the scope. */
+export interface ScopeView extends ScopeSummary {
+  sections: { id: string; materialId: string; versionId: string; materialTitle: string; key: string; heading: string; blockId: string | null; weight: number }[];
+  /** Saved sections whose material no longer has them. */
+  missing: ScopeSection[];
+  prerequisites: { id: string; materialId: string; versionId: string; materialTitle: string; heading: string; blockId: string | null; detail: string }[];
+}

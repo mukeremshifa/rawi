@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, date, text, boolean, timestamp, uuid, integer, bigint, jsonb, unique, index, foreignKey, primaryKey, check, vector, customType, doublePrecision, real, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, date, text, boolean, timestamp, uuid, integer, bigint, jsonb, unique, index, foreignKey, primaryKey, check, vector, customType, doublePrecision, real, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { CallState, Language, Limits, ServiceTier, Usage, Validation, Vendor } from '../ai/types';
 import type { Sealed } from '../ai/funding';
 import type { FactKind, IngestStage, KnowledgeCoverage, PoolQuestion, PoolVerification, Readiness } from '../services/knowledge/types';
@@ -13,7 +13,7 @@ import type { TutorSession, TutorMessage, TutorMessageProvenance } from '../../s
 /** Review summary kept with legacy workspace imports. */
 type ImportReview = { id: string; state: 'review' | 'complete'; courses: number; materials: number; questions: number; sets: number; attempts: number; unsupported: string[]; courseIds?: string[] };
 import type { BlockType, Citation, ConversionStatus, ConversionWarning, Pagination, ParsedBlock } from '../../shared/contracts/document';
-import type { OutlineJobKind, OutlineJobResult, TopicOrigin } from '../../shared/contracts/outline';
+import type { OutlineJobKind, OutlineJobResult, ScopeKind, ScopeSection, TopicDepth, TopicOrigin } from '../../shared/contracts/outline';
 
 const timestamps = () => ({
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -159,23 +159,22 @@ export const blocks = pgTable('blocks', {
   check('blocks_ordinal_nonnegative', sql`${t.ordinal} >= 0`),
 ]);
 /**
- * A section of one version linked to a topic. A section is a heading and the blocks under it,
- * or the lead before the first heading when the heading is null. A removed row keeps the
- * student's removal through remapping, and a removed lead row removes the topic from the whole
- * version. Heading text carries student links and removals to a new version.
+ * Topics are labels over sections, rebuildable at any time. A row says how deeply a section of a
+ * material treats a topic. It names the section by its key, so it follows the section to a new
+ * version of the material. A student's own link or removal survives every rebuild.
  */
-export const sectionLinks = pgTable('section_links', {
-  id: uuid('id').primaryKey().defaultRandom(), ...materialScope(), topicId: uuid('topic_id').notNull(),
-  materialId: uuid('material_id').notNull(), versionId: uuid('version_id').notNull(),
-  headingBlockId: uuid('heading_block_id'), headingText: text('heading_text').notNull(),
+export const topicSections = pgTable('topic_sections', {
+  ...materialScope(), topicId: uuid('topic_id').notNull(), materialId: uuid('material_id').notNull(), sectionKey: text('section_key').notNull(),
+  depth: text('depth').$type<TopicDepth>().notNull(),
   origin: text('origin').$type<'suggested' | 'student'>().notNull(), removed: boolean('removed').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [
-  unique('section_links_unique').on(t.versionId, t.headingBlockId, t.topicId).nullsNotDistinct(),
+  primaryKey({ columns: [t.topicId, t.materialId, t.sectionKey] }),
   foreignKey({ columns: [t.workspaceId, t.courseId, t.topicId], foreignColumns: [topics.workspaceId, topics.courseId, topics.id] }).onDelete('cascade'),
-  foreignKey({ columns: [t.workspaceId, t.courseId, t.materialId, t.versionId], foreignColumns: [materialVersions.workspaceId, materialVersions.courseId, materialVersions.materialId, materialVersions.id] }),
-  index('section_links_course_idx').on(t.workspaceId, t.courseId, t.topicId),
-  check('section_links_origin_valid', sql`${t.origin} in ('suggested', 'student')`),
+  foreignKey({ columns: [t.workspaceId, t.courseId, t.materialId], foreignColumns: [materials.workspaceId, materials.courseId, materials.id] }).onDelete('cascade'),
+  index('topic_sections_material_idx').on(t.workspaceId, t.materialId, t.sectionKey),
+  check('topic_sections_depth_valid', sql`${t.depth} in ('introduces', 'covers', 'mentions')`),
+  check('topic_sections_origin_valid', sql`${t.origin} in ('suggested', 'student')`),
 ]);
 export const workspaceStorage = pgTable('workspace_storage', {
   workspaceId: uuid('workspace_id').primaryKey().references(() => workspaces.id),
@@ -332,7 +331,7 @@ export const outlineJobs = pgTable('outline_jobs', {
   foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
   index('outline_jobs_due_idx').on(t.state, t.nextRunAt),
   index('outline_jobs_course_idx').on(t.workspaceId, t.courseId, t.createdAt),
-  check('outline_jobs_kind_valid', sql`${t.kind} in ('read_syllabus', 'map_material', 'draft_outline')`),
+  check('outline_jobs_kind_valid', sql`${t.kind} in ('read_syllabus', 'assign_topics')`),
   check('outline_jobs_state_valid', sql`${t.state} in ('queued', 'running', 'done', 'failed')`),
 ]);
 
@@ -448,6 +447,8 @@ export const sections = pgTable('sections', {
   contentHash: text('content_hash').notNull(),
   summary: text('summary'), keyTerms: jsonb('key_terms').$type<string[]>().notNull().default([]), digestedBy: text('digested_by'),
   language: text('language').$type<Language>().notNull(),
+  // When topic assignment last looked at this section, so a section that fits no topic is not sent again.
+  topicsAt: timestamp('topics_at', { withTimezone: true }),
 }, t => [
   versionFk(t), unique('sections_version_key_unique').on(t.versionId, t.key), unique('sections_version_order_unique').on(t.versionId, t.ordinal),
   index('sections_course_idx').on(t.workspaceId, t.courseId, t.materialId, t.key), index('sections_hash_idx').on(t.workspaceId, t.contentHash),
@@ -517,3 +518,26 @@ export const questionPool = pgTable('question_pool', {
   blockIds: jsonb('block_ids').$type<string[]>().notNull(), verification: jsonb('verification').$type<PoolVerification>().notNull(),
   state: text('state').$type<'verified' | 'rejected'>().notNull(), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [versionFk(t), index('question_pool_key_idx').on(t.cacheKey, t.state), check('question_pool_state_valid', sql`${t.state} in ('verified', 'rejected')`)]);
+/**
+ * What a student is working on: a topic, a selection of sections, an assessment or the whole
+ * course. Tutor sessions and practice take a scope. A scope ranks its sections first and never
+ * limits what can be found. Topic and assessment scopes read their sections live, so a rebuilt
+ * outline or a replaced material changes them with it.
+ */
+export const scopes = pgTable('scopes', {
+  id: uuid('id').primaryKey(), ...materialScope(), name: text('name').notNull(), kind: text('kind').$type<ScopeKind>().notNull(),
+  topicId: uuid('topic_id'), assessmentId: uuid('assessment_id'),
+  sections: jsonb('sections').$type<ScopeSection[]>().notNull().default([]),
+  archived: boolean('archived').notNull().default(false), revision: integer('revision').notNull().default(1),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }), ...timestamps(),
+}, t => [
+  unique('scopes_scope_unique').on(t.workspaceId, t.courseId, t.id),
+  foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete('cascade'),
+  foreignKey({ columns: [t.workspaceId, t.courseId, t.topicId], foreignColumns: [topics.workspaceId, topics.courseId, topics.id] }).onDelete('cascade'),
+  foreignKey({ name: 'scopes_assessment_fk', columns: [t.workspaceId, t.courseId, t.assessmentId], foreignColumns: [assessments.workspaceId, assessments.courseId, assessments.id] }).onDelete('cascade'),
+  uniqueIndex('scopes_topic_unique').on(t.courseId, t.topicId).where(sql`${t.kind} = 'topic'`),
+  uniqueIndex('scopes_assessment_unique').on(t.courseId, t.assessmentId).where(sql`${t.kind} = 'assessment'`),
+  uniqueIndex('scopes_course_unique').on(t.courseId).where(sql`${t.kind} = 'course'`),
+  index('scopes_list_idx').on(t.workspaceId, t.courseId, t.archived),
+  check('scopes_kind_valid', sql`${t.kind} in ('topic', 'sections', 'assessment', 'course')`),
+]);
