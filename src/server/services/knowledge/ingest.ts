@@ -3,8 +3,8 @@ import { blocks, figureDescriptions, ingestJobs, knowledgeChunks, knowledgeFacts
 import { socketDb, transaction, type ReadDb, type SocketDb, type Transaction } from '../../db/client';
 import type { BackendBindings } from '../../config';
 import { ApiError } from '../../errors';
-import { adaptersFor, AiFailed, embed, run, type CallContext } from '../../ai/engine';
-import { TIERS } from '../../ai/catalog';
+import { AiFailed, embed, run, type CallContext } from '../../ai/engine';
+import { PREFERENCE } from '../../ai/catalog';
 import type { Language } from '../../ai/types';
 import { blockMarkdown, spansText } from '../../../shared/domain/document-text';
 import { versionBlocks, type SectionBlock } from '../outline/sections';
@@ -34,7 +34,7 @@ const PART_CHARS = 1500;
 const MAX_REPAIRS = 3;
 /** Bump when chunking changes. With the embedding model it names the index a version was built with. */
 const CHUNKER = 'chunk-v2';
-export const indexVersion = () => `${CHUNKER}:${CHUNK_CHARS}:${PART_CHARS}:${TIERS.embed[0] ?? 'none'}`;
+export const indexVersion = () => `${CHUNKER}:${CHUNK_CHARS}:${PART_CHARS}:${PREFERENCE.embed[0] ?? 'none'}`;
 
 const due = (now: Date) => and(or(eq(ingestJobs.state, 'queued'), and(eq(ingestJobs.state, 'running'), lte(ingestJobs.leaseExpiresAt, now))), or(isNull(ingestJobs.nextRunAt), lte(ingestJobs.nextRunAt, now)));
 
@@ -76,7 +76,7 @@ export async function ingestPending(db: ReadDb | SocketDb, scope: Scope) {
 
 /** Advance a course's ingest jobs for up to about twenty seconds. Safe to call from `waitUntil`. */
 export async function runIngest(env: BackendBindings, scope: Scope) {
-  if (!env.DATABASE_URL || !Object.keys(adaptersFor(env)).length) return;
+  if (!env.DATABASE_URL) return;
   const connection = socketDb(env.DATABASE_URL);
   const deadline = Date.now() + 20_000;
   try {
@@ -91,8 +91,7 @@ export async function runIngest(env: BackendBindings, scope: Scope) {
 
 /** The cron safety net. */
 export async function sweepIngest(db: SocketDb, env: BackendBindings, limit = 5) {
-  if (!Object.keys(adaptersFor(env)).length) return { ingestJobs: 0, rebuilt: 0 };
-  const rebuilt = await rebuildStale(db);
+    const rebuilt = await rebuildStale(db);
   const rows = await db.select({ id: ingestJobs.id }).from(ingestJobs).where(due(new Date())).orderBy(asc(ingestJobs.createdAt)).limit(limit);
   let ran = 0;
   for (const row of rows) { try { if (await step(db, env, row.id, Date.now() + 60_000)) ran++; } catch { /* The next sweep retries. */ } }

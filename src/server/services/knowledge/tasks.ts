@@ -28,8 +28,8 @@ export type Digest = z.infer<typeof digestSchema>;
  * instructions over more material. Background work, so it runs on flex.
  */
 export const digestTask: Task<DigestInput, Digest> = {
-  name: 'knowledge.digest', data: 'institution', promptVersion: KNOWLEDGE_PROMPT_VERSION, tiers: ['small', 'strong'], serviceTier: 'flex', cache: 'none', temperature: 0,
-  maxOutput: 6000, language: i => i.language,
+  name: 'knowledge.digest', promptVersion: KNOWLEDGE_PROMPT_VERSION, temperature: 0,
+  needs: { skill: 'extract', data: 'institution', lane: 'background', maxOutput: 6000, cache: 'none', attempts: 3 }, language: i => i.language,
   build: i => ({
     system: [
       'You read sections of a university course material and record what each one teaches.',
@@ -53,8 +53,8 @@ const figureSchema = z.object({ description: z.string().describe('What the figur
 
 /** One description per figure, from the image itself, written once at ingest. */
 export const figureTask: Task<FigureInput, string> = {
-  name: 'knowledge.figure', data: 'institution', promptVersion: KNOWLEDGE_PROMPT_VERSION, tiers: ['vision'], serviceTier: 'standard', cache: 'none', temperature: 0,
-  maxOutput: 400, language: i => i.language,
+  name: 'knowledge.figure', promptVersion: KNOWLEDGE_PROMPT_VERSION, temperature: 0,
+  needs: { skill: 'vision', data: 'institution', lane: 'background', maxOutput: 400, cache: 'none' }, language: i => i.language,
   build: i => ({
     system: ['You describe a figure from a university course material for a student who cannot see it.', 'Say what it shows and the point it makes. Read any labels, axes and values that matter. Do not guess at what is not visible.', DATA_RULE, house(i.language)].join('\n'),
     prompt: `Caption: ${escapeTags(i.caption) || '(none)'}\nNearby text: ${escapeTags(i.context).slice(0, 600) || '(none)'}`,

@@ -27,7 +27,7 @@ import { availabilityInput, assessmentInput, sessionInput, checkInInput, zonedPa
 import { examFields } from '../src/shared/contracts/exams';
 import { buildRun } from '../src/shared/domain/exam';
 import { addDays, weekStart } from '../src/shared/domain/planner';
-import type { PlannedSession, WrittenGrading } from '../src/shared/domain/types';
+import type { PlannedSession } from '../src/shared/domain/types';
 import { dataset, stableId, fixtureCourses, fixtureTopics, fixtureMaterials, fixtureQuestions, answer } from './fixtures/account';
 
 const args = process.argv.slice(2);
@@ -241,10 +241,6 @@ try {
   });
   const reviewed=histories.find(a=>a.questions.some(q=>q.question.format==='essay'&&q.result.response.kind==='text'))!;
   const written=reviewed.questions.find(q=>q.question.format==='essay'&&q.result.response.kind==='text')!;
-  for(const revision of [1,2]) await step(`feedback:${revision}`,'feedback_revisions',id(`feedback:${revision}`),async()=>{
-    const grading:WrittenGrading={method:'sample',status:'graded',gradedAt:instant(-1,600+revision).toISOString(),summary:revision===1?'Sample review: the response identifies a claim but needs a specific comparison and a clearer causal explanation.':'Sample second review of the unchanged response: partial credit recognises the stated limitation. A supported comparison is still needed.',points:written.question.rubric!.map((r,i)=>({rubricId:r.id,max:r.marks,awarded:Math.max(0,r.marks-(i===0?3-revision:1)),feedback:i===0?'The claim is identifiable. Link it explicitly to the evidence.':'Use a precise source detail and state why the alternative is weaker.'}))};
-    await db.insert(s.feedbackRevisions).values({id:id(`feedback:${revision}`),workspaceId:wid,courseId:reviewed.courseId,attemptId:reviewed.id,questionId:written.question.id,revision,grading,sampleDataset:dataset}).onConflictDoNothing();return {attemptId:reviewed.id,questionId:written.question.id,revision};
-  });
   await step('remediation','learning_sets',id('remediation'),()=>createSet(db,wid,reviewed.courseId,{id:id('remediation'),name:'Sample remediation: compare the evidence',questionIds:reviewed.questions.filter(q=>q.result.outcome!=='correct').map(q=>q.question.id),remediatesAttemptId:reviewed.id,feedback:'immediate',hintsAllowed:true}));
   const focus=written.question.source??Array.from(sources.values())[0]!;
   for(const [i,kind] of ['completed','open','archived','interrupted','answer-review'].entries()){

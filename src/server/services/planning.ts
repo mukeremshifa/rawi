@@ -7,7 +7,6 @@ import { deriveAllEvidence, dueReviews, recurringMistakes, buildPlan } from '../
 import { zonedParts, type plannerWrite, type scheduleWrite, type assessmentWrite, type proposalInput, type checkInInput } from '../../shared/contracts/planner';
 import { plannerState, plannedSessions, assessments, checkIns, planProposals, courses, topics, learningAttempts, learningRuns, materials, materialVersions, questionVersions, preferences, tutorSessions } from '../db/schema';
 import { operation } from './learning';
-import { withFeedback } from './feedback';
 import { hash, validateTopics } from './materials';
 import { usableStatus } from '../../shared/contracts/document';
 import { getCourse } from './workspace';
@@ -26,10 +25,9 @@ export async function bumpPlanner(tx: Transaction, workspaceId: string) {
 }
 export async function learningData(db: ReadDb | Transaction, workspaceId: string) {
   const original = await db.select({ snapshot: learningAttempts.snapshot, setId: learningAttempts.setId }).from(learningAttempts).where(eq(learningAttempts.workspaceId, workspaceId));
-  const feedback = await withFeedback(db, workspaceId, original.map(r => r.snapshot));
   // A question's topic is its current one, so a merged or corrected topic carries its history.
   const topicOf = new Map((await db.select({ id: questionVersions.id, topicId: sql<string | null>`${questionVersions.content}->>'topicId'` }).from(questionVersions).where(eq(questionVersions.workspaceId, workspaceId))).map(q => [q.id, q.topicId ?? undefined]));
-  const current = feedback.map(a => ({ ...a, questions: a.questions.map(q => topicOf.has(q.question.id) ? { question: { ...q.question, topicId: topicOf.get(q.question.id) }, result: { ...q.result, topicId: topicOf.get(q.question.id) } } : q) }));
+  const current = original.map(r => r.snapshot).map(a => ({ ...a, questions: a.questions.map(q => topicOf.has(q.question.id) ? { question: { ...q.question, topicId: topicOf.get(q.question.id) }, result: { ...q.result, topicId: topicOf.get(q.question.id) } } : q) }));
   const rows = original.map((r, i) => ({ ...r, snapshot: current[i]! }));
   const attempts: Attempt[] = rows.map(({ snapshot: a, setId }) => a.imported ? { ...a.imported, assistanceRecord: 'unknown', marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable } : ({ id: a.id, courseId: a.courseId, kind: a.exam ? 'exam' : 'practice', mode: a.exam ? 'exam' : a.questions.every(q => q.question.format === 'flashcard') ? 'self-rated' : 'practice', title: a.title, topicIds: [...new Set(a.questions.flatMap(q => q.question.topicId ?? []))], startedAt: a.startedAt, completedAt: a.completedAt, questions: a.questions.map(q => q.result), marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable, assistanceRecord: 'tracked', practiceSetId: a.exam ? undefined : setId, examConfigSnapshot: a.exam?.configSnapshot, finish: a.finish, plannedSessionId: a.plannedSessionId, remediatesAttemptId: a.remediatesAttemptId }));
   return { attempts, snapshots: rows.map(r => r.snapshot) };

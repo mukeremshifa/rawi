@@ -5,50 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1791527494471,
+      "when": 1791760019941,
       "tag": "0000_baseline",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1791532232647,
-      "tag": "0001_completion_failures",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1791536216568,
-      "tag": "0002_outline",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1791583258726,
-      "tag": "0003_drop_executions",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1791583356159,
-      "tag": "0004_ai_engine",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1791584151724,
-      "tag": "0005_tutor_history",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1791677770432,
-      "tag": "0006_knowledge_readiness",
       "breakpoints": true
     }
   ]

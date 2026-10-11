@@ -60,8 +60,8 @@ const passageBlock = (passages: Passage[]) => passages.map(p => `<passage id="${
  * history, then this turn's passages and message. Replies are short, so output is capped.
  */
 export const tutorTask: Task<TutorInput, string> = {
-  name: 'tutor.reply', data: 'student', promptVersion: TUTOR_PROMPT_VERSION, tiers: ['chat'], serviceTier: 'standard', cache: 'long', temperature: 0.4,
-  maxOutput: 900, language: i => i.language,
+  name: 'tutor.reply', promptVersion: TUTOR_PROMPT_VERSION, temperature: 0.4,
+  needs: { skill: 'chat', data: 'student', lane: 'interactive', maxOutput: 900, cache: 'long' }, language: i => i.language,
   build: i => ({
     system: [
       'You are Rawi, a patient tutor helping a university student with their course.',
@@ -99,7 +99,7 @@ export const tutorTask: Task<TutorInput, string> = {
 
 const summarySchema = z.object({ summary: z.string() });
 const summaryTask: Task<{ language: Language; prior: string | null; turns: { role: string; text: string }[] }, string> = {
-  name: 'tutor.summarise', data: 'student', promptVersion: TUTOR_PROMPT_VERSION, tiers: ['small'], serviceTier: 'flex', cache: 'none', temperature: 0, maxOutput: 300,
+  name: 'tutor.summarise', promptVersion: TUTOR_PROMPT_VERSION, temperature: 0, needs: { skill: 'extract', data: 'student', lane: 'background', maxOutput: 300, cache: 'none' },
   language: i => i.language,
   build: i => ({
     system: ['You keep a running summary of a tutoring conversation for the tutor to read later.', 'In under 120 words: what was covered, what the student understood, what they struggled with, and any open question.', DATA_RULE, house(i.language)].join('\n'),
@@ -125,7 +125,7 @@ type StageTurn = { messageId: string; language: Language; stage: TutorStage; las
  * the reply. Only the student's words count: the tutor's praise is not evidence of mastery.
  */
 export const stageTask: Task<StageTurn, z.infer<typeof stageSchema>> = {
-  name: 'tutor.stage', data: 'student', promptVersion: TUTOR_PROMPT_VERSION, tiers: ['small'], serviceTier: 'flex', cache: 'none', temperature: 0, maxOutput: 200,
+  name: 'tutor.stage', promptVersion: TUTOR_PROMPT_VERSION, temperature: 0, needs: { skill: 'extract', data: 'student', lane: 'background', maxOutput: 200, cache: 'none' },
   language: i => i.language,
   build: i => ({
     system: ['You decide whether a student in a tutoring session has shown what the current stage asks for.', 'Judge only the student\'s own words. Agreement, thanks or a short reply shows nothing. A wrong or vague answer shows nothing.', DATA_RULE, house(i.language)].join('\n'),

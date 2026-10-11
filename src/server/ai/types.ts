@@ -6,10 +6,11 @@
 export type Vendor = 'bedrock' | 'vertex';
 /** ISO 639-1. Tasks, prompts and stored content carry it, so Arabic needs no new seams. */
 export type Language = 'en' | 'ar' | (string & {});
-/** Text tasks are built now. Voice and charts reuse the same registry, meter and trace later. */
-export type TaskKind = 'generate' | 'embed' | 'transcribe' | 'speak';
-/** Route lists by job. Each is data in `TIERS`, ordered by preference. */
-export type Tier = 'small' | 'chat' | 'writer' | 'strong' | 'vision' | 'embed';
+/**
+ * What a task needs a model to be good at. Routes list the skills they serve in preference
+ * order, so a model swap is an edit to that data and never to a task.
+ */
+export type Skill = 'chat' | 'extract' | 'write' | 'check' | 'vision' | 'embed';
 /** Flex is the vendor's discounted, lower-priority synchronous lane for background work. */
 export type ServiceTier = 'standard' | 'flex';
 
@@ -26,19 +27,10 @@ export interface Usage {
 }
 export const noUsage = (): Usage => ({ input: 0, cacheWrite: 0, cacheRead: 0, output: 0, reasoning: 0, audioSeconds: 0, images: 0 });
 
-/** Plan or organisation policy, stored as data in `ai_plans`. Money is in micro-dollars. */
-export interface AiPolicy {
-  dailyMicros: number;
-  monthlyMicros: number;
-  concurrent: number;
-  vendors: Vendor[];
-  /** `none` admits only routes whose vendor terms keep no prompts. */
-  retention: 'none' | 'standard';
-  /** Student content uses only routes that keep no prompts unless this deliberately says `standard`. */
-  studentRetention?: 'none' | 'standard';
-}
+/** Spend limits in micro-dollars, null for none, and calls running at once. */
+export interface Limits { dailyMicros: number | null; monthlyMicros: number | null; concurrent: number }
 
-/** `student`: tutor turns, written answers and summaries of them. `institution`: course material only. */
+/** `student`: tutor turns and anything a student wrote. `institution`: course material only. */
 export type DataClass = 'student' | 'institution';
 
 export type CallState = 'reserved' | 'settled' | 'ambiguous' | 'released';

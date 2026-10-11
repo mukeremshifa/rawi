@@ -6,7 +6,8 @@ import { ApiError } from '../../errors';
 import type { Citation } from '../../../shared/contracts/document';
 import { blockMarkdown } from '../../../shared/domain/document-text';
 import { OUTLINE_MAX, type OutlineJobKind, type OutlineJobResult } from '../../../shared/contracts/outline';
-import { adaptersFor, run, type Task } from '../../ai/engine';
+import { run, type Task } from '../../ai/engine';
+import { fundingFor } from '../../ai/funding';
 import { outlineTasks } from './tasks';
 import { runIngest } from '../knowledge/ingest';
 import { rulesProvider } from './rules';
@@ -130,7 +131,7 @@ type Prepared = {
  */
 async function execute(db: SocketDb, env: BackendBindings, job: Job, prepared: Prepared): Promise<'busy' | { value: unknown; provider: 'model' | 'rules'; model?: string; fallback?: OutlineJobResult['fallback'] }> {
   const rules = async (fallback: OutlineJobResult['fallback']) => ({ value: (await prepared.run(rulesProvider)).value, provider: 'rules' as const, fallback });
-  if (!Object.keys(adaptersFor(env)).length) return rules('unconfigured');
+  if (!Object.keys((await fundingFor(env, db, job.workspaceId)).adapters).length) return rules('unconfigured');
   try {
     const served = await run(env, { db, workspaceId: job.workspaceId, jobId: job.id }, outlineTasks[job.kind] as Task<unknown, unknown>, prepared.input);
     return { value: served.value, provider: 'model', model: served.route.model };

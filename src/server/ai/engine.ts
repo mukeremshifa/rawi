@@ -3,38 +3,47 @@ import type { BackendBindings } from '../config';
 import type { ReadDb, SocketDb } from '../db/client';
 import { aiCalls } from '../db/schema';
 import { ApiError } from '../errors';
-import { bedrockAdapter } from './adapters/bedrock';
-import { ProviderError, type Adapter, type ModelRequest, type ModelResult } from './adapters/types';
-import { vertexAdapter } from './adapters/vertex';
-import { cost, estimateTokens, reservation, route as routeById, TIERS, type Route } from './catalog';
-import { checkpoint, policyFor, reserve, settle } from './meter';
-import type { AiPolicy, DataClass, Language, ServiceTier, Tier, Vendor } from './types';
+import { ProviderError, type ModelRequest, type ModelResult } from './adapters/types';
+import { cost, estimateTokens, PREFERENCE, reservation, route as routeById, type Route } from './catalog';
+import { allowed, fundingFor, type Funding } from './funding';
+import { checkpoint, reserve, settle } from './meter';
+import type { DataClass, Language, ServiceTier, Skill } from './types';
 
 /**
- * A task is everything the engine needs to serve one kind of AI work. Features call tasks and
- * never name a model. `build` is the context builder, `check` the validator. A failed check
- * escalates to the next tier. Output is capped per task, and the cap sets the reservation.
+ * What a task needs from a model. Routes come from data by skill, so a task never names a
+ * model and a model swap never touches a task.
+ */
+export interface Needs {
+  skill: Skill;
+  /** `student` when the input carries anything a student wrote. It decides which routes may serve. */
+  data: DataClass;
+  /** Background work takes the flex lane where a route offers it. */
+  lane: 'interactive' | 'background';
+  maxOutput: number;
+  cache: ModelRequest['cache'];
+  /** Routes tried in turn when a check fails, the first included. Bounds what one task can spend. */
+  attempts?: number;
+}
+
+/**
+ * Everything the engine needs to serve one kind of AI work. `build` is the context builder,
+ * `check` the validator. A failed check moves to the next route for the skill.
  */
 export interface Task<I, O> {
   name: string;
-  /** `student` when the input carries anything a student wrote. It decides which routes may serve. */
-  data: DataClass;
   promptVersion: string;
-  tiers: Tier[];
-  serviceTier: ServiceTier;
-  maxOutput: number;
-  cache: ModelRequest['cache'];
+  needs: Needs;
   temperature?: number;
   language: (input: I) => Language;
   build: (input: I, route: Route) => Omit<ModelRequest, 'maxOutput' | 'cache' | 'serviceTier' | 'temperature'>;
   check: (result: ModelResult, input: I) => O | null;
 }
 
-export interface CallContext { db: SocketDb; workspaceId: string; operationId?: string; jobId?: string; signal?: AbortSignal; budget?: Budget }
+export interface CallContext { db: SocketDb; workspaceId: string; operationId?: string; jobId?: string; signal?: AbortSignal; budget?: Budget; funding?: Funding }
 
 /**
- * Limits for one operation across all its calls, retries and escalations: how many calls, how
- * much reserved spend and until when. Reaching one stops the operation before the next call.
+ * Limits for one operation across all its calls and retries: how many calls, how much reserved
+ * spend and until when. Reaching one stops the operation before the next call.
  */
 export interface Budget { calls: number; micros: number; maxCalls: number; maxMicros: number; until: number }
 export const budget = (maxCalls: number, maxMicros: number, seconds: number): Budget => ({ calls: 0, micros: 0, maxCalls, maxMicros, until: Date.now() + seconds * 1000 });
@@ -48,19 +57,9 @@ export interface Served<O> { value: O; route: Route; callId: string; result: Mod
 
 export class AiFailed extends ApiError {}
 
-/**
- * Adapters are kept per isolate, keyed by their credentials, so the Vertex access token is
- * signed and exchanged once an hour rather than before every call.
- */
-let adapters: { key: string; value: Partial<Record<Vendor, Adapter>> } | null = null;
-export function adaptersFor(env: BackendBindings): Partial<Record<Vendor, Adapter>> {
-  const key = [env.AWS_ACCESS_KEY_ID, env.AWS_SECRET_ACCESS_KEY, env.GOOGLE_VERTEX_PROJECT, env.GOOGLE_VERTEX_CLIENT_EMAIL, env.GOOGLE_VERTEX_PRIVATE_KEY].join('\u0000');
-  if (adapters?.key === key) return adapters.value;
-  const out: Partial<Record<Vendor, Adapter>> = {};
-  if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY) out.bedrock = bedrockAdapter({ accessKeyId: env.AWS_ACCESS_KEY_ID, secretAccessKey: env.AWS_SECRET_ACCESS_KEY });
-  if (env.GOOGLE_VERTEX_PROJECT && env.GOOGLE_VERTEX_CLIENT_EMAIL && env.GOOGLE_VERTEX_PRIVATE_KEY) out.vertex = vertexAdapter({ project: env.GOOGLE_VERTEX_PROJECT, clientEmail: env.GOOGLE_VERTEX_CLIENT_EMAIL, privateKey: env.GOOGLE_VERTEX_PRIVATE_KEY });
-  adapters = { key, value: out };
-  return out;
+/** The funding source for this context, resolved once per operation. */
+export async function funding(env: BackendBindings, ctx: CallContext) {
+  return ctx.funding ??= await fundingFor(env, ctx.db, ctx.workspaceId);
 }
 
 /* ── Health ──────────────────────────────────────────────────────────────── */
@@ -80,21 +79,15 @@ async function downRoutes(db: ReadDb | SocketDb) {
 }
 const markDown = (r: Route) => localDown.set(`${r.vendor}:${r.model}`, Date.now() + 60_000);
 
-/**
- * The routes that may serve a tier now, in preference order. Student content goes only to routes
- * that keep no prompts, whatever the plan allows, unless the plan deliberately widens it with
- * `studentRetention: 'standard'`. Institution material follows the plan's retention alone.
- */
-export async function routesFor(db: ReadDb | SocketDb, adapters: Partial<Record<Vendor, Adapter>>, policy: AiPolicy, tier: Tier, data: DataClass = 'institution') {
+/** The routes that may serve a skill now under this funding, in preference order. */
+export async function routesFor(db: ReadDb | SocketDb, f: Funding, skill: Skill, data: DataClass = 'institution') {
   const down = await downRoutes(db);
-  return TIERS[tier].map(id => routeById(id)!).filter(r => adapters[r.vendor] && policy.vendors.includes(r.vendor) && allowed(policy, r, data) && !down.has(`${r.vendor}:${r.model}`));
+  return PREFERENCE[skill].map(id => routeById(id)!).filter(r => allowed(f, r, data) && !down.has(`${r.vendor}:${r.model}`));
 }
-const allowed = (policy: AiPolicy, r: Route, data: DataClass) =>
-  (policy.retention === 'standard' || r.retention === 'none') && (data === 'institution' || r.retention === 'none' || policy.studentRetention === 'standard');
 
 /** When nothing may serve, say whether only the student-content rule stood in the way. */
-function unavailable(adapters: Partial<Record<Vendor, Adapter>>, policy: AiPolicy, tiers: Tier[], data: DataClass) {
-  const blocked = data === 'student' && tiers.some(t => TIERS[t].some(id => { const r = routeById(id)!; return adapters[r.vendor] && policy.vendors.includes(r.vendor) && !allowed(policy, r, data); }));
+function unavailable(f: Funding, needs: Needs) {
+  const blocked = needs.data === 'student' && PREFERENCE[needs.skill].some(id => allowed(f, routeById(id)!, 'institution'));
   return blocked
     ? new AiFailed(503, 'ai_no_private_route', 'No AI service that keeps no copy of what you write is available right now, so nothing was sent. Try again in a few minutes.')
     : new AiFailed(503, 'ai_unavailable', 'AI is not available right now. Nothing was charged. Try again in a few minutes.');
@@ -127,114 +120,112 @@ export class Cancelled extends Error {
   constructor(readonly text: string, readonly callId: string, readonly route: Route) { super('cancelled'); }
 }
 
-/**
- * Walk the task's tiers. Inside a tier, a route that refused before generating gives way to the
- * next route. A failed check escalates to the next tier. An uncertain outcome stops the run: it
- * stays charged and is never retried automatically.
- */
-export async function run<I, O>(env: BackendBindings, ctx: CallContext, task: Task<I, O>, input: I): Promise<Served<O>> {
-  const adapters = adaptersFor(env);
-  const { plan } = await policyFor(ctx.db, ctx.workspaceId);
-  const language = task.language(input);
-  let step = 0, lastError = 'unavailable';
-  for (const tier of task.tiers) {
-    for (const r of await routesFor(ctx.db, adapters, plan, tier, task.data)) {
-      const base = task.build(input, r);
-      // Flex is recorded and priced only where the route offers it.
-      const tierUsed: ServiceTier = task.serviceTier === 'flex' && r.flex ? 'flex' : 'standard';
-      const request: ModelRequest = { ...base, maxOutput: task.maxOutput, cache: task.cache, serviceTier: tierUsed, temperature: task.temperature };
-      const reservedMicros = reservation(r, estimateTokens(requestText(base), language), task.maxOutput, tierUsed, base.images?.length ?? 0);
-      spend(ctx, reservedMicros);
-      const callId = await reserve(ctx.db, { workspaceId: ctx.workspaceId, operationId: ctx.operationId, jobId: ctx.jobId, task: task.name, step, route: r, serviceTier: tierUsed, language, reservedMicros });
-      const started = Date.now();
-      let result: ModelResult;
-      const limit = deadline(ctx, tierUsed);
-      try { result = await within(adapters[r.vendor]!.generate(r, request, limit), limit); }
-      catch (error) {
-        const e = error instanceof ProviderError ? error : new ProviderError(String(error), false);
-        await settle(ctx.db, callId, { state: e.certain ? 'released' : 'ambiguous', error: e.message.slice(0, 300), latencyMs: Date.now() - started });
-        trace({ task: task.name, model: r.model, vendor: r.vendor, language, step, outcome: e.certain ? 'refused' : 'uncertain', error: e.message.slice(0, 120) });
-        if (!e.certain) throw new AiFailed(502, 'ai_uncertain', 'The AI service stopped responding partway. This request was not repeated, so nothing was saved twice.');
-        markDown(r); lastError = e.message; continue;
-      }
-      const value = result.stop === 'end' ? task.check(result, input) : null;
-      const validation = value === null ? 'failed' : 'passed';
-      await settle(ctx.db, callId, { state: 'settled', chargedMicros: cost(r, result.usage, tierUsed), usage: result.usage, latencyMs: result.latencyMs, ttftMs: result.ttftMs, validation, ...(result.stop === 'end' ? {} : { error: `stop_${result.stop}` }) });
-      trace({ task: task.name, model: r.model, vendor: r.vendor, language, step, usage: result.usage, latencyMs: result.latencyMs, validation, stop: result.stop });
-      if (value !== null) return { value, route: r, callId, result };
-      // Keep the start of a rejected answer so the check can be diagnosed from the trace.
-      await ctx.db.update(aiCalls).set({ partial: (result.text || JSON.stringify(result.json ?? null)).slice(0, 2000) }).where(eq(aiCalls.id, callId));
-      lastError = `invalid_${result.stop}`;
-      break;
-    }
-    step++;
-  }
-  if (lastError.startsWith('invalid')) throw new AiFailed(502, 'ai_invalid', 'The AI answer did not pass its checks, so nothing was saved.');
-  throw unavailable(adapters, plan, task.tiers, task.data);
+/** One prepared call: the request, its lane and its reservation. Null when the route is too small. */
+function prepare<I>(task: Task<I, unknown>, input: I, r: Route, language: Language) {
+  const base = task.build(input, r);
+  const text = requestText(base);
+  const tokens = estimateTokens(text, language);
+  if (tokens > r.context) return null;
+  const tier: ServiceTier = task.needs.lane === 'background' && r.flex ? 'flex' : 'standard';
+  const request: ModelRequest = { ...base, maxOutput: task.needs.maxOutput, cache: task.needs.cache, serviceTier: tier, temperature: task.temperature };
+  return { request, tier, reserved: reservation(r, tokens, task.needs.maxOutput, tier, base.images?.length ?? 0) };
 }
 
 /**
- * Stream a text task. Text already shown cannot be taken back, so a stream never escalates after
- * its first token. A route that refuses before any text gives way to the next. When the
- * context's signal aborts, the stream stops and `Cancelled` carries the text that arrived.
+ * Walk the routes for the task's skill. A route that refused before generating gives way to the
+ * next. A failed check moves on too, up to the task's attempts. An uncertain outcome stops the
+ * run: it stays charged and is never retried automatically.
  */
-export async function* runStream<I>(env: BackendBindings, ctx: CallContext, task: Task<I, string>, input: I, onCall?: (callId: string, route: Route) => Promise<void>): AsyncGenerator<string, Served<string>> {
-  const adapters = adaptersFor(env);
-  const { plan } = await policyFor(ctx.db, ctx.workspaceId);
+export async function run<I, O>(env: BackendBindings, ctx: CallContext, task: Task<I, O>, input: I): Promise<Served<O>> {
+  const f = await funding(env, ctx);
+  const language = task.language(input);
+  const attempts = task.needs.attempts ?? 2;
+  let step = 0, checks = 0, lastError = 'unavailable';
+  for (const r of await routesFor(ctx.db, f, task.needs.skill, task.needs.data)) {
+    if (checks >= attempts) break;
+    const call = prepare(task, input, r, language);
+    if (!call) continue;
+    spend(ctx, call.reserved);
+    const callId = await reserve(ctx.db, f, { workspaceId: ctx.workspaceId, operationId: ctx.operationId, jobId: ctx.jobId, task: task.name, step, route: r, serviceTier: call.tier, language, reservedMicros: call.reserved });
+    const started = Date.now();
+    let result: ModelResult;
+    const limit = deadline(ctx, call.tier);
+    try { result = await within(f.adapters[r.vendor]!.generate(r, call.request, limit), limit); }
+    catch (error) {
+      const e = error instanceof ProviderError ? error : new ProviderError(String(error), false);
+      await settle(ctx.db, callId, { state: e.certain ? 'released' : 'ambiguous', error: e.message.slice(0, 300), latencyMs: Date.now() - started });
+      trace({ task: task.name, model: r.model, vendor: r.vendor, source: f.source.id, language, step, outcome: e.certain ? 'refused' : 'uncertain', error: e.message.slice(0, 120) });
+      if (!e.certain) throw new AiFailed(502, 'ai_uncertain', 'The AI service stopped responding partway. This request was not repeated, so nothing was saved twice.');
+      markDown(r); lastError = e.message; step++; continue;
+    }
+    const value = result.stop === 'end' ? task.check(result, input) : null;
+    const validation = value === null ? 'failed' : 'passed';
+    await settle(ctx.db, callId, { state: 'settled', chargedMicros: cost(r, result.usage, call.tier), usage: result.usage, latencyMs: result.latencyMs, ttftMs: result.ttftMs, validation, ...(result.stop === 'end' ? {} : { error: `stop_${result.stop}` }) });
+    trace({ task: task.name, model: r.model, vendor: r.vendor, source: f.source.id, language, step, usage: result.usage, latencyMs: result.latencyMs, validation, stop: result.stop });
+    if (value !== null) return { value, route: r, callId, result };
+    // Keep the start of a rejected answer so the check can be diagnosed from the trace.
+    await ctx.db.update(aiCalls).set({ partial: (result.text || JSON.stringify(result.json ?? null)).slice(0, 2000) }).where(eq(aiCalls.id, callId));
+    lastError = `invalid_${result.stop}`; checks++; step++;
+  }
+  if (lastError.startsWith('invalid')) throw new AiFailed(502, 'ai_invalid', 'The AI answer did not pass its checks, so nothing was saved.');
+  throw unavailable(f, task.needs);
+}
+
+/**
+ * Stream a text task. Text already shown cannot be taken back, so a stream never moves to another
+ * route after its first token. A route that refuses before any text gives way to the next. When
+ * the context's signal aborts, the stream stops and `Cancelled` carries the text that arrived.
+ */
+export async function* runStream<I>(env: BackendBindings, ctx: CallContext, task: Task<I, string>, input: I, onCall?: (callId: string, route: Route) => void): AsyncGenerator<string, Served<string>> {
+  const f = await funding(env, ctx);
   const language = task.language(input);
   let step = 0;
-  for (const tier of task.tiers) {
-    for (const r of await routesFor(ctx.db, adapters, plan, tier, task.data)) {
-      const base = task.build(input, r);
-      // Flex is recorded and priced only where the route offers it.
-      const tierUsed: ServiceTier = task.serviceTier === 'flex' && r.flex ? 'flex' : 'standard';
-      const request: ModelRequest = { ...base, maxOutput: task.maxOutput, cache: task.cache, serviceTier: tierUsed, temperature: task.temperature };
-      const reservedMicros = reservation(r, estimateTokens(requestText(base), language), task.maxOutput, tierUsed);
-      spend(ctx, reservedMicros);
-      const callId = await reserve(ctx.db, { workspaceId: ctx.workspaceId, operationId: ctx.operationId, task: task.name, step, route: r, serviceTier: tierUsed, language, reservedMicros });
-      await onCall?.(callId, r);
-      const started = Date.now();
-      let text = '', saved = 0;
-      try {
-        const limit = deadline(ctx, tierUsed);
-        const stream = adapters[r.vendor]!.stream(r, request, limit);
-        for (;;) {
-          let next: IteratorResult<string, ModelResult>;
-          try { next = await within(stream.next(), limit); }
-          catch (error) { void stream.return(undefined as never).catch(() => undefined); throw error; }
-          if (next.done) {
-            const result = next.value;
-            const value = result.stop === 'end' || result.stop === 'max_tokens' ? task.check(result, input) : null;
-            await settle(ctx.db, callId, { state: 'settled', chargedMicros: cost(r, result.usage, tierUsed), usage: result.usage, latencyMs: result.latencyMs, ttftMs: result.ttftMs, validation: value === null ? 'failed' : 'passed', ...(result.stop === 'end' ? {} : { error: `stop_${result.stop}` }) });
-            trace({ task: task.name, model: r.model, vendor: r.vendor, language, step, usage: result.usage, latencyMs: result.latencyMs, ttftMs: result.ttftMs, validation: value === null ? 'failed' : 'passed' });
-            if (value === null) throw new AiFailed(502, 'ai_invalid', 'The reply did not pass its checks.');
-            return { value, route: r, callId, result };
-          }
-          text += next.value; yield next.value;
-          // Checkpoint about every 400 characters, so a lost connection keeps most of the reply.
-          if (text.length - saved > 400) { saved = text.length; await checkpoint(ctx.db, callId, text); }
+  for (const r of await routesFor(ctx.db, f, task.needs.skill, task.needs.data)) {
+    const call = prepare(task, input, r, language);
+    if (!call) continue;
+    spend(ctx, call.reserved);
+    const callId = await reserve(ctx.db, f, { workspaceId: ctx.workspaceId, operationId: ctx.operationId, task: task.name, step, route: r, serviceTier: call.tier, language, reservedMicros: call.reserved });
+    onCall?.(callId, r);
+    const started = Date.now();
+    let text = '', saved = 0;
+    try {
+      const limit = deadline(ctx, call.tier);
+      const stream = f.adapters[r.vendor]!.stream(r, call.request, limit);
+      for (;;) {
+        let next: IteratorResult<string, ModelResult>;
+        try { next = await within(stream.next(), limit); }
+        catch (error) { void stream.return(undefined as never).catch(() => undefined); throw error; }
+        if (next.done) {
+          const result = next.value;
+          const value = result.stop === 'end' || result.stop === 'max_tokens' ? task.check(result, input) : null;
+          await settle(ctx.db, callId, { state: 'settled', chargedMicros: cost(r, result.usage, call.tier), usage: result.usage, latencyMs: result.latencyMs, ttftMs: result.ttftMs, validation: value === null ? 'failed' : 'passed', ...(result.stop === 'end' ? {} : { error: `stop_${result.stop}` }) });
+          trace({ task: task.name, model: r.model, vendor: r.vendor, source: f.source.id, language, step, usage: result.usage, latencyMs: result.latencyMs, ttftMs: result.ttftMs, validation: value === null ? 'failed' : 'passed' });
+          if (value === null) throw new AiFailed(502, 'ai_invalid', 'The reply did not pass its checks.');
+          return { value, route: r, callId, result };
         }
-      } catch (error) {
-        if (error instanceof AiFailed) throw error;
-        if (ctx.signal?.aborted) {
-          // Stopped by the student. Usage is unknown, so the reservation stands as the charge.
-          if (text) await checkpoint(ctx.db, callId, text);
-          await settle(ctx.db, callId, { state: 'ambiguous', error: 'cancelled', latencyMs: Date.now() - started });
-          trace({ task: task.name, model: r.model, vendor: r.vendor, language, step, outcome: 'cancelled', chars: text.length });
-          throw new Cancelled(text, callId, r);
-        }
-        const e = error instanceof ProviderError ? error : new ProviderError(String(error), false);
-        const certain = e.certain && !text;
-        if (text) await checkpoint(ctx.db, callId, text);
-        await settle(ctx.db, callId, { state: certain ? 'released' : 'ambiguous', error: e.message.slice(0, 300), latencyMs: Date.now() - started });
-        trace({ task: task.name, model: r.model, vendor: r.vendor, language, step, outcome: certain ? 'refused' : 'uncertain', error: e.message.slice(0, 120) });
-        if (!certain) throw new AiFailed(502, 'ai_uncertain', 'The reply stopped partway. What arrived is kept, and it was not sent again.');
-        markDown(r); continue;
+        text += next.value; yield next.value;
+        // Checkpoint about every 400 characters, so a lost connection keeps most of the reply.
+        if (text.length - saved > 400) { saved = text.length; await checkpoint(ctx.db, callId, text); }
       }
+    } catch (error) {
+      if (error instanceof AiFailed) throw error;
+      if (ctx.signal?.aborted) {
+        // Stopped by the student. Usage is unknown, so the reservation stands as the charge.
+        if (text) await checkpoint(ctx.db, callId, text);
+        await settle(ctx.db, callId, { state: 'ambiguous', error: 'cancelled', latencyMs: Date.now() - started });
+        trace({ task: task.name, model: r.model, vendor: r.vendor, source: f.source.id, language, step, outcome: 'cancelled', chars: text.length });
+        throw new Cancelled(text, callId, r);
+      }
+      const e = error instanceof ProviderError ? error : new ProviderError(String(error), false);
+      const certain = e.certain && !text;
+      if (text) await checkpoint(ctx.db, callId, text);
+      await settle(ctx.db, callId, { state: certain ? 'released' : 'ambiguous', error: e.message.slice(0, 300), latencyMs: Date.now() - started });
+      trace({ task: task.name, model: r.model, vendor: r.vendor, source: f.source.id, language, step, outcome: certain ? 'refused' : 'uncertain', error: e.message.slice(0, 120) });
+      if (!certain) throw new AiFailed(502, 'ai_uncertain', 'The reply stopped partway. What arrived is kept, and it was not sent again.');
+      markDown(r); step++; continue;
     }
-    step++;
   }
-  throw unavailable(adapters, plan, task.tiers, task.data);
+  throw unavailable(f, task.needs);
 }
 
 /**
@@ -243,18 +234,18 @@ export async function* runStream<I>(env: BackendBindings, ctx: CallContext, task
  * and without one the caller searches by text alone.
  */
 export async function embed(env: BackendBindings, ctx: CallContext, texts: string[], purpose: 'document' | 'query', language: Language, data: DataClass) {
-  const adapters = adaptersFor(env);
-  const { plan } = await policyFor(ctx.db, ctx.workspaceId);
-  const [r] = await routesFor(ctx.db, adapters, plan, 'embed', data);
+  const f = await funding(env, ctx);
+  const [r] = await routesFor(ctx.db, f, 'embed', data);
   if (!r) return null;
   const out: number[][] = [];
   for (let i = 0; i < texts.length; i += 50) {
     const batch = texts.slice(i, i + 50), chars = batch.reduce((n, t) => n + t.length, 0);
-    const callId = await reserve(ctx.db, { workspaceId: ctx.workspaceId, operationId: ctx.operationId, jobId: ctx.jobId, task: `embed.${purpose}`, step: 0, route: r, serviceTier: 'standard', language, reservedMicros: reservation(r, 0, 0, 'standard', 0, chars) });
+    const callId = await reserve(ctx.db, f, { workspaceId: ctx.workspaceId, operationId: ctx.operationId, jobId: ctx.jobId, task: `embed.${purpose}`, step: 0, route: r, serviceTier: 'standard', language, reservedMicros: reservation(r, 0, 0, 'standard', 0, chars) });
     const started = Date.now();
     try {
-      const result = await adapters[r.vendor]!.embed(r, batch, purpose, deadline(ctx, 'standard'));
-      await settle(ctx.db, callId, { state: 'settled', chargedMicros: cost(r, { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, audioSeconds: 0, images: 0 }, 'standard', result.chars), usage: { input: result.chars, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, audioSeconds: 0, images: 0 }, latencyMs: result.latencyMs, ttftMs: null, validation: result.vectors.length === batch.length ? 'passed' : 'failed' });
+      const result = await f.adapters[r.vendor]!.embed(r, batch, purpose, deadline(ctx, 'standard'));
+      const usage = { input: result.chars, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, audioSeconds: 0, images: 0 };
+      await settle(ctx.db, callId, { state: 'settled', chargedMicros: cost(r, { ...usage, input: 0 }, 'standard', result.chars), usage, latencyMs: result.latencyMs, ttftMs: null, validation: result.vectors.length === batch.length ? 'passed' : 'failed' });
       if (result.vectors.length !== batch.length) return null;
       out.push(...result.vectors);
     } catch (error) {

@@ -1,45 +1,23 @@
 import { and, eq, lt, sql } from 'drizzle-orm';
-import { aiCalls, aiPlans, workspaces } from '../db/schema';
+import { aiCalls } from '../db/schema';
 import type { ReadDb, SocketDb } from '../db/client';
 import { ApiError } from '../errors';
 import type { Route } from './catalog';
-import type { AiPolicy, Language, ServiceTier, Usage, Validation } from './types';
-
-/** Plans change rarely. Each isolate keeps them for a minute. */
-let plans: { at: number; rows: Map<string, AiPolicy> } | null = null;
-async function planRows(db: ReadDb | SocketDb) {
-  if (plans && Date.now() - plans.at < 60_000) return plans.rows;
-  const rows = await db.select().from(aiPlans);
-  plans = { at: Date.now(), rows: new Map(rows.map(r => [r.id, r.policy])) };
-  return plans.rows;
-}
-
-/** The workspace's plan and the platform ceiling. Organisation policy will narrow the plan here. */
-const assigned = new Map<string, { at: number; plan: string }>();
-export async function policyFor(db: ReadDb | SocketDb, workspaceId: string) {
-  const rows = await planRows(db);
-  let planId = assigned.get(workspaceId);
-  if (!planId || Date.now() - planId.at > 60_000) {
-    const [ws] = await db.select({ plan: workspaces.aiPlanId }).from(workspaces).where(eq(workspaces.id, workspaceId));
-    planId = { at: Date.now(), plan: ws?.plan ?? 'default' };
-    assigned.set(workspaceId, planId);
-  }
-  const plan = rows.get(planId.plan) ?? rows.get('default');
-  const platform = rows.get('platform');
-  if (!plan || !platform) throw new ApiError(503, 'ai_unconfigured', 'AI is not set up for this workspace yet.');
-  return { plan, platform };
-}
+import type { Funding } from './funding';
+import type { Language, ServiceTier, Usage, Validation } from './types';
 
 /** Spend that counts against limits: settled charges, and reservations still open or uncertain. */
-const spent = sql<number>`coalesce(sum(coalesce(${aiCalls.chargedMicros}, ${aiCalls.reservedMicros})) filter (where ${aiCalls.state} <> 'released'), 0)::float8`;
+const counted = sql`coalesce(${aiCalls.chargedMicros}, ${aiCalls.reservedMicros})`;
+const monthStart = sql`date_trunc('month', now() at time zone 'UTC') at time zone 'UTC'`;
+const dayStart = sql`date_trunc('day', now() at time zone 'UTC') at time zone 'UTC'`;
 
-export async function usageSnapshot(db: ReadDb | SocketDb, workspaceId: string) {
+/** What a workspace has spent under its source today and this month. */
+export async function usageSnapshot(db: ReadDb | SocketDb, workspaceId: string, sourceId: string) {
   const [row] = await db.select({
-    today: sql<number>`coalesce(sum(coalesce(${aiCalls.chargedMicros}, ${aiCalls.reservedMicros})) filter (where ${aiCalls.state} <> 'released' and ${aiCalls.createdAt} >= date_trunc('day', now() at time zone 'UTC') at time zone 'UTC'), 0)::float8`,
-    month: spent,
-    open: sql<number>`count(*) filter (where ${aiCalls.state} = 'reserved')::int`,
-  }).from(aiCalls).where(and(eq(aiCalls.workspaceId, workspaceId), sql`${aiCalls.createdAt} >= date_trunc('month', now() at time zone 'UTC') at time zone 'UTC'`));
-  return row ?? { today: 0, month: 0, open: 0 };
+    today: sql<number>`coalesce(sum(${counted}) filter (where ${aiCalls.state} <> 'released' and ${aiCalls.createdAt} >= ${dayStart}), 0)::float8`,
+    month: sql<number>`coalesce(sum(${counted}) filter (where ${aiCalls.state} <> 'released'), 0)::float8`,
+  }).from(aiCalls).where(and(eq(aiCalls.workspaceId, workspaceId), eq(aiCalls.fundingSourceId, sourceId), sql`${aiCalls.createdAt} >= ${monthStart}`));
+  return row ?? { today: 0, month: 0 };
 }
 
 export interface CallStart {
@@ -48,37 +26,38 @@ export interface CallStart {
 }
 
 /**
- * Reserve before a provider call. Nothing is sent until this commits. Background work (a call
- * with a job) and interactive work count against separate concurrency slots, so a long ingest
- * never makes a student's tutor reply wait. Four round trips: begin, the lock, one statement
- * that checks every limit and inserts, and commit.
+ * Reserve before a provider call. Nothing is sent until this commits. Limits are the source's
+ * own: its total, and for a shared source each workspace's share. Background work (a call with a
+ * job) and interactive work hold separate concurrency slots, so a long ingest never makes a
+ * student's reply wait. One lock per source keeps the limits exact.
  */
-export async function reserve(db: SocketDb, start: CallStart) {
-  const { plan, platform } = await policyFor(db, start.workspaceId);
+export async function reserve(db: SocketDb, funding: Funding, start: CallStart) {
+  const { limits, perWorkspace, id: sourceId } = funding.source;
   const r = start.reservedMicros, id = crypto.randomUUID(), background = !!start.jobId;
+  const own = perWorkspace ?? { dailyMicros: null, monthlyMicros: null, concurrent: limits.concurrent };
+  const under = (spent: ReturnType<typeof sql>, cap: number | null) => cap === null ? sql`true` : sql`${spent} + ${r} <= ${cap}`;
   return db.transaction(async tx => {
-    // One lock keeps limits exact. The next statement takes its snapshot after the lock.
-    await tx.execute(sql`select pg_advisory_xact_lock(714290032)`);
-    const today = sql`created_at >= date_trunc('day', now() at time zone 'UTC') at time zone 'UTC'`;
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${sourceId}))`);
     const rows = await tx.execute(sql`with n as (select
-        coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and ${today}), 0)::float8 as platform_day,
-        coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released'), 0)::float8 as platform_month,
-        count(*) filter (where state = 'reserved')::int as platform_open,
-        coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and workspace_id = ${start.workspaceId} and ${today}), 0)::float8 as own_day,
+        coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and created_at >= ${dayStart}), 0)::float8 as all_day,
+        coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released'), 0)::float8 as all_month,
+        count(*) filter (where state = 'reserved')::int as all_open,
+        coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and workspace_id = ${start.workspaceId} and created_at >= ${dayStart}), 0)::float8 as own_day,
         coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and workspace_id = ${start.workspaceId}), 0)::float8 as own_month,
         count(*) filter (where state = 'reserved' and workspace_id = ${start.workspaceId} and (job_id is not null) = ${background})::int as own_open
-        from ai_calls where created_at >= date_trunc('month', now() at time zone 'UTC') at time zone 'UTC'),
-      ins as (insert into ai_calls (id, workspace_id, operation_id, job_id, task, step, vendor, model, region, service_tier, language, state, reserved_micros)
-        select ${id}, ${start.workspaceId}, ${start.operationId ?? null}, ${start.jobId ?? null}, ${start.task}, ${start.step}, ${start.route.vendor}, ${start.route.model}, ${start.route.region}, ${start.serviceTier}, ${start.language}, 'reserved', ${r} from n
-        where n.own_open < ${plan.concurrent} and n.platform_open < ${platform.concurrent}
-          and n.own_day + ${r} <= ${plan.dailyMicros} and n.platform_day + ${r} <= ${platform.dailyMicros}
-          and n.own_month + ${r} <= ${plan.monthlyMicros} and n.platform_month + ${r} <= ${platform.monthlyMicros}
+        from ai_calls where funding_source_id = ${sourceId} and created_at >= ${monthStart}),
+      ins as (insert into ai_calls (id, workspace_id, funding_source_id, operation_id, job_id, task, step, vendor, model, region, service_tier, language, state, reserved_micros)
+        select ${id}, ${start.workspaceId}, ${sourceId}, ${start.operationId ?? null}, ${start.jobId ?? null}, ${start.task}, ${start.step}, ${start.route.vendor}, ${start.route.model}, ${start.route.region}, ${start.serviceTier}, ${start.language}, 'reserved', ${r} from n
+        where n.own_open < ${own.concurrent} and n.all_open < ${limits.concurrent}
+          and ${under(sql`n.own_day`, own.dailyMicros)} and ${under(sql`n.all_day`, limits.dailyMicros)}
+          and ${under(sql`n.own_month`, own.monthlyMicros)} and ${under(sql`n.all_month`, limits.monthlyMicros)}
         returning id)
       select n.*, (select id from ins) as id from n`);
-    const n = rows.rows[0] as { own_open: number; platform_open: number; own_day: number; platform_day: number; id: string | null };
+    const n = rows.rows[0] as { own_open: number; all_open: number; own_day: number; all_day: number; id: string | null };
     if (n.id) return n.id;
-    if (n.own_open >= plan.concurrent || n.platform_open >= platform.concurrent) throw new ApiError(429, 'ai_busy', 'Another AI request is still running. Try again when it finishes.');
-    if (n.own_day + r > plan.dailyMicros || n.platform_day + r > platform.dailyMicros) throw new ApiError(429, 'ai_budget', 'The AI allowance for today is used up. It resets at midnight UTC.');
+    if (n.own_open >= own.concurrent || n.all_open >= limits.concurrent) throw new ApiError(429, 'ai_busy', 'Another AI request is still running. Try again when it finishes.');
+    const overDay = (spent: number, cap: number | null) => cap !== null && spent + r > cap;
+    if (overDay(n.own_day, own.dailyMicros) || overDay(n.all_day, limits.dailyMicros)) throw new ApiError(429, 'ai_budget', 'The AI allowance for today is used up. It resets at midnight UTC.');
     throw new ApiError(429, 'ai_budget', 'The AI allowance for this month is used up.');
   });
 }

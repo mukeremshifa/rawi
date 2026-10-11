@@ -1,13 +1,14 @@
-import type { Language, ServiceTier, Tier, Usage, Vendor } from './types';
+import type { Language, ServiceTier, Skill, Usage, Vendor } from './types';
 
 /**
  * Every model route Rawi can call, with its price and what it supports. Prices are dollars per
- * million units, which is micro-dollars per unit. Changing which model serves a tier is an edit to
- * `TIERS`, and the router skips routes that are unconfigured, unhealthy or outside policy.
+ * million units, which is micro-dollars per unit. Which route serves a skill is the order in
+ * `PREFERENCE`. The router skips routes that are unconfigured for the funding source, unhealthy,
+ * too small for the request or outside the source's data rules.
  *
- * Verified on 10 October 2026 against the AWS Price List API and the Cloud Billing catalog, and
- * by calling each route from the development machine. Anthropic and OpenAI models on Bedrock
- * refused calls from there as an unsupported country, so none is listed.
+ * Prices were checked on 10 October 2026 against the AWS Price List API and the Cloud Billing
+ * catalog. Anthropic and OpenAI models on Bedrock refuse calls from the development account, so
+ * none is listed. Adding one is a row here and a place in `PREFERENCE`.
  */
 export interface Route {
   id: string;
@@ -16,6 +17,8 @@ export interface Route {
   model: string;
   region: string;
   price: { input: number; cacheWrite: number; cacheRead: number; output: number; perImage?: number; perChar?: number };
+  /** Input tokens the route accepts. */
+  context: number;
   /** Flex costs half on both vendors where it exists. */
   flex: boolean;
   /** `explicit` needs a cache point, `implicit` reuses a stable prefix by itself. */
@@ -31,56 +34,34 @@ export interface Route {
 }
 
 const bedrock = (id: string, model: string, price: Route['price'], extra: Partial<Route> = {}): Route =>
-  ({ id, vendor: 'bedrock', model, region: 'us-east-1', price, flex: false, cache: 'none', structured: 'tool', vision: false, retention: 'none', kind: 'text', ...extra });
+  ({ id, vendor: 'bedrock', model, region: 'us-east-1', price, context: 128_000, flex: false, cache: 'none', structured: 'tool', vision: false, retention: 'none', kind: 'text', ...extra });
 const vertex = (id: string, model: string, price: Route['price'], extra: Partial<Route> = {}): Route =>
-  ({ id, vendor: 'vertex', model, region: 'global', price, flex: false, cache: 'implicit', structured: 'schema', vision: true, retention: 'standard', reasoning: 'gemini-off', kind: 'text', ...extra });
+  ({ id, vendor: 'vertex', model, region: 'global', price, context: 1_000_000, flex: false, cache: 'implicit', structured: 'schema', vision: true, retention: 'standard', reasoning: 'gemini-off', kind: 'text', ...extra });
 
 export const ROUTES: Route[] = [
-  bedrock('qwen3-32b', 'qwen.qwen3-32b-v1:0', { input: 0.15, cacheWrite: 0, cacheRead: 0, output: 0.6 }, { flex: true }),
+  bedrock('qwen3-32b', 'qwen.qwen3-32b-v1:0', { input: 0.15, cacheWrite: 0, cacheRead: 0, output: 0.6 }, { flex: true, context: 32_000 }),
   bedrock('gpt-oss-20b', 'openai.gpt-oss-20b-1:0', { input: 0.07, cacheWrite: 0, cacheRead: 0, output: 0.3 }, { flex: true, reasoning: 'gpt-oss-low' }),
   bedrock('gpt-oss-120b', 'openai.gpt-oss-120b-1:0', { input: 0.15, cacheWrite: 0, cacheRead: 0, output: 0.6 }, { flex: true, reasoning: 'gpt-oss-low' }),
-  // Priced from the AWS Price List API on 10 October 2026. Where the list shows two regional
-  // figures the higher one is used, so the meter overestimates rather than under.
   bedrock('mistral-large-3', 'mistral.mistral-large-3-675b-instruct', { input: 0.5, cacheWrite: 0, cacheRead: 0, output: 1.5 }),
-  bedrock('nova-lite', 'us.amazon.nova-lite-v1:0', { input: 0.06, cacheWrite: 0, cacheRead: 0.015, output: 0.24 }, { cache: 'explicit', vision: true }),
+  bedrock('nova-lite', 'us.amazon.nova-lite-v1:0', { input: 0.06, cacheWrite: 0, cacheRead: 0.015, output: 0.24 }, { cache: 'explicit', vision: true, context: 300_000 }),
   bedrock('nova-micro', 'us.amazon.nova-micro-v1:0', { input: 0.035, cacheWrite: 0, cacheRead: 0.00875, output: 0.14 }, { cache: 'explicit' }),
   vertex('gemini-2.5-flash-lite', 'gemini-2.5-flash-lite', { input: 0.1, cacheWrite: 0, cacheRead: 0.01, output: 0.4 }),
   vertex('gemini-3.1-flash-lite', 'gemini-3.1-flash-lite', { input: 0.25, cacheWrite: 0, cacheRead: 0.025, output: 1.5 }),
-  vertex('gemini-3.5-flash', 'gemini-3.5-flash', { input: 1.5, cacheWrite: 0, cacheRead: 0.15, output: 9 }),
   // Priced per character. Batches many texts per call, which keeps ingest within subrequest limits.
-  vertex('text-multilingual-embedding-002', 'text-multilingual-embedding-002', { input: 0, cacheWrite: 0, cacheRead: 0, output: 0, perChar: 0.025 }, { region: 'us-central1', kind: 'embed', cache: 'none', vision: false, reasoning: undefined }),
+  vertex('text-multilingual-embedding-002', 'text-multilingual-embedding-002', { input: 0, cacheWrite: 0, cacheRead: 0, output: 0, perChar: 0.025 }, { region: 'us-central1', kind: 'embed', cache: 'none', vision: false, reasoning: undefined, context: 2_000 }),
 ];
 
 /**
- * The ordered routes for each kind of work. The first available route serves, and a task's
- * escalation moves to its next tier. Chosen from `dev/compare.ts` runs on 10 October 2026:
- * - small: gpt-oss-20b passed digest, syllabus and grading fixtures at the lowest cost. It wrote
- *   a wrong fact in free chat, so it serves structured work only.
- * - chat: Qwen3 32B cited and kept the reply format every time, with first tokens under a second.
- * - writer: only Gemini 3.1 Flash-Lite wrote complete, rule-clean question sets.
- * - strong: Gemini 3.5 Flash matched Flash-Lite on every fixture at six times the cost and took
- *   up to 150 seconds, so it is left out. Mistral Large 3 passed syllabus, digest and grading
- *   6 of 6 at about a thousandth of a dollar a call and keeps no prompts, so it leads. It cannot
- *   write questions (0 of 6). Kimi K3 passed too, at 20 to 40 times the cost and about 5 seconds
- *   to a first token. DeepSeek V3.2, Nemotron Super 120B and Nova Pro wrote complete question
- *   sets at most 1 time in 6, so Gemini 3.1 Flash-Lite stays the only writer.
- * - chat: re-measured on 11 October 2026 once grounding moved into code, over 17 reviewed
- *   cases with 6 repeats through the whole pipeline (dev/pipeline.ts). Nova Lite passed 95 of
- *   102 at about 100 micro-dollars a reply, Qwen3 32B 93 at 323, Mistral Large 3 90 at about
- *   1,250 and gpt-oss-120b 82. Nova Lite leads and Qwen3 32B follows. Gemini is left out because
- *   the tutor carries student text, which only routes that keep no prompts may receive.
- * - grading: with evidence required for every award, Mistral Large 3 agreed with reviewed marks
- *   on 96% of criteria with 3 false credits in 54 wrong answers and no escalations. gpt-oss-20b
- *   agreed on 94% but failed its check often enough that 27 of 63 calls escalated anyway, so
- *   grading starts on the strong tier.
- * Vertex returned quota errors (429) for Gemini 2.5 Flash-Lite under light load, so Bedrock leads
- * where quality allows.
+ * Routes for each skill, most preferred first. A failed check moves to the next one. These are
+ * the cheapest routes that passed the reviewed cases on 11 October 2026: Nova Lite and Qwen3 32B
+ * cite and keep the reply format, gpt-oss-20b reads structure, Gemini 3.1 Flash-Lite writes
+ * well-formed questions, and Mistral Large 3 solves them from the source most reliably.
  */
-export const TIERS: Record<Tier, string[]> = {
-  small: ['gpt-oss-20b', 'qwen3-32b', 'gemini-2.5-flash-lite'],
+export const PREFERENCE: Record<Skill, string[]> = {
   chat: ['nova-lite', 'qwen3-32b', 'gpt-oss-120b'],
-  writer: ['gemini-3.1-flash-lite', 'qwen3-32b'],
-  strong: ['mistral-large-3', 'gemini-3.1-flash-lite', 'qwen3-32b', 'gpt-oss-120b'],
+  extract: ['gpt-oss-20b', 'qwen3-32b', 'gemini-2.5-flash-lite', 'gpt-oss-120b'],
+  write: ['gemini-3.1-flash-lite', 'qwen3-32b'],
+  check: ['mistral-large-3', 'gemini-3.1-flash-lite', 'gpt-oss-120b'],
   vision: ['gemini-2.5-flash-lite', 'nova-lite'],
   embed: ['text-multilingual-embedding-002'],
 };

@@ -49,8 +49,8 @@ const writeSchema = z.object({
 
 /** Writes candidate questions for several sections at once, from their facts and blocks. */
 export const writeTask: Task<WriteInput, z.infer<typeof writeSchema>> = {
-  name: 'questions.write', data: 'institution', promptVersion: QUESTIONS_PROMPT_VERSION, tiers: ['writer'], serviceTier: 'standard', cache: 'none', temperature: 0.5,
-  maxOutput: 5000, language: i => i.language,
+  name: 'questions.write', promptVersion: QUESTIONS_PROMPT_VERSION, temperature: 0.5,
+  needs: { skill: 'write', data: 'institution', lane: 'interactive', maxOutput: 5000, cache: 'none' }, language: i => i.language,
   build: i => ({
     system: [
       'You write practice questions for a university student from their course material.',
@@ -82,8 +82,8 @@ type SolveItem = { id: string; question: string; options?: string[]; source: str
  * agreement means something. For multiple choice the comparison is done in code.
  */
 export const solveTask: Task<{ language: Language; items: SolveItem[] }, z.infer<typeof solveSchema>> = {
-  name: 'questions.solve', data: 'institution', promptVersion: QUESTIONS_PROMPT_VERSION, tiers: ['strong'], serviceTier: 'standard', cache: 'none', temperature: 0,
-  maxOutput: 2500, language: i => i.language,
+  name: 'questions.solve', promptVersion: QUESTIONS_PROMPT_VERSION, temperature: 0,
+  needs: { skill: 'check', data: 'institution', lane: 'interactive', maxOutput: 2500, cache: 'none' }, language: i => i.language,
   build: i => ({
     system: ['You answer practice questions using only the source text given with each one.', 'Solve each question yourself. For multiple choice, judge every option on its own against the source.', 'Say if the source does not settle the answer, or if the question could fairly be read two ways.', DATA_RULE, house(i.language)].join('\n'),
     prompt: i.items.map(q => `<item id="${q.id}">\nQuestion: ${escapeTags(q.question)}\n${q.options ? `Options: ${q.options.map((o, n) => `${n + 1}. ${escapeTags(o)}`).join(' | ')}\n` : ''}<document>${escapeTags(q.source)}</document>\n</item>`).join('\n'),
@@ -102,8 +102,8 @@ const compareSchema = z.object({ verdicts: z.array(z.object({
 type CompareItem = { id: string; question: string; proposed: string; solution: string; rubric?: string[]; source: string };
 /** Compares a proposed answer with the independent solution, for formats code cannot compare. */
 export const compareTask: Task<{ language: Language; items: CompareItem[] }, z.infer<typeof compareSchema>> = {
-  name: 'questions.compare', data: 'institution', promptVersion: QUESTIONS_PROMPT_VERSION, tiers: ['strong'], serviceTier: 'standard', cache: 'none', temperature: 0,
-  maxOutput: 1500, language: i => i.language,
+  name: 'questions.compare', promptVersion: QUESTIONS_PROMPT_VERSION, temperature: 0,
+  needs: { skill: 'check', data: 'institution', lane: 'interactive', maxOutput: 1500, cache: 'none' }, language: i => i.language,
   build: i => ({
     system: ['You review practice questions. Each comes with a proposed answer, an independent solution written from the source without seeing it, and the source.', 'Judge whether the proposed answer agrees with the solution and the source in substance, not wording. For written answers, judge the rubric too.', 'Give a short reason. Be strict.', DATA_RULE, house(i.language)].join('\n'),
     prompt: i.items.map(q => `<item id="${q.id}">\nQuestion: ${escapeTags(q.question)}\nProposed answer: ${escapeTags(q.proposed)}\nIndependent solution: ${escapeTags(q.solution)}\n${q.rubric ? `Rubric:\n${q.rubric.map(r => `- ${escapeTags(r)}`).join('\n')}\n` : ''}<document>${escapeTags(q.source)}</document>\n</item>`).join('\n'),

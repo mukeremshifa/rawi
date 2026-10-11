@@ -8,7 +8,6 @@ import { uuid } from '../../shared/contracts/workspace';
 import { questionVersions, questionSources, learningSets, setItems, learningRuns, runAnswers, learningAttempts, learningOperations, workspaces, topics, plannedSessions } from '../db/schema';
 import { hash, lockCourse, validateCitation } from './materials';
 import { bumpPlanner } from './planning';
-import { withFeedback } from './feedback';
 import { getCourse } from './workspace';
 import { sectionTopic } from './outline/links';
 import { ApiError, conflict, notFound } from '../errors';
@@ -225,13 +224,13 @@ export async function history(db: Db, workspaceId: string, courseId: string, lim
   const [pivot] = cursor ? await db.select({ at: completed }).from(learningAttempts).where(and(eq(learningAttempts.workspaceId, workspaceId), eq(learningAttempts.courseId, courseId), eq(learningAttempts.id, cursor))) : [];
   if (cursor && !pivot) throw notFound();
   const rows = await db.select({ id: learningAttempts.id, snapshot: learningAttempts.snapshot }).from(learningAttempts).where(and(eq(learningAttempts.workspaceId, workspaceId), eq(learningAttempts.courseId, courseId), pivot ? sql`(${completed}, ${learningAttempts.id}) < (${pivot.at}, ${cursor}::uuid)` : undefined)).orderBy(desc(completed), desc(learningAttempts.id)).limit(limit + 1);
-  const current = await withFeedback(db, workspaceId, rows.slice(0, limit).map(r => r.snapshot));
+  const current = rows.slice(0, limit).map(r => r.snapshot);
   return { attempts: current.map(a => ({ id: a.id, title: a.title, completedAt: a.completedAt, marksAwarded: a.marksAwarded, marksAvailable: a.marksAvailable, pending: a.pending })), nextCursor: rows.length > limit ? rows[limit - 1]!.id : null };
 }
 export async function attempt(db: Db, workspaceId: string, id: string) {
   const [row] = await db.select({ snapshot: learningAttempts.snapshot }).from(learningAttempts).where(and(eq(learningAttempts.workspaceId, workspaceId), eq(learningAttempts.id, id)));
   if (!row) throw notFound();
-  return (await withFeedback(db, workspaceId, [row.snapshot]))[0]!;
+  return row.snapshot;
 }
 export async function activeRuns(db: Db, workspaceId: string, courseId: string, limit: number, cursor?: string) {
   await getCourse(db, workspaceId, courseId);

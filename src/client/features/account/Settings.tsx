@@ -4,7 +4,7 @@ import { preferencesPatch, type Me, type Preferences, type PreferenceFields } fr
 
 import { MOTION_LABEL, READING_SIZE_LABEL, THEME_LABEL } from '@/components/domain';
 import { Page, PageHeader, SectionHeader } from '@/components/layout';
-import { SaveIndicator } from '@/components/states';
+import { ErrorState, Notice, PageLoading, SaveIndicator } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { CheckboxRow } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
@@ -16,9 +16,10 @@ import { RadioGroup } from '@/components/ui/radio-group';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { useAccount } from '@/lib/account';
 import { request, errorMessage } from '@/lib/api';
-import { useSave } from '@/lib/data';
+import { useApi, useSave } from '@/lib/data';
 import { useUnsentGuard } from '@/lib/hooks';
 import { usePageMeta } from '@/lib/shell';
 import { cn } from '@/lib/utils';
@@ -27,6 +28,7 @@ const SECTIONS = [
   { id: 'profile', label: 'Profile' },
   { id: 'study', label: 'Study defaults' },
   { id: 'appearance', label: 'Appearance' },
+  { id: 'ai', label: 'AI' },
 ] as const;
 type Section = typeof SECTIONS[number]['id'];
 
@@ -54,7 +56,7 @@ export function Settings({ onProfile, onPreferences }: { onProfile: (user: Me['u
           ))}
         </nav>
         <div className="min-w-0 flex-1">
-          {section === 'profile' ? <ProfileSection onSaved={onProfile} /> : <PreferencesSection section={section as Exclude<Section, 'profile'>} onSaved={onPreferences} />}
+          {section === 'profile' ? <ProfileSection onSaved={onProfile} /> : section === 'ai' ? <AiSection /> : <PreferencesSection section={section as Exclude<Section, 'profile' | 'ai'>} onSaved={onPreferences} />}
         </div>
       </div>
     </Page>
@@ -91,7 +93,7 @@ function ProfileSection({ onSaved }: { onSaved: (user: Me['user']) => void }) {
 
 type Draft = { values: PreferenceFields; timezone: string };
 
-function PreferencesSection({ section, onSaved }: { section: Exclude<Section, 'profile'>; onSaved: (value: Preferences) => void }) {
+function PreferencesSection({ section, onSaved }: { section: Exclude<Section, 'profile' | 'ai'>; onSaved: (value: Preferences) => void }) {
   const account = useAccount();
   const [base, setBase] = useState(account.preferences);
   const [draft, setDraft] = useState<Draft>({ values: base.values, timezone: base.timezone });
@@ -183,5 +185,67 @@ function PreferencesSection({ section, onSaved }: { section: Exclude<Section, 'p
         )}
       </Dialog>
     </form>
+  );
+}
+
+type Funding = { using: 'platform' | 'institution' | 'user'; fallback: string; ownKey: { vendor: 'bedrock' | 'vertex'; active: boolean; studentRetention: 'none' | 'standard'; monthlyCapUsd: number | null; savedAt: string } | null };
+type Status = { allowance: { todayUsd: number; dailyUsd: number | null; monthUsd: number; monthlyUsd: number | null } | null };
+const usd = (n: number) => `$${n.toFixed(n < 1 ? 3 : 2)}`;
+const EMPTY_KEY = { accessKeyId: '', secretAccessKey: '', project: '', clientEmail: '', privateKey: '' };
+
+/**
+ * Who pays for AI work. A student can add their own Bedrock or Vertex key. It is stored sealed and
+ * never shown again. Allowing routes that keep prompts for what they write is a separate, visible choice.
+ */
+function AiSection() {
+  const data = useApi<Funding>('/v1/ai/funding');
+  const status = useApi<Status>('/v1/ai/status');
+  const save = useSave();
+  const [vendor, setVendor] = useState<'bedrock' | 'vertex'>('bedrock');
+  const [fields, setFields] = useState(EMPTY_KEY);
+  const [wide, setWide] = useState(false);
+  const [cap, setCap] = useState<number | null>(null);
+  const dirty = Object.values(fields).some(Boolean);
+  useUnsentGuard(dirty || save.pending);
+  if (data.isPending) return <PageLoading label="Loading AI settings" />;
+  if (data.error) return <ErrorState error={data.error} onRetry={() => void data.refetch()} />;
+  const f = data.data;
+  const done = (value: Funding) => { data.setData(value); setFields(EMPTY_KEY); void status.refetch(); };
+  const credentials = vendor === 'bedrock' ? { vendor, accessKeyId: fields.accessKeyId, secretAccessKey: fields.secretAccessKey } : { vendor, project: fields.project, clientEmail: fields.clientEmail, privateKey: fields.privateKey };
+  const a = status.data?.allowance;
+  const set = (key: keyof typeof EMPTY_KEY) => (e: { target: { value: string } }) => setFields(v => ({ ...v, [key]: e.target.value }));
+  return (
+    <div className="flex flex-col gap-section">
+      <Group title="Who pays" description={f.using === 'user' ? 'AI work uses your own key.' : `AI work is paid by ${f.fallback}.`}>
+        {a && <Field layout="row" label="Used today"><span>{usd(a.todayUsd)}{a.dailyUsd !== null ? ` of ${usd(a.dailyUsd)}` : ''}</span></Field>}
+        {a && <Field layout="row" label="Used this month"><span>{usd(a.monthUsd)}{a.monthlyUsd !== null ? ` of ${usd(a.monthlyUsd)}` : ''}</span></Field>}
+        {f.ownKey && (
+          <Field layout="row" label="Use my own key" description={`${f.ownKey.vendor === 'bedrock' ? 'AWS Bedrock' : 'Google Vertex'} key saved ${new Date(f.ownKey.savedAt).toLocaleDateString()}.`}>
+            <Switch checked={f.ownKey.active} onCheckedChange={on => save.run<Funding>({ path: '/v1/ai/funding/use', body: { source: on ? 'own' : 'platform' } }, { id: `use:${on}`, onSuccess: done })} />
+          </Field>
+        )}
+      </Group>
+      {f.ownKey?.studentRetention === 'standard' && <Notice>Your key lets services that keep a copy of prompts receive what you write to the tutor. Save the key again to change this.</Notice>}
+      <form onSubmit={e => { e.preventDefault(); save.run<Funding>({ path: '/v1/ai/funding/key', method: 'PUT', body: { credentials, studentRetention: wide ? 'standard' : 'none', monthlyCapUsd: cap } }, { id: 'key', onSuccess: done }); }}>
+        <Group title={f.ownKey ? 'Replace your key' : 'Add your own key'} description="Your key is stored encrypted and never shown again. Rawi records what each request costs, and stops only at the cap you set."
+          footer={<>
+            {f.ownKey && <Button type="button" variant="ghost" loading={save.busy} onClick={() => save.run<Funding>({ path: '/v1/ai/funding/key', method: 'DELETE' }, { id: 'remove', onSuccess: done })}>Remove key</Button>}
+            <Button type="submit" loading={save.busy} disabled={!dirty}>Save key</Button>
+          </>}>
+          <Field layout="row" label="Service"><SegmentedControl aria-label="Service" value={vendor} onValueChange={setVendor} options={[{ value: 'bedrock', label: 'AWS Bedrock' }, { value: 'vertex', label: 'Google Vertex' }]} /></Field>
+          {vendor === 'bedrock' ? <>
+            <Field layout="row" label="Access key ID" required><Input autoComplete="off" value={fields.accessKeyId} onChange={set('accessKeyId')} /></Field>
+            <Field layout="row" label="Secret access key" required><Input type="password" autoComplete="off" value={fields.secretAccessKey} onChange={set('secretAccessKey')} /></Field>
+          </> : <>
+            <Field layout="row" label="Project ID" required><Input autoComplete="off" value={fields.project} onChange={set('project')} /></Field>
+            <Field layout="row" label="Service account email" required><Input autoComplete="off" value={fields.clientEmail} onChange={set('clientEmail')} /></Field>
+            <Field layout="row" label="Private key" description="The private_key value from the JSON key file." required><Textarea rows={4} autoComplete="off" value={fields.privateKey} onChange={set('privateKey')} /></Field>
+          </>}
+          <Field layout="row" label="Monthly cap" description="In US dollars. Leave empty for no cap."><NumberField value={cap} onValueChange={n => setCap(n ?? null)} min={1} max={10000} /></Field>
+          <Field layout="row" label="Allow services that keep prompts" description="Off keeps what you write on services that keep no copy. On widens the choice for your own content."><Switch checked={wide} onCheckedChange={setWide} /></Field>
+        </Group>
+      </form>
+      {save.error && <p role="alert" className="text-danger-text text-sm">{save.error}</p>}
+    </div>
   );
 }

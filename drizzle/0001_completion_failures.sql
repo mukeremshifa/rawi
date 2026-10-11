@@ -1,1 +1,0 @@
-ALTER TABLE "material_versions" ADD COLUMN "completion_failures" integer DEFAULT 0 NOT NULL;

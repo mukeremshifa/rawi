@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { pgTable, date, text, boolean, timestamp, uuid, integer, bigint, jsonb, unique, index, foreignKey, primaryKey, check, vector, customType, type AnyPgColumn } from 'drizzle-orm/pg-core';
-import type { AiPolicy, CallState, Language, ServiceTier, Usage, Validation, Vendor } from '../ai/types';
+import type { CallState, Language, Limits, ServiceTier, Usage, Validation, Vendor } from '../ai/types';
+import type { Sealed } from '../ai/funding';
 import type { KnowledgeCoverage, PoolQuestion, PoolVerification } from '../services/knowledge/types';
 import type { PreferenceFields } from '../../shared/contracts/workspace';
 import type { VersionedQuestion, LearningAttempt, FlashcardReview } from '../../shared/contracts/learning';
@@ -11,7 +12,6 @@ import type { Availability, PlannedAssessment, PlannedSession, PlanProposal, Che
 import type { TutorSession, TutorMessage, TutorMessageProvenance } from '../../shared/contracts/tutor';
 /** Review summary kept with legacy workspace imports. */
 type ImportReview = { id: string; state: 'review' | 'complete'; courses: number; materials: number; questions: number; sets: number; attempts: number; unsupported: string[]; courseIds?: string[] };
-import type { WrittenGrading } from '../../shared/domain/types';
 import type { BlockType, Citation, ConversionStatus, ConversionWarning, Pagination, ParsedBlock } from '../../shared/contracts/document';
 import type { OutlineJobKind, OutlineJobResult, TopicOrigin } from '../../shared/contracts/outline';
 
@@ -45,8 +45,8 @@ export const verification = pgTable('verification', {
 export const workspaces = pgTable('workspaces', {
   id: uuid('id').primaryKey().defaultRandom(),
   ownerUserId: text('owner_user_id').notNull().unique().references(() => user.id, { onDelete: 'cascade' }),
-  // Null means the default plan. Organisation policy will override plans when tenancy exists.
-  aiPlanId: text('ai_plan_id').references((): AnyPgColumn => aiPlans.id),
+  // Who pays for AI work. Null means the platform.
+  fundingSourceId: text('funding_source_id').references((): AnyPgColumn => fundingSources.id, { onDelete: 'set null' }),
   ...timestamps(),
 });
 export const preferences = pgTable('workspace_preferences', {
@@ -317,11 +317,6 @@ export const aiOperations = pgTable('ai_operations', {
   model: text('model'), promptVersion: text('prompt_version').notNull(), reason: text('reason'),
   activeExecutionId: uuid('active_execution_id'), result: jsonb('result').$type<unknown>(), ...timestamps(),
 }, t => [unique('ai_operations_scope_unique').on(t.workspaceId, t.id), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('ai_operations_target_idx').on(t.workspaceId, t.targetId, t.createdAt)]);
-export const feedbackRevisions = pgTable('feedback_revisions', {
-  id: uuid('id').primaryKey(), ...materialScope(), attemptId: uuid('attempt_id').notNull().references(() => learningAttempts.id), questionId: uuid('question_id').notNull(),
-  operationId: uuid('operation_id').unique(), sampleDataset: text('sample_dataset'), revision: integer('revision').notNull(), grading: jsonb('grading').$type<WrittenGrading>().notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-}, t => [unique('feedback_revision_unique').on(t.attemptId, t.questionId, t.revision), foreignKey({ name: 'feedback_attempt_scope_fk', columns: [t.workspaceId, t.courseId, t.attemptId], foreignColumns: [learningAttempts.workspaceId, learningAttempts.courseId, learningAttempts.id] }), foreignKey({ columns: [t.workspaceId, t.operationId], foreignColumns: [aiOperations.workspaceId, aiOperations.id] }), foreignKey({ columns: [t.workspaceId, t.courseId, t.questionId], foreignColumns: [questionVersions.workspaceId, questionVersions.courseId, questionVersions.id] })]);
 /**
  * Structured outline work: reading the syllabus, mapping a material's sections to topics, and
  * drafting an outline from materials. Jobs advance like conversions, under a short lease.
@@ -362,16 +357,36 @@ export const developmentSeedRecords = pgTable('development_seed_records', {
   foreignKey({ columns: [t.workspaceId, t.version], foreignColumns: [developmentSeeds.workspaceId, developmentSeeds.version] }),
   index('seed_records_entity_idx').on(t.workspaceId, t.entityType, t.entityId)]);
 
-/** Plan limits and allowed vendors as data. The `default` row is the only plan wired in. */
-export const aiPlans = pgTable('ai_plans', {
-  id: text('id').primaryKey(), policy: jsonb('policy').$type<AiPolicy>().notNull(), ...timestamps(),
-});
+/**
+ * Who pays for AI work and on what terms: the platform, an institution's account or quota, or a
+ * student's own key. Credentials are sealed, or `env` for the platform's Worker secrets.
+ */
+export const fundingSources = pgTable('funding_sources', {
+  id: text('id').primaryKey(), kind: text('kind').$type<'platform' | 'institution' | 'user'>().notNull(), label: text('label').notNull(),
+  // A student's own key belongs to their workspace. Platform and institution sources are shared.
+  ownerWorkspaceId: uuid('owner_workspace_id').references((): AnyPgColumn => workspaces.id, { onDelete: 'cascade' }),
+  credentials: jsonb('credentials').$type<Sealed | 'env'>().notNull(),
+  vendors: jsonb('vendors').$type<Vendor[]>().notNull(),
+  // Null allows every route the vendors serve.
+  routes: jsonb('routes').$type<string[] | null>(),
+  // The source's own limits, and for a shared source each workspace's share.
+  limits: jsonb('limits').$type<Limits>().notNull(), perWorkspace: jsonb('per_workspace').$type<Limits | null>(),
+  // `none` admits only routes that keep no prompts. Student content stays on those unless widened here.
+  retention: text('retention').$type<'none' | 'standard'>().notNull(), studentRetention: text('student_retention').$type<'none' | 'standard'>().notNull().default('none'),
+  active: boolean('active').notNull().default(true), ...timestamps(),
+}, t => [
+  check('funding_kind_valid', sql`${t.kind} in ('platform', 'institution', 'user')`),
+  check('funding_retention_valid', sql`${t.retention} in ('none', 'standard') and ${t.studentRetention} in ('none', 'standard')`),
+  // One own key per workspace.
+  unique('funding_owner_kind_unique').on(t.ownerWorkspaceId, t.kind),
+]);
 /**
  * One provider call: the meter and the trace together. A call is reserved before it is sent and
  * settled from its usage after. An uncertain outcome stays charged at its reservation.
  */
 export const aiCalls = pgTable('ai_calls', {
   id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  fundingSourceId: text('funding_source_id').references(() => fundingSources.id, { onDelete: 'set null' }),
   // The student-facing operation or background job the call serves, when there is one.
   operationId: uuid('operation_id'), jobId: uuid('job_id'),
   task: text('task').notNull(), step: integer('step').notNull().default(0),
@@ -383,7 +398,7 @@ export const aiCalls = pgTable('ai_calls', {
   validation: text('validation').$type<Validation>(), error: text('error'), partial: text('partial').notNull().default(''),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(), settledAt: timestamp('settled_at', { withTimezone: true }),
 }, t => [
-  index('ai_calls_budget_idx').on(t.workspaceId, t.createdAt), index('ai_calls_open_idx').on(t.state, t.createdAt),
+  index('ai_calls_budget_idx').on(t.workspaceId, t.createdAt), index('ai_calls_source_idx').on(t.fundingSourceId, t.createdAt), index('ai_calls_open_idx').on(t.state, t.createdAt),
   index('ai_calls_health_idx').on(t.vendor, t.model, t.createdAt), index('ai_calls_operation_idx').on(t.operationId),
   check('ai_calls_state_valid', sql`${t.state} in ('reserved', 'settled', 'ambiguous', 'released')`),
   check('ai_calls_reservation_nonnegative', sql`${t.reservedMicros} >= 0 AND (${t.chargedMicros} IS NULL OR ${t.chargedMicros} >= 0)`),

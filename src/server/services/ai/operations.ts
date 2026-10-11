@@ -3,8 +3,9 @@ import type { BackendBindings } from '../../config';
 import type { ReadDb, SocketDb, Transaction } from '../../db/client';
 import { aiCalls, aiOperations, tutorMessages } from '../../db/schema';
 import { ApiError, notFound } from '../../errors';
-import { adaptersFor, routesFor } from '../../ai/engine';
-import { policyFor, usageSnapshot } from '../../ai/meter';
+import { routesFor } from '../../ai/engine';
+import { fundingFor } from '../../ai/funding';
+import { usageSnapshot } from '../../ai/meter';
 import { operation } from '../learning';
 
 /** A repeated request whose first run may have been charged without a result. */
@@ -12,18 +13,20 @@ export const uncertainBefore = () => new ApiError(409, 'operation_uncertain', 'T
 
 /**
  * What the client may offer right now. Unavailable means a request would be refused before any
- * provider call: no vendor configured, the allowance used up, or every small model failing.
+ * provider call: no vendor for the funding source, its allowance used up, or every route failing.
  */
 export async function aiStatus(env: BackendBindings, db: ReadDb, workspaceId: string) {
-  const adapters = adaptersFor(env);
-  if (!Object.keys(adapters).length) return { available: false, reason: 'AI is not set up on this server yet.', allowance: null };
-  const { plan } = await policyFor(db, workspaceId);
-  const used = await usageSnapshot(db, workspaceId);
-  const allowance = { todayUsd: used.today / 1e6, dailyUsd: plan.dailyMicros / 1e6, monthUsd: used.month / 1e6, monthlyUsd: plan.monthlyMicros / 1e6 };
-  if (used.today >= plan.dailyMicros) return { available: false, reason: 'The AI allowance for today is used up. It resets at midnight UTC.', allowance };
-  if (used.month >= plan.monthlyMicros) return { available: false, reason: 'The AI allowance for this month is used up.', allowance };
-  if (!(await routesFor(db, adapters, plan, 'small')).length) return { available: false, reason: 'The AI services are not responding right now. Try again in a few minutes.', allowance };
-  return { available: true, reason: null, allowance };
+  const funding = await fundingFor(env, db, workspaceId);
+  const own = funding.source.perWorkspace ?? funding.source.limits;
+  const source = { kind: funding.source.kind, label: funding.source.label };
+  if (!Object.keys(funding.adapters).length) return { available: false, reason: 'AI is not set up on this server yet.', allowance: null, source };
+  const used = await usageSnapshot(db, workspaceId, funding.source.id);
+  const usd = (micros: number | null) => micros === null ? null : micros / 1e6;
+  const allowance = { todayUsd: used.today / 1e6, dailyUsd: usd(own.dailyMicros), monthUsd: used.month / 1e6, monthlyUsd: usd(own.monthlyMicros) };
+  if (own.dailyMicros !== null && used.today >= own.dailyMicros) return { available: false, reason: 'The AI allowance for today is used up. It resets at midnight UTC.', allowance, source };
+  if (own.monthlyMicros !== null && used.month >= own.monthlyMicros) return { available: false, reason: 'The AI allowance for this month is used up.', allowance, source };
+  if (!(await routesFor(db, funding, 'chat', 'student')).length && !(await routesFor(db, funding, 'extract')).length) return { available: false, reason: 'The AI services are not responding right now. Try again in a few minutes.', allowance, source };
+  return { available: true, reason: null, allowance, source };
 }
 
 export async function viewOperation(db: ReadDb | Transaction, workspaceId: string, id: string) {
