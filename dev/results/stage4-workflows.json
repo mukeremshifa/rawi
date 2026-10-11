@@ -1,0 +1,1051 @@
+{
+  "label": "stage4-workflows",
+  "at": "2026-10-11T01:44:06.865Z",
+  "repeat": 6,
+  "ingest": {
+    "ms": 0,
+    "micros": 0,
+    "calls": 0,
+    "jobs": [
+      "reused"
+    ],
+    "chunks": 0,
+    "embedded": 0,
+    "coverage": {
+      "missing": 0,
+      "segments": 0
+    }
+  },
+  "retrieval": [
+    {
+      "case": "ord-demography",
+      "kind": "ordinary",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 956
+    },
+    {
+      "case": "ord-encomienda",
+      "kind": "ordinary",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 845
+    },
+    {
+      "case": "ord-navigation",
+      "kind": "ordinary",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 852
+    },
+    {
+      "case": "follow-enforcement",
+      "kind": "follow-up",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 1051
+    },
+    {
+      "case": "follow-maroon",
+      "kind": "follow-up",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 825
+    },
+    {
+      "case": "follow-larssen",
+      "kind": "follow-up",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 5075
+    },
+    {
+      "case": "unsup-napoleon",
+      "kind": "unsupported",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 841
+    },
+    {
+      "case": "unsup-calculus",
+      "kind": "unsupported",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 3968
+    },
+    {
+      "case": "unsup-tordesillas",
+      "kind": "unsupported",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 865
+    },
+    {
+      "case": "partial-newlaws",
+      "kind": "partial",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 0,
+      "ms": 836
+    },
+    {
+      "case": "long-indigo",
+      "kind": "long-block",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 895
+    },
+    {
+      "case": "table-mariposa",
+      "kind": "table",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 879
+    },
+    {
+      "case": "figure-azores",
+      "kind": "figure",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 859
+    },
+    {
+      "case": "version-current",
+      "kind": "version",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 954
+    },
+    {
+      "case": "version-stale-focus",
+      "kind": "version",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 970
+    },
+    {
+      "case": "conflict-encomienda",
+      "kind": "conflict",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 837
+    },
+    {
+      "case": "focus-shift",
+      "kind": "focus-shift",
+      "runs": 2,
+      "evidence": 2,
+      "stale": 0,
+      "verdict": 2,
+      "ms": 871
+    }
+  ],
+  "tutor": [
+    {
+      "route": "qwen3-32b",
+      "case": "ord-demography",
+      "kind": "ordinary",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        4310,
+        3910,
+        4075,
+        5282,
+        3974,
+        4483
+      ],
+      "totalMs": [
+        9096,
+        8027,
+        9028,
+        10303,
+        9048,
+        9585
+      ],
+      "trips": [
+        25,
+        22,
+        22,
+        23,
+        22,
+        24
+      ],
+      "micros": [
+        345,
+        336,
+        355,
+        350,
+        340,
+        337
+      ],
+      "notes": []
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "ord-encomienda",
+      "kind": "ordinary",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        4008,
+        4238,
+        4169,
+        4204,
+        4029,
+        4411
+      ],
+      "totalMs": [
+        6459,
+        6680,
+        6196,
+        6290,
+        6432,
+        6882
+      ],
+      "trips": [
+        22,
+        22,
+        22,
+        23,
+        22,
+        24
+      ],
+      "micros": [
+        306,
+        295,
+        289,
+        288,
+        298,
+        304
+      ],
+      "notes": []
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "ord-navigation",
+      "kind": "ordinary",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        3792,
+        4268,
+        3932,
+        3919,
+        3953,
+        4134
+      ],
+      "totalMs": [
+        8071,
+        8265,
+        8213,
+        8069,
+        8106,
+        8174
+      ],
+      "trips": [
+        22,
+        22,
+        22,
+        23,
+        22,
+        24
+      ],
+      "micros": [
+        254,
+        253,
+        254,
+        261,
+        254,
+        254
+      ],
+      "notes": []
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "follow-enforcement",
+      "kind": "follow-up",
+      "runs": 6,
+      "pass": 5,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 5,
+      "inline": 5,
+      "groundingOk": 2,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        4021,
+        4103,
+        4016,
+        4155,
+        4105,
+        4309
+      ],
+      "totalMs": [
+        6746,
+        6478,
+        6517,
+        6806,
+        6434,
+        7052
+      ],
+      "trips": [
+        23,
+        22,
+        22,
+        23,
+        22,
+        24
+      ],
+      "micros": [
+        314,
+        302,
+        308,
+        307,
+        295,
+        296
+      ],
+      "notes": [
+        "no citation"
+      ]
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "follow-maroon",
+      "kind": "follow-up",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 4,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        3996,
+        4041,
+        3780,
+        3948,
+        3984,
+        4210
+      ],
+      "totalMs": [
+        6583,
+        6673,
+        5704,
+        6793,
+        6152,
+        6652
+      ],
+      "trips": [
+        23,
+        22,
+        22,
+        22,
+        23,
+        24
+      ],
+      "micros": [
+        295,
+        296,
+        286,
+        299,
+        285,
+        292
+      ],
+      "notes": []
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "follow-larssen",
+      "kind": "follow-up",
+      "runs": 6,
+      "pass": 5,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 5,
+      "inline": 4,
+      "groundingOk": 5,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        6958,
+        8261,
+        6729,
+        7335,
+        7431,
+        8647
+      ],
+      "totalMs": [
+        9789,
+        11110,
+        9047,
+        9952,
+        10080,
+        11210
+      ],
+      "trips": [
+        30,
+        31,
+        30,
+        31,
+        32,
+        30
+      ],
+      "micros": [
+        335,
+        331,
+        325,
+        337,
+        325,
+        331
+      ],
+      "notes": [
+        "no citation"
+      ]
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "unsup-napoleon",
+      "kind": "unsupported",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 6,
+      "cited": 0,
+      "inline": 0,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 6,
+      "firstMs": [
+        2032,
+        2040,
+        2054,
+        2153,
+        2104,
+        2456
+      ],
+      "totalMs": [
+        6450,
+        6175,
+        6333,
+        7827,
+        6176,
+        6435
+      ],
+      "trips": [
+        16,
+        16,
+        16,
+        16,
+        16,
+        16
+      ],
+      "micros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "notes": []
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "unsup-calculus",
+      "kind": "unsupported",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 6,
+      "cited": 0,
+      "inline": 0,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 6,
+      "firstMs": [
+        6139,
+        5995,
+        6642,
+        6500,
+        5271,
+        5173
+      ],
+      "totalMs": [
+        7908,
+        7767,
+        8410,
+        8254,
+        7011,
+        6940
+      ],
+      "trips": [
+        25,
+        24,
+        24,
+        27,
+        24,
+        24
+      ],
+      "micros": [
+        1,
+        0,
+        0,
+        1,
+        1,
+        1
+      ],
+      "notes": []
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "unsup-tordesillas",
+      "kind": "unsupported",
+      "runs": 6,
+      "pass": 5,
+      "answer": 5,
+      "limitation": 5,
+      "cited": 0,
+      "inline": 0,
+      "groundingOk": 5,
+      "forbidden": 0,
+      "noCall": 5,
+      "firstMs": [
+        2084,
+        2241,
+        1994,
+        2094,
+        2067,
+        2418
+      ],
+      "totalMs": [
+        6322,
+        6223,
+        5806,
+        6770,
+        6434,
+        6504
+      ],
+      "trips": [
+        16,
+        16,
+        16,
+        16,
+        16,
+        16
+      ],
+      "micros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "notes": [
+        "no reply"
+      ]
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "partial-newlaws",
+      "kind": "partial",
+      "runs": 6,
+      "pass": 0,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 5,
+      "groundingOk": 5,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        3782,
+        4037,
+        4036,
+        4081,
+        4344,
+        3917
+      ],
+      "totalMs": [
+        8378,
+        8245,
+        8619,
+        9232,
+        8889,
+        8245
+      ],
+      "trips": [
+        22,
+        23,
+        22,
+        24,
+        23,
+        22
+      ],
+      "micros": [
+        323,
+        313,
+        319,
+        336,
+        322,
+        318
+      ],
+      "notes": [
+        "no limitation",
+        "no limitation",
+        "no limitation",
+        "no limitation",
+        "no limitation",
+        "no limitation"
+      ]
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "long-indigo",
+      "kind": "long-block",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        4245,
+        4343,
+        4459,
+        4260,
+        4213,
+        4228
+      ],
+      "totalMs": [
+        8487,
+        8586,
+        8944,
+        8302,
+        8386,
+        8629
+      ],
+      "trips": [
+        22,
+        23,
+        24,
+        22,
+        23,
+        22
+      ],
+      "micros": [
+        517,
+        518,
+        516,
+        516,
+        519,
+        516
+      ],
+      "notes": []
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "table-mariposa",
+      "kind": "table",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        4095,
+        4226,
+        3741,
+        4052,
+        4125,
+        3969
+      ],
+      "totalMs": [
+        8208,
+        8359,
+        7822,
+        8022,
+        8036,
+        8170
+      ],
+      "trips": [
+        22,
+        25,
+        22,
+        22,
+        23,
+        22
+      ],
+      "micros": [
+        353,
+        350,
+        349,
+        350,
+        351,
+        351
+      ],
+      "notes": []
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "figure-azores",
+      "kind": "figure",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        3884,
+        4453,
+        3879,
+        3849,
+        4118,
+        3762
+      ],
+      "totalMs": [
+        8566,
+        8956,
+        8401,
+        8588,
+        8425,
+        8437
+      ],
+      "trips": [
+        22,
+        23,
+        22,
+        22,
+        23,
+        22
+      ],
+      "micros": [
+        293,
+        294,
+        293,
+        293,
+        288,
+        293
+      ],
+      "notes": []
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "version-current",
+      "kind": "version",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        4082,
+        4350,
+        4006,
+        4191,
+        4475,
+        4160
+      ],
+      "totalMs": [
+        8294,
+        8412,
+        7868,
+        8094,
+        8522,
+        8032
+      ],
+      "trips": [
+        22,
+        23,
+        22,
+        22,
+        23,
+        22
+      ],
+      "micros": [
+        331,
+        327,
+        325,
+        325,
+        325,
+        328
+      ],
+      "notes": []
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "version-stale-focus",
+      "kind": "version",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        3773,
+        4237,
+        4091,
+        3872,
+        5304,
+        3902
+      ],
+      "totalMs": [
+        7707,
+        8105,
+        8170,
+        7835,
+        9542,
+        8240
+      ],
+      "trips": [
+        22,
+        23,
+        22,
+        22,
+        23,
+        22
+      ],
+      "micros": [
+        338,
+        338,
+        339,
+        339,
+        337,
+        339
+      ],
+      "notes": []
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "conflict-encomienda",
+      "kind": "conflict",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 5,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        3993,
+        3776,
+        3954,
+        4009,
+        3936,
+        3984
+      ],
+      "totalMs": [
+        9252,
+        8274,
+        8664,
+        8456,
+        8998,
+        9196
+      ],
+      "trips": [
+        22,
+        22,
+        22,
+        23,
+        22,
+        22
+      ],
+      "micros": [
+        336,
+        330,
+        322,
+        346,
+        347,
+        344
+      ],
+      "notes": []
+    },
+    {
+      "route": "qwen3-32b",
+      "case": "focus-shift",
+      "kind": "focus-shift",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 5,
+      "groundingOk": 5,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        4569,
+        3872,
+        5558,
+        4373,
+        3937,
+        3864
+      ],
+      "totalMs": [
+        7236,
+        6483,
+        7682,
+        6742,
+        5922,
+        6183
+      ],
+      "trips": [
+        23,
+        22,
+        24,
+        23,
+        22,
+        22
+      ],
+      "micros": [
+        338,
+        359,
+        347,
+        326,
+        317,
+        334
+      ],
+      "notes": []
+    }
+  ],
+  "questions": [
+    {
+      "config": "mc",
+      "runs": 6,
+      "requested": 36,
+      "saved": 0,
+      "written": 48,
+      "verified": 0,
+      "failures": 6,
+      "ms": [
+        12551,
+        22699,
+        32751,
+        25296,
+        50380,
+        29563
+      ],
+      "micros": 42658,
+      "rules": {
+        "weak_distractors": 36,
+        "key_longest": 5,
+        "duplicate": 1,
+        "correct_index": 6
+      },
+      "audit": {},
+      "notes": [
+        "The AI answer did not pass its checks, so nothing was saved.",
+        "None of the written questions passed their checks. No set was saved.",
+        "None of the written questions passed their checks. No set was saved.",
+        "The AI answer did not pass its checks, so nothing was saved.",
+        "None of the written questions passed their checks. No set was saved.",
+        "None of the written questions passed their checks. No set was saved."
+      ]
+    },
+    {
+      "config": "written",
+      "runs": 6,
+      "requested": 18,
+      "saved": 9,
+      "written": 13,
+      "verified": 9,
+      "failures": 3,
+      "ms": [
+        15797,
+        41344,
+        9725,
+        9623,
+        13408,
+        17817
+      ],
+      "micros": 27484,
+      "rules": {
+        "rubric": 3,
+        "ambiguous": 1
+      },
+      "audit": {},
+      "notes": [
+        "The AI answer did not pass its checks, so nothing was saved.",
+        "The AI answer did not pass its checks, so nothing was saved.",
+        "The AI answer did not pass its checks, so nothing was saved."
+      ]
+    }
+  ]
+}

@@ -75,11 +75,10 @@ const ANAPHORA = /\b(it|its|they|them|their|this|that|these|those|he|him|his|she
 export function resolveQuery(message: string, history: { role: 'user' | 'assistant'; text: string }[], language: Language) {
   const own = terms(message, language);
   const leans = own.length <= 4 && ANAPHORA.test(message);
-  if (!leans || !history.length) return { query: message, context: '', asked: '' };
+  if (!leans || !history.length) return { query: message, context: '' };
   const lastStudent = [...history].reverse().find(h => h.role === 'user')?.text ?? '';
   const lastTutor = [...history].reverse().find(h => h.role === 'assistant')?.text ?? '';
-  // The tutor's words help find the passage, but only the student's words say what was asked.
-  return { query: message, context: `${lastStudent}\n${lastTutor.slice(0, 600)}`, asked: lastStudent };
+  return { query: message, context: `${lastStudent}\n${lastTutor.slice(0, 600)}` };
 }
 
 /** Characters of evidence per turn, about 2,400 tokens, leaving room for history. */
@@ -103,7 +102,7 @@ function overlap(a: string, b: string) {
   return shared / Math.max(1, Math.min(x.size, y.size));
 }
 
-export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { courseId: string; query: string; context?: string; asked?: string; language: Language; topicId?: string | null; focus?: Citation | null }): Promise<Retrieval> {
+export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { courseId: string; query: string; context?: string; language: Language; topicId?: string | null; focus?: Citation | null }): Promise<Retrieval> {
   const { db, workspaceId } = ctx;
   const own = terms(opts.query, opts.language);
   const via: string[] = [];
@@ -128,7 +127,7 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { c
   ]);
   // Search by meaning only when the best text matches leave the question's terms uncovered.
   // A query embedding costs little but takes one to five seconds, all before the first token.
-  const judged = opts.asked ? [...new Set([...own, ...terms(opts.asked, opts.language)])] : own;
+  const judged = own;
   const topText = textRows.slice(0, 4).map(r => `${r.heading}\n${r.text}`).join('\n').toLowerCase();
   const textCovers = textRows.length > 0 && judged.filter(w => mentions(topText, w)).length >= 0.75 * judged.length;
   // A name no text match mentions decides the verdict as absent whatever vectors find.
@@ -178,15 +177,17 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { c
   chosen.sort((a, b) => a.versionId === b.versionId ? a.ordinal - b.ordinal : 0);
 
   // The verdict: how many of the question's own terms the evidence mentions. A follow-up with
-  // no terms of its own is judged on the exchange it leans on.
+  // almost no terms of its own, such as "Did people follow it?", cannot be judged on words, so
+  // it rests on whether the exchange it leans on found a passage.
   const evidence = [focus && !focus.earlier ? focus.text : '', ...chosen.map(c => `${c.heading}\n${c.text}`)].join('\n').toLowerCase();
   const missing = judged.filter(w => !mentions(evidence, w));
   const share = judged.length ? 1 - missing.length / judged.length : 1;
   const close = vectorRows.some(r => r.distance < CLOSE);
   // A name the student asks about that no passage mentions means the subject itself is missing.
   const subjectMissing = names(opts.query, opts.language).some(w => !mentions(evidence, w));
+  const bare = !!opts.context && own.length < 2;
   const verdict: Verdict = (!chosen.length && !(focus && !focus.earlier)) || subjectMissing ? 'absent'
-    : share >= 0.75 || (close && share >= 0.5) ? 'sufficient'
+    : bare || share >= 0.75 || (close && share >= 0.5) ? 'sufficient'
     : share >= 0.4 ? 'partial' : 'absent';
 
   const versionIds = [...new Set(chosen.map(p => p.versionId))];

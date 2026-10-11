@@ -1,0 +1,830 @@
+{
+  "label": "tutor-nova-lite",
+  "at": "2026-10-11T13:59:55.156Z",
+  "repeat": 6,
+  "ingest": {
+    "ms": 0,
+    "micros": 0,
+    "calls": 0,
+    "jobs": [
+      "reused"
+    ],
+    "chunks": 0,
+    "embedded": 0,
+    "coverage": {
+      "missing": 0,
+      "segments": 0
+    }
+  },
+  "tutor": [
+    {
+      "route": "nova-lite",
+      "case": "ord-demography",
+      "kind": "ordinary",
+      "runs": 6,
+      "pass": 5,
+      "answer": 5,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        5156,
+        2830,
+        2361,
+        4766,
+        4442,
+        2768
+      ],
+      "totalMs": [
+        7064,
+        4820,
+        4200,
+        6815,
+        6329,
+        4792
+      ],
+      "trips": [
+        19,
+        14,
+        14,
+        17,
+        16,
+        14
+      ],
+      "micros": [
+        90,
+        101,
+        101,
+        101,
+        103,
+        92
+      ],
+      "notes": [
+        "answer"
+      ]
+    },
+    {
+      "route": "nova-lite",
+      "case": "ord-encomienda",
+      "kind": "ordinary",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        4773,
+        4218,
+        4266,
+        4309,
+        4435,
+        4256
+      ],
+      "totalMs": [
+        6307,
+        6744,
+        5822,
+        6135,
+        6097,
+        5869
+      ],
+      "trips": [
+        19,
+        15,
+        15,
+        15,
+        16,
+        15
+      ],
+      "micros": [
+        92,
+        90,
+        99,
+        101,
+        97,
+        97
+      ],
+      "notes": []
+    },
+    {
+      "route": "nova-lite",
+      "case": "ord-navigation",
+      "kind": "ordinary",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        4336,
+        3255,
+        4263,
+        2783,
+        2803,
+        2362
+      ],
+      "totalMs": [
+        5804,
+        4935,
+        5824,
+        4521,
+        4490,
+        4064
+      ],
+      "trips": [
+        15,
+        15,
+        15,
+        14,
+        14,
+        13
+      ],
+      "micros": [
+        70,
+        80,
+        80,
+        80,
+        81,
+        81
+      ],
+      "notes": []
+    },
+    {
+      "route": "nova-lite",
+      "case": "follow-enforcement",
+      "kind": "follow-up",
+      "runs": 6,
+      "pass": 4,
+      "answer": 4,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 1,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        2588,
+        2892,
+        3304,
+        2832,
+        2893,
+        3118
+      ],
+      "totalMs": [
+        4295,
+        4801,
+        4911,
+        5027,
+        4997,
+        4734
+      ],
+      "trips": [
+        14,
+        14,
+        17,
+        14,
+        14,
+        15
+      ],
+      "micros": [
+        102,
+        105,
+        101,
+        109,
+        101,
+        100
+      ],
+      "notes": [
+        "answer",
+        "answer"
+      ]
+    },
+    {
+      "route": "nova-lite",
+      "case": "follow-maroon",
+      "kind": "follow-up",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        2803,
+        3029,
+        3300,
+        2893,
+        2853,
+        2991
+      ],
+      "totalMs": [
+        4393,
+        4787,
+        4940,
+        4689,
+        4473,
+        4793
+      ],
+      "trips": [
+        14,
+        14,
+        17,
+        14,
+        14,
+        14
+      ],
+      "micros": [
+        89,
+        89,
+        89,
+        91,
+        89,
+        90
+      ],
+      "notes": []
+    },
+    {
+      "route": "nova-lite",
+      "case": "follow-larssen",
+      "kind": "follow-up",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        2983,
+        2898,
+        4521,
+        5018,
+        4645,
+        4317
+      ],
+      "totalMs": [
+        5134,
+        4742,
+        6258,
+        6717,
+        6336,
+        5892
+      ],
+      "trips": [
+        15,
+        14,
+        15,
+        18,
+        17,
+        15
+      ],
+      "micros": [
+        180,
+        180,
+        179,
+        188,
+        186,
+        185
+      ],
+      "notes": []
+    },
+    {
+      "route": "nova-lite",
+      "case": "unsup-napoleon",
+      "kind": "unsupported",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 6,
+      "cited": 0,
+      "inline": 0,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 6,
+      "firstMs": [
+        1251,
+        1260,
+        1410,
+        1374,
+        1342,
+        1411
+      ],
+      "totalMs": [
+        2305,
+        2315,
+        2732,
+        2730,
+        2719,
+        2742
+      ],
+      "trips": [
+        8,
+        8,
+        8,
+        8,
+        8,
+        10
+      ],
+      "micros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "notes": []
+    },
+    {
+      "route": "nova-lite",
+      "case": "unsup-calculus",
+      "kind": "unsupported",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 6,
+      "cited": 0,
+      "inline": 0,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 6,
+      "firstMs": [
+        1511,
+        1305,
+        1368,
+        1311,
+        1328,
+        1486
+      ],
+      "totalMs": [
+        2662,
+        2366,
+        2498,
+        2380,
+        2378,
+        2769
+      ],
+      "trips": [
+        8,
+        7,
+        7,
+        7,
+        7,
+        8
+      ],
+      "micros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "notes": []
+    },
+    {
+      "route": "nova-lite",
+      "case": "unsup-tordesillas",
+      "kind": "unsupported",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 6,
+      "cited": 0,
+      "inline": 0,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 6,
+      "firstMs": [
+        1392,
+        1335,
+        1425,
+        1390,
+        1569,
+        1388
+      ],
+      "totalMs": [
+        2757,
+        2452,
+        2771,
+        2782,
+        2632,
+        2747
+      ],
+      "trips": [
+        8,
+        8,
+        8,
+        11,
+        9,
+        8
+      ],
+      "micros": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "notes": []
+    },
+    {
+      "route": "nova-lite",
+      "case": "partial-newlaws",
+      "kind": "partial",
+      "runs": 6,
+      "pass": 2,
+      "answer": 6,
+      "limitation": 2,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        2529,
+        2333,
+        3700,
+        2690,
+        3339,
+        4211
+      ],
+      "totalMs": [
+        4435,
+        3965,
+        6057,
+        4249,
+        5048,
+        6171
+      ],
+      "trips": [
+        17,
+        13,
+        16,
+        14,
+        14,
+        15
+      ],
+      "micros": [
+        111,
+        103,
+        106,
+        103,
+        107,
+        109
+      ],
+      "notes": [
+        "no limitation",
+        "no limitation",
+        "no limitation",
+        "no limitation"
+      ]
+    },
+    {
+      "route": "nova-lite",
+      "case": "long-indigo",
+      "kind": "long-block",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        3306,
+        3559,
+        2735,
+        2771,
+        2765,
+        2518
+      ],
+      "totalMs": [
+        4678,
+        4878,
+        4134,
+        4290,
+        4327,
+        4093
+      ],
+      "trips": [
+        15,
+        17,
+        14,
+        14,
+        15,
+        16
+      ],
+      "micros": [
+        174,
+        168,
+        175,
+        174,
+        174,
+        174
+      ],
+      "notes": []
+    },
+    {
+      "route": "nova-lite",
+      "case": "table-mariposa",
+      "kind": "table",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        3208,
+        2317,
+        2850,
+        2449,
+        2562,
+        3154
+      ],
+      "totalMs": [
+        4707,
+        3669,
+        4200,
+        3967,
+        3964,
+        4712
+      ],
+      "trips": [
+        14,
+        14,
+        14,
+        13,
+        16,
+        17
+      ],
+      "micros": [
+        111,
+        113,
+        111,
+        113,
+        110,
+        112
+      ],
+      "notes": []
+    },
+    {
+      "route": "nova-lite",
+      "case": "figure-azores",
+      "kind": "figure",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        2843,
+        2845,
+        2524,
+        2778,
+        2890,
+        2815
+      ],
+      "totalMs": [
+        4213,
+        4521,
+        4036,
+        4284,
+        4259,
+        4337
+      ],
+      "trips": [
+        14,
+        14,
+        14,
+        14,
+        14,
+        14
+      ],
+      "micros": [
+        90,
+        91,
+        92,
+        92,
+        91,
+        91
+      ],
+      "notes": []
+    },
+    {
+      "route": "nova-lite",
+      "case": "version-current",
+      "kind": "version",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        3319,
+        2614,
+        2609,
+        2507,
+        3001,
+        2562
+      ],
+      "totalMs": [
+        4730,
+        4108,
+        4049,
+        3968,
+        4465,
+        4758
+      ],
+      "trips": [
+        17,
+        14,
+        14,
+        14,
+        14,
+        14
+      ],
+      "micros": [
+        127,
+        126,
+        126,
+        128,
+        127,
+        126
+      ],
+      "notes": []
+    },
+    {
+      "route": "nova-lite",
+      "case": "version-stale-focus",
+      "kind": "version",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 6,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        2375,
+        2756,
+        2871,
+        3002,
+        2982,
+        2807
+      ],
+      "totalMs": [
+        3727,
+        4393,
+        4377,
+        4362,
+        4497,
+        4301
+      ],
+      "trips": [
+        14,
+        15,
+        14,
+        14,
+        15,
+        14
+      ],
+      "micros": [
+        119,
+        119,
+        119,
+        126,
+        125,
+        127
+      ],
+      "notes": []
+    },
+    {
+      "route": "nova-lite",
+      "case": "conflict-encomienda",
+      "kind": "conflict",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 5,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        2656,
+        2937,
+        2384,
+        2414,
+        2640,
+        3120
+      ],
+      "totalMs": [
+        4402,
+        4724,
+        4500,
+        3976,
+        4613,
+        4771
+      ],
+      "trips": [
+        16,
+        14,
+        13,
+        14,
+        14,
+        15
+      ],
+      "micros": [
+        108,
+        110,
+        109,
+        111,
+        111,
+        107
+      ],
+      "notes": []
+    },
+    {
+      "route": "nova-lite",
+      "case": "focus-shift",
+      "kind": "focus-shift",
+      "runs": 6,
+      "pass": 6,
+      "answer": 6,
+      "limitation": 0,
+      "cited": 6,
+      "inline": 3,
+      "groundingOk": 6,
+      "forbidden": 0,
+      "noCall": 0,
+      "firstMs": [
+        2872,
+        3095,
+        2965,
+        2721,
+        2765,
+        2954
+      ],
+      "totalMs": [
+        4803,
+        4873,
+        4922,
+        4312,
+        4486,
+        4816
+      ],
+      "trips": [
+        14,
+        16,
+        15,
+        14,
+        14,
+        15
+      ],
+      "micros": [
+        92,
+        99,
+        108,
+        99,
+        93,
+        101
+      ],
+      "notes": []
+    }
+  ]
+}
