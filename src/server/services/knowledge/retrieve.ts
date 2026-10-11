@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { blocks, ingestJobs, knowledgeChunks, knowledgeSections, materials, materialVersions, sectionLinks } from '../../db/schema';
+import { blocks, ingestJobs, knowledgeChunks, materials, materialVersions, sectionLinks, sections } from '../../db/schema';
 import type { BackendBindings } from '../../config';
 import { embed, type CallContext } from '../../ai/engine';
 import type { Language } from '../../ai/types';
@@ -90,7 +90,7 @@ const RRF = 20;
 const FAR = 0.5;
 const CLOSE = 0.3;
 
-type Row = { id: string; materialId: string; versionId: string; blockIds: string[]; heading: string; text: string; sectionBlockId: string | null; ordinal: number; kind: 'text' | 'figure' };
+type Row = { id: string; materialId: string; versionId: string; blockIds: string[]; heading: string; text: string; sectionId: string; ordinal: number; kind: 'text' | 'figure' };
 
 /** Runs of three words. Parts of one long table or ledger share words but not runs. */
 const shingles = (text: string) => { const w = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []; return new Set(w.slice(2).map((x, i) => `${w[i]} ${w[i + 1]} ${x}`)); };
@@ -111,7 +111,7 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { c
   const searchTerms = [...new Set([...own, ...terms(opts.context ?? '', opts.language)])].slice(0, 24);
   const current = and(eq(knowledgeChunks.workspaceId, workspaceId), eq(knowledgeChunks.courseId, opts.courseId),
     sql`${knowledgeChunks.versionId} in (select m.current_version_id from ${materials} m where m.workspace_id = ${workspaceId} and m.course_id = ${opts.courseId} and not m.archived)`);
-  const columns = { id: knowledgeChunks.id, materialId: knowledgeChunks.materialId, versionId: knowledgeChunks.versionId, blockIds: knowledgeChunks.blockIds, heading: knowledgeChunks.heading, text: knowledgeChunks.text, sectionBlockId: knowledgeChunks.sectionBlockId, ordinal: knowledgeChunks.ordinal, kind: knowledgeChunks.kind };
+  const columns = { id: knowledgeChunks.id, materialId: knowledgeChunks.materialId, versionId: knowledgeChunks.versionId, blockIds: knowledgeChunks.blockIds, heading: knowledgeChunks.heading, text: knowledgeChunks.text, sectionId: knowledgeChunks.sectionId, ordinal: knowledgeChunks.ordinal, kind: knowledgeChunks.kind };
   const config = searchConfig(opts.language);
   const q = searchTerms.length ? searchTerms.join(' | ') : null;
   const rank = q ? sql<number>`ts_rank_cd(${knowledgeChunks.search}, to_tsquery(${config}::regconfig, ${q}), 32)` : sql<number>`0`;
@@ -123,7 +123,7 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { c
     opts.focus ? focusPassage(db, workspaceId, opts.focus) : Promise.resolve(null),
     q ? db.select({ ...columns, rank }).from(knowledgeChunks).where(and(current, sql`${knowledgeChunks.search} @@ to_tsquery(${config}::regconfig, ${q})`)).orderBy(sql`${rank} desc`).limit(16) : Promise.resolve([]),
     db.execute(sql`select m.title from ${materials} m join ${materialVersions} v on v.id = m.current_version_id left join ${ingestJobs} j on j.version_id = v.id
-      where m.workspace_id = ${workspaceId} and m.course_id = ${opts.courseId} and not m.archived and v.status in ('ready', 'partial') and coalesce(j.readiness, 'pending') = 'pending' limit 5`),
+      where m.workspace_id = ${workspaceId} and m.course_id = ${opts.courseId} and not m.archived and v.status in ('ready', 'partial') and coalesce(j.readiness, 'readable') = 'readable' limit 5`),
   ]);
   // Search by meaning only when the best text matches leave the question's terms uncovered.
   // A query embedding costs little but takes one to five seconds, all before the first token.
@@ -153,7 +153,7 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { c
   vectorRows.filter(r => r.distance < FAR).forEach((r, i) => add(r, 1 / (RRF + i)));
   // Topic links raise passages already found. They never add one by themselves.
   if (opts.topicId && fused.size) {
-    const linked = await db.select({ id: knowledgeChunks.id }).from(knowledgeChunks).innerJoin(sectionLinks, and(eq(sectionLinks.versionId, knowledgeChunks.versionId), sql`${sectionLinks.headingBlockId} is not distinct from ${knowledgeChunks.sectionBlockId}`))
+    const linked = await db.select({ id: knowledgeChunks.id }).from(knowledgeChunks).innerJoin(sections, eq(sections.id, knowledgeChunks.sectionId)).innerJoin(sectionLinks, and(eq(sectionLinks.versionId, knowledgeChunks.versionId), sql`${sectionLinks.headingBlockId} is not distinct from ${sections.headingBlockId}`))
       .where(and(inArray(knowledgeChunks.id, [...fused.keys()]), eq(sectionLinks.topicId, opts.topicId), eq(sectionLinks.removed, false)));
     for (const { id } of linked) fused.get(id)!.score *= 1.25;
     if (linked.length) via.push('topic');
@@ -170,7 +170,7 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { c
     // An earlier version is never a reason to leave out the current text.
     if (focus && !focus.earlier && overlap(row.text, focus.text) > 0.6) continue;
     if (chosen.some(c => overlap(c.text, row.text) > 0.6)) continue;
-    const key = `${row.versionId}:${row.sectionBlockId}`;
+    const key = row.sectionId;
     if ((perSection.get(key) ?? 0) >= 2) continue;
     chosen.push(row); used += row.text.length; perSection.set(key, (perSection.get(key) ?? 0) + 1);
   }
@@ -190,15 +190,14 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: { c
     : bare || share >= 0.75 || (close && share >= 0.5) ? 'sufficient'
     : share >= 0.4 ? 'partial' : 'absent';
 
-  const versionIds = [...new Set(chosen.map(p => p.versionId))];
   const [titles, summaries] = await Promise.all([
     db.select({ id: materials.id, title: materials.title }).from(materials).where(inArray(materials.id, [...new Set([...chosen.map(p => p.materialId), ...(focus ? [focus.materialId] : [])])])),
-    versionIds.length ? db.select({ versionId: knowledgeSections.versionId, sectionBlockId: knowledgeSections.sectionBlockId, summary: knowledgeSections.summary }).from(knowledgeSections).where(inArray(knowledgeSections.versionId, versionIds)) : Promise.resolve([]),
+    chosen.length ? db.select({ id: sections.id, summary: sections.summary }).from(sections).where(inArray(sections.id, [...new Set(chosen.map(c => c.sectionId))])) : Promise.resolve([]),
   ]);
   const title = (id: string) => titles.find(t => t.id === id)?.title ?? '';
   const passages: Passage[] = [
     ...(focus ? [{ id: '', materialId: focus.materialId, versionId: focus.versionId, blockIds: focus.blockIds, materialTitle: title(focus.materialId), heading: focus.heading, text: focus.text, sectionSummary: null, kind: 'text' as const, focus: true, earlier: focus.earlier }] : []),
-    ...chosen.map(r => ({ id: '', materialId: r.materialId, versionId: r.versionId, blockIds: r.blockIds, materialTitle: title(r.materialId), heading: r.heading, text: r.text, kind: r.kind, sectionSummary: summaries.find(s => s.versionId === r.versionId && s.sectionBlockId === r.sectionBlockId)?.summary ?? null })),
+    ...chosen.map(r => ({ id: '', materialId: r.materialId, versionId: r.versionId, blockIds: r.blockIds, materialTitle: title(r.materialId), heading: r.heading, text: r.text, kind: r.kind, sectionSummary: summaries.find(s => s.id === r.sectionId)?.summary ?? null })),
   ].map((p, i) => ({ ...p, id: `p${i + 1}` }));
   // The session's own passage is always shown, but only fresh evidence counts as support.
   return { passages, verdict: verdict === 'absent' && !passages.some(p => !p.focus) ? 'absent' : verdict, missing, pending: (pendingRows.rows as { title: string }[]).map(r => r.title), via };

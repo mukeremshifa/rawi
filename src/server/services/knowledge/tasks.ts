@@ -3,38 +3,46 @@ import type { Task } from '../../ai/engine';
 import type { Language } from '../../ai/types';
 import { DATA_RULE, escapeTags, house, parsed, schemaOf } from '../../ai/style';
 
-export const KNOWLEDGE_PROMPT_VERSION = 'knowledge-v1';
+export const KNOWLEDGE_PROMPT_VERSION = 'knowledge-v2';
 
 export interface DigestInput {
   language: Language;
   materialTitle: string;
   sections: { key: string; heading: string; blocks: { key: string; text: string }[] }[];
 }
+const factSchema = z.object({
+  kind: z.enum(['fact', 'definition', 'number', 'steps', 'formula']),
+  subject: z.string().describe('definition: the term. number: what is measured. steps: the process. formula: what it computes. fact: what the claim is about, in a few words'),
+  text: z.string().describe('The claim, definition, formula or summary of the steps, readable on its own'),
+  value: z.number().nullable().describe('number only: the value exactly as the text gives it, otherwise null'),
+  unit: z.string().nullable().describe('number only: the unit, otherwise null'),
+  items: z.array(z.string()).nullable().describe('steps only: each step in the order the text gives, otherwise null'),
+  blocks: z.array(z.string()).describe('Keys of the blocks that state it'),
+});
 const digestSchema = z.object({
   sections: z.array(z.object({
     key: z.string(),
     summary: z.string().describe('One or two sentences on what the section teaches, written only from its blocks'),
     keyTerms: z.array(z.string()).describe('Up to six terms the section defines or relies on'),
-    facts: z.array(z.object({
-      text: z.string().describe('One self-contained claim the section states, readable without the section'),
-      blocks: z.array(z.string()).describe('Keys of the blocks that state it'),
-    })).describe('Up to eight claims worth testing a student on'),
+    facts: z.array(factSchema).describe('Up to ten facts worth testing a student on'),
   })),
 });
 export type Digest = z.infer<typeof digestSchema>;
 
 /**
- * Summaries, key terms and atomic facts for several sections in one call, which spreads the
- * instructions over more material. Background work, so it runs on flex.
+ * Summaries, key terms and typed facts for several sections in one call, which spreads the
+ * instructions over more material. The main expensive step of reading a material, so it runs on
+ * the background lane and its results are kept per section text and reused.
  */
 export const digestTask: Task<DigestInput, Digest> = {
   name: 'knowledge.digest', promptVersion: KNOWLEDGE_PROMPT_VERSION, temperature: 0,
-  needs: { skill: 'extract', data: 'institution', lane: 'background', maxOutput: 6000, cache: 'none', attempts: 3 }, language: i => i.language,
+  needs: { skill: 'extract', data: 'institution', lane: 'background', maxOutput: 7000, cache: 'none', attempts: 3 }, language: i => i.language,
   build: i => ({
     system: [
       'You read sections of a university course material and record what each one teaches.',
-      'For every section: a summary of one or two sentences, up to six key terms, and up to eight facts.',
-      'A fact is one claim the section states, written so it makes sense on its own. Cite the keys of the blocks that state it. Use only keys from that section. Leave out anything you cannot tie to a block.',
+      'For every section: a summary of one or two sentences, up to six key terms, and up to ten facts.',
+      'Each fact has a kind. definition: a term and what the section says it means. number: a quantity the section states, with its value and unit exactly as written. steps: a process the section gives in order, with each step. formula: an equation, written as the section writes it, and what it computes. fact: any other single claim.',
+      'Write each fact so it makes sense on its own. Cite the keys of the blocks that state it. Use only keys from that section. Leave out anything you cannot tie to a block.',
       'Do not add knowledge from outside the material. Return every section key you were given, in order.',
       DATA_RULE, house(i.language),
     ].join('\n'),
@@ -43,7 +51,7 @@ export const digestTask: Task<DigestInput, Digest> = {
   }),
   check: (r, i) => {
     const value = parsed(digestSchema, r.json);
-    // Every section must come back. A partial digest escalates rather than leaving gaps.
+    // Every section must come back. A partial digest moves to the next route rather than leaving gaps.
     return value && i.sections.every(s => value.sections.some(o => o.key === s.key)) ? value : null;
   },
 };

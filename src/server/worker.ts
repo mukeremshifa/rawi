@@ -6,7 +6,7 @@ import { reconcileExams } from './services/learning';
 import { reconcile } from './services/uploads';
 import { sweepConversions, sweepOrphanAssets } from './services/conversion';
 import { sweepOutlineJobs } from './services/outline/jobs';
-import { backfillIngest, sweepIngest } from './services/knowledge/ingest';
+import { sweepIngest } from './services/knowledge/ingest';
 import { recoverReplies } from './services/ai/tutor';
 import { expireOpenCalls } from './ai/meter';
 import type { BackendBindings } from './config';
@@ -21,7 +21,7 @@ export default {
   async scheduled(_controller: ScheduledController, env: BackendBindings) {
     if (!env.DATABASE_URL) return;
     const connection = socketDb(env.DATABASE_URL);
-    try { await reconcileExams(connection.db); console.log(JSON.stringify({ operation: 'material-maintenance', ...await reconcile(connection.db, env), ...await sweepConversions(connection.db, env), ...await sweepOutlineJobs(connection.db, env), abandonedCalls: await expireOpenCalls(connection.db), recoveredReplies: await recoverReplies(connection.db, null), backfilled: await backfillIngest(connection.db), ...await sweepIngest(connection.db, env), ...await sweepOrphanAssets(connection.db, env) })); }
+    try { await reconcileExams(connection.db); console.log(JSON.stringify({ operation: 'material-maintenance', ...await reconcile(connection.db, env), ...await sweepConversions(connection.db, env), ...await sweepOutlineJobs(connection.db, env), abandonedCalls: await expireOpenCalls(connection.db), recoveredReplies: await recoverReplies(connection.db, null), ...await sweepIngest(connection.db, env), ...await sweepOrphanAssets(connection.db, env) })); }
     catch { throw new Error('Material maintenance failed. Retry after checking database and storage availability.'); }
     finally { await connection.close(); }
   },

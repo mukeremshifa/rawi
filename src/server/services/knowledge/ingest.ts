@@ -1,26 +1,28 @@
-import { and, asc, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
-import { blocks, figureDescriptions, ingestJobs, knowledgeChunks, knowledgeFacts, knowledgeSections, materials, materialVersions, fileObjects } from '../../db/schema';
+import { and, asc, eq, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { blocks, facts, figureDescriptions, fileObjects, ingestJobs, knowledgeChunks, materials, materialVersions, sections } from '../../db/schema';
 import { socketDb, transaction, type ReadDb, type SocketDb, type Transaction } from '../../db/client';
 import type { BackendBindings } from '../../config';
 import { ApiError } from '../../errors';
-import { AiFailed, embed, run, type CallContext } from '../../ai/engine';
+import { AiFailed, embed, funding, run, type CallContext } from '../../ai/engine';
 import { PREFERENCE } from '../../ai/catalog';
 import type { Language } from '../../ai/types';
 import { blockMarkdown, spansText } from '../../../shared/domain/document-text';
 import { versionBlocks, type SectionBlock } from '../outline/sections';
 import { detectLanguage, searchConfig } from './language';
-import { digestTask, figureTask, type DigestInput } from './tasks';
+import { checkFact, leafSections, mergeFacts, ruleFacts, type FactDraft, type LeafSection } from './structure';
+import { digestTask, figureTask, KNOWLEDGE_PROMPT_VERSION, type DigestInput } from './tasks';
 import type { KnowledgeCoverage } from './types';
+import { afterIngest } from './course';
 
 /**
- * Each ready version is read once into a knowledge layer: chunks for search with embeddings,
- * section summaries and key terms, atomic facts and figure descriptions, all citing blocks of
- * that version. The job runs in stages under a lease, keeps a cursor so a large version spans
- * several steps, and is superseded when a newer version of the material arrives.
+ * Each ready version is read once into a knowledge layer: sections with stable keys, chunks for
+ * search with embeddings, section summaries and key terms, typed facts and figure descriptions,
+ * all citing blocks of that version. The job runs in stages under a lease, keeps a cursor so a
+ * large version spans several steps, and is superseded when a newer version arrives.
  *
- * Readiness is explicit. A version is searchable once every block is in a chunk, and enriched
- * once embeddings, the digest and figure descriptions are complete too. Whatever is missing is
- * counted in `coverage`, and a repair stage comes back for embeddings that failed.
+ * Tokens are spent once per section text. A section whose text matches one already read, in this
+ * workspace and under the same digest prompt, takes its summary and facts from it, so replacing a
+ * material pays only for what changed.
  */
 type Job = typeof ingestJobs.$inferSelect;
 type Scope = { workspaceId: string; courseId: string };
@@ -32,9 +34,9 @@ const CHUNK_CHARS = 1200;
 const PART_CHARS = 1500;
 /** Repair passes for missing embeddings before the version settles as searchable only. */
 const MAX_REPAIRS = 3;
-/** Bump when chunking changes. With the embedding model it names the index a version was built with. */
-const CHUNKER = 'chunk-v2';
-export const indexVersion = () => `${CHUNKER}:${CHUNK_CHARS}:${PART_CHARS}:${PREFERENCE.embed[0] ?? 'none'}`;
+/** Bump when sections or chunking change. With the embedding model and digest prompt it names the index. */
+const STRUCTURE = 'structure-v1';
+export const indexVersion = () => `${STRUCTURE}:${CHUNK_CHARS}:${PART_CHARS}:${PREFERENCE.embed[0] ?? 'none'}:${KNOWLEDGE_PROMPT_VERSION}`;
 
 const due = (now: Date) => and(or(eq(ingestJobs.state, 'queued'), and(eq(ingestJobs.state, 'running'), lte(ingestJobs.leaseExpiresAt, now))), or(isNull(ingestJobs.nextRunAt), lte(ingestJobs.nextRunAt, now)));
 
@@ -45,23 +47,13 @@ export async function enqueueIngest(tx: Transaction, version: Scope & { material
   await tx.insert(ingestJobs).values({ id: crypto.randomUUID(), workspaceId: version.workspaceId, courseId: version.courseId, materialId: version.materialId, versionId: version.id }).onConflictDoNothing();
 }
 
-/** Current readable versions with no ingest job, such as those ready before the knowledge layer. */
-const unread = (scope?: Scope) => sql`select v.workspace_id, v.course_id, v.material_id, v.id from ${materials} m join ${materialVersions} v on v.id = m.current_version_id
-  where v.status in ('ready', 'partial') and not m.archived and not exists (select 1 from ${ingestJobs} j where j.version_id = v.id)
-  ${scope ? sql`and m.workspace_id = ${scope.workspaceId} and m.course_id = ${scope.courseId}` : sql``}`;
-
-export async function backfillIngest(db: SocketDb, scope?: Scope) {
-  const rows = await db.execute(sql`insert into ${ingestJobs} (id, workspace_id, course_id, material_id, version_id) select gen_random_uuid(), * from (${unread(scope)} limit 50) u on conflict do nothing returning id`);
-  return rows.rows.length;
-}
-
 /**
- * Current versions built with an older index configuration go back through chunking, a few at a
- * time, so a change to chunking or the embedding model rebuilds every version under control.
- * Search keeps serving the old chunks until the new ones replace them in one transaction.
+ * Current versions built with an older index configuration go back through the stages, a few at
+ * a time. Search keeps serving the old chunks until the new ones replace them in one transaction,
+ * and unchanged sections keep their digests and facts.
  */
 export async function rebuildStale(db: SocketDb, limit = 5) {
-  const rows = await db.execute(sql`update ${ingestJobs} set state = 'queued', stage = 'chunk', progress = '{"cursor":0}'::jsonb, attempts = 0, next_run_at = null, updated_at = now()
+  const rows = await db.execute(sql`update ${ingestJobs} set state = 'queued', stage = 'structure', progress = '{"cursor":0}'::jsonb, attempts = 0, next_run_at = null, updated_at = now()
     where id in (select j.id from ${ingestJobs} j join ${materials} m on m.current_version_id = j.version_id
       where j.state = 'done' and j.index_version <> ${indexVersion()} and not m.archived order by j.updated_at limit ${limit}) returning id`);
   return rows.rows.length;
@@ -70,8 +62,7 @@ export async function rebuildStale(db: SocketDb, limit = 5) {
 /** Whether a course has knowledge work to start, so a page read can hand it to `waitUntil`. */
 export async function ingestPending(db: ReadDb | SocketDb, scope: Scope) {
   const [row] = await db.select({ id: ingestJobs.id }).from(ingestJobs).where(and(eq(ingestJobs.workspaceId, scope.workspaceId), eq(ingestJobs.courseId, scope.courseId), due(new Date()))).limit(1);
-  if (row) return true;
-  return (await db.execute(sql`${unread(scope)} limit 1`)).rows.length > 0;
+  return !!row;
 }
 
 /** Advance a course's ingest jobs for up to about twenty seconds. Safe to call from `waitUntil`. */
@@ -80,7 +71,6 @@ export async function runIngest(env: BackendBindings, scope: Scope) {
   const connection = socketDb(env.DATABASE_URL);
   const deadline = Date.now() + 20_000;
   try {
-    await backfillIngest(connection.db, scope);
     while (Date.now() < deadline) {
       const [next] = await connection.db.select({ id: ingestJobs.id }).from(ingestJobs).where(and(eq(ingestJobs.workspaceId, scope.workspaceId), eq(ingestJobs.courseId, scope.courseId), due(new Date()))).orderBy(asc(ingestJobs.createdAt)).limit(1);
       if (!next || !await step(connection.db, env, next.id, deadline)) break;
@@ -91,7 +81,7 @@ export async function runIngest(env: BackendBindings, scope: Scope) {
 
 /** The cron safety net. */
 export async function sweepIngest(db: SocketDb, env: BackendBindings, limit = 5) {
-    const rebuilt = await rebuildStale(db);
+  const rebuilt = await rebuildStale(db);
   const rows = await db.select({ id: ingestJobs.id }).from(ingestJobs).where(due(new Date())).orderBy(asc(ingestJobs.createdAt)).limit(limit);
   let ran = 0;
   for (const row of rows) { try { if (await step(db, env, row.id, Date.now() + 60_000)) ran++; } catch { /* The next sweep retries. */ } }
@@ -109,7 +99,7 @@ async function claim(db: SocketDb, jobId: string) {
     }
     if (row.attempts >= MAX_FAILURES) {
       // Whatever was built stays in use. Readiness and coverage say how far it got.
-      await tx.update(ingestJobs).set({ state: 'failed', failure: 'Reading this material for the tutor stopped after several attempts.', updatedAt: new Date() }).where(eq(ingestJobs.id, jobId));
+      await tx.update(ingestJobs).set({ state: 'failed', failure: 'Reading this material stopped after several attempts.', updatedAt: new Date() }).where(eq(ingestJobs.id, jobId));
       return null;
     }
     const token = crypto.randomUUID();
@@ -140,7 +130,10 @@ async function step(db: SocketDb, env: BackendBindings, jobId: string, deadline:
       if (next.nextRunAt) break;
     }
     await save(db, job, token, job.stage === 'done' ? { state: 'done', leaseToken: null, leaseExpiresAt: null, failure: null } : { state: 'queued', leaseToken: null, leaseExpiresAt: null, nextRunAt: job.nextRunAt });
-    if (job.stage === 'done') console.log(JSON.stringify({ operation: 'ingest-done', jobId: job.id, versionId: job.versionId, readiness: job.readiness, coverage: job.coverage }));
+    if (job.stage === 'done') {
+      console.log(JSON.stringify({ operation: 'ingest-done', jobId: job.id, versionId: job.versionId, readiness: job.readiness, coverage: job.coverage }));
+      await afterIngest(db, { workspaceId: job.workspaceId, courseId: job.courseId });
+    }
   } catch (error) {
     const code = error instanceof ApiError ? error.code : 'unexpected';
     if (code === 'lease_lost') return true;
@@ -192,29 +185,27 @@ export function blockParts(block: SectionBlock): string[] {
 }
 
 /**
- * Chunks follow sections: a heading starts a new chunk, and consecutive blocks share one up to
- * CHUNK_CHARS. An equation stays with the text before and after it, which says what it means.
+ * Chunks within one section: consecutive blocks share one up to CHUNK_CHARS. An equation stays
+ * with the text before and after it, which says what it means.
  */
-export function chunkBlocks(list: SectionBlock[]) {
-  type Chunk = { sectionBlockId: string | null; heading: string; blockIds: string[]; text: string; uncertain: boolean };
-  const out: Chunk[] = [];
-  let heading = '', sectionBlockId: string | null = null, afterEquation = false;
-  let current: { ids: string[]; parts: string[]; size: number; uncertain: boolean } = { ids: [], parts: [], size: 0, uncertain: false };
-  const flush = () => { if (current.ids.length) out.push({ sectionBlockId, heading, blockIds: current.ids, text: current.parts.join('\n\n'), uncertain: current.uncertain }); current = { ids: [], parts: [], size: 0, uncertain: false }; };
-  for (const block of list) {
-    if (block.type === 'heading') { flush(); heading = spansText(block.content.spans).trim().slice(0, 300); sectionBlockId = block.id; afterEquation = false; continue; }
-    const parts = blockParts(block);
+export function chunkSection(section: LeafSection, byId: Map<string, SectionBlock>) {
+  const out: { blockIds: string[]; text: string; uncertain: boolean }[] = [];
+  let current = { ids: [] as string[], parts: [] as string[], size: 0, uncertain: false }, afterEquation = false;
+  const flush = () => { if (current.ids.length) out.push({ blockIds: current.ids, text: current.parts.join('\n\n'), uncertain: current.uncertain }); current = { ids: [], parts: [], size: 0, uncertain: false }; };
+  for (const id of section.blockIds) {
+    const block = byId.get(id);
+    if (!block) continue;
+    const parts = blockParts(block), uncertain = !!block.flags?.uncertain;
     if (!parts.length) continue;
-    const uncertain = !!block.flags?.uncertain;
     if (parts.length > 1) {
       flush();
-      for (const part of parts) out.push({ sectionBlockId, heading, blockIds: [block.id], text: part, uncertain });
+      for (const part of parts) out.push({ blockIds: [id], text: part, uncertain });
       afterEquation = false;
       continue;
     }
     const text = parts[0]!;
     if (current.size && current.size + text.length > CHUNK_CHARS && block.type !== 'equation' && !afterEquation) flush();
-    current.ids.push(block.id); current.parts.push(text); current.size += text.length; current.uncertain ||= uncertain;
+    current.ids.push(id); current.parts.push(text); current.size += text.length; current.uncertain ||= uncertain;
     afterEquation = block.type === 'equation';
   }
   flush();
@@ -225,41 +216,89 @@ export function chunkBlocks(list: SectionBlock[]) {
 
 type Stage = (db: SocketDb, env: BackendBindings, ctx: CallContext, job: Job) => Promise<Partial<Job>>;
 const vectorText = (v: number[]) => `[${v.join(',')}]`;
+async function sha(text: string) {
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+type SectionRow = typeof sections.$inferSelect;
+type FactRow = typeof facts.$inferInsert;
 
-const chunk: Stage = async (db, _env, _ctx, job) => {
+/**
+ * Structure, by code: sections, chunks and rule facts. A section whose text is unchanged keeps
+ * its row, digest and facts. A new section whose text matches one already read elsewhere in the
+ * workspace copies its digest and facts, with block ids mapped across in order.
+ */
+const structure: Stage = async (db, _env, _ctx, job) => {
   const [list, [version]] = await Promise.all([
     versionBlocks(db, job.workspaceId, job.versionId),
     db.select({ warnings: materialVersions.warnings }).from(materialVersions).where(eq(materialVersions.id, job.versionId)),
   ]);
-  const chunks = chunkBlocks(list);
-  const language = detectLanguage(chunks.map(c => c.text).join(' ').slice(0, 20000));
+  const byId = new Map(list.map(b => [b.id, b]));
+  const leaves = leafSections(list);
+  const language = detectLanguage(leaves.map(s => s.text).join(' ').slice(0, 20000));
   const config = searchConfig(language);
+  const hashes = await Promise.all(leaves.map(s => sha(`${KNOWLEDGE_PROMPT_VERSION}\n${s.blockIds.map(id => blockMarkdown(byId.get(id)!).trim()).join('\n\n')}`)));
+  const scope = { workspaceId: job.workspaceId, courseId: job.courseId, materialId: job.materialId, versionId: job.versionId };
+  let reused = 0;
   await transaction(db, async tx => {
-    // A rebuild keeps the embedding of any chunk whose text and model are unchanged.
-    const prior = await tx.select({ text: knowledgeChunks.text, model: knowledgeChunks.embeddingModel, embedding: sql<string | null>`${knowledgeChunks.embedding}::text` }).from(knowledgeChunks).where(eq(knowledgeChunks.versionId, job.versionId));
-    const reuse = new Map(prior.filter(p => p.embedding && p.model).map(p => [p.text, p]));
+    const prior = await tx.select().from(sections).where(eq(sections.versionId, job.versionId));
+    const priorChunks = await tx.select({ text: knowledgeChunks.text, model: knowledgeChunks.embeddingModel, embedding: sql<string | null>`${knowledgeChunks.embedding}::text` }).from(knowledgeChunks).where(eq(knowledgeChunks.versionId, job.versionId));
+    const reuseEmbedding = new Map(priorChunks.filter(p => p.embedding && p.model).map(p => [p.text, p]));
+    // Digested sections elsewhere in the workspace with the same text, to copy from.
+    const donors = hashes.length ? await tx.select().from(sections).where(and(eq(sections.workspaceId, job.workspaceId), inArray(sections.contentHash, hashes), ne(sections.versionId, job.versionId), sql`${sections.digestedBy} is not null and ${sections.digestedBy} not like 'failed%'`)) : [];
+    const donorFacts = donors.length ? await tx.select().from(facts).where(inArray(facts.sectionId, donors.map(d => d.id))) : [];
     await tx.delete(knowledgeChunks).where(eq(knowledgeChunks.versionId, job.versionId));
-    await tx.update(materialVersions).set({ language }).where(eq(materialVersions.id, job.versionId));
-    for (let i = 0; i < chunks.length; i += 100) {
-      await tx.insert(knowledgeChunks).values(chunks.slice(i, i + 100).map((c, n) => {
-        const kept = reuse.get(c.text);
+    // Sections that changed are removed. Their facts go with them.
+    const kept = new Map(prior.filter(p => leaves.some((s, i) => s.key === p.key && hashes[i] === p.contentHash)).map(p => [p.key, p]));
+    const drop = prior.filter(p => !kept.has(p.key)).map(p => p.id);
+    if (drop.length) await tx.delete(sections).where(inArray(sections.id, drop));
+    // Free ordinals before rewriting them, since the unique constraint is checked per statement.
+    if (kept.size) await tx.update(sections).set({ ordinal: sql`-1 - ${sections.ordinal}` }).where(inArray(sections.id, [...kept.values()].map(k => k.id)));
+    let chunkOrdinal = 0;
+    for (const [i, s] of leaves.entries()) {
+      const hash = hashes[i]!;
+      const existing = kept.get(s.key);
+      let id = existing?.id;
+      if (existing) {
+        await tx.update(sections).set({ ordinal: s.ordinal, headingBlockId: s.headingBlockId, heading: s.heading, path: s.path, level: s.level, blockIds: s.blockIds, tokens: s.tokens, language }).where(eq(sections.id, existing.id));
+      } else {
+        id = crypto.randomUUID();
+        const donor = donors.find(d => d.contentHash === hash && d.blockIds.length === s.blockIds.length);
+        await tx.insert(sections).values({ id, ...scope, ordinal: s.ordinal, key: s.key, headingBlockId: s.headingBlockId, heading: s.heading, path: s.path, level: s.level, blockIds: s.blockIds, tokens: s.tokens, contentHash: hash, language,
+          ...(donor ? { summary: donor.summary, keyTerms: donor.keyTerms, digestedBy: donor.digestedBy } : {}) });
+        const mapped: FactRow[] = [];
+        if (donor) {
+          reused++;
+          const across = new Map(donor.blockIds.map((b, n) => [b, s.blockIds[n]!]));
+          for (const f of donorFacts.filter(f => f.sectionId === donor.id)) mapped.push({ ...f, id: crypto.randomUUID(), ...scope, sectionId: id, blockIds: f.blockIds.map(b => across.get(b)!).filter(Boolean), position: byId.get(across.get(f.blockIds[0]!) ?? '')?.ordinal ?? f.position });
+        } else {
+          for (const f of ruleFacts(s, byId)) mapped.push(factRow(f, scope, id, byId, language));
+        }
+        if (mapped.length) await tx.insert(facts).values(mapped);
+      }
+      const chunks = chunkSection(s, byId);
+      if (chunks.length) await tx.insert(knowledgeChunks).values(chunks.map(c => {
+        const keep = reuseEmbedding.get(c.text);
         return {
-          id: crypto.randomUUID(), workspaceId: job.workspaceId, courseId: job.courseId, materialId: job.materialId, versionId: job.versionId,
-          ordinal: i + n, sectionBlockId: c.sectionBlockId, heading: c.heading, blockIds: c.blockIds, text: c.text, language, tokens: Math.ceil(c.text.length / 4), uncertain: c.uncertain,
-          search: sql`to_tsvector(${config}::regconfig, ${`${c.heading}\n${c.text}`})` as unknown as string,
-          ...(kept ? { embedding: sql`${kept.embedding}::vector` as unknown as number[], embeddingModel: kept.model } : {}),
+          id: crypto.randomUUID(), ...scope, ordinal: chunkOrdinal++, sectionId: id!, heading: s.heading, blockIds: c.blockIds, text: c.text, language, tokens: Math.ceil(c.text.length / 4), uncertain: c.uncertain,
+          search: sql`to_tsvector(${config}::regconfig, ${`${s.path.join(' ')}\n${c.text}`})` as unknown as string,
+          ...(keep ? { embedding: sql`${keep.embedding}::vector` as unknown as number[], embeddingModel: keep.model } : {}),
         };
       }));
     }
+    await tx.update(materialVersions).set({ language }).where(eq(materialVersions.id, job.versionId));
   });
   const textBlocks = list.filter(b => b.type !== 'heading' && blockMarkdown(b).trim());
-  const chunked = new Set(chunks.flatMap(c => c.blockIds));
+  const inSection = new Set(leaves.flatMap(s => s.blockIds));
   const coverage: KnowledgeCoverage = {
-    blocks: textBlocks.length, chunked: textBlocks.filter(b => chunked.has(b.id)).length, chunks: chunks.length,
+    blocks: textBlocks.length, chunked: textBlocks.filter(b => inSection.has(b.id)).length, sections: leaves.length, reused,
     uncertainBlocks: textBlocks.filter(b => b.flags?.uncertain).length, warnings: [...new Set((version?.warnings ?? []).map(w => w.code))],
   };
   return { stage: 'embed', progress: { cursor: 0 }, readiness: 'searchable', coverage, indexVersion: indexVersion() };
 };
+
+function factRow(f: FactDraft, scope: { workspaceId: string; courseId: string; materialId: string; versionId: string }, sectionId: string, byId: Map<string, SectionBlock>, language: Language): FactRow {
+  return { id: crypto.randomUUID(), ...scope, sectionId, kind: f.kind, subject: f.subject, text: f.text, value: f.value, unit: f.unit, items: f.items, blockIds: f.blockIds, position: byId.get(f.blockIds[0]!)?.ordinal ?? 0, confidence: f.confidence, extractor: f.extractor, language };
+}
 
 /** Embeds chunks that have none, fifty at a time. Returns how many still have none. */
 async function embedMissing(db: SocketDb, env: BackendBindings, ctx: CallContext, job: Job, limit: number) {
@@ -276,48 +315,38 @@ async function embedMissing(db: SocketDb, env: BackendBindings, ctx: CallContext
   return { tried: rows.length, failed };
 }
 
+/** Whether any AI service can serve this workspace's background work. Without one, code builds the layer alone. */
+async function canUseAi(env: BackendBindings, ctx: CallContext) {
+  return Object.keys((await funding(env, ctx)).adapters).length > 0;
+}
+
 const embedStage: Stage = async (db, env, ctx, job) => {
+  if (!await canUseAi(env, ctx)) return { stage: 'repair', progress: { cursor: MAX_REPAIRS }, coverage: { ...job.coverage, rulesOnly: true } };
   // Failures are left for the repair stage, which counts them, rather than skipped for good.
   const done = job.progress.cursor;
-  const { tried, failed } = await embedMissing(db, env, ctx, { ...job }, 100);
+  const { tried, failed } = await embedMissing(db, env, ctx, job, 100);
   if (!tried || failed || done + tried > 2000) return { stage: 'digest', progress: { cursor: 0 } };
   return { progress: { cursor: done + tried } };
 };
 
-/** Sections in reading order, merged from text chunks, for the digest. */
-async function chunkSections(db: SocketDb, versionId: string) {
-  const rows = await db.select({ sectionBlockId: knowledgeChunks.sectionBlockId, heading: knowledgeChunks.heading, blockIds: knowledgeChunks.blockIds, language: knowledgeChunks.language }).from(knowledgeChunks)
-    .where(and(eq(knowledgeChunks.versionId, versionId), eq(knowledgeChunks.kind, 'text'))).orderBy(asc(knowledgeChunks.ordinal));
-  const out: { sectionBlockId: string | null; heading: string; blockIds: string[]; language: Language }[] = [];
-  for (const r of rows) {
-    const last = out.at(-1);
-    if (last && last.sectionBlockId === r.sectionBlockId) { for (const id of r.blockIds) if (!last.blockIds.includes(id)) last.blockIds.push(id); }
-    else out.push({ ...r, blockIds: [...r.blockIds] });
-  }
-  return out;
-}
-
 /** Characters of one block given to the digest. Search sees every character, this bounds one call. */
 const DIGEST_BLOCK_CHARS = 8000;
 
+/**
+ * Digests sections still unread, several per call up to about 8,000 characters. Facts the model
+ * returns are kept only when their cited text bears them out, then merged with the rule facts.
+ */
 const digest: Stage = async (db, env, ctx, job) => {
-  const all = await chunkSections(db, job.versionId);
-  const start = job.progress.cursor;
-  if (start >= all.length) return { stage: 'figures', progress: { cursor: 0 } };
-  // A rebuild keeps sections already digested, so only new or changed sections are paid for.
-  const existing = new Set((await db.select({ id: knowledgeSections.sectionBlockId, blockIds: knowledgeSections.blockIds }).from(knowledgeSections).where(eq(knowledgeSections.versionId, job.versionId))).map(r => `${r.id}:${r.blockIds.join(',')}`));
-  const todo = all.slice(start).findIndex(s => !existing.has(`${s.sectionBlockId}:${s.blockIds.join(',')}`));
-  if (todo < 0) return { stage: 'figures', progress: { cursor: 0 } };
-  const from = start + todo;
+  const todo = await db.select().from(sections).where(and(eq(sections.versionId, job.versionId), isNull(sections.digestedBy), gte(sections.ordinal, job.progress.cursor))).orderBy(asc(sections.ordinal)).limit(12);
+  if (!todo.length) return { stage: 'figures', progress: { cursor: 0 } };
   const list = await versionBlocks(db, job.workspaceId, job.versionId);
   const byId = new Map(list.map(b => [b.id, b]));
   const [material] = await db.select({ title: materials.title }).from(materials).where(eq(materials.id, job.materialId));
-  // Several sections per call, up to about 8000 characters of material.
-  const group: typeof all = [];
+  const text = (id: string) => { const b = byId.get(id); return b && b.type !== 'heading' ? blockMarkdown(b).trim().slice(0, DIGEST_BLOCK_CHARS) : ''; };
+  const group: SectionRow[] = [];
   let size = 0;
-  for (const s of all.slice(from)) {
-    if (existing.has(`${s.sectionBlockId}:${s.blockIds.join(',')}`)) break;
-    const chars = s.blockIds.reduce((n, id) => n + Math.min(DIGEST_BLOCK_CHARS, byId.get(id) ? blockMarkdown(byId.get(id)!).length : 0), 0);
+  for (const s of todo) {
+    const chars = s.blockIds.reduce((n, id) => n + text(id).length, 0);
     if (group.length && (size + chars > 8000 || group.length >= 6)) break;
     group.push(s); size += chars;
   }
@@ -325,29 +354,40 @@ const digest: Stage = async (db, env, ctx, job) => {
   let n = 0;
   const input: DigestInput = {
     language: group[0]!.language, materialTitle: material?.title ?? '',
-    sections: group.map((s, i) => ({ key: `s${i}`, heading: s.heading || material?.title || '', blocks: s.blockIds.flatMap(id => { const b = byId.get(id); const text = b && b.type !== 'heading' ? blockMarkdown(b).trim().slice(0, DIGEST_BLOCK_CHARS) : ''; if (!text) return []; const key = `b${n++}`; keys.set(key, id); return [{ key, text }]; }) })),
+    sections: group.map((s, i) => ({ key: `s${i}`, heading: s.path.join(' / ') || material?.title || '', blocks: s.blockIds.flatMap(id => { const t = text(id); if (!t) return []; const key = `b${n++}`; keys.set(key, id); return [{ key, text: t }]; }) })),
   };
+  const nextCursor = group.at(-1)!.ordinal + 1;
   let served;
   try { served = await run(env, ctx, digestTask, input); }
   catch (error) {
     // A digest that fails its checks or stops partway is not repeated here. The sections stay
-    // searchable, and coverage records that they have no summary.
-    if (error instanceof AiFailed && (error.code === 'ai_invalid' || error.code === 'ai_uncertain')) return { progress: { cursor: from + group.length } };
+    // searchable with their rule facts, and coverage records that they have no summary.
+    if (error instanceof AiFailed && (error.code === 'ai_invalid' || error.code === 'ai_uncertain')) {
+      await db.update(sections).set({ digestedBy: `failed:${error.code}` }).where(inArray(sections.id, group.map(s => s.id)));
+      return { progress: { cursor: nextCursor } };
+    }
     throw error;
   }
   const scope = { workspaceId: job.workspaceId, courseId: job.courseId, materialId: job.materialId, versionId: job.versionId };
+  const extractor = `model:${served.route.id}`;
   await transaction(db, async tx => {
+    const existing = await tx.select().from(facts).where(inArray(facts.sectionId, group.map(s => s.id)));
     for (const [i, s] of group.entries()) {
       const d = served.value.sections.find(o => o.key === `s${i}`)!;
-      await tx.insert(knowledgeSections).values({ id: crypto.randomUUID(), ...scope, sectionBlockId: s.sectionBlockId, heading: s.heading, summary: d.summary.trim().slice(0, 600), keyTerms: d.keyTerms.slice(0, 6).map(t => t.trim().slice(0, 80)).filter(Boolean), blockIds: s.blockIds, language: s.language, model: served.route.model })
-        .onConflictDoUpdate({ target: [knowledgeSections.versionId, knowledgeSections.sectionBlockId], set: { summary: d.summary.trim().slice(0, 600), blockIds: s.blockIds, model: served.route.model } });
-      await tx.delete(knowledgeFacts).where(and(eq(knowledgeFacts.versionId, job.versionId), s.sectionBlockId ? eq(knowledgeFacts.sectionBlockId, s.sectionBlockId) : isNull(knowledgeFacts.sectionBlockId)));
-      // A fact keeps only the block keys that belong to its own section.
-      const facts = d.facts.slice(0, 8).flatMap(f => { const ids = [...new Set(f.blocks.map(k => keys.get(k)).filter((id): id is string => !!id && s.blockIds.includes(id)))]; return ids.length && f.text.trim() ? [{ id: crypto.randomUUID(), ...scope, sectionBlockId: s.sectionBlockId, text: f.text.trim().slice(0, 500), blockIds: ids, language: s.language }] : []; });
-      if (facts.length) await tx.insert(knowledgeFacts).values(facts);
+      const model = d.facts.slice(0, 10).flatMap(f => {
+        const ids = [...new Set(f.blocks.map(k => keys.get(k)).filter((id): id is string => !!id && s.blockIds.includes(id)))];
+        if (!ids.length) return [];
+        const checked = checkFact({ kind: f.kind, subject: f.subject, text: f.text, value: f.value, unit: f.unit?.trim() || null, items: f.items, blockIds: ids }, ids.map(text).join('\n\n'), extractor);
+        return checked ? [checked] : [];
+      });
+      const rules = existing.filter(f => f.sectionId === s.id && f.extractor === 'rule').map(f => ({ ...f, value: f.value, unit: f.unit, items: f.items }));
+      const merged = mergeFacts(rules, model);
+      await tx.delete(facts).where(eq(facts.sectionId, s.id));
+      if (merged.length) await tx.insert(facts).values(merged.map(f => factRow(f, scope, s.id, byId, s.language)));
+      await tx.update(sections).set({ summary: d.summary.trim().slice(0, 600), keyTerms: d.keyTerms.slice(0, 6).map(t => t.trim().slice(0, 80)).filter(Boolean), digestedBy: served.route.id }).where(eq(sections.id, s.id));
     }
   });
-  return { progress: { cursor: from + group.length } };
+  return { progress: { cursor: nextCursor } };
 };
 
 /** A description shorter than this says too little to be worth searching. */
@@ -355,7 +395,7 @@ const USEFUL_DESCRIPTION = 40;
 
 /**
  * Describes one figure per step from its image. Once every figure has been tried, each useful
- * description becomes a search chunk of its own, labelled as a generated interpretation.
+ * description becomes a search chunk of its own in the figure's section, labelled as generated.
  */
 const figures: Stage = async (db, env, ctx, job) => {
   const list = await versionBlocks(db, job.workspaceId, job.versionId);
@@ -390,37 +430,40 @@ const figures: Stage = async (db, env, ctx, job) => {
     return {};
   }
   // Every figure tried. Useful descriptions without a chunk get one, in the figure's section.
-  const chunked = new Set((await db.select({ blockIds: knowledgeChunks.blockIds }).from(knowledgeChunks).where(and(eq(knowledgeChunks.versionId, job.versionId), eq(knowledgeChunks.kind, 'figure')))).flatMap(r => r.blockIds));
+  const [chunked, rows, [last]] = await Promise.all([
+    db.select({ blockIds: knowledgeChunks.blockIds }).from(knowledgeChunks).where(and(eq(knowledgeChunks.versionId, job.versionId), eq(knowledgeChunks.kind, 'figure'))),
+    db.select({ id: sections.id, heading: sections.heading, path: sections.path, blockIds: sections.blockIds }).from(sections).where(eq(sections.versionId, job.versionId)),
+    db.select({ ordinal: sql<number>`coalesce(max(${knowledgeChunks.ordinal}), -1)::int` }).from(knowledgeChunks).where(eq(knowledgeChunks.versionId, job.versionId)),
+  ]);
+  const has = new Set(chunked.flatMap(r => r.blockIds));
   const config = searchConfig(language);
-  const [last] = await db.select({ ordinal: sql<number>`coalesce(max(${knowledgeChunks.ordinal}), -1)::int` }).from(knowledgeChunks).where(eq(knowledgeChunks.versionId, job.versionId));
-  const headingOf = (id: string) => { let heading = '', section: string | null = null; for (const b of list) { if (b.id === id) break; if (b.type === 'heading') { heading = spansText(b.content.spans).trim().slice(0, 300); section = b.id; } } return { heading, section }; };
-  const fresh = described.filter(d => d.description.trim().length >= USEFUL_DESCRIPTION && !chunked.has(d.id) && list.some(b => b.id === d.id));
+  const fresh = described.filter(d => d.description.trim().length >= USEFUL_DESCRIPTION && !has.has(d.id) && rows.some(s => s.blockIds.includes(d.id)));
   if (fresh.length) await db.insert(knowledgeChunks).values(fresh.map((d, i) => {
     const b = list.find(x => x.id === d.id)!, caption = b.type === 'figure' ? spansText(b.content.caption).trim() : '';
+    const section = rows.find(s => s.blockIds.includes(d.id))!;
     const text = `Figure description, generated by Rawi from the image: ${caption ? `${caption}. ` : ''}${d.description.trim()}`;
-    const { heading, section } = headingOf(d.id);
-    return { id: crypto.randomUUID(), ...scope, ordinal: last!.ordinal + 1 + i, sectionBlockId: section, heading, blockIds: [d.id], text, language, tokens: Math.ceil(text.length / 4), kind: 'figure' as const, search: sql`to_tsvector(${config}::regconfig, ${`${heading}\n${text}`})` as unknown as string };
+    return { id: crypto.randomUUID(), ...scope, ordinal: last!.ordinal + 1 + i, sectionId: section.id, heading: section.heading, blockIds: [d.id], text, language, tokens: Math.ceil(text.length / 4), kind: 'figure' as const, search: sql`to_tsvector(${config}::regconfig, ${`${section.path.join(' ')}\n${text}`})` as unknown as string };
   }));
   return { stage: 'repair', progress: { cursor: 0 } };
 };
 
 /** What the layer holds now, against what the version needs. */
 async function measure(db: SocketDb, job: Job): Promise<KnowledgeCoverage> {
-  const [[chunks], sections, [digested], list, [figureRows]] = await Promise.all([
+  const [[chunks], [sectionCounts], [factCount], list, [figureRows]] = await Promise.all([
     db.select({ n: sql<number>`count(*)::int`, embedded: sql<number>`count(${knowledgeChunks.embedding})::int` }).from(knowledgeChunks).where(eq(knowledgeChunks.versionId, job.versionId)),
-    chunkSections(db, job.versionId),
-    db.select({ n: sql<number>`count(*)::int` }).from(knowledgeSections).where(eq(knowledgeSections.versionId, job.versionId)),
+    db.select({ n: sql<number>`count(*)::int`, digested: sql<number>`count(*) filter (where ${sections.digestedBy} is not null and ${sections.digestedBy} not like 'failed%')::int` }).from(sections).where(eq(sections.versionId, job.versionId)),
+    db.select({ n: sql<number>`count(*)::int` }).from(facts).where(eq(facts.versionId, job.versionId)),
     db.select({ id: blocks.id, untried: sql<boolean>`${blocks.content}->>'assetId' is not null and not exists (select 1 from ${figureDescriptions} f where f.block_id = ${blocks.id})` }).from(blocks).where(and(eq(blocks.versionId, job.versionId), eq(blocks.type, 'figure'))),
-    db.select({ tried: sql<number>`count(*)::int`, described: sql<number>`count(*) filter (where length(${figureDescriptions.description}) >= ${USEFUL_DESCRIPTION})::int` }).from(figureDescriptions).where(eq(figureDescriptions.versionId, job.versionId)),
+    db.select({ described: sql<number>`count(*) filter (where length(${figureDescriptions.description}) >= ${USEFUL_DESCRIPTION})::int` }).from(figureDescriptions).where(eq(figureDescriptions.versionId, job.versionId)),
   ]);
-  return { ...job.coverage, chunks: chunks!.n, embedded: chunks!.embedded, sections: sections.length, digested: digested!.n, figures: list.length, described: figureRows!.described, undescribed: list.filter(f => f.untried).length };
+  return { ...job.coverage, chunks: chunks!.n, embedded: chunks!.embedded, sections: sectionCounts!.n, digested: sectionCounts!.digested, facts: factCount!.n, figures: list.length, described: figureRows!.described, undescribed: list.filter(f => f.untried).length };
 }
 
 /** Comes back for embeddings that failed, a few times, then settles on what was built. */
 const repair: Stage = async (db, env, ctx, job) => {
   let coverage = await measure(db, job);
   const repairs = job.progress.cursor;
-  if (coverage.embedded! < coverage.chunks!) {
+  if (coverage.embedded! < coverage.chunks! && repairs < MAX_REPAIRS) {
     await embedMissing(db, env, ctx, job, 500);
     coverage = await measure(db, job);
   }
@@ -430,4 +473,4 @@ const repair: Stage = async (db, env, ctx, job) => {
   return { stage: 'done', coverage, readiness: enriched ? 'enriched' : 'searchable' };
 };
 
-const stages: Record<Exclude<Job['stage'], 'done'>, Stage> = { chunk, embed: embedStage, digest, figures, repair };
+const stages: Record<Exclude<Job['stage'], 'done'>, Stage> = { structure, embed: embedStage, digest, figures, repair };

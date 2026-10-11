@@ -1,8 +1,8 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, date, text, boolean, timestamp, uuid, integer, bigint, jsonb, unique, index, foreignKey, primaryKey, check, vector, customType, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, date, text, boolean, timestamp, uuid, integer, bigint, jsonb, unique, index, foreignKey, primaryKey, check, vector, customType, doublePrecision, real, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { CallState, Language, Limits, ServiceTier, Usage, Validation, Vendor } from '../ai/types';
 import type { Sealed } from '../ai/funding';
-import type { KnowledgeCoverage, PoolQuestion, PoolVerification } from '../services/knowledge/types';
+import type { FactKind, IngestStage, KnowledgeCoverage, PoolQuestion, PoolVerification, Readiness } from '../services/knowledge/types';
 import type { PreferenceFields } from '../../shared/contracts/workspace';
 import type { VersionedQuestion, LearningAttempt, FlashcardReview } from '../../shared/contracts/learning';
 import type { AnswerValue } from '../../shared/domain/types';
@@ -416,13 +416,14 @@ const versionFk = (t: { workspaceId: AnyPgColumn; courseId: AnyPgColumn; materia
 export const ingestJobs = pgTable('ingest_jobs', {
   id: uuid('id').primaryKey(), ...versionScope(),
   state: text('state').$type<'queued' | 'running' | 'done' | 'failed' | 'superseded'>().notNull().default('queued'),
-  stage: text('stage').$type<'chunk' | 'embed' | 'digest' | 'figures' | 'repair' | 'done'>().notNull().default('chunk'),
+  stage: text('stage').$type<IngestStage>().notNull().default('structure'),
   progress: jsonb('progress').$type<{ cursor: number }>().notNull().default({ cursor: 0 }),
-  // Searchable once every block is in a chunk. Enriched once embeddings, the digest and figure
-  // descriptions are complete too. Coverage says what is missing, so a gap is never hidden.
-  readiness: text('readiness').$type<'pending' | 'searchable' | 'enriched'>().notNull().default('pending'),
+  // Readable once its blocks exist. Searchable once every block is in a chunk. Enriched once
+  // embeddings, digests, facts and figure descriptions are complete too. Coverage says what is
+  // missing, so a gap is never hidden.
+  readiness: text('readiness').$type<Readiness>().notNull().default('readable'),
   coverage: jsonb('coverage').$type<KnowledgeCoverage>().notNull().default({}),
-  // The chunking and embedding configuration the layer was built with. A change rebuilds it.
+  // The structure, chunking, embedding and digest configuration the layer was built with. A change rebuilds it.
   indexVersion: text('index_version').notNull().default(''),
   leaseToken: uuid('lease_token'), leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
   attempts: integer('attempts').notNull().default(0), nextRunAt: timestamp('next_run_at', { withTimezone: true }),
@@ -430,14 +431,63 @@ export const ingestJobs = pgTable('ingest_jobs', {
 }, t => [
   unique('ingest_jobs_version_unique').on(t.versionId), versionFk(t), index('ingest_jobs_due_idx').on(t.state, t.nextRunAt),
   check('ingest_jobs_state_valid', sql`${t.state} in ('queued', 'running', 'done', 'failed', 'superseded')`),
-  check('ingest_jobs_stage_valid', sql`${t.stage} in ('chunk', 'embed', 'digest', 'figures', 'repair', 'done')`),
-  check('ingest_jobs_readiness_valid', sql`${t.readiness} in ('pending', 'searchable', 'enriched')`),
+  check('ingest_jobs_stage_valid', sql`${t.stage} in ('structure', 'embed', 'digest', 'figures', 'repair', 'done')`),
+  check('ingest_jobs_readiness_valid', sql`${t.readiness} in ('readable', 'searchable', 'enriched')`),
+]);
+/**
+ * A section of one version: a heading and the blocks under it up to the next heading of any
+ * level, or the lead before the first heading. Sections do not overlap. The key is the heading
+ * path, so a section keeps its identity when its material is replaced, and scopes and topics
+ * that name it follow it to the new version.
+ */
+export const sections = pgTable('sections', {
+  id: uuid('id').primaryKey(), ...versionScope(), ordinal: integer('ordinal').notNull(),
+  key: text('key').notNull(), headingBlockId: uuid('heading_block_id'), heading: text('heading').notNull(), path: jsonb('path').$type<string[]>().notNull(),
+  level: integer('level').notNull(), blockIds: jsonb('block_ids').$type<string[]>().notNull(), tokens: integer('tokens').notNull(),
+  // The section's text, hashed with the digest prompt version, so an unchanged section is never read twice.
+  contentHash: text('content_hash').notNull(),
+  summary: text('summary'), keyTerms: jsonb('key_terms').$type<string[]>().notNull().default([]), digestedBy: text('digested_by'),
+  language: text('language').$type<Language>().notNull(),
+}, t => [
+  versionFk(t), unique('sections_version_key_unique').on(t.versionId, t.key), unique('sections_version_order_unique').on(t.versionId, t.ordinal),
+  index('sections_course_idx').on(t.workspaceId, t.courseId, t.materialId, t.key), index('sections_hash_idx').on(t.workspaceId, t.contentHash),
+]);
+/**
+ * Atomic, typed facts with a pointer to where they are stated. Code builds questions from them,
+ * so each carries how it was extracted and how far its source text bears it out.
+ */
+export const facts = pgTable('facts', {
+  id: uuid('id').primaryKey(), ...versionScope(), sectionId: uuid('section_id').notNull().references(() => sections.id, { onDelete: 'cascade' }),
+  kind: text('kind').$type<FactKind>().notNull(),
+  // The term defined, the quantity measured, the process ordered or the formula named.
+  subject: text('subject').notNull(), text: text('text').notNull(),
+  value: doublePrecision('value'), unit: text('unit'), items: jsonb('items').$type<string[]>(),
+  blockIds: jsonb('block_ids').$type<string[]>().notNull(), position: integer('position').notNull(),
+  confidence: real('confidence').notNull(), extractor: text('extractor').notNull(), language: text('language').$type<Language>().notNull(),
+}, t => [
+  versionFk(t), index('facts_section_idx').on(t.sectionId, t.kind),
+  check('facts_kind_valid', sql`${t.kind} in ('fact', 'definition', 'number', 'steps', 'formula')`),
+  check('facts_confidence_range', sql`${t.confidence} >= 0 and ${t.confidence} <= 1`),
+]);
+/**
+ * What a section builds on, read from the material: a term it uses that an earlier section
+ * defines, or an explicit reference to an earlier part. Rebuilt for a course whenever one of its
+ * current versions changes.
+ */
+export const prerequisites = pgTable('prerequisites', {
+  ...materialScope(), sectionId: uuid('section_id').notNull().references(() => sections.id, { onDelete: 'cascade' }),
+  requiresId: uuid('requires_id').notNull().references(() => sections.id, { onDelete: 'cascade' }),
+  reason: text('reason').$type<'term' | 'reference'>().notNull(), detail: text('detail').notNull(),
+}, t => [
+  primaryKey({ columns: [t.sectionId, t.requiresId] }), index('prerequisites_course_idx').on(t.workspaceId, t.courseId),
+  foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete('cascade'),
+  check('prerequisites_reason_valid', sql`${t.reason} in ('term', 'reference')`),
 ]);
 /** Retrieval units: consecutive blocks of one section, searched by text and by embedding. */
 export const knowledgeChunks = pgTable('knowledge_chunks', {
   id: uuid('id').primaryKey(), ...versionScope(), ordinal: integer('ordinal').notNull(),
-  // The section's heading block, or null for the lead before the first heading.
-  sectionBlockId: uuid('section_block_id'), heading: text('heading').notNull(), blockIds: jsonb('block_ids').$type<string[]>().notNull(),
+  sectionId: uuid('section_id').notNull().references(() => sections.id, { onDelete: 'cascade' }),
+  heading: text('heading').notNull(), blockIds: jsonb('block_ids').$type<string[]>().notNull(),
   text: text('text').notNull(), language: text('language').$type<Language>().notNull(), tokens: integer('tokens').notNull(),
   search: tsvector('search').notNull(), embedding: vector('embedding', { dimensions: 768 }), embeddingModel: text('embedding_model'),
   // `figure` is a generated description of a figure, never the material's own words.
@@ -447,21 +497,10 @@ export const knowledgeChunks = pgTable('knowledge_chunks', {
 }, t => [
   check('knowledge_chunks_kind_valid', sql`${t.kind} in ('text', 'figure')`),
   versionFk(t), unique('knowledge_chunks_order_unique').on(t.versionId, t.ordinal),
-  index('knowledge_chunks_scope_idx').on(t.workspaceId, t.courseId, t.versionId),
+  index('knowledge_chunks_scope_idx').on(t.workspaceId, t.courseId, t.versionId), index('knowledge_chunks_section_idx').on(t.sectionId),
   index('knowledge_chunks_search_idx').using('gin', t.search),
   index('knowledge_chunks_embedding_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
 ]);
-/** A section's summary and key terms, written once per version. */
-export const knowledgeSections = pgTable('knowledge_sections', {
-  id: uuid('id').primaryKey(), ...versionScope(), sectionBlockId: uuid('section_block_id'), heading: text('heading').notNull(),
-  summary: text('summary').notNull(), keyTerms: jsonb('key_terms').$type<string[]>().notNull(), blockIds: jsonb('block_ids').$type<string[]>().notNull(),
-  language: text('language').$type<Language>().notNull(), model: text('model').notNull(),
-}, t => [versionFk(t), unique('knowledge_sections_unique').on(t.versionId, t.sectionBlockId).nullsNotDistinct()]);
-/** Atomic claims, each tied to the blocks that state it. */
-export const knowledgeFacts = pgTable('knowledge_facts', {
-  id: uuid('id').primaryKey(), ...versionScope(), sectionBlockId: uuid('section_block_id'),
-  text: text('text').notNull(), blockIds: jsonb('block_ids').$type<string[]>().notNull(), language: text('language').$type<Language>().notNull(),
-}, t => [versionFk(t), index('knowledge_facts_section_idx').on(t.versionId, t.sectionBlockId)]);
 /** One description per figure, written once from the image. */
 export const figureDescriptions = pgTable('figure_descriptions', {
   blockId: uuid('block_id').primaryKey(), ...versionScope(), description: text('description').notNull(),

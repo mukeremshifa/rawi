@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { BackendBindings } from '../../config';
 import { transaction, type SocketDb } from '../../db/client';
-import { aiOperations, knowledgeChunks, knowledgeFacts, learningSets, materials, questionPool, questionSources, questionVersions, sectionLinks, setItems, topics } from '../../db/schema';
+import { aiOperations, facts as factRows, sections as sectionRows, learningSets, materials, questionPool, questionSources, questionVersions, sectionLinks, setItems, topics } from '../../db/schema';
 import { ApiError } from '../../errors';
 import { uncertainBefore } from './operations';
 import { budget, run, type CallContext, type Task } from '../../ai/engine';
@@ -139,17 +139,9 @@ type Section = { materialId: string; versionId: string; sectionBlockId: string |
 
 async function targetSections(db: SocketDb, workspaceId: string, courseId: string, input: z.infer<typeof generateInput>): Promise<Section[]> {
   const scope = { workspaceId, courseId };
-  // Sections come from the chunks, so a section whose digest failed can still be practised.
-  const current = sql`${knowledgeChunks.versionId} in (select m.current_version_id from ${materials} m where m.workspace_id = ${workspaceId} and m.course_id = ${courseId} and not m.archived)`;
-  const rows = await db.select({ materialId: knowledgeChunks.materialId, versionId: knowledgeChunks.versionId, sectionBlockId: knowledgeChunks.sectionBlockId, heading: knowledgeChunks.heading, blockIds: knowledgeChunks.blockIds, language: knowledgeChunks.language })
-    .from(knowledgeChunks).where(and(eq(knowledgeChunks.workspaceId, workspaceId), eq(knowledgeChunks.courseId, courseId), eq(knowledgeChunks.kind, 'text'), current)).orderBy(knowledgeChunks.versionId, knowledgeChunks.ordinal);
-  const merged = new Map<string, Section>();
-  for (const r of rows) {
-    const key = `${r.versionId}:${r.sectionBlockId}`, s = merged.get(key);
-    if (s) { for (const id of r.blockIds) if (!s.blockIds.includes(id)) s.blockIds.push(id); }
-    else merged.set(key, { ...r, blockIds: [...r.blockIds] });
-  }
-  const all = [...merged.values()];
+  const current = sql`${sectionRows.versionId} in (select m.current_version_id from ${materials} m where m.workspace_id = ${workspaceId} and m.course_id = ${courseId} and not m.archived)`;
+  const all: Section[] = await db.select({ materialId: sectionRows.materialId, versionId: sectionRows.versionId, sectionBlockId: sectionRows.headingBlockId, heading: sectionRows.heading, blockIds: sectionRows.blockIds, language: sectionRows.language })
+    .from(sectionRows).where(and(eq(sectionRows.workspaceId, workspaceId), eq(sectionRows.courseId, courseId), current)).orderBy(sectionRows.versionId, sectionRows.ordinal);
   const chosen = new Map<string, Section>();
   const keep = (s: Section) => chosen.set(`${s.versionId}:${s.sectionBlockId}`, s);
   for (const c of input.sections) for (const s of all) if (s.versionId === c.versionId && s.blockIds.some(id => c.blockIds.includes(id))) keep(s);
@@ -263,7 +255,7 @@ async function fillPool(env: BackendBindings, ctx: CallContext, courseId: string
   const { db } = ctx;
   const versionIds = [...new Set(short.map(s => s.section.versionId))];
   const [facts, versions, titles, existing] = await Promise.all([
-    db.select().from(knowledgeFacts).where(inArray(knowledgeFacts.versionId, versionIds)),
+    db.select({ versionId: factRows.versionId, text: factRows.text, sectionBlockId: sectionRows.headingBlockId }).from(factRows).innerJoin(sectionRows, eq(sectionRows.id, factRows.sectionId)).where(inArray(factRows.versionId, versionIds)),
     Promise.all(versionIds.map(id => versionBlocks(db, ctx.workspaceId, id))),
     db.select({ id: materials.id, title: materials.title }).from(materials).where(inArray(materials.id, [...new Set(short.map(s => s.section.materialId))])),
     db.select({ prompt: sql<string>`${questionPool.content}->>'prompt'` }).from(questionPool).where(and(inArray(questionPool.cacheKey, short.map(s => s.key)), eq(questionPool.state, 'verified'))),
