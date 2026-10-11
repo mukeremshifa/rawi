@@ -64,14 +64,21 @@ export const ROUTES: Route[] = [
  *   write questions (0 of 6). Kimi K3 passed too, at 20 to 40 times the cost and about 5 seconds
  *   to a first token. DeepSeek V3.2, Nemotron Super 120B and Nova Pro wrote complete question
  *   sets at most 1 time in 6, so Gemini 3.1 Flash-Lite stays the only writer.
- * - tutor: no model keeps the reply format reliably (see the tutor trailer), so the choice
- *   between Qwen3 32B and the others is open until that is fixed.
+ * - chat: re-measured on 11 October 2026 once grounding moved into code, over 17 reviewed
+ *   cases with 6 repeats through the whole pipeline (dev/pipeline.ts). Nova Lite passed 95 of
+ *   102 at about 100 micro-dollars a reply, Qwen3 32B 93 at 323, Mistral Large 3 90 at about
+ *   1,250 and gpt-oss-120b 82. Nova Lite leads and Qwen3 32B follows. Gemini is left out because
+ *   the tutor carries student text, which only routes that keep no prompts may receive.
+ * - grading: with evidence required for every award, Mistral Large 3 agreed with reviewed marks
+ *   on 96% of criteria with 3 false credits in 54 wrong answers and no escalations. gpt-oss-20b
+ *   agreed on 94% but failed its check often enough that 27 of 63 calls escalated anyway, so
+ *   grading starts on the strong tier.
  * Vertex returned quota errors (429) for Gemini 2.5 Flash-Lite under light load, so Bedrock leads
  * where quality allows.
  */
 export const TIERS: Record<Tier, string[]> = {
   small: ['gpt-oss-20b', 'qwen3-32b', 'gemini-2.5-flash-lite'],
-  chat: ['qwen3-32b', 'gemini-2.5-flash-lite', 'gpt-oss-120b'],
+  chat: ['nova-lite', 'qwen3-32b', 'gpt-oss-120b'],
   writer: ['gemini-3.1-flash-lite', 'qwen3-32b'],
   strong: ['mistral-large-3', 'gemini-3.1-flash-lite', 'qwen3-32b', 'gpt-oss-120b'],
   vision: ['gemini-2.5-flash-lite', 'nova-lite'],

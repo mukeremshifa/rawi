@@ -113,10 +113,10 @@ export function vertexAdapter(creds: VertexCredentials): Adapter {
       } catch (error) { throw new ProviderError(`vertex_stream_broken: ${String(error).slice(0, 120)}`, false); }
       return { text, usage, stop, latencyMs: Date.now() - started, ttftMs: ttft };
     },
-    async embed(route, texts, purpose) {
+    async embed(route, texts, purpose, signal) {
       const started = Date.now();
       const task = purpose === 'query' ? 'RETRIEVAL_QUERY' : 'RETRIEVAL_DOCUMENT';
-      const j = await (await send(endpoint(route, 'predict'), { instances: texts.map(content => ({ content, task_type: task })), parameters: { outputDimensionality: 768 } })).json() as { predictions: { embeddings: { values: number[] } }[] };
+      const j = await (await send(endpoint(route, 'predict'), { instances: texts.map(content => ({ content, task_type: task })), parameters: { outputDimensionality: 768 } }, signal)).json() as { predictions: { embeddings: { values: number[] } }[] };
       return { vectors: j.predictions.map(p => p.embeddings.values), chars: texts.reduce((n, t) => n + t.length, 0), latencyMs: Date.now() - started };
     },
   };

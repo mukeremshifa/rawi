@@ -34,7 +34,12 @@ export interface AiPolicy {
   vendors: Vendor[];
   /** `none` admits only routes whose vendor terms keep no prompts. */
   retention: 'none' | 'standard';
+  /** Student content uses only routes that keep no prompts unless this deliberately says `standard`. */
+  studentRetention?: 'none' | 'standard';
 }
+
+/** `student`: tutor turns, written answers and summaries of them. `institution`: course material only. */
+export type DataClass = 'student' | 'institution';
 
 export type CallState = 'reserved' | 'settled' | 'ambiguous' | 'released';
 export type Validation = 'passed' | 'failed' | 'skipped';

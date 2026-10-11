@@ -1,6 +1,6 @@
 import { and, eq, lt, sql } from 'drizzle-orm';
 import { aiCalls, aiPlans, workspaces } from '../db/schema';
-import { transaction, type ReadDb, type SocketDb } from '../db/client';
+import type { ReadDb, SocketDb } from '../db/client';
 import { ApiError } from '../errors';
 import type { Route } from './catalog';
 import type { AiPolicy, Language, ServiceTier, Usage, Validation } from './types';
@@ -47,30 +47,39 @@ export interface CallStart {
   route: Route; serviceTier: ServiceTier; language: Language; reservedMicros: number;
 }
 
-/** Reserve before a provider call. Nothing is sent until this commits. */
+/**
+ * Reserve before a provider call. Nothing is sent until this commits. Background work (a call
+ * with a job) and interactive work count against separate concurrency slots, so a long ingest
+ * never makes a student's tutor reply wait. Four round trips: begin, the lock, one statement
+ * that checks every limit and inserts, and commit.
+ */
 export async function reserve(db: SocketDb, start: CallStart) {
   const { plan, platform } = await policyFor(db, start.workspaceId);
-  return transaction(db, async tx => {
-    // One lock keeps limits exact. Calls are few and reservations are short.
+  const r = start.reservedMicros, id = crypto.randomUUID(), background = !!start.jobId;
+  return db.transaction(async tx => {
+    // One lock keeps limits exact. The next statement takes its snapshot after the lock.
     await tx.execute(sql`select pg_advisory_xact_lock(714290032)`);
-    const month = sql`${aiCalls.createdAt} >= date_trunc('month', now() at time zone 'UTC') at time zone 'UTC'`;
-    const today = sql`${aiCalls.createdAt} >= date_trunc('day', now() at time zone 'UTC') at time zone 'UTC'`;
-    const rows = await tx.execute(sql`select
-      coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and ${today}), 0)::float8 as platform_day,
-      coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released'), 0)::float8 as platform_month,
-      count(*) filter (where state = 'reserved')::int as platform_open,
-      coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and workspace_id = ${start.workspaceId} and ${today}), 0)::float8 as own_day,
-      coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and workspace_id = ${start.workspaceId}), 0)::float8 as own_month,
-      count(*) filter (where state = 'reserved' and workspace_id = ${start.workspaceId})::int as own_open
-      from ai_calls where ${month}`);
-    const n = rows.rows[0] as Record<string, number>;
-    if (n.own_open! >= plan.concurrent || n.platform_open! >= platform.concurrent) throw new ApiError(429, 'ai_busy', 'Another AI request is still running. Try again when it finishes.');
-    const r = start.reservedMicros;
-    if (n.own_day! + r > plan.dailyMicros || n.platform_day! + r > platform.dailyMicros) throw new ApiError(429, 'ai_budget', 'The AI allowance for today is used up. It resets at midnight UTC.');
-    if (n.own_month! + r > plan.monthlyMicros || n.platform_month! + r > platform.monthlyMicros) throw new ApiError(429, 'ai_budget', 'The AI allowance for this month is used up.');
-    const id = crypto.randomUUID();
-    await tx.insert(aiCalls).values({ id, workspaceId: start.workspaceId, operationId: start.operationId, jobId: start.jobId, task: start.task, step: start.step, vendor: start.route.vendor, model: start.route.model, region: start.route.region, serviceTier: start.serviceTier, language: start.language, state: 'reserved', reservedMicros: r });
-    return id;
+    const today = sql`created_at >= date_trunc('day', now() at time zone 'UTC') at time zone 'UTC'`;
+    const rows = await tx.execute(sql`with n as (select
+        coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and ${today}), 0)::float8 as platform_day,
+        coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released'), 0)::float8 as platform_month,
+        count(*) filter (where state = 'reserved')::int as platform_open,
+        coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and workspace_id = ${start.workspaceId} and ${today}), 0)::float8 as own_day,
+        coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released' and workspace_id = ${start.workspaceId}), 0)::float8 as own_month,
+        count(*) filter (where state = 'reserved' and workspace_id = ${start.workspaceId} and (job_id is not null) = ${background})::int as own_open
+        from ai_calls where created_at >= date_trunc('month', now() at time zone 'UTC') at time zone 'UTC'),
+      ins as (insert into ai_calls (id, workspace_id, operation_id, job_id, task, step, vendor, model, region, service_tier, language, state, reserved_micros)
+        select ${id}, ${start.workspaceId}, ${start.operationId ?? null}, ${start.jobId ?? null}, ${start.task}, ${start.step}, ${start.route.vendor}, ${start.route.model}, ${start.route.region}, ${start.serviceTier}, ${start.language}, 'reserved', ${r} from n
+        where n.own_open < ${plan.concurrent} and n.platform_open < ${platform.concurrent}
+          and n.own_day + ${r} <= ${plan.dailyMicros} and n.platform_day + ${r} <= ${platform.dailyMicros}
+          and n.own_month + ${r} <= ${plan.monthlyMicros} and n.platform_month + ${r} <= ${platform.monthlyMicros}
+        returning id)
+      select n.*, (select id from ins) as id from n`);
+    const n = rows.rows[0] as { own_open: number; platform_open: number; own_day: number; platform_day: number; id: string | null };
+    if (n.id) return n.id;
+    if (n.own_open >= plan.concurrent || n.platform_open >= platform.concurrent) throw new ApiError(429, 'ai_busy', 'Another AI request is still running. Try again when it finishes.');
+    if (n.own_day + r > plan.dailyMicros || n.platform_day + r > platform.dailyMicros) throw new ApiError(429, 'ai_budget', 'The AI allowance for today is used up. It resets at midnight UTC.');
+    throw new ApiError(429, 'ai_budget', 'The AI allowance for this month is used up.');
   });
 }
 

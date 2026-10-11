@@ -74,15 +74,15 @@ export function draftPrompt(input: DraftInput) {
  */
 export const outlineTasks: { [K in OutlineJobKind]: Task<K extends 'read_syllabus' ? SyllabusInput : K extends 'map_material' ? MappingInput : DraftInput, K extends 'read_syllabus' ? SyllabusReading : K extends 'map_material' ? Mapping : Draft> } = {
   read_syllabus: {
-    name: 'outline.read_syllabus', promptVersion: OUTLINE_PROMPT_VERSION, tiers: ['strong'], serviceTier: 'standard', maxOutput: 8000, cache: 'none', temperature: 0,
+    name: 'outline.read_syllabus', data: 'institution', promptVersion: OUTLINE_PROMPT_VERSION, tiers: ['strong'], serviceTier: 'standard', maxOutput: 8000, cache: 'none', temperature: 0,
     language: i => i.language, build: i => ({ ...syllabusPrompt(i), schema: schemaOf(readingSchema) }), check: r => parsed(readingSchema, r.json),
   },
   map_material: {
-    name: 'outline.map_material', promptVersion: OUTLINE_PROMPT_VERSION, tiers: ['small', 'strong'], serviceTier: 'flex', maxOutput: 4000, cache: 'none', temperature: 0,
+    name: 'outline.map_material', data: 'institution', promptVersion: OUTLINE_PROMPT_VERSION, tiers: ['small', 'strong'], serviceTier: 'flex', maxOutput: 4000, cache: 'none', temperature: 0,
     language: i => i.language, build: i => ({ ...mappingPrompt(i), schema: schemaOf(mappingSchema) }), check: r => parsed(mappingSchema, r.json),
   },
   draft_outline: {
-    name: 'outline.draft_outline', promptVersion: OUTLINE_PROMPT_VERSION, tiers: ['small', 'strong'], serviceTier: 'flex', maxOutput: 4000, cache: 'none', temperature: 0,
+    name: 'outline.draft_outline', data: 'institution', promptVersion: OUTLINE_PROMPT_VERSION, tiers: ['small', 'strong'], serviceTier: 'flex', maxOutput: 4000, cache: 'none', temperature: 0,
     language: i => i.language, build: i => ({ ...draftPrompt(i), schema: schemaOf(draftSchema) }), check: r => parsed(draftSchema, r.json),
   },
 };

@@ -3,7 +3,8 @@ import { uuid } from './workspace';
 import { writeInput } from './learning';
 import { citationInput, type Citation } from './document';
 import type { AnswerReview, TutorTurn } from '../domain/types';
-export type TutorMessageProvenance = Pick<TutorTurn, 'model' | 'stage' | 'grounding' | 'droppedCitations'> & { citations: Citation[]; imported: boolean; sampleDataset?: string };
+/** `attachedSources` counts sources added after the cited ones because the reply cited none. */
+export type TutorMessageProvenance = Pick<TutorTurn, 'model' | 'stage' | 'grounding' | 'droppedCitations'> & { citations: Citation[]; imported: boolean; sampleDataset?: string; attachedSources?: number };
 // Without a title, a session is named after its topic, section heading or material.
 export const newTutorInput = z.strictObject({ id: uuid, title: z.string().trim().max(200).default(''), topicId: uuid.optional(), plannedSessionId: uuid.optional(), source: citationInput.optional(), review: z.strictObject({ attemptId: uuid, questionId: uuid }).optional() });
 export const tutorMessageInput = writeInput.extend({ text: z.string().trim().min(1).max(4000), action: z.enum(['message', 'explain', 'example', 'hint', 'check', 'simpler']).default('message') });

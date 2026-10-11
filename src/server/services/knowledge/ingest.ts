@@ -269,7 +269,7 @@ async function embedMissing(db: SocketDb, env: BackendBindings, ctx: CallContext
   let failed = 0;
   for (let i = 0; i < rows.length; i += 50) {
     const batch = rows.slice(i, i + 50);
-    const result = await embed(env, ctx, batch.map(r => `${r.heading}\n${r.text}`), 'document', batch[0]!.language);
+    const result = await embed(env, ctx, batch.map(r => `${r.heading}\n${r.text}`), 'document', batch[0]!.language, 'institution');
     if (!result) { failed += batch.length; continue; }
     await db.execute(sql`update ${knowledgeChunks} set embedding = v.e::vector, embedding_model = ${result.model}
       from (values ${sql.join(batch.map((r, n) => sql`(${r.id}::uuid, ${vectorText(result.vectors[n]!)})`), sql`, `)}) as v(id, e) where ${knowledgeChunks.id} = v.id`);
@@ -376,7 +376,17 @@ const figures: Stage = async (db, env, ctx, job) => {
     }
     const at = list.indexOf(block);
     const context = list.slice(Math.max(0, at - 2), at + 3).filter(b => b !== block).map(blockMarkdown).join('\n');
-    const served = await run(env, ctx, figureTask, { language, caption: spansText(block.content.caption), context, image: { mime: object!.type, data: new Uint8Array(await body.arrayBuffer()) } });
+    let served;
+    try { served = await run(env, ctx, figureTask, { language, caption: spansText(block.content.caption), context, image: { mime: object!.type, data: new Uint8Array(await body.arrayBuffer()) } }); }
+    catch (error) {
+      // A description that failed its checks or may have been charged is not tried again. The
+      // figure keeps its caption, and coverage counts it as undescribed.
+      if (error instanceof AiFailed && (error.code === 'ai_invalid' || error.code === 'ai_uncertain')) {
+        await db.insert(figureDescriptions).values({ blockId: block.id, ...scope, description: '', language, model: error.code }).onConflictDoNothing();
+        return {};
+      }
+      throw error;
+    }
     await db.insert(figureDescriptions).values({ blockId: block.id, ...scope, description: served.value.slice(0, 1500), language, model: served.route.model }).onConflictDoNothing();
     return {};
   }

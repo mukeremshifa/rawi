@@ -28,6 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAccount } from '@/lib/account';
 import { request, errorMessage } from '@/lib/api';
 import { useApi, useApiAll, useApiPages, useSave } from '@/lib/data';
+import { UNCERTAIN } from '../ai/AiOperation';
 import type { AiStatusView } from '../../../server/api-types';
 import { useUnsentGuard } from '@/lib/hooks';
 import { activityKeys, keys } from '@/lib/query';
@@ -247,6 +248,7 @@ function GenerateSheet({ courseId, open, onOpenChange }: { courseId: string; ope
   ];
   const chosen = options.find(o => o.value === from);
   const submit = () => {
+    if (UNCERTAIN.includes(save.code)) save.discard();
     const [kind, value] = from.split(':');
     const body = {
       // Each click is a new request. A failed one saved no set, so there is nothing to resume.

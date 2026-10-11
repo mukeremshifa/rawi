@@ -2,9 +2,10 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { BackendBindings } from '../../config';
 import { transaction, type SocketDb } from '../../db/client';
-import { aiOperations, knowledgeFacts, knowledgeSections, learningSets, materials, questionPool, questionSources, questionVersions, sectionLinks, setItems, topics } from '../../db/schema';
+import { aiOperations, knowledgeChunks, knowledgeFacts, learningSets, materials, questionPool, questionSources, questionVersions, sectionLinks, setItems, topics } from '../../db/schema';
 import { ApiError } from '../../errors';
-import { run, type CallContext, type Task } from '../../ai/engine';
+import { uncertainBefore } from './operations';
+import { budget, run, type CallContext, type Task } from '../../ai/engine';
 import { DATA_RULE, escapeTags, house, parsed, schemaOf } from '../../ai/style';
 import type { Language } from '../../ai/types';
 import { uuid } from '../../../shared/contracts/workspace';
@@ -30,11 +31,11 @@ export const generateInput = z.strictObject({
 /* ── Tasks ───────────────────────────────────────────────────────────────── */
 
 interface Target { key: string; heading: string; facts: string[]; blocks: { key: string; text: string }[]; difficulty: Difficulty; count: number }
-interface WriteInput { language: Language; materialTitle: string; format: PoolFormat; targets: Target[] }
+interface WriteInput { language: Language; materialTitle: string; format: PoolFormat; targets: Target[]; failed?: { target: string; prompt: string; reasons: string[] }[] }
 
 const FORMAT_NOTE: Record<PoolFormat, string> = {
   flashcard: 'Flashcards: "prompt" is the front, a short question or term. "answer" is the back, one to three sentences. Leave options, correctIndex and rubric out.',
-  'multiple-choice': 'Multiple choice: exactly 4 options, one correct, with "correctIndex" its zero-based position. Distractors are plausible and clearly wrong by the material. Vary the correct position. "answer" repeats the correct option. Leave rubric out.',
+  'multiple-choice': 'Multiple choice: exactly 4 options, one correct, with "correctIndex" its zero-based position. Each wrong option is a mistake a student who half-read the material would make: a reversed cause, a confused term, a claim from another section. Write all four in the same form and about the same length, so the right one does not stand out. Never use "all of the above" or "none of the above". Vary the correct position. "answer" repeats the correct option. Leave rubric out.',
   'written-recall': 'Written recall: answered in a few sentences from memory. "answer" is a model answer. "rubric" has 2 to 4 points, each a "label" naming one thing a strong answer shows, whole "marks" from 1 to 3, and "missedAdvice" for a student who missed it. Leave options and correctIndex out.',
 };
 const writeSchema = z.object({
@@ -48,7 +49,7 @@ const writeSchema = z.object({
 
 /** Writes candidate questions for several sections at once, from their facts and blocks. */
 export const writeTask: Task<WriteInput, z.infer<typeof writeSchema>> = {
-  name: 'questions.write', promptVersion: QUESTIONS_PROMPT_VERSION, tiers: ['writer'], serviceTier: 'standard', cache: 'none', temperature: 0.5,
+  name: 'questions.write', data: 'institution', promptVersion: QUESTIONS_PROMPT_VERSION, tiers: ['writer'], serviceTier: 'standard', cache: 'none', temperature: 0.5,
   maxOutput: 5000, language: i => i.language,
   build: i => ({
     system: [
@@ -59,23 +60,56 @@ export const writeTask: Task<WriteInput, z.infer<typeof writeSchema>> = {
       'recall checks a fact or definition, reasoning asks why or how, stretch applies the idea to a new case.',
       FORMAT_NOTE[i.format], DATA_RULE, house(i.language),
     ].join('\n'),
-    prompt: `<document title="${escapeTags(i.materialTitle)}">\n${i.targets.map(t => `<section key="${t.key}" heading="${escapeTags(t.heading)}" difficulty="${t.difficulty}" questions="${t.count}">\nFacts:\n${t.facts.map(f => `- ${escapeTags(f)}`).join('\n')}\n${t.blocks.map(b => `<block key="${b.key}">${escapeTags(b.text)}</block>`).join('\n')}\n</section>`).join('\n')}\n</document>\nWrite the number of questions each section asks for, at its difficulty, with "target" set to the section key.`,
+    prompt: `<document title="${escapeTags(i.materialTitle)}">\n${i.targets.map(t => `<section key="${t.key}" heading="${escapeTags(t.heading)}" difficulty="${t.difficulty}" questions="${t.count}">\nFacts:\n${t.facts.map(f => `- ${escapeTags(f)}`).join('\n')}\n${t.blocks.map(b => `<block key="${b.key}">${escapeTags(b.text)}</block>`).join('\n')}\n</section>`).join('\n')}\n</document>\nWrite the number of questions each section asks for, at its difficulty, with "target" set to the section key.${i.failed?.length ? `\nThese earlier questions failed review. Write different questions that avoid their problems:\n${i.failed.map(f => `- [${f.target}] ${escapeTags(f.prompt)}: ${f.reasons.join(', ')}`).join('\n')}` : ''}`,
     schema: schemaOf(writeSchema),
   }),
   check: r => parsed(writeSchema, r.json),
 };
 
-const checkSchema = z.object({ verdicts: z.array(z.object({ id: z.string(), supported: z.boolean(), answerCorrect: z.boolean(), correctOptions: z.array(z.number().int()).describe('For multiple choice, the numbers of every option the source makes correct. Empty otherwise.'), reason: z.string() })) });
-/** A second, cheap reader confirms each answer against the blocks it cites. */
-export const checkTask: Task<{ language: Language; items: { id: string; question: string; answer: string; options?: string[]; source: string }[] }, z.infer<typeof checkSchema>> = {
-  name: 'questions.check', promptVersion: QUESTIONS_PROMPT_VERSION, tiers: ['small'], serviceTier: 'standard', cache: 'none', temperature: 0,
+const levels = ['recall', 'reasoning', 'stretch'] as const;
+const solveSchema = z.object({ verdicts: z.array(z.object({
+  id: z.string(),
+  answerable: z.boolean().describe('The source alone settles the answer'),
+  solution: z.string().describe('Your own answer, from the source, in one or two sentences'),
+  correctOptions: z.array(z.number().int()).describe('For multiple choice, the number of every option the source makes correct. Empty otherwise.'),
+  weakDistractors: z.array(z.number().int()).describe('For multiple choice, the number of every wrong option a student could rule out without knowing the material. Empty otherwise.'),
+  level: z.enum(levels).describe('recall if the source states the answer directly, reasoning if it must be explained from the source, stretch if it applies the idea to a new case'),
+  ambiguity: z.string().describe('Why the question could fairly be read two ways, or empty'),
+})) });
+type SolveItem = { id: string; question: string; options?: string[]; source: string };
+/**
+ * A second reader solves each question from its source before seeing any proposed answer, so
+ * agreement means something. For multiple choice the comparison is done in code.
+ */
+export const solveTask: Task<{ language: Language; items: SolveItem[] }, z.infer<typeof solveSchema>> = {
+  name: 'questions.solve', data: 'institution', promptVersion: QUESTIONS_PROMPT_VERSION, tiers: ['strong'], serviceTier: 'standard', cache: 'none', temperature: 0,
+  maxOutput: 2500, language: i => i.language,
+  build: i => ({
+    system: ['You answer practice questions using only the source text given with each one.', 'Solve each question yourself. For multiple choice, judge every option on its own against the source.', 'Say if the source does not settle the answer, or if the question could fairly be read two ways.', DATA_RULE, house(i.language)].join('\n'),
+    prompt: i.items.map(q => `<item id="${q.id}">\nQuestion: ${escapeTags(q.question)}\n${q.options ? `Options: ${q.options.map((o, n) => `${n + 1}. ${escapeTags(o)}`).join(' | ')}\n` : ''}<document>${escapeTags(q.source)}</document>\n</item>`).join('\n'),
+    schema: schemaOf(solveSchema),
+  }),
+  // A verdict missing for some items leaves those unchecked rather than failing the batch.
+  check: (r, i) => { const v = parsed(solveSchema, r.json); return v && i.items.some(q => v.verdicts.some(o => o.id === q.id)) ? v : null; },
+};
+
+const compareSchema = z.object({ verdicts: z.array(z.object({
+  id: z.string(),
+  matches: z.boolean().describe('The proposed answer says what the independent solution says, and the source supports it'),
+  rubricSound: z.boolean().describe('For written answers: every rubric point is supported by the source, the points do not overlap, and together they describe a strong answer. True for other formats.'),
+  reason: z.string(),
+})) });
+type CompareItem = { id: string; question: string; proposed: string; solution: string; rubric?: string[]; source: string };
+/** Compares a proposed answer with the independent solution, for formats code cannot compare. */
+export const compareTask: Task<{ language: Language; items: CompareItem[] }, z.infer<typeof compareSchema>> = {
+  name: 'questions.compare', data: 'institution', promptVersion: QUESTIONS_PROMPT_VERSION, tiers: ['strong'], serviceTier: 'standard', cache: 'none', temperature: 0,
   maxOutput: 1500, language: i => i.language,
   build: i => ({
-    system: ['You check practice questions against the source text they cite.', 'supported: the question can be answered from the source alone. answerCorrect: the given answer is correct by the source.', 'For multiple choice, judge every option on its own and list the number of each option the source makes correct, ignoring which answer was given.', 'Give a short reason. Be strict.', DATA_RULE, house(i.language)].join('\n'),
-    prompt: i.items.map(q => `<item id="${q.id}">\nQuestion: ${escapeTags(q.question)}\n${q.options ? `Options: ${q.options.map((o, n) => `${n + 1}. ${escapeTags(o)}`).join(' | ')}\n` : ''}Answer: ${escapeTags(q.answer)}\n<document>${escapeTags(q.source)}</document>\n</item>`).join('\n'),
-    schema: schemaOf(checkSchema),
+    system: ['You review practice questions. Each comes with a proposed answer, an independent solution written from the source without seeing it, and the source.', 'Judge whether the proposed answer agrees with the solution and the source in substance, not wording. For written answers, judge the rubric too.', 'Give a short reason. Be strict.', DATA_RULE, house(i.language)].join('\n'),
+    prompt: i.items.map(q => `<item id="${q.id}">\nQuestion: ${escapeTags(q.question)}\nProposed answer: ${escapeTags(q.proposed)}\nIndependent solution: ${escapeTags(q.solution)}\n${q.rubric ? `Rubric:\n${q.rubric.map(r => `- ${escapeTags(r)}`).join('\n')}\n` : ''}<document>${escapeTags(q.source)}</document>\n</item>`).join('\n'),
+    schema: schemaOf(compareSchema),
   }),
-  check: (r, i) => { const v = parsed(checkSchema, r.json); return v && i.items.every(q => v.verdicts.some(o => o.id === q.id)) ? v : null; },
+  check: (r, i) => { const v = parsed(compareSchema, r.json); return v && i.items.every(q => v.verdicts.some(o => o.id === q.id)) ? v : null; },
 };
 
 /** Rules that need no model. Each returns the reasons a question fails. */
@@ -89,8 +123,12 @@ export function ruleCheck(q: z.infer<typeof writeSchema>['questions'][number], f
     if (options.length !== 4 || new Set(options.map(promptKey)).size !== 4) out.push('options');
     if (q.correctIndex === undefined || q.correctIndex < 0 || q.correctIndex > 3) out.push('correct_index');
     else if (promptKey(options[q.correctIndex] ?? '') !== promptKey(q.answer)) out.push('answer_mismatch');
+    // A key far longer than every distractor gives itself away.
+    else if (options.every((o, i) => i === q.correctIndex || options[q.correctIndex!]!.length > o.length * 1.6)) out.push('key_longest');
+    if (options.some(o => /^(all|none|both) of the above$/i.test(o.trim()))) out.push('above_option');
   }
-  if (format === 'written-recall' && (!q.rubric || q.rubric.length < 2 || q.rubric.length > 4 || q.rubric.some(r => r.marks < 1 || r.marks > 3 || !r.label.trim()))) out.push('rubric');
+  if (format !== 'multiple-choice' && q.answer.trim().length > 12 && promptKey(q.prompt).includes(promptKey(q.answer))) out.push('answer_in_prompt');
+  if (format === 'written-recall' && (!q.rubric || q.rubric.length < 2 || q.rubric.length > 4 || q.rubric.some(r => r.marks < 1 || r.marks > 3 || !r.label.trim()) || new Set(q.rubric.map(r => promptKey(r.label))).size !== q.rubric.length)) out.push('rubric');
   if (format !== 'multiple-choice' && q.options?.length) out.push('unexpected_options');
   return out;
 }
@@ -101,9 +139,17 @@ type Section = { materialId: string; versionId: string; sectionBlockId: string |
 
 async function targetSections(db: SocketDb, workspaceId: string, courseId: string, input: z.infer<typeof generateInput>): Promise<Section[]> {
   const scope = { workspaceId, courseId };
-  const current = sql`${knowledgeSections.versionId} in (select m.current_version_id from ${materials} m where m.workspace_id = ${workspaceId} and m.course_id = ${courseId} and not m.archived)`;
-  const all = await db.select({ materialId: knowledgeSections.materialId, versionId: knowledgeSections.versionId, sectionBlockId: knowledgeSections.sectionBlockId, heading: knowledgeSections.heading, blockIds: knowledgeSections.blockIds, language: knowledgeSections.language })
-    .from(knowledgeSections).where(and(eq(knowledgeSections.workspaceId, workspaceId), eq(knowledgeSections.courseId, courseId), current));
+  // Sections come from the chunks, so a section whose digest failed can still be practised.
+  const current = sql`${knowledgeChunks.versionId} in (select m.current_version_id from ${materials} m where m.workspace_id = ${workspaceId} and m.course_id = ${courseId} and not m.archived)`;
+  const rows = await db.select({ materialId: knowledgeChunks.materialId, versionId: knowledgeChunks.versionId, sectionBlockId: knowledgeChunks.sectionBlockId, heading: knowledgeChunks.heading, blockIds: knowledgeChunks.blockIds, language: knowledgeChunks.language })
+    .from(knowledgeChunks).where(and(eq(knowledgeChunks.workspaceId, workspaceId), eq(knowledgeChunks.courseId, courseId), eq(knowledgeChunks.kind, 'text'), current)).orderBy(knowledgeChunks.versionId, knowledgeChunks.ordinal);
+  const merged = new Map<string, Section>();
+  for (const r of rows) {
+    const key = `${r.versionId}:${r.sectionBlockId}`, s = merged.get(key);
+    if (s) { for (const id of r.blockIds) if (!s.blockIds.includes(id)) s.blockIds.push(id); }
+    else merged.set(key, { ...r, blockIds: [...r.blockIds] });
+  }
+  const all = [...merged.values()];
   const chosen = new Map<string, Section>();
   const keep = (s: Section) => chosen.set(`${s.versionId}:${s.sectionBlockId}`, s);
   for (const c of input.sections) for (const s of all) if (s.versionId === c.versionId && s.blockIds.some(id => c.blockIds.includes(id))) keep(s);
@@ -130,12 +176,13 @@ export async function generateSet(env: BackendBindings, db: SocketDb, workspaceI
   const fingerprint = await hash(JSON.stringify(input));
   const [prior] = await db.select().from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.id, input.operationId)));
   // A completed request returns its result. A failed one saved nothing, so the same request may run again.
-  if (prior) { if (prior.fingerprint !== fingerprint) throw new ApiError(409, 'operation_conflict', 'This request ID belongs to different input.'); if (prior.state !== 'failed') return prior.result; }
+  if (prior) { if (prior.fingerprint !== fingerprint) throw new ApiError(409, 'operation_conflict', 'This request ID belongs to different input.'); if (prior.state === 'uncertain') throw uncertainBefore(); if (prior.state !== 'failed') return prior.result; }
   const sections = (await targetSections(db, workspaceId, courseId, input)).slice(0, 8);
   if (!sections.length) throw new ApiError(409, 'no_knowledge', 'Rawi has not finished reading these materials. Try again in a minute.');
   if (prior) await db.update(aiOperations).set({ state: 'running', reason: null, updatedAt: new Date() }).where(eq(aiOperations.id, input.operationId));
   else await db.insert(aiOperations).values({ id: input.operationId, workspaceId, courseId, targetId: input.operationId, task: 'generate', fingerprint, input, state: 'running', promptVersion: QUESTIONS_PROMPT_VERSION });
-  const ctx: CallContext = { db, workspaceId, operationId: input.operationId };
+  // Writing, checking and one repair round for a set of up to ten questions, about 6 cents at most.
+  const ctx: CallContext = { db, workspaceId, operationId: input.operationId, budget: budget(8, 60_000, 180) };
   try {
     // Spread the count over sections and difficulties.
     const plan: { section: Section; difficulty: Difficulty; count: number; key: string }[] = [];
@@ -158,58 +205,118 @@ export async function generateSet(env: BackendBindings, db: SocketDb, workspaceI
     return await saveSet(db, workspaceId, courseId, input, fingerprint, picked);
   } catch (error) {
     const reason = error instanceof ApiError ? error.message : 'The set could not be generated.';
-    await db.update(aiOperations).set({ state: 'failed', reason, updatedAt: new Date() }).where(eq(aiOperations.id, input.operationId));
+    // A call that may have been charged leaves the request uncertain, so it is never run again under this id.
+    const state = error instanceof ApiError && error.code === 'ai_uncertain' ? 'uncertain' as const : 'failed' as const;
+    await db.update(aiOperations).set({ state, reason, updatedAt: new Date() }).where(eq(aiOperations.id, input.operationId));
     throw error;
   }
 }
 
-/** Write questions for the shortfall, check them, and store both outcomes in the pool. */
+/** Runs of three words, to spot a question that repeats another in different order or small edits. */
+const shingles = (text: string) => { const w = promptKey(text).split(' '); return new Set(w.slice(2).map((x, i) => `${w[i]} ${w[i + 1]} ${x}`)); };
+const similar = (a: string, b: string) => { const x = shingles(a), y = shingles(b); let n = 0; for (const s of x) if (y.has(s)) n++; return n / Math.max(1, Math.min(x.size, y.size)); };
+
+type Written = z.infer<typeof writeSchema>['questions'][number];
+type Candidate = { id: string; q: Written; plan: { section: Section; difficulty: Difficulty; count: number; key: string }; blockIds: string[]; rules: string[]; checker: PoolVerification['checker'] };
+
+/**
+ * Checks candidates by rules, then by a second reader that solves each one from its source
+ * before any answer is compared. Rules and verdicts are recorded on each candidate.
+ */
+async function verify(env: BackendBindings, ctx: CallContext, language: Language, format: PoolFormat, candidates: Candidate[], blockText: Map<string, string>, existing: string[]) {
+  const seen = [...existing];
+  for (const c of candidates) {
+    c.rules.push(...ruleCheck(c.q, format));
+    if (!c.blockIds.length) c.rules.push('no_citation');
+    if (seen.some(p => similar(p, c.q.prompt) > 0.6)) c.rules.push('duplicate');
+    seen.push(c.q.prompt);
+  }
+  const checkable = candidates.filter(c => !c.rules.length);
+  if (!checkable.length) return;
+  const source = (c: Candidate) => c.blockIds.map(id => blockText.get(id) ?? '').join('\n\n');
+  const solved = await run(env, ctx, solveTask, { language, items: checkable.map(c => ({ id: c.id, question: c.q.prompt, options: c.q.options, source: source(c) })) });
+  const compared = format === 'multiple-choice' ? null : await run(env, ctx, compareTask, { language, items: checkable.map(c => ({ id: c.id, question: c.q.prompt, proposed: c.q.answer, solution: solved.value.verdicts.find(v => v.id === c.id)?.solution ?? '', rubric: c.q.rubric?.map(r => `${r.label} (${r.marks})`), source: source(c) })) });
+  for (const c of checkable) {
+    const s = solved.value.verdicts.find(v => v.id === c.id);
+    if (!s) { c.rules.push('unchecked'); continue; }
+    const m = compared?.value.verdicts.find(v => v.id === c.id);
+    const keyed = (c.q.correctIndex ?? -1) + 1;
+    const answerCorrect = format === 'multiple-choice' ? s.correctOptions.length === 1 && s.correctOptions[0] === keyed : !!m?.matches;
+    if (!s.answerable) c.rules.push('unanswerable');
+    if (s.ambiguity.trim() || (format === 'multiple-choice' && s.correctOptions.length > 1)) c.rules.push('ambiguous');
+    // Every distractor easy to rule out makes the question a giveaway. One or two weak ones are recorded only.
+    if (format === 'multiple-choice' && new Set(s.weakDistractors.filter(n => n !== keyed && n >= 1 && n <= 4)).size >= 3) c.rules.push('weak_distractors');
+    if (Math.abs(levels.indexOf(s.level) - levels.indexOf(c.plan.difficulty)) >= 2) c.rules.push('difficulty');
+    if (m && !m.rubricSound) c.rules.push('rubric_unsound');
+    c.checker = { model: [solved.route.model, compared?.route.model].filter(Boolean).join(', '), supported: s.answerable, answerCorrect, reason: (m?.reason || s.ambiguity || s.solution).slice(0, 300) };
+  }
+}
+
+/** Repair rounds for failed questions. One keeps the cost of a set bounded. */
+const MAX_REPAIRS = 1;
+
+/**
+ * Write questions for the shortfall, check them, and store every outcome in the pool. Only the
+ * sections still short after checking are written again, once, told why the others failed.
+ */
 async function fillPool(env: BackendBindings, ctx: CallContext, courseId: string, format: PoolFormat, short: { section: Section; difficulty: Difficulty; count: number; key: string }[]) {
   const { db } = ctx;
   const versionIds = [...new Set(short.map(s => s.section.versionId))];
-  const [facts, versions, titles] = await Promise.all([
+  const [facts, versions, titles, existing] = await Promise.all([
     db.select().from(knowledgeFacts).where(inArray(knowledgeFacts.versionId, versionIds)),
     Promise.all(versionIds.map(id => versionBlocks(db, ctx.workspaceId, id))),
     db.select({ id: materials.id, title: materials.title }).from(materials).where(inArray(materials.id, [...new Set(short.map(s => s.section.materialId))])),
+    db.select({ prompt: sql<string>`${questionPool.content}->>'prompt'` }).from(questionPool).where(and(inArray(questionPool.cacheKey, short.map(s => s.key)), eq(questionPool.state, 'verified'))),
   ]);
   // Each block's own text, whole. Text conversion was unsure of is not used to write questions.
   const blockText = new Map<string, string>();
   for (const b of versions.flat()) if (b.type !== 'heading' && !b.flags?.uncertain) blockText.set(b.id, blockMarkdown(b));
-  const keys = new Map<string, { blockId: string; target: number }>();
-  let n = 0;
-  const targets: Target[] = short.map((p, t) => ({
-    key: `t${t}`, heading: p.section.heading, difficulty: p.difficulty, count: Math.min(5, p.count + 1),
-    facts: facts.filter(f => f.versionId === p.section.versionId && f.sectionBlockId === p.section.sectionBlockId).map(f => f.text).slice(0, 10),
-    blocks: p.section.blockIds.flatMap(id => { const text = blockText.get(id)?.trim(); if (!text) return []; const key = `b${n++}`; keys.set(key, { blockId: id, target: t }); return [{ key, text: text.slice(0, 2000) }]; }).slice(0, 30),
-  }));
   const language = short[0]!.section.language;
-  const written = await run(env, ctx, writeTask, { language, materialTitle: titles[0]?.title ?? '', format, targets });
-  const candidates = written.value.questions.flatMap((q, i) => {
-    const t = targets.findIndex(x => x.key === q.target);
-    if (t < 0) return [];
-    const blockIds = [...new Set(q.blocks.map(k => keys.get(k)).filter(k => k?.target === t).map(k => k!.blockId))];
-    const rules = ruleCheck(q, format);
-    if (!blockIds.length) rules.push('no_citation');
-    return [{ id: `q${i}`, q, plan: short[t]!, blockIds, rules }];
-  });
-  const seen = new Set<string>();
-  for (const c of candidates) { const key = promptKey(c.q.prompt); if (seen.has(key)) c.rules.push('duplicate'); seen.add(key); }
-  const checkable = candidates.filter(c => !c.rules.length);
-  const verdicts = checkable.length ? (await run(env, ctx, checkTask, { language, items: checkable.map(c => ({ id: c.id, question: c.q.prompt, answer: c.q.answer, options: c.q.options, source: c.blockIds.map(id => blockText.get(id) ?? '').join('\n') })) })) : null;
-  const rows = candidates.map(c => {
-    const v = verdicts?.value.verdicts.find(o => o.id === c.id);
-    const verification: PoolVerification = { rules: c.rules, checker: v ? { model: verdicts!.route.model, supported: v.supported, answerCorrect: v.answerCorrect, reason: v.reason.slice(0, 300) } : null };
+  const keys = new Map<string, { blockId: string; target: number }>();
+  let n = 0, written: Awaited<ReturnType<typeof run<WriteInput, z.infer<typeof writeSchema>>>> | null = null;
+  const all: Candidate[] = [];
+  let pending = short.map(p => ({ ...p })), failed: WriteInput['failed'] = [];
+  for (let round = 0; round <= MAX_REPAIRS && pending.length; round++) {
+    const targets: Target[] = pending.map((p, t) => ({
+      key: `t${t}`, heading: p.section.heading, difficulty: p.difficulty, count: Math.min(5, p.count),
+      facts: facts.filter(f => f.versionId === p.section.versionId && f.sectionBlockId === p.section.sectionBlockId).map(f => f.text).slice(0, 10),
+      blocks: p.section.blockIds.flatMap(id => { const text = blockText.get(id)?.trim(); if (!text) return []; const key = `b${n++}`; keys.set(key, { blockId: id, target: t }); return [{ key, text: text.slice(0, 4000) }]; }).slice(0, 30),
+    }));
+    // A repair round that fails keeps what the first round accepted.
+    try { written = await run(env, ctx, writeTask, { language, materialTitle: titles[0]?.title ?? '', format, targets, failed }); }
+    catch (error) { if (round === 0) throw error; break; }
+    const fresh: Candidate[] = written.value.questions.flatMap((q, i) => {
+      const t = targets.findIndex(x => x.key === q.target);
+      if (t < 0) return [];
+      const blockIds = [...new Set(q.blocks.map(k => keys.get(k)).filter(k => k?.target === t).map(k => k!.blockId))];
+      // A missing key whose answer is exactly one of the options is that option. Nothing else is guessed.
+      if (format === 'multiple-choice' && q.correctIndex === undefined && q.options) {
+        const at = q.options.map(promptKey).indexOf(promptKey(q.answer));
+        if (at >= 0 && q.options.map(promptKey).lastIndexOf(promptKey(q.answer)) === at) q.correctIndex = at;
+      }
+      return [{ id: `r${round}q${i}`, q, plan: pending[t]!, blockIds, rules: [], checker: null }];
+    });
+    // A check that fails its own validation leaves its questions unchecked, which keeps them out.
+    try { await verify(env, ctx, language, format, fresh, blockText, [...existing.map(e => e.prompt), ...all.map(c => c.q.prompt)]); }
+    catch (error) { if (!(error instanceof ApiError && error.code === 'ai_invalid')) throw error; for (const c of fresh) if (!c.checker) c.rules.push('unchecked'); }
+    all.push(...fresh);
+    // Sections still short go round again, with the reasons their questions failed.
+    const ok = (c: Candidate) => !c.rules.length && !!c.checker?.supported && c.checker.answerCorrect;
+    const next = pending.flatMap(p => { const got = fresh.filter(c => c.plan === p && ok(c)).length; return got < p.count ? [{ ...p, count: p.count - got }] : []; });
+    failed = fresh.filter(c => !ok(c)).flatMap(c => { const t = next.findIndex(p => p.key === c.plan.key); return t < 0 ? [] : [{ target: `t${t}`, prompt: c.q.prompt.slice(0, 200), reasons: c.rules.length ? c.rules : ['answer_incorrect'] }]; });
+    pending = next;
+  }
+  const rows = all.map(c => {
+    const verification: PoolVerification = { rules: c.rules, checker: c.checker };
     const content: PoolQuestion = { format, difficulty: c.plan.difficulty, prompt: c.q.prompt.trim(), answer: c.q.answer.trim(), explanation: c.q.explanation.trim(), ...(format === 'multiple-choice' ? { options: c.q.options, correctIndex: c.q.correctIndex } : {}), ...(format === 'written-recall' ? { rubric: c.q.rubric } : {}) };
-    // For multiple choice the checker's own list of correct options must be exactly the keyed one.
-    if (v && format === 'multiple-choice' && (v.correctOptions.length !== 1 || v.correctOptions[0] !== (c.q.correctIndex ?? -1) + 1)) c.rules.push('options_ambiguous');
-    const state = !c.rules.length && v?.supported && v.answerCorrect ? 'verified' as const : 'rejected' as const;
+    const state = !c.rules.length && c.checker?.supported && c.checker.answerCorrect ? 'verified' as const : 'rejected' as const;
     return { id: crypto.randomUUID(), workspaceId: ctx.workspaceId, courseId, materialId: c.plan.section.materialId, versionId: c.plan.section.versionId, sectionBlockId: c.plan.section.sectionBlockId, cacheKey: c.plan.key, format, difficulty: c.plan.difficulty, language, content, blockIds: c.blockIds.length ? c.blockIds : c.plan.section.blockIds.slice(0, 1), verification, state };
   });
   // Rejected questions are kept too, so their reasons can be measured.
   if (rows.length) await db.insert(questionPool).values(rows);
-  console.log(JSON.stringify({ operation: 'question-pool', written: rows.length, verified: rows.filter(r => r.state === 'verified').length, rules: rows.flatMap(r => r.verification.rules), unsupported: rows.filter(r => r.verification.checker && !(r.verification.checker.supported && r.verification.checker.answerCorrect)).length }));
+  console.log(JSON.stringify({ operation: 'question-pool', written: rows.length, verified: rows.filter(r => r.state === 'verified').length, rules: rows.flatMap(r => r.verification.rules), incorrect: rows.filter(r => r.verification.checker && !(r.verification.checker.supported && r.verification.checker.answerCorrect)).length }));
   // Fill each shortfall from its own section's verified questions.
-  return short.flatMap(p => rows.filter(r => r.cacheKey === p.key && r.state === 'verified').slice(0, p.count).map(r => ({ ...r, model: written.route.model })));
+  return short.flatMap(p => rows.filter(r => r.cacheKey === p.key && r.state === 'verified').slice(0, p.count).map(r => ({ ...r, model: written!.route.model })));
 }
 
 async function saveSet(db: SocketDb, workspaceId: string, courseId: string, input: z.infer<typeof generateInput>, fingerprint: string, picked: { id: string; materialId: string; versionId: string; content: PoolQuestion; blockIds: string[]; model?: string }[]) {

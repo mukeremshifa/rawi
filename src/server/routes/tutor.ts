@@ -25,7 +25,7 @@ tutorRoutes.post('/tutor/:id/reply', async c => {
   let open = true;
   const emit = async (event: ReplyEvent) => { if (!open) return; try { await writer.write(encoder.encode(`${JSON.stringify(event)}
 `)); } catch { open = false; } };
-  const done = streamReply(c.env, c.get('workspaceId'), uuid.parse(c.req.param('id')), body.operationId, emit)
+  const done = streamReply(c.env, c.get('workspaceId'), uuid.parse(c.req.param('id')), body.operationId, emit, work => c.executionCtx.waitUntil(work))
     .catch(() => emit({ type: 'error', code: 'unavailable', message: 'The tutor could not reply just now.' }))
     .finally(() => writer.close().catch(() => undefined));
   c.executionCtx.waitUntil(done);

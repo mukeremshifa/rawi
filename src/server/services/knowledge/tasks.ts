@@ -28,7 +28,7 @@ export type Digest = z.infer<typeof digestSchema>;
  * instructions over more material. Background work, so it runs on flex.
  */
 export const digestTask: Task<DigestInput, Digest> = {
-  name: 'knowledge.digest', promptVersion: KNOWLEDGE_PROMPT_VERSION, tiers: ['small', 'strong'], serviceTier: 'flex', cache: 'none', temperature: 0,
+  name: 'knowledge.digest', data: 'institution', promptVersion: KNOWLEDGE_PROMPT_VERSION, tiers: ['small', 'strong'], serviceTier: 'flex', cache: 'none', temperature: 0,
   maxOutput: 6000, language: i => i.language,
   build: i => ({
     system: [
@@ -53,7 +53,7 @@ const figureSchema = z.object({ description: z.string().describe('What the figur
 
 /** One description per figure, from the image itself, written once at ingest. */
 export const figureTask: Task<FigureInput, string> = {
-  name: 'knowledge.figure', promptVersion: KNOWLEDGE_PROMPT_VERSION, tiers: ['vision'], serviceTier: 'standard', cache: 'none', temperature: 0,
+  name: 'knowledge.figure', data: 'institution', promptVersion: KNOWLEDGE_PROMPT_VERSION, tiers: ['vision'], serviceTier: 'standard', cache: 'none', temperature: 0,
   maxOutput: 400, language: i => i.language,
   build: i => ({
     system: ['You describe a figure from a university course material for a student who cannot see it.', 'Say what it shows and the point it makes. Read any labels, axes and values that matter. Do not guess at what is not visible.', DATA_RULE, house(i.language)].join('\n'),

@@ -149,36 +149,64 @@ tables, headings and lists instead and the outline says so.
 
 One engine in `src/server/ai/` serves every AI task. Features call a task and
 never name a model. A task declares its context builder, output schema and
-check, output cap, cache policy, service tier and the route lists it escalates
-through. The router picks the first healthy route allowed by the plan, and a
-failed check moves to the next list. Routes, prices and the lists themselves
-live in `catalog.ts`, chosen from `dev/compare.ts` measurements.
+check, output cap, cache policy, service tier, data class and the route lists
+it escalates through. The router picks the first healthy route allowed by the
+plan, and a failed check moves to the next list. Routes, prices and the lists
+themselves live in `catalog.ts`, chosen from `dev/pipeline.ts` measurements.
 
 - Vendors: AWS Bedrock and Google Vertex, through small `fetch` adapters that
   run on Workers. Put the credentials described in `.dev.vars.example` in
   `.dev.vars`. Anthropic and OpenAI models on Bedrock refused calls from the
   development machine as an unsupported country, so none is routed.
+- Student content: tutor turns, written answers and summaries of them go only
+  to routes that keep no prompts, whatever the plan allows, unless a plan sets
+  `studentRetention: "standard"` on purpose. When no such route is up the
+  request fails and says so. Student questions are therefore not embedded
+  while the only embedding route is on Vertex, and the tutor searches by text.
 - Meter and trace: every provider call is a row in `ai_calls`, reserved from
   the task's output cap before sending and settled from usage by class after.
-  An uncertain outcome stays charged and is never retried automatically.
+  An uncertain outcome stays charged and is never retried automatically: a
+  practice set or feedback request left uncertain is refused if repeated under
+  the same id. Calls time out after 60 seconds, 150 on the flex lane. Each
+  interactive operation has limits on calls, spend and time. Background work
+  and interactive work hold separate concurrency slots.
 - Plans: limits and allowed vendors are rows in `ai_plans`. The `default` plan
   allows $2 a day and $20 a month per workspace, and `platform` caps all
   workspaces together. `/ai/status` reports whether a request would be refused.
-- Knowledge layer: each ready version is read once by an ingest job into
-  chunks with full-text search and pgvector embeddings, section summaries and
-  key terms, atomic facts and figure descriptions, all citing its blocks. A
-  newer version supersedes the job. Background work uses the vendors'
-  discounted flex lane where a route offers it.
-- Tutor: replies stream from `/tutor/:id/reply`, built from the focus section
-  and a few retrieved passages. Vector search runs only when text search is
-  weak, and when nothing relevant is found the tutor says so without a model
-  call. Older turns are summarised.
+- Knowledge layer: each ready version is read by an ingest job into chunks
+  with full-text search and pgvector embeddings, section summaries and key
+  terms, atomic facts and figure descriptions, all citing its blocks. Long
+  blocks are split, never cut, and tables repeat their header in each part. A
+  version is searchable once every block is in a chunk and enriched once the
+  rest is done, and `coverage` on the job says what is missing. A repair stage
+  comes back for failed embeddings. Figure descriptions are chunks of their
+  own, labelled as generated. Changing the chunker or embedding model rebuilds
+  current versions a few per sweep, keeping unchanged embeddings.
+- Tutor: replies stream from `/tutor/:id/reply`. A session's own passage is
+  read from its blocks, marked when a newer version exists. A follow-up is read
+  with the exchange it leans on, then text search runs, with vectors only when
+  text leaves the question's terms uncovered. Passages fill a token budget
+  without repeats. The evidence is judged sufficient, partial or absent:
+  absent is answered without a model call, and partial names what the
+  materials leave out. Grounding is worked out in code from that verdict and
+  the checked citations. A reply that cites nothing shows the passages it was
+  given. The stage moves in a small call after the reply, on the student's own
+  words. A hint on a reviewed answer is held back until it is known not to
+  give the answer away. Stop ends a reply within a second and keeps what
+  arrived, and a reply whose Worker went away is saved as interrupted.
 - Questions: checked pool questions keyed by version, section, format,
   difficulty and prompt version are reused first. The shortfall is written,
-  checked by rules and a second cheap reader, and stored with its verdict.
+  checked by rules, solved from its source by a second reader before any answer
+  is compared, and stored with its verdict. Sections still short are written
+  once more, told why the others failed.
+- Grading: every awarded rubric point must quote the answer, and code checks
+  the quote. Points whose evidence does not hold up are marked again by a
+  stronger model, alone. Large attempts are marked in groups.
 
-Run `npx tsx dev/compare.ts` to compare routes on the fictional fixtures. A full
-run costs about five cents.
+`npx tsx dev/compare.ts --pipeline` measures the whole pipeline on reviewed
+fictional cases in an evaluation workspace and writes `dev/results`. A full
+run costs about fifty cents. `npx tsx dev/compare.ts` compares routes on single
+tasks.
 
 ## Development seed
 
@@ -213,9 +241,8 @@ bundles. Nothing seeds during startup, migration, onboarding or sign-in.
 
 ## Remaining work
 
-- AI hardening: pedagogy and edge cases in tutor, generation and grading,
-  stopping a reply partway, and the latency of the reply path, which makes
-  about two dozen database round trips before the model starts.
+- AI: multiple-choice distractors are often rejected as too easy, and evidence
+  judged partial is still often answered as if complete.
 - Deferred AI: Arabic prompts and search, voice, chart specs, shared question
   pools and organisation policy. Language, audio units and cache keys are
   already carried for them.

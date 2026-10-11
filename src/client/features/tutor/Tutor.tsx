@@ -155,7 +155,7 @@ export function Tutor() {
   const end = useRef<HTMLDivElement>(null);
   const status = useApi<AiStatusView>('/v1/ai/status');
   // The reply streams in after the question is saved. A reload resumes by reading the saved session.
-  const [live, setLive] = useState<{ op: string; text: string; error?: string } | null>(null);
+  const [live, setLive] = useState<{ op: string; text: string; error?: string; stopping?: boolean } | null>(null);
   const started = useRef<string | null>(null);
   const pendingReply = data.data?.pendingReply ?? null;
   useEffect(() => {
@@ -228,15 +228,16 @@ export function Tutor() {
             const body = tutor ? renderCitations(m.text, citations.length) : m.text;
             return (
               <li key={m.id} className="flex flex-col gap-1.5">
-                <span className="text-muted-foreground text-sm font-medium">{tutor ? m.provenance?.model ?? 'Tutor' : 'You'}</span>
+                <span className="text-muted-foreground text-sm font-medium">{tutor ? (m.provenance?.model && m.provenance.model !== 'none' ? m.provenance.model : 'Tutor') : 'You'}</span>
                 <div className={cn(tutor ? 'font-serif' : 'bg-surface rounded-lg border px-4 py-3')}>
                   <Prose text={body} size={tutor ? 'reading' : 'compact'} onCitation={citations.length ? n => { if (citations[n - 1]) setPanel({ kind: 'source', message: m, index: n - 1 }); } : undefined} />
                 </div>
                 {tutor && (
                   <div className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-sm">
                     {m.provenance?.grounding && <span>{GROUNDING_LABEL[m.provenance.grounding]}</span>}
-                    {citations.length > 0 && <button type="button" className="hover:text-foreground underline-offset-2 hover:underline" onClick={() => setPanel({ kind: 'source', message: m, index: 0 })}>{citations.length === 1 ? '1 source' : `${citations.length} sources`}</button>}
+                    {citations.length > 0 && <button type="button" className="hover:text-foreground underline-offset-2 hover:underline" onClick={() => setPanel({ kind: 'source', message: m, index: 0 })}>{m.provenance?.attachedSources === citations.length ? (citations.length === 1 ? 'Where this may come from' : `${citations.length} places this may come from`) : citations.length === 1 ? '1 source' : `${citations.length} sources`}</button>}
                     {m.state === 'interrupted' && <span className="text-warning-text">This reply was cut off and is incomplete.</span>}
+                    {m.state === 'cancelled' && <span>You stopped this reply.</span>}
                     {!!m.provenance?.droppedCitations && <span>{m.provenance.droppedCitations === 1 ? 'One citation did not match your materials and was removed.' : `${m.provenance.droppedCitations} citations did not match your materials and were removed.`}</span>}
                   </div>
                 )}
@@ -247,9 +248,10 @@ export function Tutor() {
           {live && (
             <li className="flex flex-col gap-1.5" aria-live="polite">
               <span className="text-muted-foreground text-sm font-medium">Tutor</span>
-              {live.text && <div className="font-serif"><Prose text={live.text.replace(/[[[^]]*]]/g, '').replace(/[[[^]]*$/, '')} size="reading" /></div>}
+              {live.text && <div className="font-serif"><Prose text={live.text.replace(/\[\[[^\]]*\]\]/g, '').replace(/\[\[[^\]]*$|\[$/, '')} size="reading" /></div>}
               {!live.text && !live.error && <span className="text-muted-foreground text-base">Reading your materials…</span>}
               {live.error && <span className="text-danger-text text-sm">{live.error}</span>}
+              {!live.error && <Button variant="secondary" size="sm" className="self-start" loading={live.stopping} onClick={() => { setLive(prior => prior && { ...prior, stopping: true }); void request(`/v1/ai/operations/${live.op}/cancel`, user.id, { operationId: crypto.randomUUID() }, 'POST').catch(e => toast.error(String(e instanceof Error ? e.message : e))); }}>Stop</Button>}
             </li>
           )}
         </ol>

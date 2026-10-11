@@ -46,13 +46,16 @@ export function AiOperation() {
   );
 }
 
+/** After a request that may have been charged without a result, the next press is a new request. */
+export const UNCERTAIN = ['ai_uncertain', 'operation_uncertain'];
+
 /** Ask for feedback on every written answer in an attempt at once. The attempt reloads with it. */
 export function RequestFeedback({ attemptId, count, onDone }: { attemptId: string; count: number; onDone: () => void }) {
   const save = useSave();
   const id = useRef(crypto.randomUUID());
   return (
     <div className="flex flex-col items-start gap-1">
-      <Button variant="secondary" size="sm" loading={save.busy} onClick={() => save.run<{ graded: number }>({ path: `/v1/attempts/${attemptId}/feedback`, body: { operationId: id.current } }, { id: 'feedback', onSuccess: () => { id.current = crypto.randomUUID(); onDone(); } })}>
+      <Button variant="secondary" size="sm" loading={save.busy} onClick={() => { if (UNCERTAIN.includes(save.code)) { save.discard(); id.current = crypto.randomUUID(); } save.run<{ graded: number }>({ path: `/v1/attempts/${attemptId}/feedback`, body: { operationId: id.current } }, { id: 'feedback', onSuccess: () => { id.current = crypto.randomUUID(); onDone(); } }); }}>
         {save.busy ? 'Marking your answers' : count === 1 ? 'Get feedback on your written answer' : `Get feedback on ${count} written answers`}
       </Button>
       {save.error && <FieldError>{save.error}</FieldError>}

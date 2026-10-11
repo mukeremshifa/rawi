@@ -6,7 +6,7 @@ import { tutorMessages, tutorSessions, topics, aiOperations, plannedSessions } f
 import { citationBlocks, validateCitation } from './materials';
 import { spansText } from '../../shared/domain/document-text';
 import { operation, attempt } from './learning';
-import { queueReply } from './ai/tutor';
+import { queueReply, recoverReplies } from './ai/tutor';
 import { summariseTutorTurns } from '../../shared/domain/tutor-summary';
 import type { writeInput } from '../../shared/contracts/learning';
 import { bumpPlanner } from './planning';
@@ -71,6 +71,8 @@ export async function createSession(db: SocketDb, workspaceId: string, courseId:
 export async function saveMessage(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof tutorMessageInput>) {
   return operation(db, workspaceId, input.operationId, { action: 'tutor-message', id, input }, async tx => {
     const session = await ownSession(tx, workspaceId, id, true); if (session.revision !== input.expectedRevision) throw conflict(); if (session.endedAt) throw new ApiError(409, 'session_ended', 'This session has ended. Start a new session to continue studying.'); if (session.archived) throw new ApiError(409, 'archived', 'Restore the session before adding messages.');
+    // A reply whose Worker went away would otherwise hold the session busy for good.
+    await recoverReplies(tx, { workspaceId, sessionId: id });
     const [active] = await tx.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), inArray(aiOperations.state, ['queued', 'running']))).limit(1);
     if (active) throw new ApiError(409, 'tutor_busy', 'A reply is still being written. Wait for it before sending another question.');
     const [last] = await tx.select({ ordinal: tutorMessages.ordinal }).from(tutorMessages).where(eq(tutorMessages.sessionId, id)).orderBy(desc(tutorMessages.ordinal)).limit(1);
@@ -100,6 +102,7 @@ export async function endSession(db: SocketDb, workspaceId: string, id: string, 
     const session = await ownSession(tx, workspaceId, id, true);
     if (session.endedAt) return detail(tx, workspaceId, id);
     if (session.revision !== input.expectedRevision) throw conflict();
+    await recoverReplies(tx, { workspaceId, sessionId: id });
     const [running] = await tx.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), inArray(aiOperations.state, ['queued', 'running']))).limit(1);
     if (running) throw new ApiError(409, 'tutor_busy', 'Wait for the reply to finish before ending this session.');
     const counts = await messageCounts(tx, workspaceId, id);

@@ -43,7 +43,7 @@ export interface Adapter {
   generate(route: Route, request: ModelRequest, signal?: AbortSignal): Promise<ModelResult>;
   /** Yields text as it arrives and returns the final result. */
   stream(route: Route, request: ModelRequest, signal?: AbortSignal): AsyncGenerator<string, ModelResult>;
-  embed(route: Route, texts: string[], purpose: 'document' | 'query'): Promise<{ vectors: number[][]; chars: number; latencyMs: number }>;
+  embed(route: Route, texts: string[], purpose: 'document' | 'query', signal?: AbortSignal): Promise<{ vectors: number[][]; chars: number; latencyMs: number }>;
 }
 
 /** Statuses that mean the request was refused before any generation. */

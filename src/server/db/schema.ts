@@ -311,7 +311,9 @@ export const reminderStates = pgTable('reminder_states', {
 export const aiOperations = pgTable('ai_operations', {
   id: uuid('id').primaryKey(), ...materialScope(), task: text('task').$type<'tutor' | 'generate' | 'grade' | OutlineJobKind>().notNull(),
   targetId: uuid('target_id').notNull(), fingerprint: text('fingerprint').notNull(), input: jsonb('input').$type<unknown>().notNull(),
-  state: text('state').$type<'queued' | 'blocked' | 'running' | 'complete' | 'failed' | 'cancelled' | 'interrupted'>().notNull(),
+  // One lifecycle: queued, running, complete, failed, cancelled, or uncertain when a provider call
+  // may have been charged without a result. Uncertain work is never repeated automatically.
+  state: text('state').$type<'queued' | 'blocked' | 'running' | 'complete' | 'failed' | 'cancelled' | 'interrupted' | 'uncertain'>().notNull(),
   model: text('model'), promptVersion: text('prompt_version').notNull(), reason: text('reason'),
   activeExecutionId: uuid('active_execution_id'), result: jsonb('result').$type<unknown>(), ...timestamps(),
 }, t => [unique('ai_operations_scope_unique').on(t.workspaceId, t.id), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('ai_operations_target_idx').on(t.workspaceId, t.targetId, t.createdAt)]);

@@ -225,7 +225,8 @@ export interface WrittenGrading {
   model?: string;
   gradedAt?: string;
   summary?: string;
-  points?: { rubricId: string; awarded: number; max: number; feedback: string }[];
+  /** `evidence` quotes the words of the answer that earned the point. */
+  points?: { rubricId: string; awarded: number; max: number; feedback: string; evidence?: string }[];
   /** The last failure, shown with a retry. The answer itself is never lost. */
   error?: string;
 }

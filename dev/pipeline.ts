@@ -14,7 +14,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { createHash } from 'node:crypto';
 import { Client } from '@neondatabase/serverless';
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { socketDb, transaction } from '../src/server/db/client';
 import * as s from '../src/server/db/schema';
 import type { BackendBindings } from '../src/server/config';
@@ -23,12 +23,11 @@ import { createMaterial, publishVersion } from '../src/server/services/materials
 import { sections as versionSections, versionBlocks } from '../src/server/services/outline/sections';
 import { backfillIngest, runIngest } from '../src/server/services/knowledge/ingest';
 import { createSession, saveMessage } from '../src/server/services/tutoring';
-import { prepare, streamReply } from '../src/server/services/ai/tutor';
-import { generateSet } from '../src/server/services/ai/questions';
-import { gradeTask } from '../src/server/services/ai/grading';
+import { prepare, revealsAnswer, stageTask, streamReply, tutorTask } from '../src/server/services/ai/tutor';
+import { generateInput, generateSet } from '../src/server/services/ai/questions';
+import { markItems, type MarkCall } from '../src/server/services/ai/grading';
 import { adaptersFor } from '../src/server/ai/engine';
 import { cost, route as routeById, TIERS } from '../src/server/ai/catalog';
-import type { ModelRequest } from '../src/server/ai/adapters/types';
 import { promptKey } from '../src/shared/domain/prompt-key';
 import type { Citation } from '../src/shared/contracts/document';
 import { SEED_MATERIALS } from './fixtures/materials';
@@ -45,6 +44,9 @@ const uuidFor = (key: string) => { const h = createHash('sha256').update(`rawi-e
 
 /* ── Database round trips, counted at the driver ─────────────────────────── */
 
+// A dropped database socket during a long run is reported, not fatal. The turn it hit is counted as failed.
+process.on('uncaughtException', error => console.log(`uncaught: ${String(error).slice(0, 160)}`));
+
 let roundTrips = 0;
 const query = Client.prototype.query;
 Client.prototype.query = function (this: Client, ...args: unknown[]) { roundTrips++; return (query as (...a: unknown[]) => unknown).apply(this, args); } as typeof Client.prototype.query;
@@ -57,6 +59,10 @@ interface Corpus { workspaceId: string; courseId: string; topicId: string; mater
 async function corpus(db: Db): Promise<Corpus> {
   await db.insert(s.user).values({ id: EVAL_USER, name: 'Rawi evaluation', email: 'eval@rawi.invalid' }).onConflictDoNothing();
   const { workspace } = await bootstrap(db, EVAL_USER);
+  // A development-only plan for the evaluation workspace, so parallel runs are not held to two
+  // calls at once. The default and platform plans are left as they are.
+  await db.insert(s.aiPlans).values({ id: 'eval', policy: { vendors: ['bedrock', 'vertex'], retention: 'standard', concurrent: 6, dailyMicros: 5_000_000, monthlyMicros: 10_000_000 } }).onConflictDoNothing();
+  await db.update(s.workspaces).set({ aiPlanId: 'eval' }).where(eq(s.workspaces.id, workspace.id));
   const workspaceId = workspace.id, courseId = uuidFor('course'), topicId = uuidFor('topic');
   await db.insert(s.courses).values({ id: courseId, workspaceId, name: 'Evaluation: The Atlantic World, 1500 to 1800', description: 'Fictional evaluation course.', createFingerprint: 'eval' }).onConflictDoNothing();
   await db.insert(s.topics).values({ id: topicId, workspaceId, courseId, title: 'Atlantic World review', summary: '', module: '', order: 0 }).onConflictDoNothing();
@@ -141,7 +147,7 @@ async function blockCoverage(db: Db, c: Corpus) {
 
 async function spent(db: Db, workspaceId: string, from: Date, operationId?: string) {
   const [row] = await db.select({ micros: sql<number>`coalesce(sum(coalesce(${s.aiCalls.chargedMicros}, ${s.aiCalls.reservedMicros})) filter (where ${s.aiCalls.state} <> 'released'), 0)::float8`, calls: sql<number>`count(*)::int` })
-    .from(s.aiCalls).where(and(eq(s.aiCalls.workspaceId, workspaceId), gte(s.aiCalls.createdAt, from), operationId ? eq(s.aiCalls.operationId, operationId) : undefined));
+    .from(s.aiCalls).where(and(eq(s.aiCalls.workspaceId, workspaceId), operationId ? eq(s.aiCalls.operationId, operationId) : gte(s.aiCalls.createdAt, from)));
   return row!;
 }
 
@@ -184,13 +190,15 @@ async function retrievalSuite(db: Db, c: Corpus, repeat: number) {
     for (let i = 0; i < runs; i++) {
       const { sessionId, operationId } = await openSession(db, c, t);
       const started = Date.now();
-      const { input } = await prepare(env, { db, workspaceId: c.workspaceId, operationId }, sessionId, { text: t.message, action: 'message', sessionRevision: 0 });
+      const prepared = await prepare(env, { db, workspaceId: c.workspaceId, operationId }, sessionId, { text: t.message, action: 'message', sessionRevision: 0 });
+      const input = prepared.input, verdict = 'found' in prepared ? (prepared as { found: { verdict: string } }).found.verdict : (input.passages.length || input.anchor.length ? 'sufficient' : 'absent');
       ms += Date.now() - started;
       const given = [...input.anchor, ...input.passages].map(p => `${p.heading}\n${p.text}`);
       if (t.evidence.every(m => has(given, m))) hit++;
-      if (t.staleEvidence?.some(m => has(given, m))) stale++;
-      const offered = given.length > 0;
-      if ((t.verdict === 'absent') === !offered) verdictOk++;
+      const unlabelled = [...input.anchor, ...input.passages].filter(p => !('earlier' in p && p.earlier)).map(p => `${p.heading}
+${p.text}`);
+      if (t.staleEvidence?.some(m => has(unlabelled, m))) stale++;
+      if (verdict === t.verdict) verdictOk++;
       await db.update(s.aiOperations).set({ state: 'cancelled' }).where(eq(s.aiOperations.id, operationId));
     }
     rows.push({ case: t.id, kind: t.kind, runs, evidence: hit, stale, verdict: verdictOk, ms: Math.round(ms / runs) });
@@ -205,7 +213,7 @@ async function tutorSuite(db: Db, c: Corpus, repeat: number, routes: string[], d
   for (const routeId of routes) {
     TIERS.chat = [routeId];
     for (const t of TUTOR_CASES) {
-      const row = { route: routeId, case: t.id, kind: t.kind, runs: 0, pass: 0, answer: 0, limitation: 0, cited: 0, forbidden: 0, noCall: 0, firstMs: [] as number[], totalMs: [] as number[], trips: [] as number[], micros: [] as number[], notes: [] as string[] };
+      const row = { route: routeId, case: t.id, kind: t.kind, runs: 0, pass: 0, answer: 0, limitation: 0, cited: 0, inline: 0, groundingOk: 0, forbidden: 0, noCall: 0, firstMs: [] as number[], totalMs: [] as number[], trips: [] as number[], micros: [] as number[], notes: [] as string[] };
       for (let i = 0; i < repeat; i++) {
         row.runs++;
         const { sessionId, operationId } = await openSession(db, c, t);
@@ -214,18 +222,19 @@ async function tutorSuite(db: Db, c: Corpus, repeat: number, routes: string[], d
         await streamReply(env, c.workspaceId, sessionId, operationId, async e => {
           if (e.type === 'delta' && !first) { first = Date.now() - started; tripsBefore = roundTrips - trips0; }
           if (e.type === 'error') error = e.code;
-        });
+        }, work => { void work; });
         row.totalMs.push(Date.now() - started);
         if (first) { row.firstMs.push(first); row.trips.push(tripsBefore); }
         row.micros.push((await spent(db, c.workspaceId, from, operationId)).micros);
-        const [reply] = await db.select().from(s.tutorMessages).where(and(eq(s.tutorMessages.sessionId, sessionId), eq(s.tutorMessages.role, 'tutor'), gte(s.tutorMessages.createdAt, from)));
+        // The newest tutor message that is not fixture history. Matching on time would depend on two clocks.
+        const [reply] = await db.select().from(s.tutorMessages).where(and(eq(s.tutorMessages.sessionId, sessionId), eq(s.tutorMessages.role, 'tutor'), sql`${s.tutorMessages.provenance}->>'model' <> 'fixture'`)).orderBy(desc(s.tutorMessages.ordinal)).limit(1);
         if (!reply) { row.notes.push(error || 'no reply'); continue; }
         const text = reply.text, p = reply.provenance!;
         const answerOk = t.answer.every(r => r.test(text));
         const forbidOk = !(t.forbid ?? []).some(r => r.test(text));
         const limitOk = !t.limitation || LIMITATION.test(text);
         const citeOk = t.verdict === 'absent' || p.citations.length > 0;
-        if (answerOk) row.answer++; if (t.limitation && LIMITATION.test(text)) row.limitation++; if (p.citations.length) row.cited++; if (!forbidOk) row.forbidden++; if (p.model === 'none') row.noCall++;
+        if (answerOk) row.answer++; if (t.limitation && LIMITATION.test(text)) row.limitation++; if (p.citations.length) row.cited++; if (p.citations.length > (p.attachedSources ?? 0)) row.inline++; if (t.verdict === 'absent' ? !p.grounding || ['insufficient', 'general'].includes(p.grounding) : ['materials', 'mixed'].includes(p.grounding ?? '')) row.groundingOk++; if (!forbidOk) row.forbidden++; if (p.model === 'none') row.noCall++;
         const ok = answerOk && forbidOk && limitOk && citeOk;
         if (ok) row.pass++;
         else {
@@ -304,22 +313,31 @@ async function gradingSuite(repeat: number, routes: string[]) {
   // Attempt k answers question j with answer type (k + 2j) mod 6, so every attempt mixes types.
   const attempts = types.map((_, k) => questions.map((q, j) => GRADED_ANSWERS.find(a => a.question === q.id && a.type === types[(k + 2 * j) % 6])!));
   const rows = [];
+  const strong = TIERS.strong[0]!;
   for (const routeId of routes) {
-    const r = routeById(routeId)!;
-    const row = { route: routeId, runs: 0, failed: 0, points: 0, exact: 0, within1: 0, totalAbsError: 0, items: 0, falseCredit: 0, wrongItems: 0, alternativeShare: [] as number[], byType: {} as Record<string, { exact: number; points: number }>, ms: [] as number[], micros: 0 };
+    const row = { route: routeId, runs: 0, failed: 0, points: 0, exact: 0, within1: 0, totalAbsError: 0, items: 0, falseCredit: 0, wrongItems: 0, alternativeShare: [] as number[], byType: {} as Record<string, { exact: number; points: number }>, ms: [] as number[], micros: 0, calls: 0, escalated: 0, disputed: 0 };
     for (let i = 0; i < repeat; i++) for (const attempt of attempts) {
       row.runs++;
       const items = attempt.map((a, n) => { const q = SEED_QUESTIONS.find(x => x.id === a.question)!; return { key: `a${n}`, prompt: q.prompt, modelAnswer: q.answer ?? q.explanation ?? '', rubric: q.rubric!.map((p, m) => ({ key: `r${m}`, label: p.label, marks: p.marks })), source: sourceOf(a.question), response: a.text }; });
-      const input = { language: 'en', items };
-      const req: ModelRequest = { ...gradeTask.build(input, r), maxOutput: gradeTask.maxOutput, cache: gradeTask.cache, serviceTier: 'standard', temperature: gradeTask.temperature };
+      // The production path: grouped marking, evidence checks, and review of disputed points,
+      // with this route first and the strong tier behind it as the engine escalates.
+      const call: MarkCall = async (task, input) => {
+        for (const id of task.name === 'grade.review' ? [strong] : [routeId, strong]) {
+          const rr = routeById(id)!;
+          const result = await adapters[rr.vendor]!.generate(rr, { ...task.build(input, rr), maxOutput: task.maxOutput, cache: task.cache, serviceTier: 'standard', temperature: task.temperature });
+          row.ms.push(result.latencyMs); row.micros += cost(rr, result.usage, 'standard'); row.calls++;
+          if (id !== routeId) row.escalated++;
+          const value = result.stop === 'end' ? task.check(result, input) : null;
+          if (value) return { value, model: id };
+        }
+        throw new Error('invalid');
+      };
       try {
-        const result = await adapters[r.vendor]!.generate(r, req);
-        row.ms.push(result.latencyMs); row.micros += cost(r, result.usage, 'standard');
-        const value = result.stop === 'end' ? gradeTask.check(result, input) : null;
-        if (!value) { row.failed++; continue; }
+        const { marked, disputed } = await markItems(call, 'en', items);
+        row.disputed += disputed;
         for (const [n, a] of attempt.entries()) {
-          const out = value.items.find(o => o.key === `a${n}`)!;
-          const awarded = a.marks.map((_, m) => out.points.find(p => p.rubricKey === `r${m}`)?.awarded ?? 0);
+          const out = marked.get(`a${n}`)!;
+          const awarded = a.marks.map((_, m) => out.points.find(p => p.key === `r${m}`)?.awarded ?? 0);
           const t = row.byType[a.type] ??= { exact: 0, points: 0 };
           for (const [m, mark] of a.marks.entries()) { row.points++; t.points++; if (awarded[m] === mark) { row.exact++; t.exact++; } if (Math.abs(awarded[m]! - mark) <= 1) row.within1++; }
           const total = awarded.reduce((x, y) => x + y, 0), expected = a.marks.reduce((x, y) => x + y, 0);
@@ -335,6 +353,104 @@ async function gradingSuite(repeat: number, routes: string[]) {
   return rows;
 }
 
+/* ── Behaviour: stage decisions and hints ────────────────────────────────── */
+
+/**
+ * Stage decisions on reviewed turns, and how often a raw hint gives an answer key away before
+ * the guard. Calls vendors directly with the production prompts. No database.
+ */
+const STAGE_TURNS: { id: string; stage: 'understand' | 'recall' | 'reason'; lastTutor: string; message: string; shown: boolean }[] = [
+  { id: 'praise-only', stage: 'understand', lastTutor: 'Great question! You are doing really well. Can you say in your own words why the demographic collapse mattered?', message: 'Thank you so much, that is really kind of you and it all makes sense now.', shown: false },
+  { id: 'agreement', stage: 'reason', lastTutor: 'So disease removed one labour supply while demand stayed. Do you agree that is the key step?', message: 'Yes I agree with that, it sounds right to me and I think I get it now.', shown: false },
+  { id: 'vague', stage: 'understand', lastTutor: 'Can you explain in your own words what the encomienda granted?', message: 'I think it was something to do with the colonies and how things changed for the people living there over time.', shown: false },
+  { id: 'wrong', stage: 'recall', lastTutor: 'What did the encomienda grant to a colonist?', message: 'It granted the colonist permanent ownership of a large estate of land that he could pass on to his heirs.', shown: false },
+  { id: 'correct-understand', stage: 'understand', lastTutor: 'Can you explain in your own words what the encomienda granted?', message: 'It gave a Spaniard the right to tribute and labour from a named group of indigenous people, not the land itself, which stayed theirs in law.', shown: true },
+  { id: 'correct-reason', stage: 'reason', lastTutor: 'Why did the slave trade expand into the gap left by epidemic mortality?', message: 'Because plantations already needed workers, and when disease killed the indigenous labour force the demand stayed while the supply collapsed, so buying captives became the commercially attractive way to fill it.', shown: true },
+];
+const HINT_KEY = 'The encomienda granted the labour and tribute of a named indigenous community, not land.';
+
+async function behaviourSuite(repeat: number, routes: string[]) {
+  const adapters = adaptersFor(env);
+  const rows = [];
+  for (const routeId of routes) {
+    const r = routeById(routeId)!;
+    const row = { route: routeId, stageRuns: 0, stageRight: 0, falseAdvance: 0, missedAdvance: 0, hintRuns: 0, hintLeaks: 0, notes: [] as string[] };
+    for (let i = 0; i < repeat; i++) {
+      for (const t of STAGE_TURNS) {
+        row.stageRuns++;
+        // The code rule first: a short message never reaches the model.
+        if ((t.message.match(/[\p{L}\p{N}]+/gu) ?? []).length < 8) { if (!t.shown) row.stageRight++; else row.missedAdvance++; continue; }
+        const input = { messageId: '', language: 'en', stage: t.stage, lastTutor: t.lastTutor, message: t.message };
+        const result = await adapters[r.vendor]!.generate(r, { ...stageTask.build(input, r), maxOutput: stageTask.maxOutput, cache: 'none', serviceTier: 'standard', temperature: 0 });
+        const v = result.stop === 'end' ? stageTask.check(result, input) : null;
+        if (!v) { row.notes.push(`${t.id}: invalid`); continue; }
+        if (v.shown === t.shown) row.stageRight++; else if (v.shown) { row.falseAdvance++; row.notes.push(`advanced on ${t.id}`); } else row.missedAdvance++;
+      }
+      // A hint on a reviewed answer, with the key in the session. Raw leaks before the guard.
+      row.hintRuns++;
+      const passage = { id: 'p1', materialId: 'm', versionId: 'v', blockIds: [], materialTitle: 'Grant, Tribute and Labour', heading: 'What an encomienda actually granted', text: SEED_MATERIALS[1]!.sections[0]!.text, sectionSummary: null, kind: 'text' as const, focus: true };
+      const input = { language: 'en', courseName: 'The Atlantic World', topic: null, focusLabel: 'The encomienda', anchor: [passage], review: { attemptId: 'a', questionId: 'q', courseId: 'c', prompt: 'What did an encomienda grant?', response: 'Land in the colonies.', answerKey: HINT_KEY, feedback: '', marksAwarded: 0, marksAvailable: 2, usedHint: false, pending: false }, olderSummary: null, history: [], passages: [], evidence: { verdict: 'sufficient' as const, missing: [] }, stage: 'recall' as const, action: 'hint' as const, message: 'Can I have a hint? I got this one wrong.' };
+      const stream = adapters[r.vendor]!.stream(r, { ...tutorTask.build(input as never, r), maxOutput: tutorTask.maxOutput, cache: 'none', serviceTier: 'standard', temperature: tutorTask.temperature });
+      let text = '';
+      for (;;) { const n = await stream.next(); if (n.done) break; text += n.value; }
+      if (revealsAnswer(text, HINT_KEY)) row.hintLeaks++;
+    }
+    process.stdout.write(`behaviour ${routeId}: stage ${row.stageRight}/${row.stageRuns}, false advances ${row.falseAdvance}, hint leaks ${row.hintLeaks}/${row.hintRuns}\n`);
+    rows.push(row);
+  }
+  return rows;
+}
+
+/* ── Lifecycle: cancellation, a lost Worker, a repeated uncertain request ── */
+
+async function lifecycleSuite(db: Db, c: Corpus) {
+  const out: Record<string, unknown> = {};
+  const scope = { workspaceId: c.workspaceId };
+  // 1. The student stops a reply after its first text.
+  {
+    const t = { ...TUTOR_CASES.find(x => x.id === 'ord-encomienda')!, message: 'Explain in detail how the encomienda worked, what it granted and what the New Laws of 1542 tried to change.' };
+    const { sessionId, operationId } = await openSession(db, c, t);
+    let shown = '', cancelledAt = 0, event = '';
+    const started = Date.now();
+    await streamReply(env, c.workspaceId, sessionId, operationId, async e => {
+      if (e.type === 'delta') { shown += e.text; if (!cancelledAt && shown.length > 40) { cancelledAt = Date.now(); void db.update(s.aiOperations).set({ state: 'cancelled' }).where(and(eq(s.aiOperations.id, operationId), eq(s.aiOperations.state, 'running'))).then(() => undefined); } }
+      else event = e.type;
+    }, work => { void work; });
+    const [reply] = await db.select().from(s.tutorMessages).where(and(eq(s.tutorMessages.sessionId, sessionId), eq(s.tutorMessages.role, 'tutor'), sql`${s.tutorMessages.provenance}->>'model' <> 'fixture'`));
+    const [op] = await db.select().from(s.aiOperations).where(eq(s.aiOperations.id, operationId));
+    const [call] = await db.select().from(s.aiCalls).where(eq(s.aiCalls.operationId, operationId));
+    out.cancel = { shownChars: shown.length, stopMs: Date.now() - (cancelledAt || started), event, replyState: reply?.state, savedChars: reply?.text.length, savedMatchesShown: !!reply && shown.startsWith(reply.text.slice(0, 30)), operation: op?.state, call: call && { state: call.state, error: call.error, partialChars: call.partial.length, reservedMicros: call.reservedMicros, chargedMicros: call.chargedMicros } };
+  }
+  // 2. A Worker that died mid-reply: the operation is left running with a checkpoint.
+  {
+    const t = TUTOR_CASES.find(x => x.id === 'ord-navigation')!;
+    const { sessionId, operationId } = await openSession(db, c, t);
+    await db.update(s.aiOperations).set({ state: 'running', updatedAt: new Date(Date.now() - 5 * 60_000) }).where(eq(s.aiOperations.id, operationId));
+    await db.insert(s.aiCalls).values({ id: crypto.randomUUID(), workspaceId: c.workspaceId, operationId, task: 'tutor.reply', step: 0, vendor: 'bedrock', model: 'qwen.qwen3-32b-v1:0', region: 'us-east-1', serviceTier: 'standard', language: 'en', state: 'ambiguous', reservedMicros: 900, partial: 'The Navigation Acts required that colonial trade travel in English ships [[p1]], and that enumerated goods' });
+    const [session] = await db.select().from(s.tutorSessions).where(eq(s.tutorSessions.id, sessionId));
+    let next: string;
+    try { await saveMessage(db, c.workspaceId, sessionId, { operationId: crypto.randomUUID(), expectedRevision: session!.revision, text: 'Which goods were enumerated?', action: 'message' }); next = 'accepted'; }
+    catch (error) { next = (error as { code?: string }).code ?? String(error); }
+    const [op] = await db.select().from(s.aiOperations).where(eq(s.aiOperations.id, operationId));
+    const messages = await db.select({ role: s.tutorMessages.role, state: s.tutorMessages.state, text: s.tutorMessages.text }).from(s.tutorMessages).where(and(eq(s.tutorMessages.sessionId, sessionId), sql`coalesce(${s.tutorMessages.provenance}->>'model', '') <> 'fixture'`)).orderBy(s.tutorMessages.ordinal);
+    out.lostWorker = { nextMessage: next, operation: op?.state, messages: messages.map(m => `${m.role}:${m.state}:${m.text.slice(0, 60)}`) };
+  }
+  // 3. A practice set whose first run ended uncertain is not run again under the same id.
+  {
+    const operationId = crypto.randomUUID();
+    const input = { operationId, name: 'Eval uncertain', format: 'flashcard' as const, count: 1, topicIds: [], materialIds: [c.materials.get('mat-exchange-reading')!.id], sections: [], difficulties: ['recall' as const] };
+    const { hash } = await import('../src/server/services/materials');
+    await db.insert(s.aiOperations).values({ id: operationId, workspaceId: c.workspaceId, courseId: c.courseId, targetId: operationId, task: 'generate', fingerprint: await hash(JSON.stringify(generateInput.parse(input))), input, state: 'uncertain', promptVersion: 'test' });
+    try { await generateSet(env, db, c.workspaceId, c.courseId, generateInput.parse(input)); out.uncertainRepeat = 'ran again'; }
+    catch (error) { out.uncertainRepeat = (error as { code?: string }).code ?? String(error); }
+    const calls = await db.select({ id: s.aiCalls.id }).from(s.aiCalls).where(eq(s.aiCalls.operationId, operationId));
+    out.uncertainRepeatCalls = calls.length;
+  }
+  void scope;
+  console.log(JSON.stringify(out, null, 1));
+  return out;
+}
+
 /* ── Report ──────────────────────────────────────────────────────────────── */
 
 const mean = (xs: number[]) => xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : NaN;
@@ -348,12 +464,14 @@ export async function runPipeline(args: PipelineArgs) {
   try {
     // Grading alone calls vendors directly and leaves the evaluation workspace untouched.
     let c = undefined as unknown as Corpus;
-    if (args.suites.some(x => x !== 'grading')) {
+    if (args.suites.some(x => x !== 'grading' && x !== 'behaviour')) {
       c = await corpus(db);
       // Earlier runs' sessions and sets are not needed. Their calls stay in `ai_calls` as spend.
-      for (const table of ['set_items', 'learning_sets', 'question_sources', 'question_versions', 'tutor_messages', 'tutor_sessions', 'learning_operations']) await db.execute(sql`delete from ${sql.identifier(table)} where workspace_id = ${c.workspaceId}`);
-      await db.execute(sql`delete from ai_operations where workspace_id = ${c.workspaceId}`);
-      const ingest = await rebuildKnowledge(db, c);
+      // A reuse run leaves them, so several runs can share the workspace at once.
+      if (!process.env.EVAL_REUSE) for (const table of ['set_items', 'learning_sets', 'question_sources', 'question_versions', 'tutor_messages', 'tutor_sessions', 'learning_operations']) await db.execute(sql`delete from ${sql.identifier(table)} where workspace_id = ${c.workspaceId}`);
+      if (!process.env.EVAL_REUSE) await db.execute(sql`delete from ai_operations where workspace_id = ${c.workspaceId}`);
+      // EVAL_REUSE=1 keeps the existing knowledge layer, for retrieval changes that do not touch ingest.
+      const ingest = process.env.EVAL_REUSE ? { ms: 0, micros: 0, calls: 0, jobs: ['reused'], chunks: 0, embedded: 0, coverage: { missing: 0, segments: 0 } } : await rebuildKnowledge(db, c);
       report.ingest = ingest;
       console.log(`ingest: ${ingest.chunks} chunks, ${ingest.embedded} embedded, ${ingest.coverage.missing}/${ingest.coverage.segments} sentences or rows missing, ${ingest.ms} ms, ${ingest.micros} µ$, jobs ${[...new Set(ingest.jobs)].join(' ')}`);
     }
@@ -382,11 +500,16 @@ export async function runPipeline(args: PipelineArgs) {
       report.questions = rows;
       for (const r of rows) console.log(`questions ${r.config}: saved ${r.saved}/${r.requested} (${pct(r.saved, r.requested)}), accepted ${r.verified}/${r.written} written (${pct(r.verified, r.written)}), failed runs ${r.failures}/${r.runs}, ${mean(r.ms)} ms mean, ${Math.round(r.micros / Math.max(1, r.saved))} µ$ per saved question. rejections ${JSON.stringify(r.rules)}. audit of saved ${JSON.stringify(r.audit)}${r.notes.length ? `. ${[...new Set(r.notes)].join('; ')}` : ''}`);
     }
+    if (args.suites.includes('lifecycle')) report.lifecycle = await lifecycleSuite(db, c);
+    if (args.suites.includes('behaviour')) {
+      const rows = await behaviourSuite(args.repeat, args.tutorRoutes ?? [TIERS.small[0]!]);
+      report.behaviour = rows;
+    }
     if (args.suites.includes('grading')) {
       const routes = args.gradeRoutes ?? [TIERS.small[0]!, TIERS.strong[0]!];
       const rows = await gradingSuite(args.repeat, routes);
       report.grading = rows;
-      for (const r of rows) console.log(`grading ${r.route}: exact ${pct(r.exact, r.points)}, within one ${pct(r.within1, r.points)}, total error ${(r.totalAbsError / Math.max(1, r.items)).toFixed(2)} marks per answer, false credit on wrong answers ${r.falseCredit}/${r.wrongItems}, alternative answers ${Math.round(100 * r.alternativeShare.reduce((a, b) => a + b, 0) / Math.max(1, r.alternativeShare.length))}% of marks, failed calls ${r.failed}/${r.runs}, ${mean(r.ms)} ms, ${Math.round(r.micros / Math.max(1, r.runs - r.failed))} µ$ per attempt. exact by type ${Object.entries(r.byType).map(([k, v]) => `${k} ${pct(v.exact, v.points)}`).join(', ')}`);
+      for (const r of rows) console.log(`grading ${r.route}: exact ${pct(r.exact, r.points)}, within one ${pct(r.within1, r.points)}, total error ${(r.totalAbsError / Math.max(1, r.items)).toFixed(2)} marks per answer, false credit on wrong answers ${r.falseCredit}/${r.wrongItems}, alternative answers ${Math.round(100 * r.alternativeShare.reduce((a, b) => a + b, 0) / Math.max(1, r.alternativeShare.length))}% of marks, failed attempts ${r.failed}/${r.runs}, ${r.calls} calls with ${r.escalated} on the strong tier, ${r.disputed} disputed points, ${mean(r.ms)} ms per call, ${Math.round(r.micros / Math.max(1, r.runs - r.failed))} µ$ per attempt. exact by type ${Object.entries(r.byType).map(([k, v]) => `${k} ${pct(v.exact, v.points)}`).join(', ')}`);
     }
   } finally {
     mkdirSync('dev/results', { recursive: true });
