@@ -5,8 +5,8 @@ import { drizzle as socketDrizzle } from 'drizzle-orm/neon-serverless';
 import * as schema from './schema';
 
 export const readDb = (url: string) => httpDrizzle(neon(url), { schema });
-export function socketDb(url: string) {
-  const pool = new Pool({ connectionString: url, max: 2, connectionTimeoutMillis: 10000 });
+export function socketDb(url: string, max = 2) {
+  const pool = new Pool({ connectionString: url, max, connectionTimeoutMillis: 10000 });
   pool.on('error', () => { /* Request failures are reported without database details. */ });
   return { db: socketDrizzle(pool, { schema }), close: () => pool.end() };
 }

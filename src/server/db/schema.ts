@@ -318,8 +318,9 @@ export const tutorSessions = pgTable('tutor_sessions', {
   archived: boolean('archived').notNull().default(false), revision: integer('revision').notNull().default(1), stage: text('stage').$type<TutorSession['stage']>().notNull().default('orient'),
   source: jsonb('source').$type<TutorSession['source']>(), review: jsonb('review').$type<TutorSession['review']>(), ...timestamps(),
   plannedSessionId: uuid('planned_session_id'), completedLearning: boolean('completed_learning').notNull().default(false),
-  sampleDataset: text('sample_dataset'),
-  imported: boolean('imported').notNull().default(false), endedAt: timestamp('ended_at', { withTimezone: true }),
+  endedAt: timestamp('ended_at', { withTimezone: true }),
+  // What the student is working on. Retrieval ranks it first and never stops at it.
+  scopeId: uuid('scope_id'),
   // Older turns, summarised so a long session sends recent turns verbatim and the rest briefly.
   historySummary: text('history_summary'), summarisedThrough: integer('summarised_through').notNull().default(-1),
 }, t => [unique('tutor_sessions_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ name: 'tutor_planner_scope_fk', columns: [t.workspaceId, t.courseId, t.plannedSessionId], foreignColumns: [plannedSessions.workspaceId, plannedSessions.courseId, plannedSessions.id] }), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('tutor_sessions_scope_idx').on(t.workspaceId, t.courseId, t.id), index('tutor_chronology_idx').on(t.workspaceId, t.courseId, t.createdAt, t.id)]);

@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { newTutorInput, tutorMessageInput, tutorMetadataInput } from '../../shared/contracts/tutor';
 import { answerKey, responseText } from '../../shared/domain/answer-review';
-import { tutorMessages, tutorSessions, topics, aiOperations, plannedSessions } from '../db/schema';
+import { tutorMessages, tutorSessions, topics, aiOperations, plannedSessions, scopes } from '../db/schema';
 import { citationBlocks, validateCitation } from './materials';
 import { spansText } from '../../shared/domain/document-text';
 import { operation, attempt } from './learning';
@@ -61,19 +61,31 @@ export async function createSession(db: SocketDb, workspaceId: string, courseId:
       review = { attemptId: a.id, questionId: question.id, courseId, ...(topicId ? { topicId } : {}), prompt: question.prompt, response: responseText(result.response, question), answerKey: answerKey(question), feedback: question.explanation, marksAwarded: result.marksAwarded, marksAvailable: result.marksAvailable, usedHint: result.usedHint };
     }
     if (input.topicId && !topicLabel) throw notFound();
+    let scopeId = input.scopeId ?? null;
+    if (scopeId) {
+      const [scope] = await tx.select({ id: scopes.id, topicId: scopes.topicId }).from(scopes).where(and(eq(scopes.workspaceId, workspaceId), eq(scopes.courseId, courseId), eq(scopes.id, scopeId)));
+      if (!scope) throw notFound();
+      topicId ??= scope.topicId;
+    } else if (topicId) {
+      // A topic session works on the topic's scope, made on first use like any topic scope.
+      await tx.insert(scopes).values({ id: crypto.randomUUID(), workspaceId, courseId, name: topicLabel ?? 'Topic', kind: 'topic', topicId }).onConflictDoNothing();
+      const [scope] = await tx.select({ id: scopes.id }).from(scopes).where(and(eq(scopes.courseId, courseId), eq(scopes.kind, 'topic'), eq(scopes.topicId, topicId)));
+      scopeId = scope?.id ?? null;
+    }
     const focus = input.source ? await citationBlocks(tx, workspaceId, courseId, input.source) : null;
     const heading = focus?.blocks.find(b => b.type === 'heading');
     const title = (input.title || topicLabel || (heading?.type === 'heading' ? spansText(heading.content.spans) : '') || focus?.title || 'Tutor session').slice(0, 200);
-    if (!topicId && !input.source && !review) throw new ApiError(400, 'invalid_input', 'Choose a topic, or start the session from a section of a material.');
-    const [saved] = await tx.insert(tutorSessions).values({ id: input.id, workspaceId, courseId, plannedSessionId: input.plannedSessionId, topicId, topicLabel, title, source: input.source ?? null, review }).onConflictDoNothing().returning(); if (!saved) throw notFound(); return detail(tx, workspaceId, saved.id);
+    if (!topicId && !scopeId && !input.source && !review) throw new ApiError(400, 'invalid_input', 'Choose a topic, or start the session from a section of a material.');
+    const [saved] = await tx.insert(tutorSessions).values({ id: input.id, workspaceId, courseId, plannedSessionId: input.plannedSessionId, topicId, topicLabel, scopeId, title, source: input.source ?? null, review }).onConflictDoNothing().returning(); if (!saved) throw notFound(); return detail(tx, workspaceId, saved.id);
   });
 }
 export async function saveMessage(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof tutorMessageInput>) {
   return operation(db, workspaceId, input.operationId, { action: 'tutor-message', id, input }, async tx => {
     const session = await ownSession(tx, workspaceId, id, true); if (session.revision !== input.expectedRevision) throw conflict(); if (session.endedAt) throw new ApiError(409, 'session_ended', 'This session has ended. Start a new session to continue studying.'); if (session.archived) throw new ApiError(409, 'archived', 'Restore the session before adding messages.');
-    // A reply whose Worker went away would otherwise hold the session busy for good.
-    await recoverReplies(tx, { workspaceId, sessionId: id });
-    const [active] = await tx.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), inArray(aiOperations.state, ['queued', 'running']))).limit(1);
+    // A reply whose Worker went away would otherwise hold the session busy for good, so an active
+    // reply is checked for staleness before it blocks the question.
+    let [active] = await tx.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), inArray(aiOperations.state, ['queued', 'running']))).limit(1);
+    if (active && await recoverReplies(tx, { workspaceId, sessionId: id })) [active] = await tx.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), inArray(aiOperations.state, ['queued', 'running']))).limit(1);
     if (active) throw new ApiError(409, 'tutor_busy', 'A reply is still being written. Wait for it before sending another question.');
     const [last] = await tx.select({ ordinal: tutorMessages.ordinal }).from(tutorMessages).where(eq(tutorMessages.sessionId, id)).orderBy(desc(tutorMessages.ordinal)).limit(1);
     await tx.insert(tutorMessages).values({ id: crypto.randomUUID(), workspaceId, courseId: session.courseId, sessionId: id, ordinal: (last?.ordinal ?? -1) + 1, text: input.text, role: 'student', state: 'pending', operationId: input.operationId, failure: null });
@@ -90,12 +102,12 @@ export async function patchSession(db: SocketDb, workspaceId: string, id: string
 }
 
 async function messageCounts(db: Db, workspaceId: string, id: string) {
-  return db.select({ role: tutorMessages.role, state: tutorMessages.state, stage: sql<SessionStage | null>`${tutorMessages.provenance}->>'stage'`, imported: sql<boolean>`coalesce(${tutorMessages.provenance}->>'imported' = 'true', false)`, count: sql<number>`count(*)::int` }).from(tutorMessages).where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.sessionId, id))).groupBy(tutorMessages.role, tutorMessages.state, sql`${tutorMessages.provenance}->>'stage'`, sql`coalesce(${tutorMessages.provenance}->>'imported' = 'true', false)`);
+  return db.select({ role: tutorMessages.role, state: tutorMessages.state, stage: sql<SessionStage | null>`${tutorMessages.provenance}->>'stage'`, count: sql<number>`count(*)::int` }).from(tutorMessages).where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.sessionId, id))).groupBy(tutorMessages.role, tutorMessages.state, sql`${tutorMessages.provenance}->>'stage'`);
 }
 type SessionStage = Awaited<ReturnType<typeof ownSession>>['stage'];
 async function sessionSummary(db: Db, workspaceId: string, session: Awaited<ReturnType<typeof ownSession>>) {
   const counts = await messageCounts(db, workspaceId, session.id);
-  return summariseTutorTurns({ id: session.id, topicId: session.topicId, stage: session.stage, stages: counts.flatMap(m => m.stage && m.state === 'complete' ? [m.stage] : []), studentTurns: counts.filter(m => m.role === 'student').reduce((n, m) => n + m.count, 0) });
+  return summariseTutorTurns({ id: session.id, courseId: session.courseId, scopeId: session.scopeId, topicId: session.topicId, stage: session.stage, stages: counts.flatMap(m => m.stage && m.state === 'complete' ? [m.stage] : []), studentTurns: counts.filter(m => m.role === 'student').reduce((n, m) => n + m.count, 0) });
 }
 export async function endSession(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof writeInput>) {
   return operation(db, workspaceId, input.operationId, { action: 'end-tutor', id, input }, async tx => {
@@ -106,7 +118,7 @@ export async function endSession(db: SocketDb, workspaceId: string, id: string, 
     const [running] = await tx.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), inArray(aiOperations.state, ['queued', 'running']))).limit(1);
     if (running) throw new ApiError(409, 'tutor_busy', 'Wait for the reply to finish before ending this session.');
     const counts = await messageCounts(tx, workspaceId, id);
-    const complete = counts.filter(m => !m.imported && m.state === 'complete');
+    const complete = counts.filter(m => m.state === 'complete');
     const completedLearning = complete.filter(m => m.role === 'student').reduce((n, m) => n + m.count, 0) >= 2 && complete.some(m => m.role === 'tutor' && m.count > 0);
     const endedAt = new Date();
     await tx.update(tutorSessions).set({ endedAt, completedLearning, updatedAt: endedAt, revision: session.revision + 1 }).where(eq(tutorSessions.id, id));

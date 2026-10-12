@@ -44,7 +44,7 @@ export function Progress() {
         score: a.marksAvailable ? `${a.marksAwarded}/${a.marksAvailable}` : '—', note: a.assistanceRecord === 'unknown' ? 'Assistance not recorded' : undefined }));
     const tutor: HistoryRow[] = kind && kind !== 'tutor' ? [] : row.tutorActivity
       .filter(s => s.completedAt && (!topic || s.topicId === topic))
-      .map(s => ({ id: s.id, to: `/tutor/${s.id}`, at: String(s.completedAt), title: s.title, courseId: s.courseId, type: 'Tutor session', score: '—', note: s.imported ? 'Imported' : undefined }));
+      .map(s => ({ id: s.id, to: `/tutor/${s.id}`, at: String(s.completedAt), title: s.title, courseId: s.courseId, type: 'Tutor session', score: '—' }));
     return [...attempts, ...tutor].filter(r => (!course || r.courseId === course) && (!q || r.title.toLowerCase().includes(q))).sort((a, b) => b.at.localeCompare(a.at));
   }, [row, course, kind, topic, query]);
   useEffect(() => {

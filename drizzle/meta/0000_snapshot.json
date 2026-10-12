@@ -1,5 +1,5 @@
 {
-  "id": "2bf4bcf1-1707-4dab-a5f6-1d089faa50f4",
+  "id": "41eeb557-0566-402f-b00b-e8c9bb596f69",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -5769,22 +5769,15 @@
           "notNull": true,
           "default": false
         },
-        "sample_dataset": {
-          "name": "sample_dataset",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "imported": {
-          "name": "imported",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "ended_at": {
           "name": "ended_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scope_id": {
+          "name": "scope_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },

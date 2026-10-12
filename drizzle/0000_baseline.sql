@@ -644,9 +644,8 @@ CREATE TABLE "tutor_sessions" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"planned_session_id" uuid,
 	"completed_learning" boolean DEFAULT false NOT NULL,
-	"sample_dataset" text,
-	"imported" boolean DEFAULT false NOT NULL,
 	"ended_at" timestamp with time zone,
+	"scope_id" uuid,
 	"history_summary" text,
 	"summarised_through" integer DEFAULT -1 NOT NULL,
 	CONSTRAINT "tutor_sessions_scope_unique" UNIQUE("workspace_id","course_id","id")

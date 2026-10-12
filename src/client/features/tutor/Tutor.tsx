@@ -28,8 +28,9 @@ import { renderCitations } from '@/features/tutor/citations';
 import { DocumentBlocks } from '@/features/materials/DocumentView';
 import { assetPath, blockPath } from '@/features/materials/Reader';
 import { useAccount } from '@/lib/account';
-import { request, streamEvents } from '@/lib/api';
+import { errorMessage, request, streamEvents } from '@/lib/api';
 import type { AiStatusView, ReplyEvent } from '../../../server/api-types';
+import type { ScopeView } from '@shared/contracts/outline';
 import { useApi, useApiPages, useSave } from '@/lib/data';
 import { useUnsentGuard } from '@/lib/hooks';
 import { activityKeys, keys } from '@/lib/query';
@@ -95,12 +96,20 @@ function NewSessionDialog({ courseId, open, onOpenChange }: { courseId: string; 
   const save = useSave();
   const allow = useUnsentGuard(open && !!title || save.pending);
   const historical = params.get('attemptId') && topicId && outline.data && !outline.data.topics.some(t => t.id === topicId);
-  const options = [...(historical ? [{ value: topicId, label: 'Topic from your saved answer' }] : []), ...(outline.data?.topics.map(t => ({ value: t.id, label: t.title })) ?? [])];
+  const options = [...(historical ? [{ value: topicId, label: 'Topic from your saved answer' }] : []), { value: 'course', label: 'Whole course' }, ...(outline.data?.topics.map(t => ({ value: t.id, label: t.title })) ?? [])];
+  const { user } = useAccount();
+  const [scopeError, setScopeError] = useState('');
   // A session from a section or a saved answer needs no topic: it takes the section's, if there is one.
   const fromSource = !!(params.get('blockIds') || params.get('attemptId'));
-  const create = () => {
+  const create = async () => {
+    // A session on the whole course works on the course scope, made on first use.
+    let scopeId = params.get('scopeId');
+    if (!body.current && topicId === 'course') {
+      try { scopeId = (await request<ScopeView>(`/v1/courses/${courseId}/scopes`, user.id, { kind: 'course' }, 'POST')).id; setScopeError(''); }
+      catch (e) { setScopeError(errorMessage(e)); return; }
+    }
     body.current ??= {
-      id: crypto.randomUUID(), title, ...(topicId ? { topicId } : {}),
+      id: crypto.randomUUID(), title, ...(topicId && topicId !== 'course' ? { topicId } : {}), ...(scopeId ? { scopeId } : {}),
       ...(params.get('plannedSessionId') ? { plannedSessionId: params.get('plannedSessionId') } : {}),
       ...(params.get('blockIds') ? { source: { materialId: params.get('materialId'), versionId: params.get('versionId'), blockIds: params.get('blockIds')!.split(',') } } : {}),
       ...(params.get('attemptId') ? { review: { attemptId: params.get('attemptId'), questionId: params.get('questionId') } } : {}),
@@ -113,7 +122,7 @@ function NewSessionDialog({ courseId, open, onOpenChange }: { courseId: string; 
   return (
     <Dialog open={open} onOpenChange={next => { if (!save.busy) onOpenChange(next); }}>
       <DialogContent>
-        <form onSubmit={e => { e.preventDefault(); create(); }}>
+        <form onSubmit={e => { e.preventDefault(); void create(); }}>
           <DialogHeader>
             <DialogTitle>New tutor session</DialogTitle>
             <DialogDescription>{params.get('blockIds') ? 'The session keeps the exact text you came from.' : params.get('attemptId') ? 'The session keeps your saved answer and its feedback.' : 'Pick the topic you want to work on.'}</DialogDescription>
@@ -121,7 +130,7 @@ function NewSessionDialog({ courseId, open, onOpenChange }: { courseId: string; 
           <DialogBody>
             <Field label="Title" required={!fromSource} optional={fromSource} description={fromSource ? 'Leave it empty to name the session after the section.' : undefined}><Input autoFocus maxLength={200} value={title} disabled={!!body.current} onChange={e => setTitle(e.target.value)} placeholder="Why the encomienda was not a land grant" /></Field>
             <Field label="Topic" required={!fromSource} optional={fromSource} description={fromSource ? 'Taken from the section when it is in the outline.' : undefined}><Combobox value={topicId} onValueChange={setTopicId} disabled={!!body.current} placeholder={fromSource ? 'From the section' : 'Choose a topic'} options={options} /></Field>
-            {save.error && <FieldError>{save.error}</FieldError>}
+            {(save.error || scopeError) && <FieldError>{save.error || scopeError}</FieldError>}
           </DialogBody>
           <DialogFooter>
             <Button type="button" variant="secondary" disabled={save.busy} onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -177,6 +186,25 @@ export function Tutor() {
     const task = pending.current;
     save.run<TutorDetail>(task, { id: task.body.operationId, invalidate: activityKeys, onSuccess: value => { pending.current = null; data.setData(value); after?.(); } });
   };
+  // Asking saves the question and streams the reply in one request. A failure before the question
+  // is saved keeps it here with the same id, so a retry never sends it twice.
+  const [asking, setAsking] = useState(false), [askError, setAskError] = useState('');
+  const ask = (write: Write) => {
+    pending.current ??= write;
+    const task = pending.current;
+    let saved = false;
+    setAsking(true); setAskError('');
+    started.current = task.body.operationId;
+    setLive({ op: task.body.operationId, text: '' });
+    void streamEvents<ReplyEvent>(task.path, user.id, task.body, event => {
+      if (event.type === 'saved') { saved = true; pending.current = null; data.setData(event.detail as TutorDetail); setText(''); setAsking(false); }
+      else if (event.type === 'delta') setLive(prior => prior && { ...prior, text: prior.text + event.text });
+      else if (event.type === 'error') setLive(prior => prior && { ...prior, error: event.message });
+    }).catch(e => {
+      if (saved) setLive(prior => prior && { ...prior, error: errorMessage(e) });
+      else { started.current = null; setLive(null); setAskError(errorMessage(e)); }
+    }).finally(() => { setAsking(false); if (saved) void data.refetch().then(() => setLive(prior => prior?.error ? prior : null)); });
+  };
   if (data.isPending) return <Page width="narrow"><PageLoading label="Opening session" /></Page>;
   if (data.error) return <Page width="narrow"><ErrorState error={data.error} onRetry={() => void data.refetch()} /></Page>;
   const d = data.data, s = d.session;
@@ -204,9 +232,7 @@ export function Tutor() {
           </div>
         </header>
 
-        {status.data && !status.data.available && !s.sampleDataset && !s.imported && <Notice>{status.data.reason}</Notice>}
-        {s.sampleDataset && <p className="text-muted-foreground text-sm">A sample conversation. Its replies were written for this workspace.</p>}
-        {s.imported && <p className="text-muted-foreground text-sm">Imported history, with its original model and source labels.</p>}
+        {status.data && !status.data.available && <Notice>{status.data.reason}</Notice>}
         {s.source && <Link className="text-primary-text inline-flex items-center gap-1.5 text-sm underline-offset-2 hover:underline" to={blockPath(s.source.materialId, s.source.versionId, s.source.blockIds[0])}><BookOpenIcon className="size-3.5" />The text this session is about</Link>}
         {s.review && (
           <details className="bg-surface rounded-lg border px-4 py-3">
@@ -235,6 +261,7 @@ export function Tutor() {
                 {tutor && (
                   <div className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-sm">
                     {m.provenance?.grounding && <span>{GROUNDING_LABEL[m.provenance.grounding]}</span>}
+                    {m.provenance?.outsideScope && <span>From outside what you are working on</span>}
                     {citations.length > 0 && <button type="button" className="hover:text-foreground underline-offset-2 hover:underline" onClick={() => setPanel({ kind: 'source', message: m, index: 0 })}>{m.provenance?.attachedSources === citations.length ? (citations.length === 1 ? 'Where this may come from' : `${citations.length} places this may come from`) : citations.length === 1 ? '1 source' : `${citations.length} sources`}</button>}
                     {m.state === 'interrupted' && <span className="text-warning-text">This reply was cut off and is incomplete.</span>}
                     {m.state === 'cancelled' && <span>You stopped this reply.</span>}
@@ -266,14 +293,14 @@ export function Tutor() {
       </div>
 
       <div className="bg-background/95 sticky bottom-0 border-t backdrop-blur">
-        <form className="ui-reading mx-auto flex flex-col gap-tight px-4 py-3" onSubmit={e => { e.preventDefault(); if (text.trim() || pending.current) send({ path: `/v1/tutor/${id}/messages`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: s.revision, text, action } }, () => setText('')); }}>
+        <form className="ui-reading mx-auto flex flex-col gap-tight px-4 py-3" onSubmit={e => { e.preventDefault(); if (!asking && (text.trim() || pending.current)) ask({ path: `/v1/tutor/${id}/ask`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: s.revision, text, action } }); }}>
           {closed ? <p className="text-muted-foreground text-sm">{s.archived ? 'Restore this session to add questions.' : 'This session has ended. Start a new one to keep going.'}</p> : <>
-            <Textarea aria-label="Your question" className="max-h-48 min-h-16 bg-card" maxLength={4000} value={text} disabled={save.busy || !!pending.current || !!pendingReply} placeholder="Ask about this topic"
+            <Textarea aria-label="Your question" className="max-h-48 min-h-16 bg-card" maxLength={4000} value={text} disabled={asking || save.busy || !!pending.current || !!pendingReply || !!live} placeholder="Ask about this topic"
               onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit(); }} />
             <div className="flex items-center gap-tight">
-              <Select aria-label="How to help" size="sm" className="w-52" value={action} onValueChange={setAction} disabled={save.busy || !!pending.current || !!pendingReply} options={ACTIONS} />
-              {save.error && !save.conflict && <span className="text-danger-text min-w-0 flex-1 truncate text-sm" title={save.error}>Not sent. {save.error}</span>}
-              <Button type="submit" className="ml-auto" loading={save.busy} disabled={!text.trim() && !pending.current}>{pending.current && !save.busy ? 'Retry' : <><ArrowUpIcon />Send</>}</Button>
+              <Select aria-label="How to help" size="sm" className="w-52" value={action} onValueChange={setAction} disabled={asking || save.busy || !!pending.current || !!pendingReply || !!live} options={ACTIONS} />
+              {(askError || save.error && !save.conflict) && <span className="text-danger-text min-w-0 flex-1 truncate text-sm" title={askError || save.error}>Not sent. {askError || save.error}</span>}
+              <Button type="submit" className="ml-auto" loading={asking} disabled={(!text.trim() && !pending.current) || !!live && !asking}>{pending.current && !asking ? 'Retry' : <><ArrowUpIcon />Send</>}</Button>
             </div>
           </>}
         </form>
@@ -289,9 +316,9 @@ export function Tutor() {
                 <p className="text-muted-foreground text-sm">Reached: {STAGE_LABEL[d.summary.stageReached]}</p>
                 <ul className="flex list-disc flex-col gap-1.5 pl-5 font-serif text-md">{d.summary.covered.map(line => <li key={line}>{line}</li>)}</ul>
                 <p className="text-muted-foreground text-sm">{s.completedLearning ? 'Counts as tutored study, which is assisted work.' : 'This session does not count as completed study.'}</p>
-                {s.topicId
-                  ? <Button asChild className="self-start"><Link to={`/course/${s.courseId}/practice?topicId=${s.topicId}`}>Practise this topic</Link></Button>
-                  : s.source && <Button asChild className="self-start"><Link to={`/course/${s.courseId}/practice?materialId=${s.source.materialId}&versionId=${s.source.versionId}`}>Practise this material</Link></Button>}
+                {s.scopeId
+                  ? <Button asChild className="self-start"><Link to={`/course/${s.courseId}/practice?scopeId=${s.scopeId}`}>Practise this</Link></Button>
+                  : s.source && <Button asChild className="self-start"><Link to={`/course/${s.courseId}/practice?materialId=${s.source.materialId}`}>Practise this material</Link></Button>}
               </SheetBody>
             </>
           )}

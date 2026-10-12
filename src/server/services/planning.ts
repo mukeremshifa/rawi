@@ -1,5 +1,5 @@
 import { transaction } from '../db/client';
-import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { Attempt, StudyMaterial, StudyTopic } from '../../shared/domain/types';
 import { planWeek, replacedByPlan, addDays } from '../../shared/domain/planner';
@@ -121,8 +121,8 @@ export async function applyProposal(db: SocketDb, workspaceId: string, id: strin
 export async function progress(db: SocketDb, workspaceId: string) {
   return transaction(db, async tx => {
     const data = await planningData(tx, workspaceId); const now = zonedParts(new Date(), data.timezone);
-    const tutorActivity = await tx.select({ id: tutorSessions.id, courseId: tutorSessions.courseId, title: tutorSessions.title, topicId: tutorSessions.topicId, completedAt: tutorSessions.endedAt, imported: tutorSessions.imported }).from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), or(eq(tutorSessions.completedLearning, true), eq(tutorSessions.imported, true))));
-    const days = [...new Set([...data.attempts.map(a => zonedParts(new Date(a.completedAt!), data.timezone).date), ...tutorActivity.flatMap(s => s.completedAt && !s.imported ? [zonedParts(s.completedAt, data.timezone).date] : [])])].sort().reverse();
+    const tutorActivity = await tx.select({ id: tutorSessions.id, courseId: tutorSessions.courseId, title: tutorSessions.title, topicId: tutorSessions.topicId, completedAt: tutorSessions.endedAt }).from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.completedLearning, true)));
+    const days = [...new Set([...data.attempts.map(a => zonedParts(new Date(a.completedAt!), data.timezone).date), ...tutorActivity.flatMap(s => s.completedAt ? [zonedParts(s.completedAt, data.timezone).date] : [])])].sort().reverse();
     let streak = 0, day = days.includes(now.date) ? now.date : addDays(now.date, -1);
     while (days.includes(day)) { streak++; day = addDays(day, -1); }
     const runs = await tx.select({ id: learningRuns.id, courseId: learningRuns.courseId, title: learningRuns.title }).from(learningRuns).where(and(eq(learningRuns.workspaceId, workspaceId), eq(learningRuns.state, 'active'))).orderBy(asc(learningRuns.id)).limit(100);
