@@ -179,7 +179,8 @@ export async function streamReply(env: BackendBindings, workspaceId: string, ses
     if (!claimed) {
       const [op] = await db.select({ task: aiOperations.task }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.id, operationId), eq(aiOperations.targetId, sessionId)));
       if (!op || op.task !== 'tutor') throw notFound();
-      await recoverReplies(db, { workspaceId, sessionId }).catch(() => 0);
+      // A reply whose Worker went away is settled here, and the session read that follows shows why.
+      if (await recoverReplies(db, { workspaceId, sessionId }).catch(() => 0)) return;
       await emit({ type: 'error', code: 'already_started', message: 'This reply has already started. Reload the session to see it.' });
       return;
     }
