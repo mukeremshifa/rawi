@@ -242,7 +242,11 @@ function OutlineSection({ view, onView }: { view: OutlineView; onView: (view: Ou
   const empty = !view.topics.length;
   return (
     <Section title="Outline" description={empty ? undefined : `${view.topics.length} ${view.topics.length === 1 ? 'topic' : 'topics'}`}
-      actions={!empty && <Button variant="ghost" size="sm" disabled={save.busy} onClick={() => setAdding(true)}><PlusIcon />Add topic</Button>}>
+      actions={!empty && <>
+        {/* Topics are worked out from the materials when there is no syllabus, and can be worked out again. */}
+        {!view.syllabus && <Button variant="ghost" size="sm" disabled={save.busy || !!view.pending} onClick={() => save.run<OutlineView>({ path: `/v1/courses/${courseId}/outline/read`, body: {} }, { id: `rebuild:${view.course.outlineRevision}`, invalidate, onSuccess: onView })}>Work out topics again</Button>}
+        <Button variant="ghost" size="sm" disabled={save.busy} onClick={() => setAdding(true)}><PlusIcon />Add topic</Button>
+      </>}>
       {status && <p className="text-muted-foreground flex items-center gap-2 text-base" role="status"><span className="bg-primary size-2 animate-pulse rounded-full" aria-hidden />{status}</p>}
       {note && <p className="text-muted-foreground text-sm">{note}</p>}
       {save.error && <ErrorState title={save.conflict ? 'The outline changed elsewhere' : 'The outline was not changed'} detail={save.conflict ? 'It has been reloaded. Try the change again.' : save.error} onRetry={save.conflict ? undefined : save.retry} />}

@@ -151,10 +151,10 @@ export function assignTopicsRules(input: AssignInput): Assignment {
       if (!NOISE.test(name) && !/^(summary|conclusions?|questions|further reading|key terms)/i.test(name)) {
         let topic = newTopics.find(t => normalTitle(t.title) === normalTitle(name));
         if (!topic && newTopics.length < input.room) {
-          topic = { key: `n${newTopics.length}`, title: name, module: '', summary: '' };
-          newTopics.push(topic); known.push({ key: topic.key, title: terms(name), summary: new Set() });
+          topic = { title: name, module: '', summary: '' };
+          newTopics.push(topic); known.push({ key: name, title: terms(name), summary: new Set() });
         }
-        if (topic) found.push({ topic: topic.key, depth: 'covers' });
+        if (topic) found.push({ topic: topic.title, depth: 'covers' });
       }
     }
     if (found.length) links.push({ section: section.key, topics: found.slice(0, 3) });

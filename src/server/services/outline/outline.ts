@@ -37,7 +37,7 @@ export async function outlineView(db: Db, workspaceId: string, courseId: string)
   const jobs = await db.select().from(outlineJobs).where(and(eq(outlineJobs.workspaceId, workspaceId), eq(outlineJobs.courseId, courseId))).orderBy(desc(outlineJobs.createdAt)).limit(30);
   const open = jobs.filter(j => j.state === 'queued' || j.state === 'running');
   const pending = open.find(j => j.kind === 'read_syllabus')?.kind ?? open[0]?.kind ?? null;
-  const finished = jobs.find(j => j.state === 'done' || j.state === 'failed');
+  const finished = jobs.find(j => j.state === 'failed' || (j.state === 'done' && j.result));
   const assessmentRows = await db.select().from(assessments).where(and(eq(assessments.workspaceId, workspaceId), eq(assessments.courseId, courseId)));
   return {
     course, pending, readyMaterials: (await readyMaterials(db, scope, course.syllabusMaterialId)).length, syllabus,

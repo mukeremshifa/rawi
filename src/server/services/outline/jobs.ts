@@ -11,10 +11,10 @@ import { fundingFor } from '../../ai/funding';
 import { outlineTasks } from './tasks';
 import { runIngest } from '../knowledge/ingest';
 import { rulesProvider } from './rules';
-import { citedOnly, housePunctuation, type AssignInput, type OutlineProvider, type SyllabusInput } from './provider';
+import { citedOnly, housePunctuation, normalTitle, type AssignInput, type OutlineProvider, type SyllabusInput } from './provider';
 import { writeSuggestions } from './links';
 import { versionBlocks, type SectionBlock } from './sections';
-import { addTopics, applyAssessments, applyTopics } from './outline';
+import { addTopics, applyAssessments, applyTopics, protectedTopics } from './outline';
 import { enqueueJob, reassignAll } from './queue';
 import { courseSections } from '../knowledge/course';
 import { outlineView } from './outline';
@@ -105,7 +105,8 @@ async function step(db: SocketDb, env: BackendBindings, jobId: string) {
   const { job, token } = claimed;
   try {
     const prepared = await prepare(db, job);
-    if (!prepared) { await finish(db, job, token, { state: 'done', result: { provider: 'rules' } }); return true; }
+    // Nothing to do: the job ends without a result, so it never stands in for the latest reading.
+    if (!prepared) { await finish(db, job, token, { state: 'done', result: null }); return true; }
     const outcome = await execute(db, env, job, prepared);
     if (outcome === 'busy') { await finish(db, job, token, { state: 'queued', attempts: job.attempts - 1, nextRunAt: new Date(Date.now() + 30_000) }); return true; }
     const result = await transaction(db, async tx => {
@@ -213,14 +214,15 @@ async function prepare(db: SocketDb, job: Job): Promise<Prepared | null> {
     input, run: p => p.assignTopics(input),
     apply: async (tx, raw) => {
       const assignment = raw as Awaited<ReturnType<OutlineProvider['assignTopics']>>['value'];
-      const used = new Set(assignment.links.flatMap(l => l.topics.map(t => t.topic)));
-      const fresh = assignment.newTopics.filter(t => /^n\d+$/.test(t.key) && used.has(t.key) && t.title.trim()).slice(0, room);
+      // A link names a current topic by key, or a new one by its title, so the two cannot drift apart.
+      const used = new Set(assignment.links.flatMap(l => l.topics.map(t => normalTitle(t.topic))));
+      const fresh = assignment.newTopics.filter(t => t.title.trim() && used.has(normalTitle(t.title))).slice(0, room);
       const created = await addTopics(tx, scope, fresh.map(t => ({ title: t.title.trim(), module: t.module.trim(), summary: housePunctuation(t.summary), source: null })));
       const ids = new Map<string, string>([...topicKeys].map(([k, t]) => [k, t.id]));
-      created.forEach((t, i) => ids.set(fresh[i]!.key, t.id));
+      created.forEach((t, i) => ids.set(normalTitle(fresh[i]!.title), t.id));
       const suggestions = assignment.links.flatMap(l => {
         const s = sectionKeys.get(l.section);
-        return s ? l.topics.slice(0, 3).flatMap(t => ids.has(t.topic) ? [{ materialId: s.materialId, sectionKey: s.key, topicId: ids.get(t.topic)!, depth: t.depth }] : []) : [];
+        return s ? l.topics.slice(0, 3).flatMap(t => { const id = ids.get(t.topic) ?? ids.get(normalTitle(t.topic)); return id ? [{ materialId: s.materialId, sectionKey: s.key, topicId: id, depth: t.depth }] : []; }) : [];
       });
       const links = await writeSuggestions(tx, scope, [...new Map(suggestions.map(x => [`${x.topicId}:${x.materialId}:${x.sectionKey}`, x])).values()]);
       await tx.update(sectionRows).set({ topicsAt: new Date() }).where(inArray(sectionRows.id, todo.map(s => s.id)));
@@ -247,11 +249,22 @@ function boundedBlocks(list: SectionBlock[], chars: number) {
   return out;
 }
 
-/** Read the syllabus again, for when the rules pass ran because the model was unavailable. */
+/**
+ * Work the outline out again. A course with a syllabus reads it again. One without rebuilds its
+ * topics from its materials: topics the materials suggested, which the student never changed and
+ * nothing depends on, are removed, and every section is assigned again. Student work stays.
+ */
 export async function readAgain(db: SocketDb, scope: Scope) {
   await transaction(db, async tx => {
     const [course] = await tx.select().from(courses).where(and(eq(courses.workspaceId, scope.workspaceId), eq(courses.id, scope.courseId))).for('update');
     if (!course) throw new ApiError(404, 'not_found', 'This record is unavailable.');
+    if (!course.syllabusMaterialId) {
+      const locked = await protectedTopics(tx, scope);
+      const loose = (await tx.select({ id: topics.id }).from(topics).where(and(eq(topics.workspaceId, scope.workspaceId), eq(topics.courseId, scope.courseId), eq(topics.origin, 'materials')))).filter(t => !locked.has(t.id));
+      if (loose.length) await tx.delete(topics).where(inArray(topics.id, loose.map(t => t.id)));
+      await reassignAll(tx, scope);
+      return;
+    }
     const [material] = course.syllabusMaterialId ? await tx.select().from(materials).where(eq(materials.id, course.syllabusMaterialId)) : [];
     const [version] = material?.currentVersionId ? await tx.select().from(materialVersions).where(eq(materialVersions.id, material.currentVersionId)) : [];
     if (!material || !version || !usableStatus(version.status)) throw new ApiError(409, 'no_syllabus', 'Add a readable syllabus first.');

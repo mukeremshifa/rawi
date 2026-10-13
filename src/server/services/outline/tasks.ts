@@ -4,7 +4,7 @@ import type { Task } from '../../ai/engine';
 import { DATA_RULE, escapeTags as escape, house, parsed, schemaOf } from '../../ai/style';
 import type { AssignInput, Assignment, SyllabusInput, SyllabusReading } from './provider';
 
-export const OUTLINE_PROMPT_VERSION = 'outline-v3';
+export const OUTLINE_PROMPT_VERSION = 'outline-v4';
 const HOUSE = (input: { language: string }) => `${house(input.language)} Copy titles exactly as the document writes them.`;
 const DATA = DATA_RULE;
 
@@ -24,8 +24,8 @@ const readingSchema = z.object({
   })),
 });
 const assignSchema = z.object({
-  links: z.array(z.object({ section: z.string(), topics: z.array(z.object({ topic: z.string().describe('A topic key, or the key of a new topic you propose'), depth: z.enum(['covers', 'mentions']) })) })),
-  newTopics: z.array(z.object({ key: z.string().describe('n0, n1 and so on'), title: z.string(), module: z.string().describe('Week or unit label when the material has one, otherwise an empty string'), summary: z.string() })),
+  links: z.array(z.object({ section: z.string(), topics: z.array(z.object({ topic: z.string().describe('A current topic key, or the exact title of a new topic you propose'), depth: z.enum(['covers', 'mentions']) })) })),
+  newTopics: z.array(z.object({ title: z.string(), module: z.string().describe('Week or unit label when the material has one, otherwise an empty string'), summary: z.string() })),
 });
 
 export function syllabusPrompt(input: SyllabusInput) {
@@ -46,7 +46,7 @@ export function assignPrompt(input: AssignInput) {
   const system = [
     `You organise the sections of the course "${input.courseName}" by topic.`,
     'A topic is a subject a student would study and be assessed on. For each section, list the topics it teaches. Use "covers" when the section teaches the topic and "mentions" when it only touches on it. A section may belong to several topics, or to none, such as a reading list or a title page.',
-    input.room ? `When substantial sections teach a subject no current topic names, propose up to ${input.room} new topics with keys n0, n1 and so on, each with a short title, a one-sentence summary written from the sections, and its week or unit label when there is one. Prefer a few broad topics to many narrow ones.` : 'Propose no new topics.',
+    input.room ? `When substantial sections teach a subject no current topic names, propose up to ${input.room} new topics, each with a short title that sections link to by that exact title, a one-sentence summary written from the sections, and its week or unit label when there is one. Prefer a few broad topics to many narrow ones.` : 'Propose no new topics.',
     'Use only the section and topic keys supplied.',
     DATA, HOUSE(input),
   ].join('\n');

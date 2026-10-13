@@ -33,7 +33,8 @@ export interface AssignInput {
 }
 export interface Assignment {
   links: { section: string; topics: { topic: string; depth: 'covers' | 'mentions' }[] }[];
-  newTopics: { key: string; title: string; module: string; summary: string }[];
+  /** New topics. Links name them by their exact title. */
+  newTopics: { title: string; module: string; summary: string }[];
 }
 
 /** The rules pass. It runs when no model is available, and the outline says so. */
