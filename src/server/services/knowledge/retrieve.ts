@@ -204,6 +204,9 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: Ret
     if (focus && !focus.earlier && overlap(row.text, focus.text) > 0.6) continue;
     if (chosen.some(c => overlap(c.text, row.text) > 0.6)) continue;
     if ((perSection.get(row.sectionId) ?? 0) >= 2) continue;
+    // Another course's passage is used only when it answers the question by itself, so a stray
+    // shared word in an unrelated subject never passes for evidence.
+    if (row.courseId !== opts.courseId && judged.filter(w => mentions(`${row.heading}\n${row.text}`.toLowerCase(), w)).length < 0.75 * judged.length) continue;
     chosen.push(row); used += row.text.length; perSection.set(row.sectionId, (perSection.get(row.sectionId) ?? 0) + 1);
   }
   chosen.sort((a, b) => a.versionId === b.versionId ? a.ordinal - b.ordinal : 0);
@@ -230,8 +233,11 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: Ret
       inScope: !opts.scope || opts.scope.sectionIds.has(r.sectionId), ...(courseNames.has(r.courseId) ? { otherCourse: courseNames.get(r.courseId)! } : {}),
     })),
   ].map((p, i) => ({ ...p, id: `p${i + 1}` }));
-  // Found, but not in what the student is working on: the reply says so and shows where it is.
-  const outsideScope = !!opts.scope && verdict !== 'absent' && !passages.some(p => !p.focus && p.inScope);
+  // Found, but not in what the student is working on: the scope's own passages do not cover the
+  // question, or miss a name it asks about. The reply says so and shows where it is.
+  const scoped = passages.filter(p => !p.focus && p.inScope).map(p => `${p.heading}\n${p.text}`).join('\n').toLowerCase();
+  const scopeShare = judged.length ? judged.filter(w => mentions(scoped, w)).length / judged.length : 1;
+  const outsideScope = !!opts.scope && (verdict === 'sufficient' || verdict === 'partial') && (scopeShare < 0.6 || names(opts.query, opts.language).some(w => !mentions(scoped, w)));
   return { passages, verdict, missing, pending: (pendingRows.rows as { title: string }[]).map(r => r.title), via, outsideScope };
 }
 
