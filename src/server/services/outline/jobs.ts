@@ -49,7 +49,15 @@ export async function courseJobsDue(db: SocketDb, scope: Scope) {
 /** Run a course's due jobs on their own connection. Safe to call from `waitUntil`. */
 export async function runCourseJobs(env: BackendBindings, scope: Scope) {
   if (!env.DATABASE_URL) return;
-  const connection = socketDb(env.DATABASE_URL);
+  await runOutline(env, scope);
+  // The knowledge layer follows the same events, on its own connection.
+  await runIngest(env, scope);
+  // A material read in that pass queues its topic links, which run now rather than at the next status read.
+  await runOutline(env, scope);
+}
+
+async function runOutline(env: BackendBindings, scope: Scope) {
+  const connection = socketDb(env.DATABASE_URL!);
   try {
     for (let i = 0; i < 25; i++) {
       const next = await connection.db.select({ id: outlineJobs.id }).from(outlineJobs).where(and(eq(outlineJobs.workspaceId, scope.workspaceId), eq(outlineJobs.courseId, scope.courseId), due(new Date()))).orderBy(asc(outlineJobs.createdAt)).limit(5);
@@ -59,8 +67,6 @@ export async function runCourseJobs(env: BackendBindings, scope: Scope) {
     }
   } catch (error) { console.log(JSON.stringify({ operation: 'outline-job', error: error instanceof ApiError ? error.code : 'unexpected' })); }
   finally { await connection.close(); }
-  // The knowledge layer follows the same events, on its own connection.
-  await runIngest(env, scope);
 }
 
 /** The cron safety net. */
