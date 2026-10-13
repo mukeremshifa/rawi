@@ -277,6 +277,10 @@ async function writeChoices(env: BackendBindings, ctx: CallContext, scope: Scope
     if (stem.stem.trim().length < 8 || MENTIONS_SOURCE.test(stem.stem)) { reject('stem'); continue; }
     if (answer.length > 12 && promptKey(stem.stem).includes(promptKey(answer))) { reject('answer_in_stem'); continue; }
     const pool = [...served.value.items.filter(o => o !== stem && typeOf(o.answerType) === typeOf(stem.answerType)).map(o => o.answer.trim()), ...bankAnswers.filter(b => b.type && typeOf(b.type) === typeOf(stem.answerType) && b.materialId === p.ctx.section.materialId).map(b => b.answer)];
+    // Too few siblings of the same kind: a year borrows neighbouring years, and a term borrows the
+    // other terms the material defines. Both come from code and the material, never from a model.
+    if (pool.length < 3 && /^\d{4}$/.test(answer)) pool.push(...[-20, 15, 40].map(d => String(Number(answer) + d)));
+    if (pool.length < 3 && /term|concept|name|policy|system/.test(typeOf(stem.answerType))) pool.push(...[...p.ctx.facts, ...p.ctx.siblings].filter(f => f.kind === 'definition').map(f => f.subject));
     const distractors = [...new Map(pool.filter(a => a && promptKey(a) !== promptKey(answer)).map(a => [promptKey(a), a])).values()].slice(0, 3);
     if (distractors.length < 3) { reject('no_distractors'); continue; }
     // The key must not stand out by length.
@@ -328,10 +332,11 @@ async function writeNumeric(env: BackendBindings, ctx: CallContext, scope: Scope
   const accepted: (typeof bankItems.$inferInsert)[] = [];
   for (const c of candidates) {
     const v = solved.value.verdicts.find(x => x.id === c.id);
-    const got = v ? readNumber(v.solution) : null;
-    if (!v || !v.answerable || got === null) { reject('unchecked'); continue; }
-    // The second reader's number must agree with the computed answer within a hundredth.
-    if (Math.abs(got - c.v.answer) > Math.max(c.v.tolerance, Math.abs(c.v.answer) * 0.01)) { reject('answer_disagrees'); continue; }
+    // Every number the second reader wrote, since a worked solution names its inputs too.
+    const got = v ? (v.solution.match(/-?\d[\d,]*(?:\.\d+)?/g) ?? []).map(readNumber).filter((n): n is number => n !== null) : [];
+    if (!v || !v.answerable || !got.length) { reject('unchecked'); continue; }
+    // One of them must agree with the computed answer within a hundredth.
+    if (!got.some(n => Math.abs(n - c.v.answer) <= Math.max(c.v.tolerance, Math.abs(c.v.answer) * 0.01))) { reject('answer_disagrees'); continue; }
     const content = question(c.p.ctx, { format: 'numeric', difficulty: 'reasoning', prompt: c.v.stem, explanation: c.t.explanation, blockIds: c.blockIds, factIds: c.factIds, numeric: { value: c.v.answer, tolerance: c.v.tolerance, ...(c.t.unit ? { unit: c.t.unit } : {}) } }, 'generated', served.route.model);
     accepted.push(row(scope, c.p.ctx, content, { state: 'template', template: c.t, verification: { rules: ['template'], solver: { route: solved.route.id, agreed: true, reason: v.solution.slice(0, 200) } } }));
   }

@@ -26,9 +26,12 @@ function tokens(text: string): Token[] {
   return out;
 }
 
+/** Typeset symbols and {name} placeholders a model may write, read as plain operators and names. */
+const plain = (text: string) => text.replace(/\{(\w+)\}/g, '$1').replace(/[×·]/g, '*').replace(/÷/g, '/').replace(/[−–]/g, '-').replace(/²/g, '^2').replace(/³/g, '^3').replace(/√\s*\(/g, 'sqrt(').replace(/√\s*([A-Za-z_]\w*|\d+(?:\.\d+)?)/g, 'sqrt($1)');
+
 /** Evaluates an expression with the given values. Throws on anything it does not understand. */
 export function evaluate(expression: string, values: Record<string, number>): number {
-  const list = tokens(expression);
+  const list = tokens(plain(expression));
   let i = 0;
   const peek = () => list[i];
   const take = (op?: string) => { const t = list[i]; if (op && !(t?.kind === 'op' && t.op === op)) throw new Error(`expected ${op}`); i++; return t; };
