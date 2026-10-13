@@ -25,6 +25,14 @@ const clip = (text: string, chars: number) => text.length <= chars ? text : `${t
 const sentence = (text: string) => { const t = text.trim().replace(/\s+/g, ' '); return /[.!?]$/.test(t) ? t : `${t}.`; };
 const lower = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * What a definition says without its term: "The standard error is the spread of…" gives "the
+ * spread of…". Null when the rest still names the term, since asking for it would give it away.
+ */
+const meaning = (f: Fact) => {
+  const rest = f.text.trim().replace(new RegExp(`^(?:(?:the|a|an)\\s+)?${escape(f.subject)}\\s*(?:\\([^)]*\\)\\s*)?(?:is defined as|refers to|is|are|means|describes)\\s+`, 'i'), '');
+  return rest.length >= 12 && !` ${normal(rest)} `.includes(` ${normal(f.subject)} `) ? rest : null;
+};
 
 /** A stable order that does not put the key first, from the question's own text. */
 function placeKey<T>(key: T, others: T[], seed: string) {
@@ -49,8 +57,9 @@ export function flashcards(facts: Fact[]): Built[] {
 export function clozes(facts: Fact[], keyTerms: string[]): Built[] {
   const out: Built[] = [];
   for (const f of facts.filter(f => f.confidence >= SURE)) {
-    if (f.kind === 'definition' && f.text.length >= 20) {
-      out.push({ format: 'cloze', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds, prompt: 'Fill in the term.', template: `___ is ${lower(sentence(f.text))}`, blanks: [[f.subject]], explanation: `${f.subject} is ${lower(sentence(f.text))}` });
+    if (f.kind === 'definition') {
+      const rest = meaning(f);
+      if (rest) out.push({ format: 'cloze', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds, prompt: 'Fill in the term.', template: `___: ${lower(sentence(rest))}`, blanks: [[f.subject]], explanation: `${f.subject}: ${lower(sentence(rest))}` });
     } else if (f.kind === 'number' && f.value !== null) {
       const written = [...f.text.matchAll(/-?\d[\d,]*(?:\.\d+)?/g)].find(m => Number(m[0].replace(/,/g, '')) === f.value);
       if (written) out.push({ format: 'cloze', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds, prompt: 'Fill in the number.', template: sentence(f.text.slice(0, written.index) + '___' + f.text.slice(written.index! + written[0].length)), blanks: [[written[0], String(f.value)]], explanation: sentence(f.text) });
@@ -66,7 +75,7 @@ export function clozes(facts: Fact[], keyTerms: string[]): Built[] {
 
 /** Terms matched to what they mean, three to five at a time, from one section and then its neighbours. */
 export function matchings(own: Fact[], nearby: Fact[]): Built[] {
-  const pool = [...own, ...nearby].filter(f => f.kind === 'definition' && f.confidence >= SURE);
+  const pool = [...own, ...nearby].filter(f => f.kind === 'definition' && f.confidence >= SURE && meaning(f));
   const seen = new Set<string>(), unique: Fact[] = [];
   for (const f of pool) { const k = normal(f.subject); if (k && !seen.has(k)) { seen.add(k); unique.push(f); } }
   const out: Built[] = [];
@@ -75,7 +84,7 @@ export function matchings(own: Fact[], nearby: Fact[]): Built[] {
     let group = unique.slice(start, start + 5);
     if (group.length < 3) group = unique.slice(Math.max(0, unique.length - 3));
     if (group.length < 3 || !group.some(f => own.includes(f))) break;
-    const rights = group.map(f => clip(f.text, 140));
+    const rights = group.map(f => clip(meaning(f)!, 140));
     if (new Set(rights.map(normal)).size !== rights.length) continue;
     out.push({ format: 'matching', difficulty: 'recall', factIds: group.map(f => f.id), blockIds: [...new Set(group.flatMap(f => f.blockIds))], prompt: 'Match each term to its meaning.', pairs: group.map((f, i) => ({ left: f.subject, right: rights[i]! })), explanation: group.map(f => `${f.subject}: ${sentence(f.text)}`).join(' ') });
     if (start + 5 >= unique.length) break;
@@ -111,10 +120,12 @@ export function choices(own: Fact[], siblings: Fact[]): Built[] {
   const out: Built[] = [];
   for (const f of own.filter(f => f.confidence >= SURE)) {
     if (f.kind === 'definition') {
+      const rest = meaning(f);
+      if (!rest) continue;
       const others = [...new Map([...siblings, ...own].filter(s => s.kind === 'definition' && s.id !== f.id && normal(s.subject) !== normal(f.subject)).map(s => [normal(s.subject), s.subject])).values()].slice(0, 3);
       if (others.length < 3) continue;
       const { options, index } = placeKey(f.subject, others, f.id);
-      out.push({ format: 'multiple-choice', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds, prompt: `Which term means: ${lower(sentence(f.text))}`, options, correctIndices: [index], answer: f.subject, explanation: `${f.subject} is ${lower(sentence(f.text))}` });
+      out.push({ format: 'multiple-choice', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds, prompt: `Which term means: ${lower(sentence(rest))}`, options, correctIndices: [index], answer: f.subject, explanation: `${f.subject}: ${lower(sentence(rest))}` });
     } else if (f.kind === 'number' && f.value !== null) {
       const same = siblings.filter(s => s.kind === 'number' && s.value !== null && s.value !== f.value && normal(s.unit ?? '') === normal(f.unit ?? '')).map(s => s.value!);
       const values = [...new Set([...same, ...nearby(f.value)])].filter(v => v !== f.value).slice(0, 3);
