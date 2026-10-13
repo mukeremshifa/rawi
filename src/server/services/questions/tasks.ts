@@ -6,8 +6,8 @@ import { DATA_RULE, escapeTags, house, parsed, schemaOf } from '../../ai/style';
 /**
  * The model's part in questions: stems with their correct answers, numeric templates, self-check
  * prompts with model answers, and a second reader that solves each one from the source before it
- * sees the key. Wrong answers for multiple choice are never written by a model: code takes them
- * from the answers to sibling questions of the same kind.
+ * sees the key. Code builds multiple choice where facts allow it, and the second reader judges
+ * the wrong answers a model writes.
  */
 export const QUESTIONS_PROMPT_VERSION = 'questions-v2';
 

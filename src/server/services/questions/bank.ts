@@ -10,6 +10,7 @@ import { questionInput, type VersionedQuestion } from '../../../shared/contracts
 import { blockMarkdown } from '../../../shared/domain/document-text';
 import { promptKey } from '../../../shared/domain/prompt-key';
 import { readNumber } from '../../../shared/domain/marking';
+import { ACTIVITY_FORMATS } from '../../../shared/domain/question-selection';
 import type { CourseSection } from '../knowledge/course';
 import { liveLinks } from '../outline/links';
 import { versionBlocks } from '../outline/sections';
@@ -148,13 +149,14 @@ export async function draw(tx: Transaction, scope: Scope, weighted: Weighted[], 
   const used = new Set(exclude), items: VersionedQuestion[] = [], fresh: (typeof bankItems.$inferInsert)[] = [];
   const short = new Map<string, Shortfall>();
   const fits = (i: Item) => difficulty === 'mixed' || i.difficulty === difficulty;
+  const kinds = Object.values(ACTIVITY_FORMATS).map(k => k.filter(f => formats.includes(f))).filter(k => k.length);
   plan.forEach((p, n) => {
     const ctx = ctxs.get(p.section.id)!;
     // A model can write self-checks and multiple choice for any section, and numbers where the
     // section states some. Code formats need facts of their kind.
     const writable = (f: QuestionFormat) => f === 'self-check' || f === 'multiple-choice' || (f === 'numeric' && ctx.facts.some(x => x.kind === 'number' || x.kind === 'formula'));
-    const take = (format: QuestionFormat, unseen: boolean) => {
-      const hit = pool.find(c => !used.has(c.item.id) && c.item.format === format && c.item.sectionKey === ctx.section.key && c.item.materialId === ctx.section.materialId && fits(c.item) && (!unseen || c.rank <= 1));
+    const take = (format: QuestionFormat, unseen: boolean, anySection = false) => {
+      const hit = pool.find(c => !used.has(c.item.id) && c.item.format === format && (anySection ? c.item.state !== 'template' : c.item.sectionKey === ctx.section.key && c.item.materialId === ctx.section.materialId) && fits(c.item) && (!unseen || c.rank <= 1));
       if (!hit) return false;
       used.add(hit.item.id);
       if (hit.item.state === 'template') {
@@ -164,7 +166,7 @@ export async function draw(tx: Transaction, scope: Scope, weighted: Weighted[], 
       } else items.push(hit.item.content);
       return true;
     };
-    for (const want of spreadFormats(formats, p.count, n)) {
+    for (const want of spreadFormats(kinds, p.count, n)) {
       // Unseen or due for another look, in the format asked for.
       if (take(want, true)) continue;
       // Nothing unseen, but a model can write it: written for the shortfall.
@@ -174,8 +176,10 @@ export async function draw(tx: Transaction, scope: Scope, weighted: Weighted[], 
         s.count++; short.set(key, s);
         continue;
       }
-      // A code format the section cannot support gives way to another format asked for, and one
-      // with nothing unseen left repeats the oldest item seen.
+      // A code format the section cannot support comes from another section in the scope first,
+      // then gives way to another format asked for, and one with nothing unseen left repeats the
+      // oldest item seen.
+      if (take(want, true, true)) continue;
       const other = formats.filter(f => f !== want);
       if (other.some(f => take(f, true))) continue;
       const alt = other.find(writable);

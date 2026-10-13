@@ -23,7 +23,14 @@ export function allot<T extends { materialId: string }>(sections: { section: T; 
   return out.filter(o => o.count > 0).map(({ section, count }) => ({ section, count }));
 }
 
-/** Formats spread over a section's questions in turn, so a mixed set is mixed in every section. */
-export function spreadFormats<F>(formats: F[], count: number, offset: number): F[] {
-  return Array.from({ length: count }, (_, i) => formats[(i + offset) % formats.length]!);
+/**
+ * Formats spread over a section's questions in turn, so a mixed set is mixed in every section.
+ * Each kind of question asked for gets an equal share first, then its formats share that in turn,
+ * so a quiz with five formats does not crowd out flashcards.
+ */
+export function spreadFormats<F>(kinds: F[][], count: number, offset: number): F[] {
+  return Array.from({ length: count }, (_, i) => {
+    const kind = kinds[(i + offset) % kinds.length]!;
+    return kind[Math.floor((i + offset) / kinds.length) % kind.length]!;
+  });
 }
