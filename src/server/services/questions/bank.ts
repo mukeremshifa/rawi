@@ -150,33 +150,37 @@ export async function draw(tx: Transaction, scope: Scope, weighted: Weighted[], 
   const fits = (i: Item) => difficulty === 'mixed' || i.difficulty === difficulty;
   plan.forEach((p, n) => {
     const ctx = ctxs.get(p.section.id)!;
+    // A model can write self-checks and multiple choice for any section, and numbers where the
+    // section states some. Code formats need facts of their kind.
+    const writable = (f: QuestionFormat) => f === 'self-check' || f === 'multiple-choice' || (f === 'numeric' && ctx.facts.some(x => x.kind === 'number' || x.kind === 'formula'));
+    const take = (format: QuestionFormat, unseen: boolean) => {
+      const hit = pool.find(c => !used.has(c.item.id) && c.item.format === format && c.item.sectionKey === ctx.section.key && c.item.materialId === ctx.section.materialId && fits(c.item) && (!unseen || c.rank <= 1));
+      if (!hit) return false;
+      used.add(hit.item.id);
+      if (hit.item.state === 'template') {
+        const v = numericVariant(scope, ctx, hit.item);
+        if (!v) return false;
+        fresh.push(v); items.push(v.content as VersionedQuestion);
+      } else items.push(hit.item.content);
+      return true;
+    };
     for (const want of spreadFormats(formats, p.count, n)) {
-      // The format asked for, then any other format asked for, from this section.
-      const order = [want, ...formats.filter(f => f !== want)];
-      let placed = false;
-      for (const format of order) {
-        const hit = pool.find(c => !used.has(c.item.id) && c.item.format === format && c.item.sectionKey === ctx.section.key && c.item.materialId === ctx.section.materialId && fits(c.item) && (c.rank <= 1 || !MODEL.includes(format) && format !== 'multiple-choice'));
-        if (!hit) continue;
-        used.add(hit.item.id);
-        if (hit.item.state === 'template') {
-          const v = numericVariant(scope, ctx, hit.item);
-          if (!v) continue;
-          fresh.push(v); items.push(v.content as VersionedQuestion);
-        } else items.push(hit.item.content);
-        placed = true; break;
-      }
-      if (placed) continue;
-      // Nothing unseen in the bank. A model format is written for the shortfall.
-      const writable = order.find(f => MODEL.includes(f) || f === 'multiple-choice');
-      if (writable) {
-        const key = `${ctx.section.id}:${writable}`;
-        const s = short.get(key) ?? { sectionId: ctx.section.id, format: writable, count: 0 };
+      // Unseen or due for another look, in the format asked for.
+      if (take(want, true)) continue;
+      // Nothing unseen, but a model can write it: written for the shortfall.
+      if (writable(want)) {
+        const key = `${ctx.section.id}:${want}`;
+        const s = short.get(key) ?? { sectionId: ctx.section.id, format: want, count: 0 };
         s.count++; short.set(key, s);
         continue;
       }
-      // Code formats with nothing unseen left repeat the oldest seen item.
-      const again = pool.find(c => !used.has(c.item.id) && order.includes(c.item.format) && c.item.sectionKey === ctx.section.key && c.item.materialId === ctx.section.materialId && c.item.state === 'active');
-      if (again) { used.add(again.item.id); items.push(again.item.content); }
+      // A code format the section cannot support gives way to another format asked for, and one
+      // with nothing unseen left repeats the oldest item seen.
+      const other = formats.filter(f => f !== want);
+      if (other.some(f => take(f, true))) continue;
+      const alt = other.find(writable);
+      if (alt) { const key = `${ctx.section.id}:${alt}`; const s = short.get(key) ?? { sectionId: ctx.section.id, format: alt, count: 0 }; s.count++; short.set(key, s); continue; }
+      [want, ...other].some(f => take(f, false));
     }
   });
   if (fresh.length) await tx.insert(bankItems).values(fresh);
