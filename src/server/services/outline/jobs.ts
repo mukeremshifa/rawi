@@ -9,7 +9,7 @@ import { OUTLINE_MAX, type OutlineJobKind, type OutlineJobResult } from '../../.
 import { run, type Task } from '../../ai/engine';
 import { fundingFor } from '../../ai/funding';
 import { outlineTasks } from './tasks';
-import { runIngest } from '../knowledge/ingest';
+import { ingestPending, runIngest } from '../knowledge/ingest';
 import { rulesProvider } from './rules';
 import { citedOnly, housePunctuation, normalTitle, type AssignInput, type OutlineProvider, type SyllabusInput } from './provider';
 import { writeSuggestions } from './links';
@@ -43,7 +43,7 @@ const due = (now: Date) => and(or(eq(outlineJobs.state, 'queued'), and(eq(outlin
 /** Whether a course has work a status read should start. */
 export async function courseJobsDue(db: SocketDb, scope: Scope) {
   const [row] = await db.select({ id: outlineJobs.id }).from(outlineJobs).where(and(eq(outlineJobs.workspaceId, scope.workspaceId), eq(outlineJobs.courseId, scope.courseId), due(new Date()))).limit(1);
-  return !!row;
+  return !!row || await ingestPending(db, scope);
 }
 
 /** Run a course's due jobs on their own connection. Safe to call from `waitUntil`. */

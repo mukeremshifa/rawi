@@ -7,7 +7,7 @@ import * as jobs from '../services/outline/jobs';
 import { outlineCorrection, outlineUndo, scopeInput, scopePatch } from '../../shared/contracts/outline';
 import * as scopes from '../services/scopes';
 import { jsonInput, type BackendContext } from '../http';
-import { ingestPending, runIngest } from '../services/knowledge/ingest';
+import { ingestPending } from '../services/knowledge/ingest';
 
 export const coursesRoutes = new Hono<BackendContext>();
 coursesRoutes.get('/courses', async c => {
@@ -23,7 +23,7 @@ coursesRoutes.get('/courses/:id/outline', async c => {
   const scope = { workspaceId: c.get('workspaceId'), courseId: uuid.parse(c.req.param('id')) };
   const view = await outline.outlineView(c.get('db'), scope.workspaceId, scope.courseId);
   if (view.pending) c.executionCtx.waitUntil(jobs.runCourseJobs(c.env, scope));
-  else if (await ingestPending(c.get('db'), scope)) c.executionCtx.waitUntil(runIngest(c.env, scope));
+  else if (await ingestPending(c.get('db'), scope)) c.executionCtx.waitUntil(jobs.runCourseJobs(c.env, scope));
   return c.json(view);
 });
 coursesRoutes.post('/courses/:id/outline/corrections', async c => c.json(await outline.correctOutline(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, outlineCorrection))));
