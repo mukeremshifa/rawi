@@ -1,5 +1,6 @@
 /**
- * Reviewed evaluation cases for `dev/pipeline.ts`. Development only, never bundled.
+ * Reviewed evaluation cases for `dev/measure.ts`, and extra materials for the seed. Development
+ * only, never bundled.
  *
  * The library is the fictional Atlantic World course in `materials.ts` plus four materials
  * written here to stress the pipeline: one paragraph longer than any chunk, a table of a hundred
@@ -116,40 +117,4 @@ export const TUTOR_CASES: TutorCase[] = [
   { id: 'version-stale-focus', kind: 'version', start: { material: 'handbook', heading: 'Assessment', version: 1 }, message: 'When is the source commentary due and how much is it worth?', evidence: ['due in week 6'], staleEvidence: ['due in week 5'], verdict: 'sufficient', answer: [/week 6/i], forbid: [/week 5(?![^.]*(earlier|previous|old|changed|moved))/i] },
   { id: 'conflict-encomienda', kind: 'conflict', start: topic, message: 'Was the encomienda mainly about revenue or about forced labour?', evidence: ['Valderrama', 'Okonkwo'], verdict: 'sufficient', answer: [/Valderrama/, /Okonkwo/] },
   { id: 'focus-shift', kind: 'focus-shift', start: { material: 'mat-exchange-reading', heading: 'What crossed, and in which direction' }, message: 'Why are runaway advertisements useful evidence?', evidence: ['runaway advertisements'], verdict: 'sufficient', answer: [/advertis/i] },
-];
-
-/* ── Grading set ─────────────────────────────────────────────────────────── */
-
-/**
- * Six answers to each of three written questions from `questions.ts`. Marks are per rubric
- * point, in rubric order. They were drafted for review and are the reference the markers are
- * measured against. Change a mark here and the agreement figures follow.
- */
-export type AnswerType = 'strong' | 'partial' | 'fluent-wrong' | 'keyword-stuffed' | 'off-topic' | 'alternative';
-export interface GradedAnswer { question: string; type: AnswerType; text: string; marks: number[] }
-
-export const GRADED_ANSWERS: GradedAnswer[] = [
-  // q-col-wr-1: mortality removes supply, demand pre-existed, direction of causation.
-  { question: 'q-col-wr-1', type: 'strong', marks: [2, 2, 2], text: 'Epidemic disease after contact killed most of the indigenous population, which removed the labour supply colonists relied on. Demand for labour in mines and on plantations already existed and did not fall when the supply did. The slave trade expanded to fill that gap. So the order is demand first, then disease removing the supply, then the trade. Disease did not cause slavery on its own.' },
-  { question: 'q-col-wr-1', type: 'partial', marks: [2, 0, 0], text: 'Diseases such as smallpox and measles killed a huge share of the indigenous people, so there were far fewer workers. Because of this the Spanish started bringing enslaved Africans across the Atlantic to work instead.' },
-  { question: 'q-col-wr-1', type: 'fluent-wrong', marks: [0, 0, 0], text: 'The chain begins with the slave trade itself. Ships carrying captives from West Africa brought smallpox and measles to the Americas, and these diseases then spread through indigenous communities. The resulting mortality reduced the need for plantation labour, so the trade slowed until new crops revived demand. In short, the slave trade caused the epidemics, not the other way round.' },
-  { question: 'q-col-wr-1', type: 'keyword-stuffed', marks: [0, 0, 0], text: 'Mortality, disease, epidemic, smallpox, population collapse. Demand, labour problem, plantation, supply. Did not cause, gap, commercially attractive, second solution.' },
-  { question: 'q-col-wr-1', type: 'off-topic', marks: [0, 0, 0], text: 'Mercantilism held that national wealth was measured in bullion and that trade was close to zero-sum. Colonies existed to supply raw materials and buy manufactures, which the Navigation Acts tried to enforce.' },
-  { question: 'q-col-wr-1', type: 'alternative', marks: [2, 2, 2], text: 'Start with the planters. The Caribbean and mainland estates already needed far more workers than they had. When imported diseases wiped out much of the native population, the supply of coerced indigenous workers shrank while the need stayed exactly where it was. Captives shipped from Africa filled that shortfall. Epidemics did not create slavery. They closed off one source of labour and made the other one profitable.' },
-
-  // q-enc-wr-1: labour and tribute from named people, land remained indigenous, consequence for the argument.
-  { question: 'q-enc-wr-1', type: 'strong', marks: [2, 2, 2], text: 'The encomienda granted a Spaniard the labour and tribute of a named indigenous community. It did not grant land: the land legally remained indigenous. Calling it a land grant hides that it was a conditional claim on people, held at the Crown\'s pleasure, which moves the argument from property to coerced labour and tribute and explains how the Crown could limit or abolish it.' },
-  { question: 'q-enc-wr-1', type: 'partial', marks: [2, 1, 0], text: 'The encomienda gave Spanish colonists the right to tribute and labour from indigenous communities. It was not really about land.' },
-  { question: 'q-enc-wr-1', type: 'fluent-wrong', marks: [0, 0, 0], text: 'The encomienda was a royal land grant that gave conquistadors permanent ownership of large estates, together with the indigenous people living on them. Calling it a land grant is accurate, because the holder owned the soil outright and could pass it to his heirs, much like a feudal lord in Castile.' },
-  { question: 'q-enc-wr-1', type: 'keyword-stuffed', marks: [0, 0, 0], text: 'Tribute. Labour. People. Not land. Legally theirs. Conditional. Crown. Obligation. Revocable. Feudal. Argument.' },
-  { question: 'q-enc-wr-1', type: 'off-topic', marks: [0, 0, 0], text: 'Sugar cane has to be milled within about a day of cutting, so the mill stood next to the field and the workforce followed the mill\'s schedule.' },
-  { question: 'q-enc-wr-1', type: 'alternative', marks: [2, 2, 2], text: 'If you call it a land grant you make it sound like a fief, permanent property, and then you cannot explain how the Crown could cut it back to one lifetime in 1542 or abolish it later. What the Crown actually handed out was a claim on people: a named indigenous community owed the holder tribute and work, while their land stayed theirs in law, and the holder owed them protection and religious instruction in return.' },
-
-  // q-pl-wr-1: milling time constraint, consequence for scale, contrast with another crop.
-  { question: 'q-pl-wr-1', type: 'strong', marks: [2, 2, 2], text: 'Cane has to be milled within roughly a day of cutting or its sucrose falls sharply. That puts the mill next to the field, needs a large coordinated workforce working to the mill\'s schedule, and ties up heavy fixed capital in the mill. Tobacco imposes no such constraint, so a tobacco farm can be small. Sugar could not be grown at small scale, which is why it organised the plantation system.' },
-  { question: 'q-pl-wr-1', type: 'partial', marks: [2, 1, 0], text: 'Sugar cane has to be processed very quickly after it is cut, so sugar estates needed their own mill and a lot of workers. Sugar was also very profitable in Europe.' },
-  { question: 'q-pl-wr-1', type: 'fluent-wrong', marks: [0, 0, 0], text: 'Sugar dominated because it was the most valuable crop per acre and grew only in the Caribbean, whereas tobacco and rice could also be grown in Europe. European demand for sweeteners rose steadily, so investors poured money into sugar islands rather than into crops that faced European competition.' },
-  { question: 'q-pl-wr-1', type: 'keyword-stuffed', marks: [0, 0, 0], text: 'Milled, day, sucrose, perish. Scale, coordinated workforce, mill next to field, capital. Tobacco, rice, small, contrast.' },
-  { question: 'q-pl-wr-1', type: 'off-topic', marks: [0, 0, 0], text: 'Maroon communities in Jamaica and Suriname won recognition by treaty, but often had to agree to return future runaways in exchange.' },
-  { question: 'q-pl-wr-1', type: 'alternative', marks: [2, 2, 2], text: 'Think about what happens after the harvest. Cut cane loses its sugar within about a day unless it is crushed, so the crushing works had to stand beside the fields. That meant huge gangs working to the mill\'s timetable and a big investment in machinery before anything could be sold. Tobacco is cured slowly and could be grown by a family on a small plot, so it never forced that scale.' },
 ];

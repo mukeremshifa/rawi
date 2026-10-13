@@ -131,8 +131,3 @@ export function substitutionNote(
 export const NO_CONTENT_REASON =
   'There is no readable material or question behind this topic yet, so there is nothing to study it with. Add a reading or link this topic to material first.';
 
-/** What is possible for one material, for work that is not in the outline. */
-export function materialCapabilities(material: StudyMaterial): TopicCapabilities {
-  const usable = isUsableMaterial(material);
-  return { tutor: usable, read: usable, activities: usable ? ALL_ACTIVITIES : [], anyQuestion: usable };
-}

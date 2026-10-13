@@ -256,8 +256,3 @@ async function focusPassage(db: CallContext['db'], workspaceId: string, focus: C
   return { materialId: list[0]!.material_id, materialTitle: list[0]!.title, versionId: focus.versionId, blockIds: focus.blockIds, heading: heading ? blockMarkdown(heading as never).replace(/^#+\s*/, '') : '', text, earlier: list[0]!.current_version_id !== focus.versionId };
 }
 
-/** Whether the course has any knowledge layer yet. Tutor and generation say so when it does not. */
-export async function knowledgeReady(db: CallContext['db'], workspaceId: string, courseId: string) {
-  const [row] = await db.select({ id: knowledgeChunks.id }).from(knowledgeChunks).where(and(eq(knowledgeChunks.workspaceId, workspaceId), eq(knowledgeChunks.courseId, courseId))).limit(1);
-  return !!row;
-}

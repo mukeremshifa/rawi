@@ -1,17 +1,10 @@
-import type { TutorTranscript, TutorStage } from './types';
+import type { TutorStage } from './types';
 import { STAGE_ORDER } from './tutor';
 
 /**
  * The end-of-session summary, built from what actually happened: the stages
  * reached and the student's own turns.
  */
-export function summarise(session: TutorTranscript): {
-  covered: string[];
-  stageReached: TutorStage;
-  nextStep: { label: string; to: string } | null;
-} {
-  return summariseTutorTurns({ ...session, stages: session.messages.filter(m => !m.meta).map(m => m.stage), studentTurns: session.messages.filter(m => m.role === 'student').length });
-}
 
 export function summariseTutorTurns(session: { id: string; courseId?: string; scopeId?: string | null; topicId?: string | null; stage: TutorStage; stages: TutorStage[]; studentTurns: number }) {
   const stages = new Set(session.stages);

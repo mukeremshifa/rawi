@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { blocks } from '../../db/schema';
 import type { ReadDb, SocketDb, Transaction } from '../../db/client';
 import type { BlockBody } from '../../../shared/contracts/document';
@@ -36,23 +36,4 @@ export function sections(list: SectionBlock[]): Section[] {
   return out;
 }
 
-/** The text directly under a heading, before any subheading, for a short excerpt. */
-export function sectionExcerpt(list: SectionBlock[], section: Section, chars: number) {
-  const own = list.filter(b => section.blockIds.includes(b.id) && b.type !== 'heading' && (section.headingBlockId === null || b.parentId === section.headingBlockId));
-  const text = (own.length ? own : list.filter(b => section.blockIds.includes(b.id) && b.type !== 'heading')).map(blockMarkdown).filter(Boolean).join('\n\n');
-  return text.length > chars ? `${text.slice(0, chars).trimEnd()}…` : text;
-}
 
-/** Headings that contain a block, innermost first. A heading contains itself. */
-export async function containingHeadings(db: ReadDb | SocketDb | Transaction, workspaceId: string, versionId: string, blockId: string) {
-  const chain: { id: string; text: string }[] = [];
-  let next: string | null = blockId;
-  for (let depth = 0; next && depth < 8; depth++) {
-    const [row] = await db.select({ id: blocks.id, parentId: blocks.parentId, type: blocks.type, content: blocks.content }).from(blocks)
-      .where(and(eq(blocks.workspaceId, workspaceId), eq(blocks.versionId, versionId), inArray(blocks.id, [next])));
-    if (!row) break;
-    if (row.type === 'heading') chain.push({ id: row.id, text: spansText((row.content as { spans: Parameters<typeof spansText>[0] }).spans).trim() });
-    next = row.parentId;
-  }
-  return chain;
-}

@@ -111,6 +111,7 @@ export function vertexAdapter(creds: VertexCredentials): Adapter {
           if (done) break;
         }
       } catch (error) { throw new ProviderError(`vertex_stream_broken: ${String(error).slice(0, 120)}`, false); }
+      finally { reader.cancel().catch(() => undefined); }
       return { text, usage, stop, latencyMs: Date.now() - started, ttftMs: ttft };
     },
     async embed(route, texts, purpose, signal) {
