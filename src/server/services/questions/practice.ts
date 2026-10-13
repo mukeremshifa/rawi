@@ -109,7 +109,7 @@ export async function topUp(env: BackendBindings, db: SocketDb, workspaceId: str
   const wanted = formats.filter(f => MODEL_FORMATS.includes(f) || f === 'multiple-choice');
   if (!wanted.length) return 0;
   const scope = await resolveScope(db, workspaceId, scopeId);
-  const counts = await db.select({ materialId: bankItems.materialId, key: bankItems.sectionKey, format: bankItems.format, n: sql<number>`count(*) filter (where not exists (select 1 from item_results r where r.item_id = ${bankItems.id}))::int` }).from(bankItems)
+  const counts = await db.select({ materialId: bankItems.materialId, key: bankItems.sectionKey, format: bankItems.format, n: sql<number>`count(*) filter (where not exists (select 1 from item_results r where r.item_id = bank_items.id))::int` }).from(bankItems)
     .where(and(eq(bankItems.workspaceId, workspaceId), eq(bankItems.courseId, courseId), inArray(bankItems.format, wanted), inArray(bankItems.state, ['active', 'template']), sql`${bankItems.templateId} is null`)).groupBy(bankItems.materialId, bankItems.sectionKey, bankItems.format);
   const shortfall: Shortfall[] = [];
   for (const { section } of [...scope.sections].sort((a, b) => b.weight - a.weight)) {

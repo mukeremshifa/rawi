@@ -97,7 +97,7 @@ export async function fundingFor(env: BackendBindings, db: ReadDb | SocketDb | T
   let pick = assigned.get(workspaceId);
   if (!pick || Date.now() - pick.at > FRESH_MS) {
     const [ws] = await db.select({
-      source: sql<string | null>`coalesce((select f.id from ${fundingSources} f where f.owner_workspace_id = ${workspaces.id} and f.kind = 'user' and f.active), ${workspaces.fundingSourceId})`,
+      source: sql<string | null>`coalesce((select f.id from ${fundingSources} f where f.owner_workspace_id = ${workspaceId} and f.kind = 'user' and f.active), ${workspaces.fundingSourceId})`,
     }).from(workspaces).where(eq(workspaces.id, workspaceId));
     pick = { at: Date.now(), id: ws?.source ?? PLATFORM };
     assigned.set(workspaceId, pick);

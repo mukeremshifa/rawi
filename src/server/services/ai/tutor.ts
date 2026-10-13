@@ -257,8 +257,9 @@ export async function prepare(env: BackendBindings, ctx: CallContext, sessionId:
     db.select({
       session: tutorSessions, course: courses.name, scope: scopes,
       // The language of the session's material, or the course's first ready version.
-      language: sql<Language | null>`coalesce((select v.language from ${materialVersions} v where v.id = (${tutorSessions.source}->>'versionId')::uuid),
-        (select v.language from ${materialVersions} v where v.workspace_id = ${tutorSessions.workspaceId} and v.course_id = ${tutorSessions.courseId} limit 1))`,
+      // Outer columns are named in full, so the subquery cannot bind them to its own table.
+      language: sql<Language | null>`coalesce((select v.language from ${materialVersions} v where v.id = (tutor_sessions.source->>'versionId')::uuid),
+        (select v.language from ${materialVersions} v where v.workspace_id = tutor_sessions.workspace_id and v.course_id = tutor_sessions.course_id limit 1))`,
     }).from(tutorSessions).innerJoin(courses, eq(courses.id, tutorSessions.courseId)).leftJoin(scopes, eq(scopes.id, tutorSessions.scopeId))
       .where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, sessionId))),
     db.select({ ordinal: tutorMessages.ordinal, role: tutorMessages.role, text: tutorMessages.text, state: tutorMessages.state }).from(tutorMessages)

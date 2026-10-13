@@ -3,7 +3,7 @@ import type { Task } from '../../ai/engine';
 import type { Language } from '../../ai/types';
 import { DATA_RULE, escapeTags, house, parsed, schemaOf } from '../../ai/style';
 
-export const KNOWLEDGE_PROMPT_VERSION = 'knowledge-v2';
+export const KNOWLEDGE_PROMPT_VERSION = 'knowledge-v3';
 
 export interface DigestInput {
   language: Language;
@@ -14,9 +14,9 @@ const factSchema = z.object({
   kind: z.enum(['fact', 'definition', 'number', 'steps', 'formula']),
   subject: z.string().describe('definition: the term. number: what is measured, as a noun phrase such as "the population of Lisbon in 1550". steps: the process, as a noun phrase. formula: what it computes. fact: what the claim is about, in a few words'),
   text: z.string().describe('The claim, definition, formula or summary of the steps, readable on its own'),
-  value: z.number().nullable().describe('number only: the value exactly as the text gives it, otherwise null'),
-  unit: z.string().nullable().describe('number only: the unit, otherwise null'),
-  items: z.array(z.string()).nullable().describe('steps only: each step in the order the text gives, otherwise null'),
+  value: z.number().nullish().describe('number only: the value exactly as the text gives it. Leave it out otherwise'),
+  unit: z.string().nullish().describe('number only: the unit. Leave it out otherwise'),
+  items: z.array(z.string()).nullish().describe('steps only: each step in the order the text gives. Leave it out otherwise'),
   blocks: z.array(z.string()).describe('Keys of the blocks that state it'),
 });
 const digestSchema = z.object({

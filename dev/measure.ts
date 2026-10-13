@@ -15,7 +15,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { socketDb, transaction } from '../src/server/db/client';
 import * as s from '../src/server/db/schema';
 import type { BackendBindings } from '../src/server/config';
-import { ingestPending } from '../src/server/services/knowledge/ingest';
+import { ingestPending, rebuildStale } from '../src/server/services/knowledge/ingest';
 import { courseJobsDue, runCourseJobs } from '../src/server/services/outline/jobs';
 import { courseSections } from '../src/server/services/knowledge/course';
 import { retrieve, resolveQuery } from '../src/server/services/knowledge/retrieve';
@@ -58,6 +58,8 @@ try {
   /* ── Reading ─────────────────────────────────────────────────────────── */
   if (args.includes('--read')) {
     const started = Date.now(), before = await spent(sql`workspace_id = ${wid}`);
+    // As the cron sweep does: versions built with an older configuration are read again.
+    out.rebuilt = await rebuildStale(db, 100);
     for (const c of [atlantic, stats, minds]) {
       const scope = { workspaceId: wid, courseId: c.id };
       for (let i = 0; i < 60 && (await ingestPending(db, scope) || await courseJobsDue(db, scope)); i++) await runCourseJobs(env, scope);

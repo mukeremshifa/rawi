@@ -112,7 +112,7 @@ export async function ensureBuilt(tx: Transaction, scope: Scope, list: SectionCo
 async function candidates(db: SocketDb | Transaction, scope: Scope, list: SectionContext[], formats: QuestionFormat[]) {
   if (!list.length) return [];
   const rows = await db.select({ item: bankItems, lastScore: sql<number | null>`r.score`, lastAt: sql<Date | null>`r.at` }).from(bankItems)
-    .leftJoin(sql`lateral (select score, at from ${itemResults} where item_id = ${bankItems.id} order by at desc limit 1) r`, sql`true`)
+    .leftJoin(sql`lateral (select score, at from ${itemResults} where item_id = bank_items.id order by at desc limit 1) r`, sql`true`)
     .where(and(eq(bankItems.workspaceId, scope.workspaceId), inArray(bankItems.materialId, [...new Set(list.map(c => c.section.materialId))]), inArray(bankItems.format, formats), inArray(bankItems.state, ['active', 'template']), sql`${bankItems.templateId} is null`));
   const now = Date.now();
   return rows.filter(r => list.some(c => c.section.materialId === r.item.materialId && c.section.key === r.item.sectionKey && c.hash === r.item.contentHash)).map(r => {

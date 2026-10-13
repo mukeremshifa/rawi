@@ -377,7 +377,7 @@ const digest: Stage = async (db, env, ctx, job) => {
       const model = d.facts.slice(0, 10).flatMap(f => {
         const ids = [...new Set(f.blocks.map(k => keys.get(k)).filter((id): id is string => !!id && s.blockIds.includes(id)))];
         if (!ids.length) return [];
-        const checked = checkFact({ kind: f.kind, subject: f.subject, text: f.text, value: f.value, unit: f.unit?.trim() || null, items: f.items, blockIds: ids }, ids.map(text).join('\n\n'), extractor);
+        const checked = checkFact({ kind: f.kind, subject: f.subject, text: f.text, value: f.value ?? null, unit: f.unit?.trim() || null, items: f.items ?? null, blockIds: ids }, ids.map(text).join('\n\n'), extractor);
         return checked ? [checked] : [];
       });
       const rules = existing.filter(f => f.sectionId === s.id && f.extractor === 'rule').map(f => ({ ...f, value: f.value, unit: f.unit, items: f.items }));
