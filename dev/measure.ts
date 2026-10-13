@@ -170,6 +170,9 @@ try {
         const body = reply?.text ?? text;
         const pass = !error && c.answer.every(p => p.test(body)) && !(c.forbid ?? []).some(p => p.test(body)) && (!c.limitation || LIMITATION.test(body));
         rows.push({ case: c.id, kind: c.kind, pass, firstMs: first, totalMs: Date.now() - t0, tripsToFirst: firstTrips, micros: cost.micros, noCall: cost.calls === 0, error });
+        // Measurement sessions would crowd the student's tutor list, so each is removed once read.
+        await db.delete(s.tutorMessages).where(eq(s.tutorMessages.sessionId, session.session.id));
+        await db.delete(s.tutorSessions).where(eq(s.tutorSessions.id, session.session.id));
       }
     }
     const called = rows.filter(r => !r.noCall);
