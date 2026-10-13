@@ -4,7 +4,7 @@ import type { BackendBindings } from '../../config';
 import { socketDb, transaction, type SocketDb, type Transaction } from '../../db/client';
 import { aiCalls, aiOperations, courses, materialVersions, prerequisites, scopes, sections, tutorMessages, tutorSessions } from '../../db/schema';
 import { ApiError, notFound } from '../../errors';
-import { budget, Cancelled, funding, run, runStream, type CallContext, type Task } from '../../ai/engine';
+import { budget, Cancelled, funding, releaseAhead, reserveAhead, run, runStream, type CallContext, type Task } from '../../ai/engine';
 import { DATA_RULE, escapeTags, house, parsed, schemaOf } from '../../ai/style';
 import type { Language } from '../../ai/types';
 import type { TutorMessageProvenance } from '../../../shared/contracts/tutor';
@@ -128,10 +128,16 @@ const summaryTask: Task<{ language: Language; prior: string | null; turns: { rol
 
 /* ── Saving the question ─────────────────────────────────────────────────── */
 
-/** Called in the transaction that saves the student's message. The reply streams after it. */
+/**
+ * Called in the transaction that saves the student's message. The reply is saved already running,
+ * since it streams straight after in the same request. One left behind is recovered like any other.
+ */
 export async function queueReply(tx: Transaction, workspaceId: string, session: { id: string; courseId: string; revision: number }, operationId: string, input: { text: string; action: Action }) {
-  await tx.insert(aiOperations).values({ id: operationId, workspaceId, courseId: session.courseId, targetId: session.id, task: 'tutor', fingerprint: operationId, input: { sessionRevision: session.revision, ...input }, state: 'queued', promptVersion: TUTOR_PROMPT_VERSION });
+  await tx.insert(aiOperations).values({ id: operationId, workspaceId, courseId: session.courseId, targetId: session.id, task: 'tutor', fingerprint: operationId, input: { sessionRevision: session.revision, ...input }, state: 'running', promptVersion: TUTOR_PROMPT_VERSION });
 }
+
+/** An upper bound on a turn's input, in tokens, for the reservation made while the turn is prepared. */
+const AHEAD_TOKENS = 12_000;
 
 /* ── Streaming the reply ─────────────────────────────────────────────────── */
 
@@ -161,13 +167,14 @@ export const replyConnection = (env: BackendBindings) => socketDb(env.DATABASE_U
  * because the stream outlives the request handler. A closed browser does not stop the reply:
  * it is saved, and the session shows it on the next read.
  */
-export async function streamReply(env: BackendBindings, workspaceId: string, sessionId: string, operationId: string, emit: (event: ReplyEvent) => Promise<void>, defer: (work: Promise<unknown>) => void, given?: ReturnType<typeof socketDb>) {
+export async function streamReply(env: BackendBindings, workspaceId: string, sessionId: string, operationId: string, emit: (event: ReplyEvent) => Promise<void>, defer: (work: Promise<unknown>) => void, given?: ReturnType<typeof socketDb>, saved?: { text: string; action: Action; sessionRevision: number }) {
   const connection = given ?? replyConnection(env);
   const db = connection.db;
   const marks: Record<string, number> = { start: Date.now() };
   try {
-    // One conditional update claims the reply. Only when it claims nothing is the reason looked up.
-    const [claimed] = await db.update(aiOperations).set({ state: 'running', updatedAt: new Date() })
+    // A question saved in this request comes with its reply already claimed. Otherwise one conditional
+    // update claims it, and only when it claims nothing is the reason looked up.
+    const [claimed] = saved ? [{ id: operationId, input: saved }] : await db.update(aiOperations).set({ state: 'running', updatedAt: new Date() })
       .where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.id, operationId), eq(aiOperations.targetId, sessionId), eq(aiOperations.task, 'tutor'), eq(aiOperations.state, 'queued'))).returning();
     if (!claimed) {
       const [op] = await db.select({ task: aiOperations.task }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.id, operationId), eq(aiOperations.targetId, sessionId)));
@@ -183,6 +190,9 @@ export async function streamReply(env: BackendBindings, workspaceId: string, ses
     const poll = setInterval(() => { void db.select({ state: aiOperations.state }).from(aiOperations).where(eq(aiOperations.id, operationId)).then(([op]) => { if (op?.state === 'cancelled') stop.abort(); }, () => undefined); }, 300);
     // A reply, and a held-back hint written once more, about 2 cents at most.
     const ctx: CallContext = { db, workspaceId, operationId, signal: stop.signal, budget: budget(4, 20_000, 120) };
+    // The call is reserved while the turn is prepared, from an upper bound on its size.
+    ctx.ahead = reserveAhead(env, ctx, tutorTask, AHEAD_TOKENS, 'en');
+    ctx.ahead.catch(() => undefined);
     let partial = { raw: '', passages: [] as Passage[], verdict: 'sufficient' as Verdict, outside: false, session: null as typeof tutorSessions.$inferSelect | null, model: '', callId: '' };
     try {
       // The funding source is resolved while the turn is prepared, so it is ready when the call starts.
@@ -194,6 +204,7 @@ export async function streamReply(env: BackendBindings, workspaceId: string, ses
         // Nothing relevant was found anywhere. Say so without a model call, and name materials still being read.
         const reading = found.pending.length ? ` Rawi is still reading ${found.pending.length === 1 ? `"${found.pending[0]}"` : `${found.pending.length} of your materials`}, so try again in a few minutes.` : '';
         raw = `Your course materials do not cover this.${reading} Try asking about a topic in your outline, or open a section in the reader and start a session from there.`;
+        await releaseAhead(ctx);
         await emit({ type: 'delta', text: raw });
       } else {
         // A hint or check on a reviewed answer is held back until it is known not to give the
@@ -222,6 +233,7 @@ export async function streamReply(env: BackendBindings, workspaceId: string, ses
       await emit({ type: 'done', messageId });
       console.log(JSON.stringify({ operation: 'tutor-turn', claimMs: marks.claimed! - marks.start!, prepareMs: marks.prepared! - marks.claimed!, reserveMs: marks.reserved ? marks.reserved - marks.prepared! : null, firstTokenMs: marks.first ? marks.first - marks.start! : null, via: found.via, verdict: found.verdict }));
     } catch (error) {
+      await releaseAhead(ctx).catch(() => undefined);
       // Stopped, or cut off partway: what arrived is saved as an incomplete reply, never sent again.
       const stopped = error instanceof Cancelled, cut = error instanceof ApiError && error.code === 'ai_uncertain';
       if ((stopped || cut) && partial.session) {
@@ -284,12 +296,13 @@ export async function prepare(env: BackendBindings, ctx: CallContext, sessionId:
   const resolved = resolveQuery(saved.text, history, language);
   const [found, needs, state, sessionTurns] = await Promise.all([
     retrieve(env, ctx, { courseId: session.courseId, query: resolved.query, context: resolved.context, language, focus: session.source, scope: scopeRow ? { name: scopeRow.name, sectionIds } : null }),
-    sectionIds.size ? db.select({ requiresId: prerequisites.requiresId }).from(prerequisites).where(inArray(prerequisites.sectionId, [...sectionIds])) : Promise.resolve([]),
+    // What the scope builds on outside itself, with each section's summary, in one query.
+    sectionIds.size ? db.selectDistinct({ id: sections.id, heading: sections.heading, summary: sections.summary, materialId: sections.materialId }).from(prerequisites).innerJoin(sections, eq(sections.id, prerequisites.requiresId))
+      .where(and(inArray(prerequisites.sectionId, [...sectionIds]), sql`${sections.summary} is not null`)) : Promise.resolve([]),
     scopeRow && inScope.length ? learnerState(db, workspaceId, inScope.map(s => ({ materialId: s.materialId, key: s.key }))) : Promise.resolve([]),
     db.select({ n: sql<number>`count(*)::int` }).from(tutorMessages).where(and(eq(tutorMessages.sessionId, sessionId), eq(tutorMessages.role, 'student'))),
   ]);
-  const outside = [...new Set(needs.map(n => n.requiresId).filter(id => !sectionIds.has(id)))];
-  const required = outside.length ? (await db.select({ id: sections.id, heading: sections.heading, summary: sections.summary, materialId: sections.materialId }).from(sections).where(inArray(sections.id, outside))).filter(s => s.summary).slice(0, PREREQUISITES) : [];
+  const required = needs.filter(n => !sectionIds.has(n.id)).slice(0, PREREQUISITES);
   const digest: string[] = [];
   let used = 0;
   for (const s of inScope) { const line = `${s.heading || s.title}: ${s.summary ?? ''}`.trim(); if (used + line.length > DIGEST_CHARS) break; digest.push(line); used += line.length; }
@@ -310,7 +323,7 @@ export async function prepare(env: BackendBindings, ctx: CallContext, sessionId:
 const ATTACHED_SOURCES = 3;
 
 /** `cancelled` was stopped by the student and `interrupted` was cut off. Both keep what arrived. */
-async function publish(db: SocketDb, workspaceId: string, session: typeof tutorSessions.$inferSelect, op: typeof aiOperations.$inferSelect, raw: string, passages: Passage[], verdict: Verdict, outsideScope: boolean, model: string | null, callId: string | null, state: 'complete' | 'cancelled' | 'interrupted', stage: TutorStage) {
+async function publish(db: SocketDb, workspaceId: string, session: typeof tutorSessions.$inferSelect, op: { id: string }, raw: string, passages: Passage[], verdict: Verdict, outsideScope: boolean, model: string | null, callId: string | null, state: 'complete' | 'cancelled' | 'interrupted', stage: TutorStage) {
   return transaction(db, async tx => {
     const [current] = await tx.select().from(tutorSessions).where(eq(tutorSessions.id, session.id)).for('update');
     if (!current) throw notFound();

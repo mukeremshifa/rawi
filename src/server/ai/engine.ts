@@ -39,7 +39,7 @@ export interface Task<I, O> {
   check: (result: ModelResult, input: I) => O | null;
 }
 
-export interface CallContext { db: SocketDb; workspaceId: string; operationId?: string; jobId?: string; signal?: AbortSignal; budget?: Budget; funding?: Funding }
+export interface CallContext { db: SocketDb; workspaceId: string; operationId?: string; jobId?: string; signal?: AbortSignal; budget?: Budget; funding?: Funding; ahead?: Promise<Ahead | null> }
 
 /**
  * Limits for one operation across all its calls and retries: how many calls, how much reserved
@@ -172,6 +172,29 @@ export async function run<I, O>(env: BackendBindings, ctx: CallContext, task: Ta
 }
 
 /**
+ * A reservation made before the request is built, from an upper bound on its size, so it runs
+ * alongside the work that prepares the request instead of after it. `runStream` uses it for the
+ * route it was made for, and it is released unused otherwise.
+ */
+export interface Ahead { callId: string; route: Route; tier: ServiceTier; inputTokens: number }
+export async function reserveAhead<I>(env: BackendBindings, ctx: CallContext, task: Task<I, unknown>, inputTokens: number, language: Language): Promise<Ahead | null> {
+  const f = await funding(env, ctx);
+  const [r] = await routesFor(ctx.db, f, task.needs.skill, task.needs.data);
+  if (!r) return null;
+  const tier: ServiceTier = task.needs.lane === 'background' && r.flex ? 'flex' : 'standard';
+  const micros = reservation(r, inputTokens, task.needs.maxOutput, tier);
+  spend(ctx, micros);
+  const callId = await reserve(ctx.db, f, { workspaceId: ctx.workspaceId, operationId: ctx.operationId, task: task.name, step: 0, route: r, serviceTier: tier, language, reservedMicros: micros });
+  return { callId, route: r, tier, inputTokens };
+}
+/** Release a reservation made ahead that no call used. */
+export async function releaseAhead(ctx: CallContext) {
+  const ahead = await ctx.ahead?.catch(() => null);
+  if (ahead) await settle(ctx.db, ahead.callId, { state: 'released', error: 'unused', latencyMs: 0 });
+  ctx.ahead = undefined;
+}
+
+/**
  * Stream a text task. Text already shown cannot be taken back, so a stream never moves to another
  * route after its first token. A route that refuses before any text gives way to the next. When
  * the context's signal aborts, the stream stops and `Cancelled` carries the text that arrived.
@@ -183,8 +206,13 @@ export async function* runStream<I>(env: BackendBindings, ctx: CallContext, task
   for (const r of await routesFor(ctx.db, f, task.needs.skill, task.needs.data)) {
     const call = prepare(task, input, r, language);
     if (!call) continue;
-    spend(ctx, call.reserved);
-    const callId = await reserve(ctx.db, f, { workspaceId: ctx.workspaceId, operationId: ctx.operationId, task: task.name, step, route: r, serviceTier: call.tier, language, reservedMicros: call.reserved });
+    // A reservation made ahead for this route covers the call when the request fits its bound.
+    const ahead = ctx.ahead ? await ctx.ahead : null;
+    ctx.ahead = undefined;
+    const fits = ahead && ahead.route.id === r.id && estimateTokens(requestText(task.build(input, r)), language) <= ahead.inputTokens;
+    if (ahead && !fits) await settle(ctx.db, ahead.callId, { state: 'released', error: 'unused', latencyMs: 0 });
+    if (!fits) spend(ctx, call.reserved);
+    const callId = fits ? ahead.callId : await reserve(ctx.db, f, { workspaceId: ctx.workspaceId, operationId: ctx.operationId, task: task.name, step, route: r, serviceTier: call.tier, language, reservedMicros: call.reserved });
     onCall?.(callId, r);
     const started = Date.now();
     let text = '', saved = 0;
@@ -225,6 +253,7 @@ export async function* runStream<I>(env: BackendBindings, ctx: CallContext, task
       markDown(r); step++; continue;
     }
   }
+  await releaseAhead(ctx);
   throw unavailable(f, task.needs);
 }
 

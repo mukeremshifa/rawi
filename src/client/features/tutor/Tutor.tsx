@@ -197,7 +197,12 @@ export function Tutor() {
     started.current = task.body.operationId;
     setLive({ op: task.body.operationId, text: '' });
     void streamEvents<ReplyEvent>(task.path, user.id, task.body, event => {
-      if (event.type === 'saved') { saved = true; pending.current = null; data.setData(event.detail as TutorDetail); setText(''); setAsking(false); }
+      if (event.type === 'saved') {
+        // The saved question and session arrive first. The page already holds the rest of the transcript.
+        const light = event.detail as Pick<TutorDetail, 'session' | 'pendingReply'> & { message: TutorDetail['messages'][number] };
+        saved = true; pending.current = null; setText(''); setAsking(false);
+        data.setData({ ...data.data!, session: light.session, messages: [...data.data!.messages, light.message], pendingReply: light.pendingReply });
+      }
       else if (event.type === 'delta') setLive(prior => prior && { ...prior, text: prior.text + event.text });
       else if (event.type === 'error') setLive(prior => prior && { ...prior, error: event.message });
     }).catch(e => {

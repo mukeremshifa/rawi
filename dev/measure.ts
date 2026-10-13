@@ -43,7 +43,7 @@ Client.prototype.query = function (this: Client, ...a: unknown[]) { trips++; ret
 
 const { db, close } = socketDb(config.DATABASE_URL, 5);
 const median = (xs: number[]) => { const v = [...xs].sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)]! : null; };
-const spent = async (where: ReturnType<typeof sql>) => (await db.execute(sql`select coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released'), 0)::int as micros, count(*)::int as calls from ai_calls where ${where}`)).rows[0] as { micros: number; calls: number };
+const spent = async (where: ReturnType<typeof sql>) => (await db.execute(sql`select coalesce(sum(coalesce(charged_micros, reserved_micros)) filter (where state <> 'released'), 0)::int as micros, count(*) filter (where state <> 'released')::int as calls from ai_calls where ${where}`)).rows[0] as { micros: number; calls: number };
 const out: Record<string, unknown> = { at: new Date().toISOString(), repeat };
 
 try {
@@ -164,7 +164,7 @@ try {
         await streamReply(env, wid, session.session.id, operationId, async e => {
           if (e.type === 'delta') { if (first === null) { first = Date.now() - t0; firstTrips = trips; } text += e.text; }
           if (e.type === 'error') error = e.code;
-        }, p => { void p.catch(() => undefined); }, connection);
+        }, p => { void p.catch(() => undefined); }, connection, { text: c.message, action: 'message', sessionRevision: session.session.revision });
         const cost = await spent(sql`operation_id = ${operationId}`);
         const [reply] = await db.select({ text: s.tutorMessages.text, provenance: s.tutorMessages.provenance }).from(s.tutorMessages).where(and(eq(s.tutorMessages.sessionId, session.session.id), eq(s.tutorMessages.role, 'tutor'))).orderBy(sql`${s.tutorMessages.ordinal} desc`).limit(1);
         const body = reply?.text ?? text;

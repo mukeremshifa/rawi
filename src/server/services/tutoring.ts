@@ -79,6 +79,11 @@ export async function createSession(db: SocketDb, workspaceId: string, courseId:
     const [saved] = await tx.insert(tutorSessions).values({ id: input.id, workspaceId, courseId, plannedSessionId: input.plannedSessionId, topicId, topicLabel, scopeId, title, source: input.source ?? null, review }).onConflictDoNothing().returning(); if (!saved) throw notFound(); return detail(tx, workspaceId, saved.id);
   });
 }
+/**
+ * Save a student's question with its reply operation already claimed, so the reply streams straight
+ * after it in the same request. Returns the session and the saved message, not the transcript the
+ * page already holds.
+ */
 export async function saveMessage(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof tutorMessageInput>) {
   return operation(db, workspaceId, input.operationId, { action: 'tutor-message', id, input }, async tx => {
     const session = await ownSession(tx, workspaceId, id, true); if (session.revision !== input.expectedRevision) throw conflict(); if (session.endedAt) throw new ApiError(409, 'session_ended', 'This session has ended. Start a new session to continue studying.'); if (session.archived) throw new ApiError(409, 'archived', 'Restore the session before adding messages.');
@@ -87,11 +92,12 @@ export async function saveMessage(db: SocketDb, workspaceId: string, id: string,
     let [active] = await tx.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), inArray(aiOperations.state, ['queued', 'running']))).limit(1);
     if (active && await recoverReplies(tx, { workspaceId, sessionId: id })) [active] = await tx.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), inArray(aiOperations.state, ['queued', 'running']))).limit(1);
     if (active) throw new ApiError(409, 'tutor_busy', 'A reply is still being written. Wait for it before sending another question.');
-    const [last] = await tx.select({ ordinal: tutorMessages.ordinal }).from(tutorMessages).where(eq(tutorMessages.sessionId, id)).orderBy(desc(tutorMessages.ordinal)).limit(1);
-    await tx.insert(tutorMessages).values({ id: crypto.randomUUID(), workspaceId, courseId: session.courseId, sessionId: id, ordinal: (last?.ordinal ?? -1) + 1, text: input.text, role: 'student', state: 'pending', operationId: input.operationId, failure: null });
+    const [message] = await tx.insert(tutorMessages).values({ id: crypto.randomUUID(), workspaceId, courseId: session.courseId, sessionId: id, ordinal: sql`(select coalesce(max(m.ordinal), -1) + 1 from tutor_messages m where m.session_id = ${id})`, text: input.text, role: 'student', state: 'pending', operationId: input.operationId, failure: null }).returning();
     await queueReply(tx, workspaceId, session, input.operationId, { text: input.text, action: input.action });
-    await tx.update(tutorSessions).set({ revision: session.revision + 1, updatedAt: new Date() }).where(eq(tutorSessions.id, id));
-    return detail(tx, workspaceId, id, Math.max(-1, (last?.ordinal ?? -1) - 48));
+    const [updated] = await tx.update(tutorSessions).set({ revision: session.revision + 1, updatedAt: new Date() }).where(eq(tutorSessions.id, id)).returning();
+    const { workspaceId: _w, ...visible } = updated!;
+    const { workspaceId: _mw, courseId: _c, sessionId: _s, ...saved } = message!;
+    return { session: visible, message: saved, pendingReply: input.operationId };
   });
 }
 export async function patchSession(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof tutorMetadataInput>) {

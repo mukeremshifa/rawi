@@ -14,14 +14,14 @@ tutorRoutes.get('/tutor/:id', async c => { const q = z.strictObject({ cursor: z.
 tutorRoutes.post('/tutor/:id/end', async c => c.json(await tutoring.endSession(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, writeInput))));
 tutorRoutes.patch('/tutor/:id', async c => c.json(await tutoring.patchSession(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, tutorMetadataInput))));
 /** A reply streamed as newline-delimited JSON. It runs to completion and is saved even if the browser goes away. */
-function replyStream(c: Context<BackendContext>, operationId: string, first?: ReplyEvent, connection?: ReturnType<typeof replyConnection>) {
+function replyStream(c: Context<BackendContext>, operationId: string, first?: ReplyEvent, connection?: ReturnType<typeof replyConnection>, saved?: Parameters<typeof streamReply>[7]) {
   const { readable, writable } = new TransformStream<Uint8Array>();
   const writer = writable.getWriter(), encoder = new TextEncoder();
   let open = true;
   const emit = async (event: ReplyEvent) => { if (!open) return; try { await writer.write(encoder.encode(`${JSON.stringify(event)}
 `)); } catch { open = false; } };
   const done = (first ? emit(first) : Promise.resolve())
-    .then(() => streamReply(c.env, c.get('workspaceId'), uuid.parse(c.req.param('id')), operationId, emit, work => c.executionCtx.waitUntil(work), connection))
+    .then(() => streamReply(c.env, c.get('workspaceId'), uuid.parse(c.req.param('id')), operationId, emit, work => c.executionCtx.waitUntil(work), connection, saved))
     .catch(() => emit({ type: 'error', code: 'unavailable', message: 'The tutor could not reply just now.' }))
     .finally(() => writer.close().catch(() => undefined));
   c.executionCtx.waitUntil(done);
@@ -37,7 +37,7 @@ tutorRoutes.post('/tutor/:id/ask', async c => {
   let detail;
   try { detail = await tutoring.saveMessage(connection.db, c.get('workspaceId'), uuid.parse(c.req.param('id')), input); }
   catch (error) { await connection.close(); throw error; }
-  return replyStream(c, input.operationId, { type: 'saved', detail }, connection);
+  return replyStream(c, input.operationId, { type: 'saved', detail }, connection, { text: input.text, action: input.action, sessionRevision: input.expectedRevision });
 });
 /** Resume the reply to a saved question, such as after a reload while it was queued. */
 tutorRoutes.post('/tutor/:id/reply', async c => replyStream(c, (await jsonInput(c, z.strictObject({ operationId: uuid }))).operationId));
