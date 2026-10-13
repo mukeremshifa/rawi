@@ -96,7 +96,7 @@ export function matchings(own: Fact[], nearby: Fact[]): Built[] {
 export function orderings(facts: Fact[]): Built[] {
   return facts.filter(f => f.kind === 'steps' && f.confidence >= SURE && f.items && f.items.length >= 3 && f.items.length <= 8 && new Set(f.items.map(normal)).size === f.items.length).map(f => ({
     format: 'ordering', difficulty: 'reasoning', factIds: [f.id], blockIds: f.blockIds,
-    prompt: `Put the steps of ${lower(f.subject)} in order.`, sequence: f.items!.map(i => clip(i, 200)), explanation: f.items!.map((s, i) => `${i + 1}. ${s}`).join(' '),
+    prompt: `Put the steps of ${lower(f.subject)} in order.`, sequence: f.items!.map(i => clip(i, 200)), explanation: f.items!.map((s, i) => `${i + 1}. ${s}`).join('\n'),
   }));
 }
 
