@@ -23,6 +23,9 @@ Keep credentials server-side. Infrastructure and deployment are separate work.
 The public development origin is `http://localhost:5173`, with Google callback
 `http://localhost:5173/api/auth/callback/google`. Existing bindings are described
 in `.dev.vars.example`. Text-only work does not require original-file storage.
+The R2 binding is remote in development, so `wrangler` must be logged in. The
+first upload after a long idle can fail once while the binding reconnects, and
+Retry then succeeds.
 
 ```sh
 npm run typecheck
@@ -33,7 +36,7 @@ npx wrangler deploy --dry-run
 `npm run preview` serves the production build and proxies `/api` to the Worker.
 Schema changes use `npm run db:generate` and `npm run db:migrate` against the
 designated development database. Startup never migrates. The schema was reset
-for the materials pipeline, so `drizzle/0000_baseline.sql` is the one applied
+for the restructure, so `drizzle/0000_baseline.sql` is the one applied
 migration. Applied migrations remain unchanged from here on.
 
 ## Layout
@@ -52,7 +55,7 @@ migration. Applied migrations remain unchanged from here on.
   `api-types.ts` is the only server file the client may import, types only.
 - `src/shared`: code used by both sides. `contracts/` holds request schemas
   and response shapes, `domain/` holds pure learning logic.
-- `dev`: the development seed and its fictional fixtures.
+- `dev`: the development seed, its fictional fixtures and `measure.ts`.
 - `drizzle`: generated migrations.
 
 ## Accounts and saving
@@ -76,21 +79,11 @@ clearing unrelated storage or session cookies. Open tabs are never forced to
 reload. Remove both files and the `/sw.js` no-store header together once
 returning-browser retirement has been checked and old installations are gone.
 
-## Learning
+## How it fits together
 
-Courses include an outline worked out from their documents, versioned materials, nine-format practice, resumable runs, immutable attempts, exam rehearsals and
-tutor records. Planning, availability, check-ins, history, search and reminders
-use the same authenticated workspace. Old `/online` links redirect to canonical
-routes with their references intact.
-
-The server enforces ownership, revisions, answer eligibility, section activation,
-deadlines and submission. Exams show no feedback before whole-paper submission.
-Pending written feedback does not lower graded totals.
-
-The tutor streams grounded, cited replies. Practice can generate checked
-question sets from a topic or material. Written answers in an attempt are
-marked together against their rubrics, and every other format is marked by
-rules. See AI below.
+Everything starts from material. A version is read into sections and facts,
+sections are linked to topics, and practice and the tutor work on a scope.
+Model calls are few and checked, and code does whatever it can.
 
 ## Materials
 
@@ -99,157 +92,138 @@ that Rawi owns (`src/shared/contracts/document.ts`): headings, paragraphs,
 lists, tables, equations, figures, code and quotes, with typed inline spans
 and source pages. Nothing is editable after conversion, and the original
 stays downloadable. Pasted text, `.md` and `.txt` use the Markdown adapter
-at publish time. PDF, DOCX and PPTX are published as pending and converted
-by Datalab in the background: `waitUntil` after upload, the version status
-read the Reader polls, and the cron sweep. Raw responses and extracted
-images are stored in R2. Images are served by an authorized Worker route.
+at publish time. PDF, DOCX and PPTX are converted by Datalab in the
+background. Put `DATALAB_API_KEY` in `.dev.vars`. Without it those uploads
+keep their original and show a conversion failure that can be retried once
+the key is set.
 
-Add material opens on files. Files dropped on the Materials page or chosen
-in the sheet need only a title, prefilled from the filename, and a file that
-is already an original in the course is flagged before it moves. Up to 10
-files go into a client queue above the routes, at most 3 transferring at
-once, each asking for its ticket just before its transfer. A tray and the
-table show progress, and each file toasts once when it is readable. The
-queue is memory only: a closed tab loses unsent files, and their tickets
-expire. A finished result that fails to save twice marks the version
-failed, and the cron sweep removes extracted images that no block shows.
+Up to 10 files go into a client queue, at most 3 transferring at once. The
+queue is memory only, so a closed tab loses unsent files. Questions, tutor
+replies and topics cite `{ materialId, versionId, blockIds }`, and the Reader
+opens `/materials/:m/versions/:v#block-:id`.
 
-Put `DATALAB_API_KEY` in `.dev.vars`. Without it those uploads keep their
-original and show a conversion failure that can be retried once the key is
-set. Questions, tutor sessions and tutor replies cite
-`{ materialId, versionId, blockIds }`, and the Reader opens
-`/materials/:m/versions/:v#block-:id`. Every ready version is also read into
-the knowledge layer described under AI.
+## Reading and topics
 
-## Course outline
+Every readable version gets an ingest job (`services/knowledge/`) in stages:
+structure, embed, digest, figures and repair. Structure splits the version
+into sections keyed by heading path, each with a content hash, and takes
+facts code can see. Digest writes a summary, key terms and typed facts with a
+confidence for each section. A replaced version digests only the sections
+whose hash changed and copies the rest. Prerequisites between sections are
+worked out in code from defined terms and references to earlier parts.
 
-A course starts with a name. Its page has two drop targets: the syllabus,
-one per course, and materials. Everything hangs off block, section and
-topic. A section is a heading and the blocks under it, or the lead before
-the first heading. A topic has a title, order, week or unit label, a short
-summary and the blocks it came from.
+A syllabus, one per course, is read into 8 to 20 topics and its assessments.
+After each version is read, `assign_topics` links its sections to the topics
+they cover or mention, and proposes new topics when substantial sections teach
+something no topic names. That is how a course without a syllabus gets its
+outline and how a midway upload adds topics. New topics are linked by title.
+Work out topics again on the course page links every section once more.
+Corrections apply in place with Undo, and a re-read never renames or removes
+a topic the student changed or has work on.
 
-Outline jobs (`src/server/services/outline/`) run like conversions: from
-`waitUntil`, from the outline status read and from the cron sweep, under a
-lease, one outline job per course at a time. A ready syllabus is read into
-8 to 20 topics and its assessments. Every other ready material is mapped
-section by section to topics, which gives Covers in the Reader and Where to
-read on the course page. Without a syllabus, two ready materials draft an
-outline from titles and headings. Every item a job keeps cites blocks of
-that version. A re-read reuses topic ids and never renames or removes a
-topic the student changed or has work on. Corrections apply in place with
-Undo. Questions and tutor sessions take their topic from their section, and
-work with no topic shows under its material as Not in the outline.
+Jobs run from `waitUntil`, from the course status read and from the cron
+sweep, under a lease. One pass runs topic jobs, then reading, then the topic
+links reading queued.
 
-Outline jobs run as engine tasks. When no vendor is configured, the
-allowance is spent or the models fail their checks, a rules pass reads
-tables, headings and lists instead and the outline says so.
+## Scopes
 
-## AI
+A scope (`services/scopes.ts`) is a topic, a set of sections, an assessment,
+the whole course or one material. Topic and assessment scopes resolve to
+their sections when used, so a new upload joins them without a rebuild.
 
-One engine in `src/server/ai/` serves every AI task. Features call a task and
-never name a model. A task declares its context builder, output schema and
-check, output cap, cache policy, service tier, data class and the route lists
-it escalates through. The router picks the first healthy route allowed by the
-plan, and a failed check moves to the next list. Routes, prices and the lists
-themselves live in `catalog.ts`, chosen from `dev/pipeline.ts` measurements.
+## Questions
 
-- Vendors: AWS Bedrock and Google Vertex, through small `fetch` adapters that
-  run on Workers. Put the credentials described in `.dev.vars.example` in
-  `.dev.vars`. Anthropic and OpenAI models on Bedrock refused calls from the
-  development machine as an unsupported country, so none is routed.
-- Student content: tutor turns, written answers and summaries of them go only
-  to routes that keep no prompts, whatever the plan allows, unless a plan sets
-  `studentRetention: "standard"` on purpose. When no such route is up the
-  request fails and says so. Student questions are therefore not embedded
-  while the only embedding route is on Vertex, and the tutor searches by text.
-- Meter and trace: every provider call is a row in `ai_calls`, reserved from
-  the task's output cap before sending and settled from usage by class after.
-  An uncertain outcome stays charged and is never retried automatically: a
-  practice set or feedback request left uncertain is refused if repeated under
-  the same id. Calls time out after 60 seconds, 150 on the flex lane. Each
-  interactive operation has limits on calls, spend and time. Background work
-  and interactive work hold separate concurrency slots.
-- Plans: limits and allowed vendors are rows in `ai_plans`. The `default` plan
-  allows $2 a day and $20 a month per workspace, and `platform` caps all
-  workspaces together. `/ai/status` reports whether a request would be refused.
-- Knowledge layer: each ready version is read by an ingest job into chunks
-  with full-text search and pgvector embeddings, section summaries and key
-  terms, atomic facts and figure descriptions, all citing its blocks. Long
-  blocks are split, never cut, and tables repeat their header in each part. A
-  version is searchable once every block is in a chunk and enriched once the
-  rest is done, and `coverage` on the job says what is missing. A repair stage
-  comes back for failed embeddings. Figure descriptions are chunks of their
-  own, labelled as generated. Changing the chunker or embedding model rebuilds
-  current versions a few per sweep, keeping unchanged embeddings.
-- Tutor: replies stream from `/tutor/:id/reply`. A session's own passage is
-  read from its blocks, marked when a newer version exists. A follow-up is read
-  with the exchange it leans on, then text search runs, with vectors only when
-  text leaves the question's terms uncovered. Passages fill a token budget
-  without repeats. The evidence is judged sufficient, partial or absent:
-  absent is answered without a model call, and partial names what the
-  materials leave out. Grounding is worked out in code from that verdict and
-  the checked citations. A reply that cites nothing shows the passages it was
-  given. The stage moves in a small call after the reply, on the student's own
-  words. A hint on a reviewed answer is held back until it is known not to
-  give the answer away. Stop ends a reply within a second and keeps what
-  arrived, and a reply whose Worker went away is saved as interrupted.
-- Questions: checked pool questions keyed by version, section, format,
-  difficulty and prompt version are reused first. The shortfall is written,
-  checked by rules, solved from its source by a second reader before any answer
-  is compared, and stored with its verdict. Sections still short are written
-  once more, told why the others failed.
-- Grading: every awarded rubric point must quote the answer, and code checks
-  the quote. Points whose evidence does not hold up are marked again by a
-  stronger model, alone. Large attempts are marked in groups.
+There is one bank per workspace (`services/questions/`), keyed by material,
+section and content hash rather than by scope, so any scope draws on it and a
+replaced version keeps the items of its unchanged sections.
 
-`npx tsx dev/compare.ts --pipeline` measures the whole pipeline on reviewed
-fictional cases in an evaluation workspace and writes `dev/results`. A full
-run costs about fifty cents. `npx tsx dev/compare.ts` compares routes on single
-tasks.
+- Code builds cloze, flashcards, matching, ordering and multiple choice on
+  definitions and numbers from facts, at no cost.
+- A model writes multiple choice for other facts, numeric templates and
+  self-checks. A numeric template is checked once, then code fills in fresh
+  values and computes the answer each time. A second reader solves every
+  written item from its source before the key is compared, and judges
+  multiple choice wrong answers that can be ruled out without the material.
+- A practice run starts at once from the bank and what code can build. What
+  only a model can write joins the run as it passes its checks, and the run
+  says how many could not be written. The kinds ticked share the run equally.
+- Exam rehearsals draw from the same bank and show no feedback before the
+  whole paper is submitted.
+- Every format is marked by code, except flashcards and self-checks, which the
+  student marks against the answer.
 
-## Development seed
+## Tutor
 
-Fictional source fixtures live in `dev/fixtures`. Seed an explicit existing
-development account after applying the reviewed migrations:
+`POST /tutor/:id/ask` saves the question and streams the reply in one
+request. Retrieval searches the course with text first and vectors when text
+leaves the question's terms uncovered, then judges the evidence sufficient,
+partial or absent. Absent is answered without a model call. An answer from
+outside the session's scope is labelled so. Stop ends a reply within a second
+and keeps what arrived. A reply whose Worker went away is settled the next
+time the session is read.
+
+## AI engine
+
+One engine in `src/server/ai/` serves every task. A task declares what it
+needs: a skill (chat, extract, write, check, vision or embed), its data class,
+lane, output cap, cache policy and attempts. `catalog.ts` lists routes with
+prices and the preferred order for each skill. Features never name a model.
+
+Funding sources are rows in `funding_sources`. The `platform` row uses the
+credentials in `.dev.vars` and allows $2 a day and $20 a month per workspace.
+A student can add their own Bedrock or Vertex key in Settings. Keys are sealed
+with a key derived from `BETTER_AUTH_SECRET`, so rotating that secret retires
+them. Student content goes only to routes that keep no prompts.
+
+Every provider call is a row in `ai_calls`, reserved before sending and
+settled from usage after. An uncertain outcome stays charged and is never
+retried automatically.
+
+## Development seed and measurement
+
+Fictional fixtures live in `dev/fixtures`. Seed an existing development
+account, which must have signed in once:
 
 ```sh
 npm run db:seed -- --email mukerem.dev@gmail.com
 ```
 
-PowerShell users should use `npm.cmd run db:seed -- --email mukerem.dev@gmail.com`
-if the npm shim consumes the argument separator. `--target WORKSPACE_ID` is also
-supported. Exactly one existing identity must resolve. Missing accounts must sign
-in once, the seed never creates Google identities or sessions.
+PowerShell users should use `npm.cmd run db:seed -- --email ...` if the npm
+shim consumes the separator. The seed (`rawi-dev-v3`) adds three courses:
+the Atlantic World and Statistical Inference with readings and no syllabus,
+and Minds, Machines and Meaning with only a syllabus. Topics, facts and
+questions are not seeded. Rawi reads the materials when a course page opens.
+`dev/fixtures/midway-*.md` are for trying a midway upload, and
+`dev/fixtures/originals` holds small originals for the Datalab path.
 
-The current dataset is `rawi-account-v2`. Its persisted date anchor and learner
-timezone keep repeat runs on the same timeline. A scoped manifest preserves edits,
-archives and progress, and reports changed records. Legacy `rawi-fictional-v1`
-imports remain intact. The new sample lab is distinctly named and does not replay
-that import envelope. Untouched empty planner defaults can receive availability.
+```sh
+npx tsx dev/measure.ts --email mukerem.dev@gmail.com --suites retrieval,questions,tutor
+```
 
-The seed uses domain services and atomic validated historical writes. Fixture
-text goes through the Markdown adapter, and question sources and authored
-tutor citations resolve to block ids by section heading. Four small
-originals use the designated R2 binding through the normal upload lifecycle
-and convert through Datalab when the key is set. A fourth sample course
-has the syllabus in `dev/fixtures/syllabus.md` as its syllabus material,
-and the seed runs its outline jobs.
-Authored tutor replies and written feedback carry Sample labels with no provider
-operations or charges. No fixtures or seed entry points ship in client or Worker
-bundles. Nothing seeds during startup, migration, onboarding or sign-in.
+`measure.ts` measures retrieval, question yield and cost, and tutor latency
+and cost on the seeded courses. `--read` first runs all reading work. It
+removes the tutor sessions it creates. A full run costs a few cents.
 
 ## Remaining work
 
-- AI: multiple-choice distractors are often rejected as too easy, and evidence
-  judged partial is still often answered as if complete.
-- Deferred AI: Arabic prompts and search, voice, chart specs, shared question
-  pools and organisation policy. Language, audio units and cache keys are
-  already carried for them.
-- Deferred from the redesign: illustrations and brand art, a canvas or topic
-  map, and native mobile patterns beyond the responsive layout.
-- Latency: planner and progress reads run their queries one after another
-  inside a socket transaction. Batching them would cut seconds per load.
-- Browser check of the failed sign-out message. Sign-in, protected routes,
-  cross-tab sign-out, autosave failure and retry, all nine answer controls,
-  material-editor drafts and storage retirement were checked on 8 October 2026.
+- Owner decisions: prices and plan numbers, the Vertex abuse-monitoring
+  exception, the AWS refusal of Anthropic and OpenAI models from this
+  account, and vendor choice.
+- Evidence judged partial is sometimes answered as if complete, because the
+  verdict leans on word overlap.
+- Code-built multiple choice is not solved by the second reader. Near
+  synonyms among the defined terms can make two options right.
+- Topic linking with gpt-oss-20b varies between runs. A material can end up
+  linked to no topic, and Work out topics again usually fixes it.
+- A replaced version embeds the whole document again, not only changed
+  sections. The cost is small.
+- The self-check feedback shows the model answer twice.
+- Each database round trip from the development machine takes 100 to 130
+  ms, so a tutor reply needs about 4 seconds to its first word and an answer
+  save takes a few seconds. Planner and progress reads run their queries one
+  after another.
+- R2 holds objects from before the database reset that no row points to.
+- The figure path of retrieval needs an uploaded document with figures to
+  check.
+- Deferred: Arabic prompts and search, voice, chart specs, shared question
+  pools, organisation policy, illustrations and a topic map.
