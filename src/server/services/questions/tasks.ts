@@ -30,6 +30,7 @@ const stemSchema = z.object({ items: z.array(z.object({
   stem: z.string().describe('The question'),
   answer: z.string().describe('The correct answer in at most twelve words'),
   answerType: z.string().describe('What kind of thing the answer is, in one or two words, such as person, year, place, cause, effect, policy, term, process'),
+  distractors: z.array(z.string()).describe('Three wrong answers of the same kind and length as the correct one. Each is a mistake a student who half-read the material would make'),
   difficulty: z.enum(['recall', 'reasoning']),
   explanation: z.string().describe('One or two sentences on why the answer is right, from the section'),
 })) });
@@ -37,17 +38,18 @@ export type Stems = z.infer<typeof stemSchema>;
 export interface StemInput { language: Language; materialTitle: string; sections: SectionInput[]; count: number }
 
 /**
- * Stems and correct answers for multiple choice, one per fact asked for. Answers to sibling
- * questions of the same type become each other's wrong answers, so stems in one call share types
- * where they can.
+ * Multiple choice for facts code cannot turn into a question. Code builds multiple choice on
+ * definitions and numbers itself. Borrowing wrong answers from sibling stems was measured and
+ * gave fewer usable questions than this, because siblings are rarely the same kind of thing, so
+ * the model writes three wrong answers of the same kind and a second reader judges them.
  */
 export const stemTask: Task<StemInput, Stems> = {
   name: 'questions.stems', promptVersion: QUESTIONS_PROMPT_VERSION, temperature: 0.4,
   needs: { skill: 'write', data: 'institution', lane: 'interactive', maxOutput: 3000, cache: 'none' }, language: i => i.language,
   build: i => ({
     system: [
-      'You write multiple-choice question stems for a university student from their course material. You write the stem and the correct answer only. Wrong answers are chosen separately from the answers to the other questions you write.',
-      'Write one question per fact you are given, up to the number asked for. The answer must be short and of a kind other questions here share: a person, a year, a place, a cause, a term. Prefer questions whose answers are of the same kind, so they can stand in for each other as wrong answers.',
+      'You write multiple-choice questions for a university student from their course material: a stem, the correct answer and three wrong answers.',
+      'Write one question per fact you are given, up to the number asked for. Keep the answer short. Every wrong answer is the same kind of thing as the correct one, about the same length, and plausible to a student who half-read the material: a confused term, a reversed cause, a claim from another section. Never use "all of the above" or "none of the above".',
       'recall asks for what the material states. reasoning asks why or how, with a short answer.',
       ...common(i.language),
     ].join('\n'),
@@ -122,6 +124,7 @@ const solveSchema = z.object({ verdicts: z.array(z.object({
   answerable: z.boolean().describe('The source alone settles the answer'),
   solution: z.string().describe('Your own answer, from the source, in one or two sentences. For a numeric question, the number.'),
   correctOptions: z.array(z.number().int()).describe('For multiple choice, the number of every option the source makes correct. Empty otherwise.'),
+  weakOptions: z.array(z.number().int()).describe('For multiple choice, the number of every wrong option a student could rule out without knowing the material, for example because it is a different kind of thing from the question. Empty otherwise.'),
   ambiguity: z.string().describe('Why the question could fairly be read two ways, or empty'),
 })) });
 export type Solved = z.infer<typeof solveSchema>;

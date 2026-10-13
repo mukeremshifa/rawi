@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { BackendBindings } from '../../config';
 import type { SocketDb, Transaction } from '../../db/client';
 import { bankItems, facts as factRows, itemResults, materials, sections as sectionRows } from '../../db/schema';
@@ -255,19 +255,16 @@ type On = <I, O>(task: Task<I, O>) => Task<I, O>;
 type Save = (rows: (typeof bankItems.$inferInsert)[]) => Promise<void>;
 
 /**
- * Stems and correct answers from a model, wrong answers from code. A stem's distractors are the
- * answers to its siblings of the same kind, in this batch and in the bank, so the model never
- * invents a wrong answer. A second reader must pick exactly the key from the options.
+ * Multiple choice for facts code cannot turn into a question, written by a model with three
+ * wrong answers of the same kind. A second reader must pick exactly the key from the options, and
+ * may rule out no more than one wrong answer without the material.
  */
 async function writeChoices(env: BackendBindings, ctx: CallContext, scope: Scope, prepared: Prepared[], need: number, language: Language, title: string, on: On, save: Save, reject: (why: string) => void, written: (n: number) => void) {
   const factful = prepared.filter(p => p.input.facts.length);
   if (!factful.length) { reject('no_facts'); return need; }
-  // More stems than needed, so each has siblings to borrow wrong answers from.
-  const served = await run(env, ctx, on(stemTask), { language, materialTitle: title, sections: factful.map(p => p.input), count: Math.min(16, Math.max(6, need * 2)) });
+  // A few more than needed, since some fail their check.
+  const served = await run(env, ctx, on(stemTask), { language, materialTitle: title, sections: factful.map(p => p.input), count: Math.min(12, need + 2) });
   written(served.value.items.length);
-  const bankAnswers = await ctx.db.select({ answer: sql<string>`${bankItems.content}->>'answer'`, type: sql<string | null>`${bankItems.verification}->>'answerType'`, materialId: bankItems.materialId }).from(bankItems)
-    .where(and(eq(bankItems.workspaceId, scope.workspaceId), eq(bankItems.format, 'multiple-choice'), eq(bankItems.origin, 'generated'), inArray(bankItems.materialId, [...new Set(factful.map(p => p.ctx.section.materialId))]))).orderBy(desc(bankItems.createdAt)).limit(200);
-  const typeOf = (t: string) => promptKey(t).replace(/s$/, '');
   type Candidate = { p: Prepared; stem: (typeof served.value.items)[number]; options: string[]; index: number; id: string };
   const candidates: Candidate[] = [];
   for (const [n, stem] of served.value.items.entries()) {
@@ -276,11 +273,7 @@ async function writeChoices(env: BackendBindings, ctx: CallContext, scope: Scope
     const answer = stem.answer.trim();
     if (stem.stem.trim().length < 8 || MENTIONS_SOURCE.test(stem.stem)) { reject('stem'); continue; }
     if (answer.length > 12 && promptKey(stem.stem).includes(promptKey(answer))) { reject('answer_in_stem'); continue; }
-    const pool = [...served.value.items.filter(o => o !== stem && typeOf(o.answerType) === typeOf(stem.answerType)).map(o => o.answer.trim()), ...bankAnswers.filter(b => b.type && typeOf(b.type) === typeOf(stem.answerType) && b.materialId === p.ctx.section.materialId).map(b => b.answer)];
-    // Too few siblings of the same kind: a year borrows neighbouring years, and a term borrows the
-    // other terms the material defines. Both come from code and the material, never from a model.
-    if (pool.length < 3 && /^\d{4}$/.test(answer)) pool.push(...[-20, 15, 40].map(d => String(Number(answer) + d)));
-    if (pool.length < 3 && /term|concept|name|policy|system/.test(typeOf(stem.answerType))) pool.push(...[...p.ctx.facts, ...p.ctx.siblings].filter(f => f.kind === 'definition').map(f => f.subject));
+    const pool = stem.distractors.map(d => d.trim()).filter(d => !/(all|none|both) of the above/i.test(d));
     const distractors = [...new Map(pool.filter(a => a && promptKey(a) !== promptKey(answer)).map(a => [promptKey(a), a])).values()].slice(0, 3);
     if (distractors.length < 3) { reject('no_distractors'); continue; }
     // The key must not stand out by length.
@@ -297,10 +290,12 @@ async function writeChoices(env: BackendBindings, ctx: CallContext, scope: Scope
     if (!v.answerable) { reject('unanswerable'); continue; }
     if (v.ambiguity.trim() || v.correctOptions.length !== 1) { reject('ambiguous'); continue; }
     if (v.correctOptions[0] !== c.index + 1) { reject('key_disagrees'); continue; }
+    // Wrong answers a student can rule out without the material make the question a giveaway.
+    if (new Set(v.weakOptions.filter(n => n !== c.index + 1 && n >= 1 && n <= 4)).size >= 2) { reject('weak_distractors'); continue; }
     if (accepted.length >= need) break;
     const fact = c.p.facts.get(c.stem.fact)!;
     const content = question(c.p.ctx, { format: 'multiple-choice', difficulty: c.stem.difficulty, prompt: c.stem.stem, explanation: c.stem.explanation, answer: c.stem.answer.trim(), options: c.options, correctIndices: [c.index], blockIds: fact.blockIds, factIds: [fact.id] }, 'generated', served.route.model);
-    accepted.push(row(scope, c.p.ctx, content, { verification: { rules: ['stem', 'distractors_from_siblings'], solver: { route: solved.route.id, agreed: true, reason: v.solution.slice(0, 300) }, answerType: c.stem.answerType } }));
+    accepted.push(row(scope, c.p.ctx, content, { verification: { rules: ['stem', 'distractors'], solver: { route: solved.route.id, agreed: true, reason: v.solution.slice(0, 300) }, answerType: c.stem.answerType } }));
   }
   await save(accepted);
   return accepted.length;
