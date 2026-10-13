@@ -63,9 +63,9 @@ export async function createSession(db: SocketDb, workspaceId: string, courseId:
     if (input.topicId && !topicLabel) throw notFound();
     let scopeId = input.scopeId ?? null;
     if (scopeId) {
-      const [scope] = await tx.select({ id: scopes.id, topicId: scopes.topicId }).from(scopes).where(and(eq(scopes.workspaceId, workspaceId), eq(scopes.courseId, courseId), eq(scopes.id, scopeId)));
+      const [scope] = await tx.select({ id: scopes.id, topicId: scopes.topicId, name: scopes.name }).from(scopes).where(and(eq(scopes.workspaceId, workspaceId), eq(scopes.courseId, courseId), eq(scopes.id, scopeId)));
       if (!scope) throw notFound();
-      topicId ??= scope.topicId;
+      topicId ??= scope.topicId; topicLabel ??= scope.name;
     } else if (topicId) {
       // A topic session works on the topic's scope, made on first use like any topic scope.
       await tx.insert(scopes).values({ id: crypto.randomUUID(), workspaceId, courseId, name: topicLabel ?? 'Topic', kind: 'topic', topicId }).onConflictDoNothing();
