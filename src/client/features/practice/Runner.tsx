@@ -86,6 +86,11 @@ export function Run() {
     send({ path: `/v1/runs/${id}/${submit ? 'submit' : 'answers'}`, method: submit ? 'POST' : 'PUT', body }, submit);
   }
   const transition = (action: 'check' | 'reveal' | 'hint') => { if (run && item) send({ path: `/v1/runs/${id}/transition`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: run.revision, itemId: item.id, action } }); };
+  // Checking an answer that has not saved yet saves it first, then checks.
+  const [queued, setQueued] = useState<'check' | 'reveal' | null>(null);
+  const act = (action: 'check' | 'reveal') => { if (!dirty) { transition(action); return; } setQueued(action); if (!blocked) saveAnswers(); };
+  useEffect(() => { if (queued && !dirty && !blocked) { setQueued(null); transition(queued); } }, [queued, dirty, save.busy]);
+  useEffect(() => { if (save.status === 'failed') setQueued(null); }, [save.status]);
   const examAction = (action: 'navigate' | 'finish-section' | 'flag', position = run?.position ?? 0) => { if (run) send({ path: `/v1/runs/${id}/exam-transition`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: run.revision, action, position } }); };
   // Autosave a second after the last change.
   useEffect(() => {
@@ -133,7 +138,7 @@ export function Run() {
         buttons[Number(e.key) - 1]?.click();
       } else if (e.key === 'Enter' && !target.closest('button, a')) {
         e.preventDefault();
-        if (canCheck && item && answered(responseOf(item)) && !dirty && !blocked) transition('check');
+        if (canCheck && item && answered(responseOf(item))) { if (!queued && !(blocked && !dirty)) act('check'); }
         else if (canNext) go(run!.position + 1);
       }
     };
@@ -216,8 +221,8 @@ export function Run() {
             {r.position + 1 < r.items.length && <Button variant="ghost" disabled={blocked} onClick={() => void submit()}>{exam ? 'Submit paper' : 'Finish'}</Button>}
             {exam && <Button variant="secondary" disabled={dirty || blocked} onClick={() => examAction('finish-section')}>Finish section</Button>}
             {revisitable && <Button variant="secondary" disabled={dirty || blocked} onClick={() => send({ path: `/v1/runs/${id}/revisit`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: r.revision } })}>Revisit hard cards</Button>}
-            {canReveal && <Button loading={save.busy} disabled={dirty || blocked || !answered(responseOf(item))} onClick={() => transition('reveal')}>Show model answer</Button>}
-            {canCheck && <Button loading={save.busy} disabled={dirty || blocked || !answered(responseOf(item))} onClick={() => transition('check')}>Check answer<Kbd className="bg-primary-foreground/20 text-primary-foreground hidden border-transparent sm:inline-flex">Enter</Kbd></Button>}
+            {canReveal && <Button loading={save.busy || !!queued} disabled={!!queued || (blocked && !dirty) || !answered(responseOf(item))} onClick={() => act('reveal')}>Show model answer</Button>}
+            {canCheck && <Button loading={save.busy || !!queued} disabled={!!queued || (blocked && !dirty) || !answered(responseOf(item))} onClick={() => act('check')}>Check answer<Kbd className="bg-primary-foreground/20 text-primary-foreground hidden border-transparent sm:inline-flex">Enter</Kbd></Button>}
             {r.position + 1 < r.items.length
               ? <Button variant={canCheck || canReveal ? 'secondary' : 'primary'} disabled={!canNext} onClick={() => go(r.position + 1)}>Next<ArrowRightIcon /></Button>
               : <Button variant={canCheck || canReveal ? 'secondary' : 'primary'} loading={save.busy && pending.current?.path.endsWith('/submit')} disabled={blocked} onClick={() => void submit()}>{exam ? 'Submit paper' : 'Finish'}</Button>}
