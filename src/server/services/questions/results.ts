@@ -11,8 +11,11 @@ import { SELF_MARKED } from '../../../shared/domain/marking';
 type Db = ReadDb | SocketDb | Transaction;
 type Run = { id: string; workspaceId: string; courseId: string; exam: unknown };
 
-/** Record one answer's result, replacing an earlier one for the same run and item. Skipped answers are not results. */
-export async function recordResults(tx: Transaction, run: Run, answered: { itemId: string; result: QuestionAttempt }[]) {
+/**
+ * Record one answer's result, replacing an earlier one for the same run and item. Skipped answers
+ * are not results. `tutored` marks a question the tutor posed during a session.
+ */
+export async function recordResults(tx: Transaction, run: Run, answered: { itemId: string; result: QuestionAttempt }[], tutored = false) {
   const marked = answered.filter(a => a.result.outcome !== 'skipped' && a.result.marksAvailable > 0);
   if (!marked.length) return;
   const items = await tx.select({ id: bankItems.id, materialId: bankItems.materialId, sectionKey: bankItems.sectionKey, factIds: bankItems.factIds }).from(bankItems)
@@ -20,7 +23,7 @@ export async function recordResults(tx: Transaction, run: Run, answered: { itemI
   const rows = marked.flatMap(a => {
     const item = items.find(i => i.id === a.itemId);
     if (!item) return [];
-    const mode = SELF_MARKED.includes(a.result.format) ? 'self-rated' as const : run.exam ? 'exam' as const : 'practice' as const;
+    const mode = SELF_MARKED.includes(a.result.format) ? 'self-rated' as const : run.exam ? 'exam' as const : tutored ? 'tutored' as const : 'practice' as const;
     return [{ id: crypto.randomUUID(), workspaceId: run.workspaceId, courseId: run.courseId, runId: run.id, itemId: item.id, materialId: item.materialId, sectionKey: item.sectionKey, factIds: item.factIds, format: a.result.format, mode, score: a.result.marksAwarded / a.result.marksAvailable, usedHint: a.result.usedHint }];
   });
   if (rows.length) await tx.insert(itemResults).values(rows).onConflictDoUpdate({ target: [itemResults.runId, itemResults.itemId], set: { score: sql`excluded.score`, usedHint: sql`excluded.used_hint`, at: new Date() } });

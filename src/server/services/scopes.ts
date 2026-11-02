@@ -105,6 +105,10 @@ export async function resolveScope(db: SocketDb, workspaceId: string, id: string
   return resolveRow(db, row);
 }
 export type ResolvedScope = Awaited<ReturnType<typeof resolveScope>>;
+/** The scope's sections, read inside the caller's transaction without marking the scope used. */
+export async function scopeSections(db: Db, workspaceId: string, id: string) {
+  return resolveRow(db, await ownScope(db, workspaceId, id));
+}
 
 /**
  * The scope with its sections and, when a section builds on one outside the scope, that section

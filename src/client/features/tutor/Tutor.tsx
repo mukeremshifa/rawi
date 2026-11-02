@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArchiveIcon, ArchiveRestoreIcon, ArrowUpIcon, BookOpenIcon, CheckCircleIcon, MoreHorizontalIcon, PencilIcon, PlusIcon, SearchIcon } from 'lucide-react';
+import { ArchiveIcon, ArchiveRestoreIcon, ArrowUpIcon, BookOpenIcon, CheckCircleIcon, ListChecksIcon, MessageSquareIcon, MoreHorizontalIcon, PencilIcon, PlusIcon, SearchIcon } from 'lucide-react';
 import type { CourseDetail } from '@shared/contracts/workspace';
 import type { BlockPage } from '@shared/contracts/document';
 import type { TutorDetail, TutorMessage, TutorSession } from '@shared/contracts/tutor';
+import type { LearningRun } from '@shared/contracts/learning';
+import type { AnswerValue } from '@shared/domain/types';
 import { STAGE_LABEL } from '@shared/domain/tutor';
 
 import { formatRelative } from '@/components/domain';
@@ -25,6 +27,8 @@ import { Select } from '@/components/ui/select';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { renderCitations } from '@/features/tutor/citations';
+import { QuestionFeedback } from '@/features/practice/QuestionFeedback';
+import { QuestionView } from '@/features/practice/QuestionView';
 import { DocumentBlocks } from '@/features/materials/DocumentView';
 import { assetPath, blockPath } from '@/features/materials/Reader';
 import { useAccount } from '@/lib/account';
@@ -210,6 +214,8 @@ export function Tutor() {
       else { started.current = null; setLive(null); setAskError(errorMessage(e)); }
     }).finally(() => { setAsking(false); if (saved) void data.refetch().then(() => setLive(prior => prior?.error ? prior : null)); });
   };
+  const busy = asking || save.busy || !!pending.current || !!pendingReply || !!live;
+  const quick = (text: string, action: string) => { if (!busy && data.data) ask({ path: `/v1/tutor/${id}/ask`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: data.data.session.revision, text, action } }); };
   if (data.isPending) return <Page width="narrow"><PageLoading label="Opening session" /></Page>;
   if (data.error) return <Page width="narrow"><ErrorState error={data.error} onRetry={() => void data.refetch()} /></Page>;
   const d = data.data, s = d.session;
@@ -263,6 +269,7 @@ export function Tutor() {
                 <div className={cn(tutor ? 'font-serif' : 'bg-surface rounded-lg border px-4 py-3')}>
                   <Prose text={body} size={tutor ? 'reading' : 'compact'} onCitation={citations.length ? n => { if (citations[n - 1]) setPanel({ kind: 'source', message: m, index: n - 1 }); } : undefined} />
                 </div>
+                {m.provenance?.check && <CheckCard runId={m.provenance.check.runId} itemId={m.provenance.check.itemId} closed={closed} onDiscuss={busy ? undefined : () => quick('Talk me through that question.', 'discuss')} />}
                 {tutor && (
                   <div className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-sm">
                     {m.provenance?.grounding && <span>{GROUNDING_LABEL[m.provenance.grounding]}</span>}
@@ -303,7 +310,8 @@ export function Tutor() {
             <Textarea aria-label="Your question" className="max-h-48 min-h-16 bg-card" maxLength={4000} value={text} disabled={asking || save.busy || !!pending.current || !!pendingReply || !!live} placeholder="Ask about this topic"
               onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit(); }} />
             <div className="flex items-center gap-tight">
-              <Select aria-label="How to help" size="sm" className="w-52" value={action} onValueChange={setAction} disabled={asking || save.busy || !!pending.current || !!pendingReply || !!live} options={ACTIONS} />
+              <Select aria-label="How to help" size="sm" className="w-52" value={action} onValueChange={setAction} disabled={busy} options={ACTIONS} />
+              <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={() => quick('Ask me a question.', 'check')}><ListChecksIcon />Ask me a question</Button>
               {(askError || save.error && !save.conflict) && <span className="text-danger-text min-w-0 flex-1 truncate text-sm" title={askError || save.error}>Not sent. {askError || save.error}</span>}
               <Button type="submit" className="ml-auto" loading={asking} disabled={(!text.trim() && !pending.current) || !!live && !asking}>{pending.current && !asking ? 'Retry' : <><ArrowUpIcon />Send</>}</Button>
             </div>
@@ -349,6 +357,46 @@ export function Tutor() {
           </DialogContent>
         )}
       </Dialog>
+    </div>
+  );
+}
+
+/**
+ * A question the tutor posed from the bank. It is answered and checked here like a practice
+ * question: code marks it, the result counts in learner state, and the tutor's next reply sees it.
+ */
+function CheckCard({ runId, itemId, closed, onDiscuss }: { runId: string; itemId: string; closed: boolean; onDiscuss?: () => void }) {
+  const { user } = useAccount();
+  const run = useApi<LearningRun>(`/v1/runs/${runId}`);
+  const [draft, setDraft] = useState<AnswerValue>();
+  const [checking, setChecking] = useState(false), [error, setError] = useState('');
+  if (run.isPending) return <LoadingState lines={3} label="Loading question" />;
+  if (run.error) return <ErrorState error={run.error} onRetry={() => void run.refetch()} />;
+  const r = run.data, position = r.items.findIndex(i => i.id === itemId), item = r.items[position];
+  if (!item) return null;
+  const answer = draft ?? item.response;
+  // The answer is saved, then checked, each against the run's latest revision.
+  const check = async () => {
+    setChecking(true); setError('');
+    try {
+      const saved = await request<LearningRun>(`/v1/runs/${runId}/answers`, user.id, { operationId: crypto.randomUUID(), expectedRevision: r.revision, position, answers: [{ itemId, response: answer }] }, 'PUT');
+      run.setData(await request<LearningRun>(`/v1/runs/${runId}/transition`, user.id, { operationId: crypto.randomUUID(), expectedRevision: saved.revision, itemId, action: 'check' }, 'POST'));
+      setDraft(undefined);
+    } catch (e) { setError(errorMessage(e)); void run.refetch(); }
+    finally { setChecking(false); }
+  };
+  return (
+    <div className="bg-card flex flex-col gap-gutter rounded-lg border px-4 py-4">
+      <QuestionView question={item.question} answer={answer} onChange={setDraft} readOnly={item.checked || closed || checking} />
+      {item.feedback ? <>
+        <div className="border-t pt-gutter"><QuestionFeedback question={{ ...item.question, source: undefined }} attempt={item.feedback} /></div>
+        {!closed && <Button variant="secondary" className="self-start" disabled={!onDiscuss} onClick={onDiscuss}><MessageSquareIcon />Talk me through it</Button>}
+      </> : !closed && (
+        <div className="flex flex-wrap items-center gap-tight">
+          <Button loading={checking} disabled={!answer || answer.kind === 'none'} onClick={() => void check()}>Check answer</Button>
+          {error && <span className="text-danger-text text-sm">Not checked. {error}</span>}
+        </div>
+      )}
     </div>
   );
 }

@@ -36,8 +36,8 @@ npx wrangler deploy --dry-run
 `npm run preview` serves the production build and proxies `/api` to the Worker.
 Schema changes use `npm run db:generate` and `npm run db:migrate` against the
 designated development database. Startup never migrates. The schema was reset
-for the restructure, so `drizzle/0000_baseline.sql` is the one applied
-migration. Applied migrations remain unchanged from here on.
+for the restructure, and `drizzle/0000_baseline.sql` is the baseline that
+later migrations follow. Applied migrations remain unchanged.
 
 ## Layout
 
@@ -161,6 +161,16 @@ partial or absent. Absent is answered without a model call. An answer from
 outside the session's scope is labelled so. Stop ends a reply within a second
 and keeps what arrived. A reply whose Worker went away is settled the next
 time the session is read.
+
+Check my understanding, or Ask me a question, poses a question from the bank
+on the session's scope, or on the section the session started from, weighted
+toward sections the student missed lately. No model is called. The student
+answers and checks it in the conversation, and code marks it as a tutored
+result in the session's own run, which practice does not list. The next turns
+see the question and its result. While it is unanswered, every reply is held
+back until it is known not to give the answer away. Talk me through it
+searches for the question and its answer. A model writes a check only when
+the bank has nothing for the session.
 
 ## AI engine
 

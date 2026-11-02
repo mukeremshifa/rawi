@@ -1,0 +1,1 @@
+ALTER TABLE "tutor_sessions" ADD COLUMN "check_run_id" uuid;

@@ -229,7 +229,7 @@ export const learningSets = pgTable('learning_sets', {
   id: uuid('id').primaryKey(), ...materialScope(), name: text('name').notNull(), archived: boolean('archived').notNull().default(false),
   revision: integer('revision').notNull().default(1), fingerprint: text('fingerprint').notNull(),
   feedback: text('feedback').$type<'immediate' | 'end'>().notNull(), hintsAllowed: boolean('hints_allowed').notNull(), ...timestamps(),
-  purpose: text('purpose').$type<'practice' | 'exam'>().notNull().default('practice'),
+  purpose: text('purpose').$type<'practice' | 'exam' | 'tutor'>().notNull().default('practice'),
   remediatesAttemptId: uuid('remediates_attempt_id'),
 }, t => [unique('sets_scope_unique').on(t.workspaceId, t.courseId, t.id),
   foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
@@ -270,7 +270,7 @@ export const learningAttempts = pgTable('learning_attempts', {
 export const itemResults = pgTable('item_results', {
   id: uuid('id').primaryKey(), ...materialScope(), runId: uuid('run_id').notNull(), itemId: uuid('item_id').notNull(),
   materialId: uuid('material_id'), sectionKey: text('section_key'), factIds: jsonb('fact_ids').$type<string[]>().notNull().default([]),
-  format: text('format').$type<QuestionFormat>().notNull(), mode: text('mode').$type<'practice' | 'exam' | 'self-rated'>().notNull(),
+  format: text('format').$type<QuestionFormat>().notNull(), mode: text('mode').$type<'practice' | 'exam' | 'self-rated' | 'tutored'>().notNull(),
   score: real('score').notNull(), usedHint: boolean('used_hint').notNull(),
   at: timestamp('at', { withTimezone: true }).defaultNow().notNull(),
 }, t => [
@@ -321,6 +321,8 @@ export const tutorSessions = pgTable('tutor_sessions', {
   endedAt: timestamp('ended_at', { withTimezone: true }),
   // What the student is working on. Retrieval ranks it first and never stops at it.
   scopeId: uuid('scope_id'),
+  // The run that holds the questions the tutor posed from the bank, made on the first one.
+  checkRunId: uuid('check_run_id'),
   // Older turns, summarised so a long session sends recent turns verbatim and the rest briefly.
   historySummary: text('history_summary'), summarisedThrough: integer('summarised_through').notNull().default(-1),
 }, t => [unique('tutor_sessions_scope_unique').on(t.workspaceId, t.courseId, t.id), foreignKey({ name: 'tutor_planner_scope_fk', columns: [t.workspaceId, t.courseId, t.plannedSessionId], foreignColumns: [plannedSessions.workspaceId, plannedSessions.courseId, plannedSessions.id] }), foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }), index('tutor_sessions_scope_idx').on(t.workspaceId, t.courseId, t.id), index('tutor_chronology_idx').on(t.workspaceId, t.courseId, t.createdAt, t.id)]);

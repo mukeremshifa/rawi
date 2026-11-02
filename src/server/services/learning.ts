@@ -1,5 +1,5 @@
 import { transaction } from '../db/client';
-import { and, asc, desc, eq, gt, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, lte, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { createSetInput, metadataInput, runWriteInput, transitionInput, writeInput, validResponse, sameAnswer, type VersionedQuestion, type LearningRun, type LearningAttempt } from '../../shared/contracts/learning';
 import { attemptTotals, toQuestionAttempt } from '../../shared/domain/marking';
@@ -175,7 +175,7 @@ export async function transition(db: SocketDb, workspaceId: string, id: string, 
     const flag = input.action === 'check' ? { checked: true } : input.action === 'reveal' ? { revealed: true } : { hinted: true };
     await tx.insert(runAnswers).values({ workspaceId, courseId: run.courseId, runId: id, setId: set.id, itemId: item.id, response: { kind: 'none' }, ...flag }).onConflictDoUpdate({ target: [runAnswers.runId, runAnswers.itemId], set: flag });
     // A checked answer is marked now, so learner state follows the student through the run.
-    if (input.action === 'check') await recordResults(tx, run, [{ itemId: item.itemId, result: toQuestionAttempt(item.question, prior?.response ?? { kind: 'none' }, !!prior?.hinted) }]);
+    if (input.action === 'check') await recordResults(tx, run, [{ itemId: item.itemId, result: toQuestionAttempt(item.question, prior?.response ?? { kind: 'none' }, !!prior?.hinted) }], set.purpose === 'tutor');
     await tx.update(learningRuns).set({ revision: run.revision + 1 }).where(eq(learningRuns.id, id));
     return runView(tx, workspaceId, id);
   });
@@ -218,7 +218,8 @@ export async function attempt(db: Db, workspaceId: string, id: string) {
 }
 export async function activeRuns(db: Db, workspaceId: string, courseId: string, limit: number, cursor?: string) {
   await getCourse(db, workspaceId, courseId);
-  const rows = await db.select({ id: learningRuns.id, title: learningRuns.title, startedAt: learningRuns.startedAt }).from(learningRuns).where(and(eq(learningRuns.workspaceId, workspaceId), eq(learningRuns.courseId, courseId), eq(learningRuns.state, 'active'), cursor ? gt(learningRuns.id, cursor) : undefined)).orderBy(asc(learningRuns.id)).limit(limit + 1);
+  // The questions a tutor session posed live in the session, not among runs to resume.
+  const rows = await db.select({ id: learningRuns.id, title: learningRuns.title, startedAt: learningRuns.startedAt }).from(learningRuns).innerJoin(learningSets, eq(learningSets.id, learningRuns.setId)).where(and(eq(learningRuns.workspaceId, workspaceId), eq(learningRuns.courseId, courseId), eq(learningRuns.state, 'active'), ne(learningSets.purpose, 'tutor'), cursor ? gt(learningRuns.id, cursor) : undefined)).orderBy(asc(learningRuns.id)).limit(limit + 1);
   return { runs: rows.slice(0, limit), nextCursor: rows.length > limit ? rows[limit - 1]!.id : null };
 }
 

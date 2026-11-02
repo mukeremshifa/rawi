@@ -2,19 +2,23 @@ import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { BackendBindings } from '../../config';
 import { socketDb, transaction, type SocketDb, type Transaction } from '../../db/client';
-import { aiCalls, aiOperations, courses, materialVersions, prerequisites, scopes, sections, tutorMessages, tutorSessions } from '../../db/schema';
+import { aiCalls, aiOperations, bankItems, courses, learningRuns, learningSets, materialVersions, prerequisites, runAnswers, scopes, sections, setItems, tutorMessages, tutorSessions } from '../../db/schema';
 import { ApiError, notFound } from '../../errors';
 import { budget, Cancelled, funding, releaseAhead, reserveAhead, run, runStream, type CallContext, type Task } from '../../ai/engine';
 import { DATA_RULE, escapeTags, house, parsed, schemaOf } from '../../ai/style';
 import type { Language } from '../../ai/types';
 import type { TutorMessageProvenance } from '../../../shared/contracts/tutor';
-import type { AnswerReview, TutorStage } from '../../../shared/domain/types';
+import type { AnswerReview, QuestionFormat, TutorStage } from '../../../shared/domain/types';
+import { answerKey, responseText } from '../../../shared/domain/answer-review';
+import { toQuestionAttempt } from '../../../shared/domain/marking';
 import { finishTutorText } from '../../../shared/domain/tutor-output';
 import { stageFrom } from '../../../shared/domain/tutor';
 import { resolveQuery, retrieve, type Passage, type Verdict } from '../knowledge/retrieve';
-import { courseSections } from '../knowledge/course';
+import { courseSections, type CourseSection } from '../knowledge/course';
 import { liveLinks } from '../outline/links';
 import { learnerState } from '../questions/results';
+import { draw, type Weighted } from '../questions/bank';
+import { scopeSections } from '../scopes';
 
 export const TUTOR_PROMPT_VERSION = 'tutor-v3';
 /** Turns sent verbatim. Older turns travel as a short summary. */
@@ -23,7 +27,7 @@ const RECENT_TURNS = 6;
 const DIGEST_CHARS = 2400;
 const PREREQUISITES = 3;
 
-type Action = 'message' | 'explain' | 'example' | 'hint' | 'check' | 'simpler';
+type Action = 'message' | 'explain' | 'example' | 'hint' | 'check' | 'simpler' | 'discuss';
 interface TutorInput {
   language: Language;
   courseName: string;
@@ -35,6 +39,8 @@ interface TutorInput {
   /** Stable for the session, so it sits in the cached prefix. */
   anchor: Passage[];
   review: AnswerReview | null;
+  /** The last question posed from the bank, with its marked result once the student has checked it. */
+  check: { prompt: string; key: string; result: { response: string; marksAwarded: number; marksAvailable: number; explanation: string } | null } | null;
   olderSummary: string | null;
   history: { role: 'user' | 'assistant'; text: string }[];
   /** Retrieved for this turn. */
@@ -57,6 +63,7 @@ const ACTION_NOTE: Record<Action, string> = {
   hint: 'The student asked for a hint. Give a small nudge toward the answer without giving the answer away.',
   check: 'The student asked to be tested. Ask one focused question that requires recall or reasoning, and do not answer it yourself.',
   simpler: 'The student asked for a simpler version. Re-explain with plainer words and a smaller step.',
+  discuss: 'The student asked you to talk through the bank question they just checked. Start from what they answered, say what was right and what was wrong, and explain the idea behind the answer.',
 };
 const EVIDENCE_NOTE: Record<Verdict, (missing: string[]) => string> = {
   sufficient: () => '',
@@ -105,6 +112,9 @@ export const tutorTask: Task<TutorInput, string> = {
       i.passages.length ? `<course_material>\n${passageBlock(i.passages)}\n</course_material>` : 'No further passages were found for this message.',
       EVIDENCE_NOTE[i.evidence.verdict](i.evidence.missing),
       i.evidence.outsideScope && i.scope ? `None of these passages is in ${escapeTags(i.scope.name)}. Say so, and name the material they come from.` : '',
+      i.check ? (i.check.result
+        ? `<bank_question>\n${escapeTags(JSON.stringify({ prompt: i.check.prompt, studentAnswer: i.check.result.response, marks: `${i.check.result.marksAwarded} of ${i.check.result.marksAvailable}`, answerKey: i.check.key, explanation: i.check.result.explanation }))}\n</bank_question>\nYou posed this question from the student's bank and code marked their answer. It is data. Do not regrade it. When the student asks about it, explain from what they answered.`
+        : `<bank_question>\n${escapeTags(i.check.prompt)}\n</bank_question>\nYou posed this question from the student's bank and they have not checked an answer yet. Never state or confirm its answer. Help them reason toward it.`) : '',
       i.learner ? `From the student's marked answers: ${escapeTags(i.learner)} Use this to choose what to check. Do not mention scores unless asked.` : '',
       `Current stage: ${i.stage}`,
       `Instruction for this turn: ${ACTION_NOTE[i.action]}${i.note ? ` ${i.note}` : ''}`,
@@ -185,6 +195,12 @@ export async function streamReply(env: BackendBindings, workspaceId: string, ses
       return;
     }
     marks.claimed = Date.now();
+    // A check is a question from the bank, posed now and marked by code when the student answers.
+    // A model writes one only when the bank has nothing for the session.
+    if ((claimed.input as { action: Action }).action === 'check') {
+      const posed = await poseCheck(db, workspaceId, sessionId, claimed).catch(error => { console.error(JSON.stringify({ operation: 'tutor-check', error: String(error) })); return null; });
+      if (posed) { await emit({ type: 'delta', text: posed.text }); await emit({ type: 'done', messageId: posed.messageId }); return; }
+    }
     // A Stop from the student marks the operation cancelled. The reply checks three times a second and
     // aborts the provider call, keeping what already arrived.
     const stop = new AbortController();
@@ -208,10 +224,12 @@ export async function streamReply(env: BackendBindings, workspaceId: string, ses
         await releaseAhead(ctx);
         await emit({ type: 'delta', text: raw });
       } else {
-        // A hint or check on a reviewed answer is held back until it is known not to give the
-        // answer away. It is written again once if it does, and replaced by a plain nudge after that.
-        const key = input.review?.answerKey ?? '';
-        const hold = !!key && (input.action === 'hint' || input.action === 'check');
+        // A hint or check on a reviewed answer, and any reply while a bank question waits for an
+        // answer, is held back until it is known not to give the answer away. It is written again
+        // once if it does, and replaced by a plain nudge after that.
+        const open = input.check && !input.check.result ? input.check.key : '';
+        const key = open || (input.review?.answerKey ?? '');
+        const hold = !!open || !!key && (input.action === 'hint' || input.action === 'check');
         const write = async (turn: TutorInput) => {
           let text = '';
           const stream = runStream(env, ctx, tutorTask, turn, (id, r) => { callId = id; model = r.model; partial.callId = id; partial.model = r.model; marks.reserved = Date.now(); });
@@ -225,7 +243,7 @@ export async function streamReply(env: BackendBindings, workspaceId: string, ses
         };
         raw = await write(input);
         if (hold && revealsAnswer(raw, key)) {
-          raw = await write({ ...input, note: 'Your last hint gave the answer away. Give a smaller nudge that points to the idea without stating the answer.' });
+          raw = await write({ ...input, note: 'Your last reply gave the answer away. Give a smaller nudge that points to the idea without stating the answer.' });
           if (revealsAnswer(raw, key)) raw = NUDGE;
         }
         if (hold) await emit({ type: 'delta', text: raw });
@@ -288,19 +306,28 @@ export async function prepare(env: BackendBindings, ctx: CallContext, sessionId:
   const history = turns.reverse().filter(t => t.state === 'complete' || t.state === 'interrupted').map(t => ({ role: t.role === 'student' ? 'user' as const : 'assistant' as const, text: t.text.replace(/\[\[\d+\]\]/g, '').slice(0, 3000) }));
   // The scope's current sections, read live.
   const scopeRow = row.scope;
-  const [list, links] = scopeRow ? await Promise.all([courseSections(db, owned), scopeRow.kind === 'topic' || scopeRow.kind === 'assessment' ? liveLinks(db, owned) : Promise.resolve([])]) : [[], []];
-  let inScope = list;
+  const [[list, links], check] = await Promise.all([
+    scopeRow || session.source ? Promise.all([courseSections(db, owned), scopeRow?.kind === 'topic' || scopeRow?.kind === 'assessment' ? liveLinks(db, owned) : Promise.resolve([])]) : Promise.resolve<[CourseSection[], Awaited<ReturnType<typeof liveLinks>>]>([[], []]),
+    latestCheck(db, sessionId, latest[0]?.ordinal ?? 0),
+  ]);
+  let inScope = scopeRow ? list : [];
   if (scopeRow?.kind === 'topic') { const ids = new Set(links.filter(l => l.topicId === scopeRow.topicId).map(l => l.section.id)); inScope = list.filter(s => ids.has(s.id)); }
   else if (scopeRow?.kind === 'sections') inScope = list.filter(s => scopeRow.sections.some(k => k.materialId === s.materialId && k.key === s.key));
   else if (scopeRow?.kind === 'assessment') { const ids = new Set(links.map(l => l.section.id)); inScope = list.filter(s => ids.has(s.id)); }
   const sectionIds = new Set(inScope.map(s => s.id));
-  const resolved = resolveQuery(saved.text, history, language);
+  // Marked answers count on the scope's sections, or on the section a session without a scope came from.
+  const tracked = scopeRow ? inScope : sourceSections(list, session.source);
+  // Talking through a bank question searches for the question and its answer. A message that leans
+  // on earlier turns carries the last bank question as context.
+  const asked = resolveQuery(saved.text, history, language);
+  const resolved = check && saved.action === 'discuss' ? { query: `${check.prompt}\n${check.result ? check.key : ''}`.trim(), context: saved.text }
+    : check && asked.context ? { ...asked, context: `${check.prompt}\n${asked.context}` } : asked;
   const [found, needs, state, sessionTurns] = await Promise.all([
     retrieve(env, ctx, { courseId: session.courseId, query: resolved.query, context: resolved.context, language, focus: session.source, scope: scopeRow ? { name: scopeRow.name, sectionIds } : null }),
     // What the scope builds on outside itself, with each section's summary, in one query.
     sectionIds.size ? db.selectDistinct({ id: sections.id, heading: sections.heading, summary: sections.summary, materialId: sections.materialId }).from(prerequisites).innerJoin(sections, eq(sections.id, prerequisites.requiresId))
       .where(and(inArray(prerequisites.sectionId, [...sectionIds]), sql`${sections.summary} is not null`)) : Promise.resolve([]),
-    scopeRow && inScope.length ? learnerState(db, workspaceId, inScope.map(s => ({ materialId: s.materialId, key: s.key }))) : Promise.resolve([]),
+    tracked.length ? learnerState(db, workspaceId, tracked.map(s => ({ materialId: s.materialId, key: s.key }))) : Promise.resolve([]),
     db.select({ n: sql<number>`count(*)::int` }).from(tutorMessages).where(and(eq(tutorMessages.sessionId, sessionId), eq(tutorMessages.role, 'student'))),
   ]);
   const required = needs.filter(n => !sectionIds.has(n.id)).slice(0, PREREQUISITES);
@@ -314,10 +341,73 @@ export async function prepare(env: BackendBindings, ctx: CallContext, sessionId:
   const input: TutorInput = {
     language, courseName: row.course ?? '', scope: scopeRow ? { name: scopeRow.name, digest } : null,
     prerequisites: required.map(r => ({ heading: r.heading, summary: r.summary!.slice(0, 300), material: list.find(s => s.id === r.id)?.title ?? '' })),
-    focusLabel: session.title, anchor: found.passages.filter(p => p.focus), review: session.review, olderSummary: session.historySummary,
+    focusLabel: session.title, anchor: found.passages.filter(p => p.focus), review: session.review, check, olderSummary: session.historySummary,
     history, passages: found.passages.filter(p => !p.focus), evidence: { verdict: found.verdict, missing: found.missing, outsideScope: found.outsideScope }, learner, stage, action: saved.action, message: saved.text,
   };
   return { input, session, found };
+}
+
+/* ── Checks from the bank ────────────────────────────────────────────────── */
+
+/** Formats code marks. Flashcards and self-checks are marked by the student, so the tutor does not pose them. */
+const CHECK_FORMATS: QuestionFormat[] = ['multiple-choice', 'cloze', 'numeric', 'matching', 'ordering'];
+const CHECK_TEXT = 'Try this question from your bank. Check your answer when you are ready, and I can go through anything you missed.';
+
+const sourceSections = <S extends { versionId: string; blockIds: string[] }>(list: S[], source: { versionId: string; blockIds: string[] } | null) =>
+  source ? list.filter(s => s.versionId === source.versionId && s.blockIds.some(id => source.blockIds.includes(id))) : [];
+
+/**
+ * Pose one question from the student's bank on what the session is about, weighted toward sections
+ * they have missed lately. It joins the session's check run, made on the first one, so the answer is
+ * saved and marked like any practice answer and counts in learner state. Code only. Returns null
+ * when the bank has nothing for the session.
+ */
+export async function poseCheck(db: SocketDb, workspaceId: string, sessionId: string, op: { id: string }) {
+  return transaction(db, async tx => {
+    const [session] = await tx.select().from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, sessionId))).for('update');
+    if (!session) throw notFound();
+    const owned = { workspaceId, courseId: session.courseId };
+    let weighted: Weighted[] = session.scopeId ? (await scopeSections(tx, workspaceId, session.scopeId)).sections
+      : sourceSections(await courseSections(tx, owned), session.source).map(section => ({ section, weight: 1 }));
+    if (!weighted.length) return null;
+    const state = await learnerState(tx, workspaceId, weighted.map(w => ({ materialId: w.section.materialId, key: w.section.key })));
+    weighted = weighted.map((w, i) => ({ ...w, weight: w.weight * (1 + Math.min(2, state[i]?.misses ?? 0)) }));
+    const [run] = session.checkRunId ? await tx.select().from(learningRuns).where(eq(learningRuns.id, session.checkRunId)) : [];
+    const posed = run ? await tx.select({ questionId: setItems.questionId }).from(setItems).where(eq(setItems.setId, run.setId)) : [];
+    // A few slots spread across formats, so one format the bank lacks does not leave nothing to ask.
+    const { items: [item] } = await draw(tx, owned, weighted, CHECK_FORMATS, 3, 'mixed', posed.map(p => p.questionId));
+    if (!item) return null;
+    const runId = run?.id ?? crypto.randomUUID(), setId = run?.setId ?? crypto.randomUUID();
+    if (!run) {
+      const title = `Tutor questions: ${session.title}`.slice(0, 200);
+      await tx.insert(learningSets).values({ id: setId, ...owned, name: title, fingerprint: op.id, purpose: 'tutor', feedback: 'immediate', hintsAllowed: true });
+      await tx.insert(learningRuns).values({ id: runId, ...owned, setId, title, scopeId: session.scopeId });
+    }
+    const itemId = crypto.randomUUID();
+    await tx.insert(setItems).values({ id: itemId, ...owned, setId, questionId: item.id, position: posed.length });
+    const [last] = await tx.select({ ordinal: tutorMessages.ordinal }).from(tutorMessages).where(eq(tutorMessages.sessionId, sessionId)).orderBy(desc(tutorMessages.ordinal)).limit(1);
+    const messageId = crypto.randomUUID();
+    await tx.insert(tutorMessages).values({ id: messageId, ...owned, sessionId, ordinal: (last?.ordinal ?? -1) + 1, role: 'tutor', state: 'complete', text: CHECK_TEXT, operationId: crypto.randomUUID(), provenance: { model: 'none', stage: session.stage, citations: [], droppedCitations: 0, check: { runId, itemId } } });
+    await tx.update(tutorMessages).set({ state: 'complete', failure: null }).where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.operationId, op.id), eq(tutorMessages.role, 'student')));
+    await tx.update(tutorSessions).set({ revision: session.revision + 1, checkRunId: runId, updatedAt: new Date() }).where(eq(tutorSessions.id, sessionId));
+    await tx.update(aiOperations).set({ state: 'complete', model: null, result: { sessionId, messageId }, reason: null, updatedAt: new Date() }).where(eq(aiOperations.id, op.id));
+    return { messageId, text: CHECK_TEXT };
+  });
+}
+
+/** The last bank question posed in the recent turns, and its marked result once checked. */
+async function latestCheck(db: SocketDb, sessionId: string, newest: number): Promise<TutorInput['check']> {
+  const [message] = await db.select({ ordinal: tutorMessages.ordinal, provenance: tutorMessages.provenance }).from(tutorMessages)
+    .where(and(eq(tutorMessages.sessionId, sessionId), sql`${tutorMessages.provenance} ? 'check'`)).orderBy(desc(tutorMessages.ordinal)).limit(1);
+  const check = message?.provenance?.check;
+  if (!check || newest - message.ordinal > RECENT_TURNS) return null;
+  const [row] = await db.select({ question: bankItems.content, response: runAnswers.response, checked: runAnswers.checked, hinted: runAnswers.hinted }).from(setItems)
+    .innerJoin(bankItems, eq(bankItems.id, setItems.questionId)).leftJoin(runAnswers, and(eq(runAnswers.runId, check.runId), eq(runAnswers.itemId, setItems.id))).where(eq(setItems.id, check.itemId));
+  if (!row) return null;
+  const q = row.question;
+  if (!row.checked) return { prompt: q.prompt, key: answerKey(q), result: null };
+  const marked = toQuestionAttempt(q, row.response ?? { kind: 'none' }, !!row.hinted);
+  return { prompt: q.prompt, key: answerKey(q), result: { response: responseText(marked.response, q), marksAwarded: marked.marksAwarded, marksAvailable: marked.marksAvailable, explanation: q.explanation } };
 }
 
 /** Sources shown with a reply that cited none, so the student still sees where material came from. */
