@@ -7,6 +7,7 @@ import { citationBlocks, validateCitation } from './materials';
 import { spansText } from '../../shared/domain/document-text';
 import { operation, attempt } from './learning';
 import { queueReply, recoverReplies } from './ai/tutor';
+import { nextMove, nextReview, opening } from './guide';
 import { summariseTutorTurns } from '../../shared/domain/tutor-summary';
 import type { writeInput } from '../../shared/contracts/learning';
 import { bumpPlanner } from './planning';
@@ -32,7 +33,13 @@ export async function detail(db: Db, workspaceId: string, id: string, cursor = -
   const session = await ownSession(db, workspaceId, id);
   const [pending] = await db.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), eq(aiOperations.task, 'tutor'), inArray(aiOperations.state, ['queued', 'running']))).orderBy(desc(aiOperations.createdAt)).limit(1);
   const rows = await db.select().from(tutorMessages).where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.sessionId, id), gt(tutorMessages.ordinal, cursor))).orderBy(asc(tutorMessages.ordinal)).limit(51);
-  return { session, summary: session.endedAt ? await sessionSummary(db, workspaceId, session) : null, messages: rows.slice(0, 50).map(({ workspaceId: _w, courseId: _c, sessionId: _s, ...m }) => m), nextCursor: rows.length > 50 ? rows[49]!.ordinal : null, pendingReply: pending?.id ?? null };
+  // The guide reads the learner model, so a failure there leaves the session readable without a next step.
+  const full = { ...session, workspaceId };
+  const [next, review] = await Promise.all([
+    pending ? null : nextMove(db, full).catch(() => null),
+    session.endedAt ? nextReview(db, full).catch(() => null) : null,
+  ]);
+  return { session, next, nextReview: review, summary: session.endedAt ? await sessionSummary(db, workspaceId, session) : null, messages: rows.slice(0, 50).map(({ workspaceId: _w, courseId: _c, sessionId: _s, ...m }) => m), nextCursor: rows.length > 50 ? rows[49]!.ordinal : null, pendingReply: pending?.id ?? null };
 }
 export async function createSession(db: SocketDb, workspaceId: string, courseId: string, input: z.infer<typeof newTutorInput>) {
   return operation(db, workspaceId, input.id, { action: 'tutor-session', courseId, input }, async tx => {
@@ -76,7 +83,9 @@ export async function createSession(db: SocketDb, workspaceId: string, courseId:
     const heading = focus?.blocks.find(b => b.type === 'heading');
     const title = (input.title || topicLabel || (heading?.type === 'heading' ? spansText(heading.content.spans) : '') || focus?.title || 'Tutor session').slice(0, 200);
     if (!topicId && !scopeId && !input.source && !review) throw new ApiError(400, 'invalid_input', 'Choose a topic, or start the session from a section of a material.');
-    const [saved] = await tx.insert(tutorSessions).values({ id: input.id, workspaceId, courseId, plannedSessionId: input.plannedSessionId, topicId, topicLabel, scopeId, title, source: input.source ?? null, review }).onConflictDoNothing().returning(); if (!saved) throw notFound(); return detail(tx, workspaceId, saved.id);
+    const [saved] = await tx.insert(tutorSessions).values({ id: input.id, workspaceId, courseId, plannedSessionId: input.plannedSessionId, topicId, topicLabel, scopeId, title, source: input.source ?? null, review }).onConflictDoNothing().returning(); if (!saved) throw notFound();
+    if (input.guided) await tx.insert(tutorMessages).values({ id: crypto.randomUUID(), workspaceId, courseId, sessionId: saved.id, ordinal: 0, role: 'tutor', state: 'complete', text: await opening(tx, saved, topicLabel ?? title), operationId: crypto.randomUUID(), provenance: { model: 'none', stage: 'orient', citations: [], droppedCitations: 0 } });
+    return detail(tx, workspaceId, saved.id);
   });
 }
 /**
@@ -93,7 +102,7 @@ export async function saveMessage(db: SocketDb, workspaceId: string, id: string,
     if (active && await recoverReplies(tx, { workspaceId, sessionId: id })) [active] = await tx.select({ id: aiOperations.id }).from(aiOperations).where(and(eq(aiOperations.workspaceId, workspaceId), eq(aiOperations.targetId, id), inArray(aiOperations.state, ['queued', 'running']))).limit(1);
     if (active) throw new ApiError(409, 'tutor_busy', 'A reply is still being written. Wait for it before sending another question.');
     const [message] = await tx.insert(tutorMessages).values({ id: crypto.randomUUID(), workspaceId, courseId: session.courseId, sessionId: id, ordinal: sql`(select coalesce(max(m.ordinal), -1) + 1 from tutor_messages m where m.session_id = ${id})`, text: input.text, role: 'student', state: 'pending', operationId: input.operationId, failure: null }).returning();
-    await queueReply(tx, workspaceId, session, input.operationId, { text: input.text, action: input.action });
+    await queueReply(tx, workspaceId, session, input.operationId, { text: input.text, action: input.action, ...(input.focus ? { focus: input.focus } : {}) });
     const [updated] = await tx.update(tutorSessions).set({ revision: session.revision + 1, updatedAt: new Date() }).where(eq(tutorSessions.id, id)).returning();
     const { workspaceId: _w, ...visible } = updated!;
     const { workspaceId: _mw, courseId: _c, sessionId: _s, ...saved } = message!;

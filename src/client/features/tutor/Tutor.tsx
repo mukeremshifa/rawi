@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArchiveIcon, ArchiveRestoreIcon, ArrowUpIcon, BookOpenIcon, CheckCircleIcon, ListChecksIcon, MessageSquareIcon, MoreHorizontalIcon, PencilIcon, PlusIcon, SearchIcon } from 'lucide-react';
+import { ArchiveIcon, ArchiveRestoreIcon, ArrowRightIcon, ArrowUpIcon, BookOpenIcon, CheckCircleIcon, ListChecksIcon, MoreHorizontalIcon, PencilIcon, PlusIcon, SearchIcon } from 'lucide-react';
 import type { CourseDetail } from '@shared/contracts/workspace';
 import type { BlockPage } from '@shared/contracts/document';
-import type { TutorDetail, TutorMessage, TutorSession } from '@shared/contracts/tutor';
+import type { NextMove, TutorDetail, TutorMessage, TutorSession } from '@shared/contracts/tutor';
 import type { LearningRun } from '@shared/contracts/learning';
 import type { AnswerValue } from '@shared/domain/types';
 import { STAGE_LABEL } from '@shared/domain/tutor';
 
-import { formatRelative } from '@/components/domain';
+import { formatDueDate, formatRelative } from '@/components/domain';
 import { Page, PageHeader, Toolbar } from '@/components/layout';
 import { EmptyState, ErrorState, LoadingState, Notice, PageLoading } from '@/components/states';
 import { Prose } from '@/components/Prose';
@@ -215,7 +215,9 @@ export function Tutor() {
     }).finally(() => { setAsking(false); if (saved) void data.refetch().then(() => setLive(prior => prior?.error ? prior : null)); });
   };
   const busy = asking || save.busy || !!pending.current || !!pendingReply || !!live;
-  const quick = (text: string, action: string) => { if (!busy && data.data) ask({ path: `/v1/tutor/${id}/ask`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: data.data.session.revision, text, action } }); };
+  const quick = (text: string, action: string, focus?: { materialId: string; key: string }) => { if (!busy && data.data) ask({ path: `/v1/tutor/${id}/ask`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: data.data.session.revision, text, action, ...(focus ? { focus } : {}) } }); };
+  const endSession = () => { if (data.data) send({ path: `/v1/tutor/${id}/end`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: data.data.session.revision } }, () => setPanel({ kind: 'summary' })); };
+  const take = (move: NextMove) => { if ('end' in move) endSession(); else quick(move.text, move.action, move.focus); };
   if (data.isPending) return <Page width="narrow"><PageLoading label="Opening session" /></Page>;
   if (data.error) return <Page width="narrow"><ErrorState error={data.error} onRetry={() => void data.refetch()} /></Page>;
   const d = data.data, s = d.session;
@@ -235,7 +237,7 @@ export function Tutor() {
               <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label="Session options"><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
               <DropdownMenuContent>
                 <DropdownMenuItem onSelect={() => setRenaming(s.title)}><PencilIcon />Rename</DropdownMenuItem>
-                {!s.endedAt && <DropdownMenuItem disabled={!!text || save.busy} onSelect={async () => { if (await confirm({ title: 'End this session?', description: 'You will see a summary. Start a new session to continue later.', confirmLabel: 'End session' })) send({ path: `/v1/tutor/${id}/end`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: s.revision } }, () => setPanel({ kind: 'summary' })); }}><CheckCircleIcon />End session</DropdownMenuItem>}
+                {!s.endedAt && <DropdownMenuItem disabled={!!text || save.busy} onSelect={async () => { if (await confirm({ title: 'End this session?', description: 'You will see a summary. Start a new session to continue later.', confirmLabel: 'End session' })) endSession(); }}><CheckCircleIcon />End session</DropdownMenuItem>}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem disabled={save.busy} onSelect={() => meta({ archived: !s.archived })}>{s.archived ? <><ArchiveRestoreIcon />Restore</> : <><ArchiveIcon />Archive</>}</DropdownMenuItem>
               </DropdownMenuContent>
@@ -269,7 +271,7 @@ export function Tutor() {
                 <div className={cn(tutor ? 'font-serif' : 'bg-surface rounded-lg border px-4 py-3')}>
                   <Prose text={body} size={tutor ? 'reading' : 'compact'} onCitation={citations.length ? n => { if (citations[n - 1]) setPanel({ kind: 'source', message: m, index: n - 1 }); } : undefined} />
                 </div>
-                {m.provenance?.check && <CheckCard runId={m.provenance.check.runId} itemId={m.provenance.check.itemId} closed={closed} onDiscuss={busy ? undefined : () => quick('Talk me through that question.', 'discuss')} />}
+                {m.provenance?.check && <CheckCard runId={m.provenance.check.runId} itemId={m.provenance.check.itemId} closed={closed} onChecked={() => void data.refetch()} />}
                 {tutor && (
                   <div className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-sm">
                     {m.provenance?.grounding && <span>{GROUNDING_LABEL[m.provenance.grounding]}</span>}
@@ -306,6 +308,9 @@ export function Tutor() {
 
       <div className="bg-background/95 sticky bottom-0 border-t backdrop-blur">
         <form className="ui-reading mx-auto flex flex-col gap-tight px-4 py-3" onSubmit={e => { e.preventDefault(); if (!asking && (text.trim() || pending.current)) ask({ path: `/v1/tutor/${id}/ask`, method: 'POST', body: { operationId: crypto.randomUUID(), expectedRevision: s.revision, text, action } }); }}>
+          {!closed && d.next && !busy && (
+            <Button type="button" variant="secondary" className="self-start" disabled={!!text.trim()} onClick={() => take(d.next!)}>{d.next.label}<ArrowRightIcon /></Button>
+          )}
           {closed ? <p className="text-muted-foreground text-sm">{s.archived ? 'Restore this session to add questions.' : 'This session has ended. Start a new one to keep going.'}</p> : <>
             <Textarea aria-label="Your question" className="max-h-48 min-h-16 bg-card" maxLength={4000} value={text} disabled={asking || save.busy || !!pending.current || !!pendingReply || !!live} placeholder="Ask about this topic"
               onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit(); }} />
@@ -326,7 +331,7 @@ export function Tutor() {
             <>
               <SheetHeader><SheetTitle>Session summary</SheetTitle></SheetHeader>
               <SheetBody>
-                <p className="text-muted-foreground text-sm">Reached: {STAGE_LABEL[d.summary.stageReached]}</p>
+                <p className="text-muted-foreground text-sm">Reached: {STAGE_LABEL[d.summary.stageReached]}{d.nextReview ? ` · Next review: ${formatDueDate(d.nextReview)}` : ''}</p>
                 <ul className="flex list-disc flex-col gap-1.5 pl-5 font-serif text-md">{d.summary.covered.map(line => <li key={line}>{line}</li>)}</ul>
                 <p className="text-muted-foreground text-sm">{s.completedLearning ? 'Counts as tutored study, which is assisted work.' : 'This session does not count as completed study.'}</p>
                 {s.scopeId
@@ -365,7 +370,7 @@ export function Tutor() {
  * A question the tutor posed from the bank. It is answered and checked here like a practice
  * question: code marks it, the result counts in learner state, and the tutor's next reply sees it.
  */
-function CheckCard({ runId, itemId, closed, onDiscuss }: { runId: string; itemId: string; closed: boolean; onDiscuss?: () => void }) {
+function CheckCard({ runId, itemId, closed, onChecked }: { runId: string; itemId: string; closed: boolean; onChecked: () => void }) {
   const { user } = useAccount();
   const run = useApi<LearningRun>(`/v1/runs/${runId}`);
   const [draft, setDraft] = useState<AnswerValue>();
@@ -381,17 +386,14 @@ function CheckCard({ runId, itemId, closed, onDiscuss }: { runId: string; itemId
     try {
       const saved = await request<LearningRun>(`/v1/runs/${runId}/answers`, user.id, { operationId: crypto.randomUUID(), expectedRevision: r.revision, position, answers: [{ itemId, response: answer }] }, 'PUT');
       run.setData(await request<LearningRun>(`/v1/runs/${runId}/transition`, user.id, { operationId: crypto.randomUUID(), expectedRevision: saved.revision, itemId, action: 'check' }, 'POST'));
-      setDraft(undefined);
+      setDraft(undefined); onChecked();
     } catch (e) { setError(errorMessage(e)); void run.refetch(); }
     finally { setChecking(false); }
   };
   return (
     <div className="bg-card flex flex-col gap-gutter rounded-lg border px-4 py-4">
       <QuestionView question={item.question} answer={answer} onChange={setDraft} readOnly={item.checked || closed || checking} />
-      {item.feedback ? <>
-        <div className="border-t pt-gutter"><QuestionFeedback question={{ ...item.question, source: undefined }} attempt={item.feedback} /></div>
-        {!closed && <Button variant="secondary" className="self-start" disabled={!onDiscuss} onClick={onDiscuss}><MessageSquareIcon />Talk me through it</Button>}
-      </> : !closed && (
+      {item.feedback ? <div className="border-t pt-gutter"><QuestionFeedback question={{ ...item.question, source: undefined }} attempt={item.feedback} /></div> : !closed && (
         <div className="flex flex-wrap items-center gap-tight">
           <Button loading={checking} disabled={!answer || answer.kind === 'none'} onClick={() => void check()}>Check answer</Button>
           {error && <span className="text-danger-text text-sm">Not checked. {error}</span>}

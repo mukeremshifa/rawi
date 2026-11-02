@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { BackendBindings } from '../../config';
-import { socketDb, transaction, type SocketDb, type Transaction } from '../../db/client';
+import { socketDb, transaction, type ReadDb, type SocketDb, type Transaction } from '../../db/client';
 import { aiCalls, aiOperations, bankItems, courses, learningRuns, learningSets, materialVersions, preferences, prerequisites, runAnswers, scopes, sections, setItems, tutorMessages, tutorSessions } from '../../db/schema';
 import { ApiError, notFound } from '../../errors';
 import { budget, Cancelled, funding, releaseAhead, reserveAhead, run, runStream, type CallContext, type Task } from '../../ai/engine';
@@ -30,6 +30,8 @@ const DIGEST_CHARS = 2400;
 const PREREQUISITES = 3;
 
 type Action = 'message' | 'explain' | 'example' | 'hint' | 'check' | 'simpler' | 'discuss';
+/** A section a move is about, by material and key. */
+export type SectionRef = { materialId: string; key: string };
 interface TutorInput {
   language: Language;
   courseName: string;
@@ -144,7 +146,7 @@ const summaryTask: Task<{ language: Language; prior: string | null; turns: { rol
  * Called in the transaction that saves the student's message. The reply is saved already running,
  * since it streams straight after in the same request. One left behind is recovered like any other.
  */
-export async function queueReply(tx: Transaction, workspaceId: string, session: { id: string; courseId: string; revision: number }, operationId: string, input: { text: string; action: Action }) {
+export async function queueReply(tx: Transaction, workspaceId: string, session: { id: string; courseId: string; revision: number }, operationId: string, input: { text: string; action: Action; focus?: SectionRef }) {
   await tx.insert(aiOperations).values({ id: operationId, workspaceId, courseId: session.courseId, targetId: session.id, task: 'tutor', fingerprint: operationId, input: { sessionRevision: session.revision, ...input }, state: 'running', promptVersion: TUTOR_PROMPT_VERSION });
 }
 
@@ -179,7 +181,7 @@ export const replyConnection = (env: BackendBindings) => socketDb(env.DATABASE_U
  * because the stream outlives the request handler. A closed browser does not stop the reply:
  * it is saved, and the session shows it on the next read.
  */
-export async function streamReply(env: BackendBindings, workspaceId: string, sessionId: string, operationId: string, emit: (event: ReplyEvent) => Promise<void>, defer: (work: Promise<unknown>) => void, given?: ReturnType<typeof socketDb>, saved?: { text: string; action: Action; sessionRevision: number }) {
+export async function streamReply(env: BackendBindings, workspaceId: string, sessionId: string, operationId: string, emit: (event: ReplyEvent) => Promise<void>, defer: (work: Promise<unknown>) => void, given?: ReturnType<typeof socketDb>, saved?: { text: string; action: Action; sessionRevision: number; focus?: SectionRef }) {
   const connection = given ?? replyConnection(env);
   const db = connection.db;
   const marks: Record<string, number> = { start: Date.now() };
@@ -200,7 +202,7 @@ export async function streamReply(env: BackendBindings, workspaceId: string, ses
     // A check is a question from the bank, posed now and marked by code when the student answers.
     // A model writes one only when the bank has nothing for the session.
     if ((claimed.input as { action: Action }).action === 'check') {
-      const posed = await poseCheck(db, workspaceId, sessionId, claimed).catch(error => { console.error(JSON.stringify({ operation: 'tutor-check', error: String(error) })); return null; });
+      const posed = await poseCheck(db, workspaceId, sessionId, claimed, (claimed.input as { focus?: SectionRef }).focus).catch(error => { console.error(JSON.stringify({ operation: 'tutor-check', error: String(error) })); return null; });
       if (posed) { await emit({ type: 'delta', text: posed.text }); await emit({ type: 'done', messageId: posed.messageId }); return; }
     }
     // A Stop from the student marks the operation cancelled. The reply checks three times a second and
@@ -369,18 +371,18 @@ const sourceSections = <S extends { versionId: string; blockIds: string[] }>(lis
  * saved and marked like any practice answer and counts in learner state. Code only. Returns null
  * when the bank has nothing for the session.
  */
-export async function poseCheck(db: SocketDb, workspaceId: string, sessionId: string, op: { id: string }) {
+export async function poseCheck(db: SocketDb, workspaceId: string, sessionId: string, op: { id: string }, focus?: SectionRef) {
   return transaction(db, async tx => {
     const [locked] = await tx.select({ session: tutorSessions, timezone: sql<string | null>`(select p.timezone from ${preferences} p where p.workspace_id = tutor_sessions.workspace_id)`, }).from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, sessionId))).for('update', { of: tutorSessions });
     if (!locked) throw notFound();
     const { session } = locked, timezone = locked.timezone ?? 'UTC';
     const owned = { workspaceId, courseId: session.courseId };
-    let weighted: Weighted[] = session.scopeId ? (await scopeSections(tx, workspaceId, session.scopeId)).sections
-      : sourceSections(await courseSections(tx, owned), session.source).map(section => ({ section, weight: 1 }));
+    let weighted = await sessionSections(tx, session);
     if (!weighted.length) return null;
     const state = await learnerState(tx, workspaceId, weighted.map(w => ({ materialId: w.section.materialId, key: w.section.key })), timezone);
     const today = localISO(new Date(), timezone);
-    weighted = weighted.map((w, i) => { const m = state[i]!.mastery; return { ...w, weight: w.weight * PICK[m.level] * (isDue(m, today) ? 2 : 1) }; });
+    // A question asked on one section, such as straight after explaining it, comes from that section when the bank has one.
+    weighted = weighted.map((w, i) => { const m = state[i]!.mastery; return { ...w, weight: w.weight * PICK[m.level] * (isDue(m, today) ? 2 : 1) * (focus && w.section.materialId === focus.materialId && w.section.key === focus.key ? 50 : 1) }; });
     const [run] = session.checkRunId ? await tx.select().from(learningRuns).where(eq(learningRuns.id, session.checkRunId)) : [];
     const posed = run ? await tx.select({ questionId: setItems.questionId }).from(setItems).where(eq(setItems.setId, run.setId)) : [];
     // A few slots spread across formats, so one format the bank lacks does not leave nothing to ask.
@@ -425,7 +427,13 @@ export function learnerLine(state: SectionState[], foundations: SectionState[], 
 }
 
 /** The last bank question posed in the recent turns, and its marked result once checked. */
-async function latestCheck(db: SocketDb, sessionId: string, newest: number): Promise<TutorInput['check']> {
+/** What a session is about: its scope's sections, or the section it started from, with their weights. */
+export async function sessionSections(db: ReadDb | SocketDb | Transaction, session: { workspaceId: string; courseId: string; scopeId: string | null; source: { versionId: string; blockIds: string[] } | null }): Promise<Weighted[]> {
+  if (session.scopeId) return (await scopeSections(db, session.workspaceId, session.scopeId)).sections;
+  return sourceSections(await courseSections(db, { workspaceId: session.workspaceId, courseId: session.courseId }), session.source).map(section => ({ section, weight: 1 }));
+}
+
+export async function latestCheck(db: ReadDb | SocketDb | Transaction, sessionId: string, newest: number): Promise<TutorInput['check']> {
   const [message] = await db.select({ ordinal: tutorMessages.ordinal, provenance: tutorMessages.provenance }).from(tutorMessages)
     .where(and(eq(tutorMessages.sessionId, sessionId), sql`${tutorMessages.provenance} ? 'check'`)).orderBy(desc(tutorMessages.ordinal)).limit(1);
   const check = message?.provenance?.check;

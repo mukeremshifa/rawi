@@ -186,6 +186,14 @@ back until it is known not to give the answer away. Talk me through it
 searches for the question and its answer. A model writes a check only when
 the bank has nothing for the session.
 
+Every open session offers one next step, chosen by code from the learner model
+and the turns so far (`services/guide.ts`): a review question when part of the
+scope is due, talking through a wrong answer, explaining the weakest section
+and then checking that section, and wrapping up after five questions. The
+student can ask anything instead. Study with the tutor, on the home page's next
+suggestion, starts a guided session whose first message says what it will work
+on and why. An ended session shows its next review date.
+
 ## AI engine
 
 One engine in `src/server/ai/` serves every task. A task declares what it

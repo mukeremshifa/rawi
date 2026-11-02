@@ -1,5 +1,7 @@
-import { Link } from 'react-router-dom';
-import { ArrowRightIcon, CheckCircle2Icon, CircleIcon } from 'lucide-react';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowRightIcon, CheckCircle2Icon, CircleIcon, GraduationCapIcon } from 'lucide-react';
+import type { TutorDetail } from '@shared/contracts/tutor';
 import type { PlannerView } from '../../../server/api-types';
 
 import { ACTIVITY_LABEL, DueLabel, SESSION_STATUS_LABEL } from '@/components/domain';
@@ -9,8 +11,31 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CheckInPrompt, ShortList, courseName, timeOfDay, type ProgressData } from '@/features/progress/parts';
 import { useAccount } from '@/lib/account';
+import { errorMessage, request } from '@/lib/api';
 import { useApi } from '@/lib/data';
 import { cn } from '@/lib/utils';
+
+/**
+ * Study the suggested topic with the tutor: a guided session that opens with a plan from what the
+ * student has shown and offers each next step. The id is kept so a retry never makes two sessions.
+ */
+function GuidedStart({ courseId, topicId }: { courseId: string; topicId: string }) {
+  const { user } = useAccount();
+  const navigate = useNavigate();
+  const [id] = useState(() => crypto.randomUUID());
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const start = async () => {
+    setBusy(true); setError('');
+    try { const d = await request<TutorDetail>(`/v1/courses/${courseId}/tutor`, user.id, { id, guided: true, topicId }, 'POST'); navigate(`/tutor/${d.session.id}`); }
+    catch (e) { setError(errorMessage(e)); setBusy(false); }
+  };
+  return (
+    <>
+      {error && <span className="text-danger-text text-sm" title={error}>Not started.</span>}
+      <Button size="lg" variant="secondary" loading={busy} onClick={() => void start()}><GraduationCapIcon />{error ? 'Retry' : 'Study with the tutor'}</Button>
+    </>
+  );
+}
 
 function greeting() {
   const h = new Date().getHours();
@@ -75,6 +100,7 @@ export function Home() {
           </div>
           <div className="flex shrink-0 items-center gap-snug">
             <span className="text-muted-foreground tabular text-sm">{next.minutes} min</span>
+            {next.topicId && next.kind !== 'setup' && <GuidedStart courseId={next.courseId} topicId={next.topicId} />}
             <Button asChild size="lg"><Link to={next.to}>Start<ArrowRightIcon /></Link></Button>
           </div>
         </section>

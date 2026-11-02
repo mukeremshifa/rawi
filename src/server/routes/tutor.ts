@@ -37,7 +37,7 @@ tutorRoutes.post('/tutor/:id/ask', async c => {
   let detail;
   try { detail = await tutoring.saveMessage(connection.db, c.get('workspaceId'), uuid.parse(c.req.param('id')), input); }
   catch (error) { await connection.close(); throw error; }
-  return replyStream(c, input.operationId, { type: 'saved', detail }, connection, { text: input.text, action: input.action, sessionRevision: input.expectedRevision });
+  return replyStream(c, input.operationId, { type: 'saved', detail }, connection, { text: input.text, action: input.action, sessionRevision: input.expectedRevision, focus: input.focus });
 });
 /** Resume the reply to a saved question, such as after a reload while it was queued. */
 tutorRoutes.post('/tutor/:id/reply', async c => replyStream(c, (await jsonInput(c, z.strictObject({ operationId: uuid }))).operationId));
