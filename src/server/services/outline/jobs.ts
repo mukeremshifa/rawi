@@ -11,7 +11,7 @@ import { fundingFor } from '../../ai/funding';
 import { outlineTasks } from './tasks';
 import { ingestPending, runIngest } from '../knowledge/ingest';
 import { assignTopicsRules, rulesProvider } from './rules';
-import { citedOnly, housePunctuation, normalTitle, SUBSTANTIAL_WORDS, type AssignInput, type OutlineProvider, type SyllabusInput } from './provider';
+import { citedOnly, housePunctuation, normalTitle, overloadedTopic, respread, SUBSTANTIAL_WORDS, withoutTopic, type AssignInput, type Assignment, type OutlineProvider, type SyllabusInput } from './provider';
 import { liveLinks, writeSuggestions } from './links';
 import { versionBlocks, type SectionBlock } from './sections';
 import { addTopics, applyAssessments, applyTopics, protectedTopics } from './outline';
@@ -139,6 +139,8 @@ async function step(db: SocketDb, env: BackendBindings, jobId: string) {
 type Prepared = {
   input: SyllabusInput | AssignInput;
   run: (provider: OutlineProvider) => Promise<{ value: unknown }>;
+  /** A second look at a model's reading, given a way to ask the model again. Its failure keeps the first reading. */
+  refine?: (value: unknown, ask: (input: unknown) => Promise<unknown>) => Promise<unknown>;
   apply: (tx: Parameters<Parameters<typeof transaction>[1]>[0], value: unknown) => Promise<Omit<OutlineJobResult, 'provider' | 'fallback'>>;
 };
 
@@ -150,8 +152,10 @@ async function execute(db: SocketDb, env: BackendBindings, job: Job, prepared: P
   const rules = async (fallback: OutlineJobResult['fallback']) => ({ value: (await prepared.run(rulesProvider)).value, provider: 'rules' as const, fallback });
   if (!Object.keys((await fundingFor(env, db, job.workspaceId)).adapters).length) return rules('unconfigured');
   try {
-    const served = await run(env, { db, workspaceId: job.workspaceId, jobId: job.id }, outlineTasks[job.kind] as Task<unknown, unknown>, prepared.input);
-    return { value: served.value, provider: 'model', model: served.route.model };
+    const ctx = { db, workspaceId: job.workspaceId, jobId: job.id }, task = outlineTasks[job.kind] as Task<unknown, unknown>;
+    const served = await run(env, ctx, task, prepared.input);
+    const value = prepared.refine ? await prepared.refine(served.value, async input => (await run(env, ctx, task, input)).value).catch(() => served.value) : served.value;
+    return { value, provider: 'model', model: served.route.model };
   } catch (error) {
     const code = error instanceof ApiError ? error.code : 'unexpected';
     if (code === 'ai_busy') return 'busy';
@@ -226,6 +230,13 @@ async function prepare(db: SocketDb, job: Job): Promise<Prepared | null> {
   };
   return {
     input, run: p => p.assignTopics(input),
+    // Without a syllabus, a topic the model files most of the batch under, often a broad one the
+    // student protected, leaves the room for new topics unused. The model reads those sections once
+    // more without that topic on offer, so the subjects inside it can become topics of their own.
+    refine: course.syllabusMaterialId ? undefined : async (raw, ask) => {
+      const first = raw as Assignment, broad = overloadedTopic(input, first, SECTIONS_PER_TOPIC);
+      return broad ? respread(input, first, await ask(withoutTopic(input, first, broad)) as Assignment, broad) : first;
+    },
     apply: async (tx, raw) => {
       const assignment = raw as Awaited<ReturnType<OutlineProvider['assignTopics']>>['value'];
       // A link names a current topic by key, or a new one by its title, so the two cannot drift apart.

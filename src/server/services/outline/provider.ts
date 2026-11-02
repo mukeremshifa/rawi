@@ -63,6 +63,44 @@ export function withNamedTopics(input: AssignInput, value: Assignment): Assignme
 }
 
 /**
+ * The current topic a reading files too much under: one covering more than twice `share` of the
+ * batch's substantial sections while room for new topics is left. A broad topic a student
+ * protected tends to swallow every section like this.
+ */
+export function overloadedTopic(input: AssignInput, value: Assignment, share: number) {
+  if (input.room - value.newTopics.length <= 0) return null;
+  const substantial = new Set(input.sections.filter(s => s.words >= SUBSTANTIAL_WORDS).map(s => s.key));
+  const counts = new Map<string, number>();
+  for (const l of value.links) if (substantial.has(l.section)) for (const t of l.topics) if (t.depth !== 'mentions' && input.topics.some(x => x.key === t.topic)) counts.set(t.topic, (counts.get(t.topic) ?? 0) + 1);
+  return [...counts].find(([, n]) => n > share * 2)?.[0] ?? null;
+}
+
+/** The batch to read again without the overloaded topic: the sections it covers, and only the room left. */
+export function withoutTopic(input: AssignInput, value: Assignment, broad: string): AssignInput {
+  const covered = new Set(value.links.filter(l => l.topics.some(t => t.topic === broad && t.depth !== 'mentions')).map(l => l.section));
+  return { ...input, room: input.room - value.newTopics.length, topics: input.topics.filter(t => t.key !== broad), sections: input.sections.filter(s => covered.has(s.key)) };
+}
+
+/**
+ * The first reading with the second one, made without the overloaded topic, laid over it. A
+ * section the second reading files under a new topic moves there and keeps the broad topic as a
+ * mention. A new topic named like the broad one is the broad one. Sections it leaves out stay put.
+ */
+export function respread(input: AssignInput, first: Assignment, second: Assignment, broad: string): Assignment {
+  const broadTitle = normalTitle(input.topics.find(t => t.key === broad)?.title ?? '');
+  const room = input.room - first.newTopics.length;
+  const fresh = second.newTopics.filter(t => normalTitle(t.title) !== broadTitle).slice(0, room);
+  const known = new Set(fresh.map(t => normalTitle(t.title)));
+  const moved = new Map(second.links.flatMap(l => {
+    const own = l.topics.filter(t => known.has(normalTitle(t.topic)));
+    return own.length ? [[l.section, own] as const] : [];
+  }));
+  // The new topic comes first, so it survives the three topics a section keeps.
+  const links = first.links.map(l => { const to = moved.get(l.section); return to ? { ...l, topics: [...to, ...l.topics.map(t => t.topic === broad ? { ...t, depth: 'mentions' as const } : t)] } : l; });
+  return { links, newTopics: [...first.newTopics, ...fresh] };
+}
+
+/**
  * Whether an assignment reads the batch: it links some substantial section to a topic it may use,
  * a current key or a new topic it proposes, and while new topics are allowed, it links every
  * substantial material somewhere. One that leaves those out is a failed reading, not an answer.

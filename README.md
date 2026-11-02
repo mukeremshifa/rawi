@@ -117,7 +117,10 @@ After each version is read, `assign_topics` links its sections to the topics
 they cover or mention, and proposes new topics when substantial sections teach
 something no topic names. That is how a course without a syllabus gets its
 outline and how a midway upload adds topics. New topics are linked by title.
-Work out topics again on the course page links every section once more.
+Work out topics again on the course page links every section once more. In a
+course without a syllabus, when one topic takes most of a batch while there is
+room for more, often a broad topic the student protected, the model reads
+those sections once more without it, so the subjects inside can become topics.
 Corrections apply in place with Undo, and a re-read never renames or removes
 a topic the student changed or has work on.
 
