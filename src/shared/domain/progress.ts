@@ -165,39 +165,10 @@ export function deriveAllEvidence(
 
 /* ── Reviews ──────────────────────────────────────────────────────────── */
 
-/**
- * Which topics have gone long enough without work to be worth revisiting.
- *
- * A very simple spacing rule — worked on, then untouched for three days — and
- * deliberately so. A real scheduler would model per-item intervals; this
- * prototype has no data to fit one to, and a fabricated SM-2 curve over six
- * seeded attempts would be a precision claim it cannot support. Three days is
- * a stated heuristic the UI can explain in one sentence, which is honest.
- */
-export function dueReviews(
-  topics: StudyTopic[],
-  attempts: Attempt[],
-  now: Date = new Date(),
-  timezone?: string,
-): ReviewDue[] {
-  const today = localISO(now, timezone);
-  const due: ReviewDue[] = [];
-
-  for (const topic of topics) {
-    const evidence = deriveEvidence(topic.id, attempts, timezone);
-    if (evidence.level === 'not-checked' || !evidence.lastWorkedAt) continue;
-    const days = daysBetween(localISO(evidence.lastWorkedAt, timezone), today);
-    if (days >= 3) {
-      due.push({
-        courseId: topic.courseId,
-        topicId: topic.id,
-        daysSince: days,
-        ...(evidence.attemptIds[0] ? { lastAttemptId: evidence.attemptIds[0] } : {}),
-      });
-    }
-  }
-
-  return due.sort((a, b) => b.daysSince - a.daysSince);
+/** Why a review was suggested. Topics come due under the mastery ladder in `mastery.ts`. */
+export function reviewReason(daysSince: number): string {
+  const when = daysSince === 0 ? 'today' : daysSince === 1 ? '1 day ago' : `${daysSince} days ago`;
+  return `Last worked ${when}. Reviews come further apart each day you answer a topic right without a hint, and sooner after a miss.`;
 }
 
 /* ── Recurring mistakes ───────────────────────────────────────────────── */
@@ -348,6 +319,8 @@ export interface PlanInput {
    */
   questions?: Question[];
   materials?: StudyMaterial[];
+  /** Topics due for review under the mastery ladder, worked out from marked answers on the server. */
+  due: ReviewDue[];
   /** Set when a tutor session or exam is part-finished and can be resumed. */
   resumable?: { courseId: string; title: string; to: string; kind: Suggestion['kind'] };
   now?: Date;
@@ -554,7 +527,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
 
   /* 6 — Reviews that have come due. */
   const activeTopics = topics.filter((t) => active.some((c) => c.id === t.courseId));
-  for (const review of dueReviews(activeTopics, attempts, now, input.timezone).slice(0, 2)) {
+  for (const review of input.due.filter(d => activeTopics.some(t => t.id === d.topicId)).slice(0, 2)) {
     const topic = activeTopics.find((t) => t.id === review.topicId);
     if (!topic) continue;
     if (suggestions.some((s) => s.topicId === topic.id)) continue;
@@ -567,7 +540,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
       id: `sug-review-${topic.id}`,
       courseId: topic.courseId,
       title: `Review ${topic.title}`,
-      reason: `Last worked ${review.daysSince} days ago. This prototype flags a topic for review after three days untouched.${substitutionNote(
+      reason: `${reviewReason(review.daysSince)}${substitutionNote(
         'flashcards',
         chosen,
       )}`,

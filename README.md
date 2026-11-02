@@ -152,6 +152,20 @@ replaced version keeps the items of its unchanged sections.
 - Every format is marked by code, except flashcards and self-checks, which the
   student marks against the answer.
 
+## Learner model
+
+Mastery is read per section from marked answers (`shared/domain/mastery.ts`)
+and is never stored. Each local day with a right, unaided answer moves the
+section's next review out (1, 3, 7, 16, then 35 days), and a day with a wrong
+answer brings it back to tomorrow. Hinted or partly right answers hold it, and
+self-marked answers do not count. A section reads as not checked, shaky,
+learning or secure. A topic is due when a section it introduces or covers is
+due, and that drives review suggestions, the planner and review reminders. The
+tutor sees each level in the scope, what is due and the prerequisites the
+student has not shown, and asks most about shaky sections. Topic evidence on
+the progress pages still reads finished attempts, so tutor questions do not
+appear there.
+
 ## Tutor
 
 `POST /tutor/:id/ask` saves the question and streams the reply in one

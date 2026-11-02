@@ -11,8 +11,9 @@ import type {
   StudyTopic,
   UnscheduledWork,
   Weekday,
+  ReviewDue,
 } from './types';
-import { deriveEvidence, dueReviews } from './progress';
+import { deriveEvidence, reviewReason } from './progress';
 import {
   NO_CONTENT_REASON,
   bestActivity,
@@ -294,6 +295,8 @@ export interface PlanInputs {
    */
   questions: Question[];
   materials: StudyMaterial[];
+  /** Topics due for review under the mastery ladder. */
+  due: ReviewDue[];
   weekStart: string;
   today: string;
 }
@@ -472,7 +475,7 @@ function candidates(input: PlanInputs): Candidate[] {
     }
 
     /* Reviews that have come due are their own, shorter, kind of work. */
-    for (const review of dueReviews(courseTopics, attempts, new Date(), input.timezone).slice(0, 2)) {
+    for (const review of input.due.filter(d => courseTopics.some(t => t.id === d.topicId)).slice(0, 2)) {
       const topic = courseTopics.find((t) => t.id === review.topicId);
       if (!topic) continue;
       /* A review is a flashcard round when flashcards exist, and whatever
@@ -488,7 +491,7 @@ function candidates(input: PlanInputs): Candidate[] {
         title: `Review ${topic.title}`,
         activity,
         minutes: Math.min(sessionMinutes, 30),
-        reason: `Last worked ${review.daysSince} days ago. A topic is flagged for review after three days untouched.${substitutionNote(
+        reason: `${reviewReason(review.daysSince)}${substitutionNote(
           'flashcards',
           activity,
         )}`,

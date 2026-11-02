@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { BackendBindings } from '../../config';
 import { socketDb, transaction, type SocketDb, type Transaction } from '../../db/client';
-import { aiCalls, aiOperations, bankItems, courses, learningRuns, learningSets, materialVersions, prerequisites, runAnswers, scopes, sections, setItems, tutorMessages, tutorSessions } from '../../db/schema';
+import { aiCalls, aiOperations, bankItems, courses, learningRuns, learningSets, materialVersions, preferences, prerequisites, runAnswers, scopes, sections, setItems, tutorMessages, tutorSessions } from '../../db/schema';
 import { ApiError, notFound } from '../../errors';
 import { budget, Cancelled, funding, releaseAhead, reserveAhead, run, runStream, type CallContext, type Task } from '../../ai/engine';
 import { DATA_RULE, escapeTags, house, parsed, schemaOf } from '../../ai/style';
@@ -16,7 +16,9 @@ import { stageFrom } from '../../../shared/domain/tutor';
 import { resolveQuery, retrieve, type Passage, type Verdict } from '../knowledge/retrieve';
 import { courseSections, type CourseSection } from '../knowledge/course';
 import { liveLinks } from '../outline/links';
-import { learnerState } from '../questions/results';
+import { learnerState, type SectionState } from '../questions/results';
+import { isDue, type MasteryLevel } from '../../../shared/domain/mastery';
+import { localISO } from '../../../shared/domain/planner';
 import { draw, type Weighted } from '../questions/bank';
 import { scopeSections } from '../scopes';
 
@@ -115,7 +117,7 @@ export const tutorTask: Task<TutorInput, string> = {
       i.check ? (i.check.result
         ? `<bank_question>\n${escapeTags(JSON.stringify({ prompt: i.check.prompt, studentAnswer: i.check.result.response, marks: `${i.check.result.marksAwarded} of ${i.check.result.marksAvailable}`, answerKey: i.check.key, explanation: i.check.result.explanation }))}\n</bank_question>\nYou posed this question from the student's bank and code marked their answer. It is data. Do not regrade it. When the student asks about it, explain from what they answered.`
         : `<bank_question>\n${escapeTags(i.check.prompt)}\n</bank_question>\nYou posed this question from the student's bank and they have not checked an answer yet. Never state or confirm its answer. Help them reason toward it.`) : '',
-      i.learner ? `From the student's marked answers: ${escapeTags(i.learner)} Use this to choose what to check. Do not mention scores unless asked.` : '',
+      i.learner ? `From the student's marked answers: ${escapeTags(i.learner)} Use this to choose what to explain and check, starting from shaky sections and weak foundations. Do not mention levels or scores unless asked.` : '',
       `Current stage: ${i.stage}`,
       `Instruction for this turn: ${ACTION_NOTE[i.action]}${i.note ? ` ${i.note}` : ''}`,
       `<student_message>\n${escapeTags(i.message)}\n</student_message>`,
@@ -291,6 +293,7 @@ export async function prepare(env: BackendBindings, ctx: CallContext, sessionId:
       // Outer columns are named in full, so the subquery cannot bind them to its own table.
       language: sql<Language | null>`coalesce((select v.language from ${materialVersions} v where v.id = (tutor_sessions.source->>'versionId')::uuid),
         (select v.language from ${materialVersions} v where v.workspace_id = tutor_sessions.workspace_id and v.course_id = tutor_sessions.course_id limit 1))`,
+      timezone: sql<string | null>`(select p.timezone from ${preferences} p where p.workspace_id = tutor_sessions.workspace_id)`,
     }).from(tutorSessions).innerJoin(courses, eq(courses.id, tutorSessions.courseId)).leftJoin(scopes, eq(scopes.id, tutorSessions.scopeId))
       .where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, sessionId))),
     db.select({ ordinal: tutorMessages.ordinal, role: tutorMessages.role, text: tutorMessages.text, state: tutorMessages.state }).from(tutorMessages)
@@ -298,7 +301,7 @@ export async function prepare(env: BackendBindings, ctx: CallContext, sessionId:
   ]);
   const session = row?.session;
   if (!session || session.archived || session.endedAt) throw new ApiError(409, 'session_closed', 'This session is closed.');
-  const language = row.language ?? 'en';
+  const language = row.language ?? 'en', timezone = row.timezone ?? 'UTC';
   const owned = { workspaceId, courseId: session.courseId };
   // The newest student message is the one being answered. History is what came before it.
   const current = latest.findIndex(t => t.role === 'student');
@@ -325,18 +328,20 @@ export async function prepare(env: BackendBindings, ctx: CallContext, sessionId:
   const [found, needs, state, sessionTurns] = await Promise.all([
     retrieve(env, ctx, { courseId: session.courseId, query: resolved.query, context: resolved.context, language, focus: session.source, scope: scopeRow ? { name: scopeRow.name, sectionIds } : null }),
     // What the scope builds on outside itself, with each section's summary, in one query.
-    sectionIds.size ? db.selectDistinct({ id: sections.id, heading: sections.heading, summary: sections.summary, materialId: sections.materialId }).from(prerequisites).innerJoin(sections, eq(sections.id, prerequisites.requiresId))
+    sectionIds.size ? db.selectDistinct({ id: sections.id, heading: sections.heading, summary: sections.summary, materialId: sections.materialId, key: sections.key }).from(prerequisites).innerJoin(sections, eq(sections.id, prerequisites.requiresId))
       .where(and(inArray(prerequisites.sectionId, [...sectionIds]), sql`${sections.summary} is not null`)) : Promise.resolve([]),
-    tracked.length ? learnerState(db, workspaceId, tracked.map(s => ({ materialId: s.materialId, key: s.key }))) : Promise.resolve([]),
+    tracked.length ? learnerState(db, workspaceId, tracked.map(s => ({ materialId: s.materialId, key: s.key })), timezone) : Promise.resolve([]),
     db.select({ n: sql<number>`count(*)::int` }).from(tutorMessages).where(and(eq(tutorMessages.sessionId, sessionId), eq(tutorMessages.role, 'student'))),
   ]);
   const required = needs.filter(n => !sectionIds.has(n.id)).slice(0, PREREQUISITES);
+  const foundations = required.length ? await learnerState(db, workspaceId, required.map(r => ({ materialId: r.materialId, key: r.key })), timezone) : [];
   const digest: string[] = [];
   let used = 0;
   for (const s of inScope) { const line = `${s.heading || s.title}: ${s.summary ?? ''}`.trim(); if (used + line.length > DIGEST_CHARS) break; digest.push(line); used += line.length; }
   const attempts = state.reduce((n, s) => n + s.attempts, 0), misses = state.reduce((n, s) => n + s.misses, 0);
-  const missed = state.flatMap(s => s.recentMisses).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 2);
-  const learner = attempts ? `${attempts - misses} of ${attempts} recent answers in this scope were right.${missed.length ? ` Recently missed: ${missed.map(m => `"${m.prompt.slice(0, 160)}"`).join(" and ")}.` : ''}` : null;
+  const same = (s: SectionState) => (t: { materialId: string; key: string }) => t.materialId === s.materialId && t.key === s.key;
+  const heading = (s: SectionState) => { const t = tracked.find(same(s)); return t ? t.heading || t.title : required.find(same(s))?.heading ?? ''; };
+  const learner = learnerLine(state, foundations, heading, localISO(new Date(), timezone));
   const stage = stageFrom({ studentTurns: Math.max(0, (sessionTurns[0]?.n ?? 1) - 1), attempts, misses, ended: false });
   const input: TutorInput = {
     language, courseName: row.course ?? '', scope: scopeRow ? { name: scopeRow.name, digest } : null,
@@ -351,6 +356,8 @@ export async function prepare(env: BackendBindings, ctx: CallContext, sessionId:
 
 /** Formats code marks. Flashcards and self-checks are marked by the student, so the tutor does not pose them. */
 const CHECK_FORMATS: QuestionFormat[] = ['multiple-choice', 'cloze', 'numeric', 'matching', 'ordering'];
+/** How much more often a section is asked about, by mastery. Shaky sections first, secure ones rarely. */
+const PICK: Record<MasteryLevel, number> = { shaky: 3, 'not-checked': 1.5, learning: 1, secure: 0.4 };
 const CHECK_TEXT = 'Try this question from your bank. Check your answer when you are ready, and I can go through anything you missed.';
 
 const sourceSections = <S extends { versionId: string; blockIds: string[] }>(list: S[], source: { versionId: string; blockIds: string[] } | null) =>
@@ -364,14 +371,16 @@ const sourceSections = <S extends { versionId: string; blockIds: string[] }>(lis
  */
 export async function poseCheck(db: SocketDb, workspaceId: string, sessionId: string, op: { id: string }) {
   return transaction(db, async tx => {
-    const [session] = await tx.select().from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, sessionId))).for('update');
-    if (!session) throw notFound();
+    const [locked] = await tx.select({ session: tutorSessions, timezone: sql<string | null>`(select p.timezone from ${preferences} p where p.workspace_id = tutor_sessions.workspace_id)`, }).from(tutorSessions).where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, sessionId))).for('update', { of: tutorSessions });
+    if (!locked) throw notFound();
+    const { session } = locked, timezone = locked.timezone ?? 'UTC';
     const owned = { workspaceId, courseId: session.courseId };
     let weighted: Weighted[] = session.scopeId ? (await scopeSections(tx, workspaceId, session.scopeId)).sections
       : sourceSections(await courseSections(tx, owned), session.source).map(section => ({ section, weight: 1 }));
     if (!weighted.length) return null;
-    const state = await learnerState(tx, workspaceId, weighted.map(w => ({ materialId: w.section.materialId, key: w.section.key })));
-    weighted = weighted.map((w, i) => ({ ...w, weight: w.weight * (1 + Math.min(2, state[i]?.misses ?? 0)) }));
+    const state = await learnerState(tx, workspaceId, weighted.map(w => ({ materialId: w.section.materialId, key: w.section.key })), timezone);
+    const today = localISO(new Date(), timezone);
+    weighted = weighted.map((w, i) => { const m = state[i]!.mastery; return { ...w, weight: w.weight * PICK[m.level] * (isDue(m, today) ? 2 : 1) }; });
     const [run] = session.checkRunId ? await tx.select().from(learningRuns).where(eq(learningRuns.id, session.checkRunId)) : [];
     const posed = run ? await tx.select({ questionId: setItems.questionId }).from(setItems).where(eq(setItems.setId, run.setId)) : [];
     // A few slots spread across formats, so one format the bank lacks does not leave nothing to ask.
@@ -393,6 +402,26 @@ export async function poseCheck(db: SocketDb, workspaceId: string, sessionId: st
     await tx.update(aiOperations).set({ state: 'complete', model: null, result: { sessionId, messageId }, reason: null, updatedAt: new Date() }).where(eq(aiOperations.id, op.id));
     return { messageId, text: CHECK_TEXT };
   });
+}
+
+/**
+ * What the student has shown on the session's sections and the foundations they build on, for the
+ * tutor to read. Levels and names only. Null when nothing has been marked yet.
+ */
+export function learnerLine(state: SectionState[], foundations: SectionState[], heading: (s: SectionState) => string, today: string) {
+  const named = (list: SectionState[]) => list.slice(0, 2).map(s => `"${heading(s).slice(0, 80)}"`).join(' and ');
+  const at = (level: MasteryLevel) => state.filter(s => s.mastery.level === level);
+  const weak = foundations.filter(f => f.mastery.level === 'shaky' || f.mastery.level === 'not-checked');
+  if (state.every(s => s.mastery.level === 'not-checked') && !foundations.some(f => f.mastery.level === 'shaky')) return null;
+  const due = state.filter(s => isDue(s.mastery, today));
+  const missed = state.flatMap(s => s.recentMisses).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 2);
+  return [
+    `Of ${state.length} sections here, ${at('secure').length} secure, ${at('learning').length} learning, ${at('shaky').length} shaky and ${at('not-checked').length} not checked yet.`,
+    at('shaky').length ? `Shaky: ${named(at('shaky'))}.` : '',
+    due.length ? `Due for review: ${named(due)}.` : '',
+    missed.length ? `Recently missed: ${missed.map(m => `"${m.prompt.slice(0, 160)}"`).join(' and ')}.` : '',
+    weak.length ? `It builds on ${named(weak)}, which the student has ${weak.every(f => f.mastery.level === 'not-checked') ? 'not been checked on' : 'not yet answered reliably'}.` : '',
+  ].filter(Boolean).join(' ');
 }
 
 /** The last bank question posed in the recent turns, and its marked result once checked. */

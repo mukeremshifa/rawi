@@ -637,13 +637,14 @@ export interface Suggestion {
   sessionId?: string;
 }
 
-/** A review that has come due under the local spacing rule. */
+/** A topic with a section due for review under the mastery ladder (`mastery.ts`). */
 export interface ReviewDue {
   courseId: string;
   topicId: string;
-  /** Days since the last independent evidence for this topic. */
+  /** Days since a section of this topic was last answered. */
   daysSince: number;
-  lastAttemptId?: string;
+  /** The earliest local date one of its sections came due. */
+  dueOn: string;
 }
 
 /**

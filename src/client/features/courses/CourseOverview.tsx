@@ -108,7 +108,7 @@ export function CourseOverview() {
       <div className="grid gap-section lg:grid-cols-3">
         <Section title="Due for review">
           <ShortList empty="Nothing due."
-            items={row.due.filter(d => d.courseId === id).slice(0, 6).map(d => ({ key: d.topicId, to: `/course/${id}/practice?topicId=${d.topicId}`, title: row.topics.find(t => t.id === d.topicId)?.title ?? 'Topic', meta: `${d.daysSince} days since you studied it` }))} />
+            items={row.due.filter(d => d.courseId === id).slice(0, 6).map(d => ({ key: d.topicId, to: `/course/${id}/practice?topicId=${d.topicId}`, title: row.topics.find(t => t.id === d.topicId)?.title ?? 'Topic', meta: d.daysSince === 0 ? 'Studied today, and part of it is due again' : d.daysSince === 1 ? '1 day since you studied it' : `${d.daysSince} days since you studied it` }))} />
         </Section>
         <Section title="Upcoming assessments">
           <ShortList empty="None planned."
