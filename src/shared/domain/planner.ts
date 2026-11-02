@@ -78,11 +78,6 @@ export function addDays(date: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Today, as a local ISO date, not `toISOString()`, which is UTC. */
-export function todayISO(now: Date = new Date()): string {
-  return localISO(now);
-}
-
 /**
  * An ISO date in the *local* calendar.
  *
@@ -161,14 +156,6 @@ export function windowsForDate(
     .filter((w) => w.day === weekdayOf(date))
     .map((w) => ({ startMinutes: w.startMinutes, endMinutes: w.endMinutes }))
     .sort((a, b) => a.startMinutes - b.startMinutes);
-}
-
-/** Total minutes of availability on a date, before commitments. */
-export function availableMinutes(availability: Availability, date: string): number {
-  return windowsForDate(availability, date).reduce(
-    (sum, w) => sum + Math.max(0, w.endMinutes - w.startMinutes),
-    0,
-  );
 }
 
 /**
@@ -873,156 +860,4 @@ export function replacedByPlan(
       s.status === 'planned' &&
       !kept.has(s.id),
   );
-}
-
-/* ── Conflicts, shared by automatic and manual scheduling ─────────────── */
-
-/**
- * What is wrong with putting a session at a particular time.
- *
- * ── Why one function serves both paths ────────────────────────────────────
- *
- * Automatic planning and manual rescheduling used to compute "is this slot
- * free" in two different places, which is how a plan can be correct while the
- * dialog beside it disagrees. They now ask the same question here. The
- * difference between them is what they *do* with the answer: automatic
- * planning refuses the slot, whereas a student who wants to double-book their
- * Tuesday is allowed to, having been told.
- */
-export interface SessionConflict {
-  kind: 'session' | 'assessment' | 'outside-availability' | 'past';
-  message: string;
-}
-
-export function sessionConflicts(
-  candidate: {
-    id?: string;
-    date: string;
-    startMinutes: number;
-    durationMinutes: number;
-  },
-  context: {
-    sessions: PlannedSession[];
-    assessments: DatedAssessment[];
-    availability: Availability;
-    today: string;
-    nowMinutes?: number;
-  },
-): SessionConflict[] {
-  const out: SessionConflict[] = [];
-  const start = candidate.startMinutes;
-  const end = start + candidate.durationMinutes;
-  const overlaps = (aStart: number, aEnd: number) => aStart < end && aEnd > start;
-
-  for (const other of context.sessions) {
-    if (other.id === candidate.id) continue;
-    if (other.date !== candidate.date) continue;
-    if (other.status === 'skipped') continue;
-    if (!overlaps(other.startMinutes, other.startMinutes + other.durationMinutes)) {
-      continue;
-    }
-    out.push({
-      kind: 'session',
-      message: `Overlaps “${other.title}” at ${formatMinutes(other.startMinutes)}.`,
-    });
-  }
-
-  for (const block of assessmentBlocks(context.assessments)) {
-    if (block.date !== candidate.date) continue;
-    if (!overlaps(block.start, block.end)) continue;
-    const assessment = context.assessments.find(
-      (a) => a.date === block.date && a.time && minutesFromClock(a.time) === block.start,
-    );
-    out.push({
-      kind: 'assessment',
-      message: `Runs over ${assessment ? `“${assessment.title}”` : 'an assessment'}, which is on at that time.`,
-    });
-  }
-
-  const windows = windowsForDate(context.availability, candidate.date);
-  const inside = windows.some((w) => start >= w.startMinutes && end <= w.endMinutes);
-  if (!inside) {
-    out.push({
-      kind: 'outside-availability',
-      message:
-        windows.length === 0
-          ? 'You have no study availability set for that day.'
-          : 'Falls outside the study time you set for that day.',
-    });
-  }
-
-  const nowMinutes = context.nowMinutes ?? currentMinutes();
-  if (
-    candidate.date < context.today ||
-    (candidate.date === context.today && end <= nowMinutes)
-  ) {
-    out.push({ kind: 'past', message: 'That time has already passed.' });
-  }
-
-  return out;
-}
-
-/**
- * Whether a proposal still describes the world it was generated against.
- *
- * A proposal is a plan for a week as it stood a moment ago. If the student
- * added a commitment, moved an assessment or changed their availability in
- * another tab before pressing Apply, applying it would write sessions over the
- * thing they just added. So Apply re-checks, and says what changed rather than
- * silently winning.
- */
-export function proposalIsStale(
-  proposal: PlanProposal,
-  context: {
-    sessions: PlannedSession[];
-    assessments: DatedAssessment[];
-    availability: Availability;
-    today: string;
-    nowMinutes?: number;
-  },
-): SessionConflict[] {
-  const out: SessionConflict[] = [];
-  const seen = new Set<string>();
-  for (const session of proposal.sessions) {
-    for (const conflict of sessionConflicts(session, context)) {
-      const key = `${conflict.kind}:${conflict.message}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(conflict);
-    }
-  }
-  return out;
-}
-
-/**
- * A short plan for a day when the student has said they have less time.
- *
- * The brief asks that a short-time check-in connect to the planner rather than
- * spawning a second, independent schedule. So this does not create sessions: it
- * *selects* from what is already planned for today, keeping as much as fits the
- * reduced budget in priority order, and names what it is setting aside.
- */
-export function trimDay(
-  sessions: PlannedSession[],
-  date: string,
-  minutes: number,
-): { keep: PlannedSession[]; defer: PlannedSession[] } {
-  const todays = sessions
-    .filter((s) => s.date === date && s.status === 'planned')
-    .sort((a, b) => a.startMinutes - b.startMinutes);
-
-  const keep: PlannedSession[] = [];
-  const defer: PlannedSession[] = [];
-  let used = 0;
-
-  for (const session of todays) {
-    if (used + session.durationMinutes <= minutes) {
-      keep.push(session);
-      used += session.durationMinutes;
-    } else {
-      defer.push(session);
-    }
-  }
-
-  return { keep, defer };
 }

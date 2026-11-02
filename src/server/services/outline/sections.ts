@@ -12,7 +12,6 @@ import { blockMarkdown, spansText } from '../../../shared/domain/document-text';
 export type SectionBlock = BlockBody & { id: string; ordinal: number; parentId: string | null; flags?: { uncertain?: boolean; interpreted?: boolean } };
 export interface Section { headingBlockId: string | null; heading: string; level: number; blockIds: string[]; firstBlockId: string | null }
 
-export const normalHeading = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
 export async function versionBlocks(db: ReadDb | SocketDb | Transaction, workspaceId: string, versionId: string): Promise<SectionBlock[]> {
   return await db.select({ id: blocks.id, ordinal: blocks.ordinal, parentId: blocks.parentId, type: blocks.type, content: blocks.content, flags: blocks.flags })

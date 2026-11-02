@@ -171,27 +171,3 @@ export function toQuestionAttempt(question: Question, answer: AnswerValue, usedH
   return { questionId: question.id, topicId: question.topicId, format: question.format, response: answer, outcome: result.outcome, marksAwarded: result.marksAwarded, marksAvailable: question.marks, usedHint };
 }
 
-/** True when an answer has enough in it to be worth marking. */
-export function hasContent(answer: AnswerValue | undefined): boolean {
-  if (!answer) return false;
-  switch (answer.kind) {
-    case 'none':
-      return false;
-    case 'choice':
-      return answer.indices.length > 0;
-    case 'text':
-      return answer.text.trim().length > 0;
-    case 'blanks':
-      return answer.values.some((v) => v.trim().length > 0);
-    case 'ordering':
-      return answer.sequence.length > 0;
-    case 'matching':
-      return Object.values(answer.assignments).some(Boolean);
-    case 'number':
-      return answer.value.trim().length > 0;
-    case 'self-rating':
-      return true;
-    case 'self-check':
-      return answer.text.trim().length > 0;
-  }
-}

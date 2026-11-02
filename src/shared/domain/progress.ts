@@ -1,5 +1,4 @@
 import type {
-  ActivityEvent,
   Suggestion,
   Attempt,
   CheckIn,
@@ -10,10 +9,8 @@ import type {
   Question,
   RecurringMistake,
   ReviewDue,
-  StreakSummary,
   StudyTopic,
   TopicEvidence,
-  TutorTranscript,
 } from './types';
 import { gradeWeight, localISO } from './planner';
 import { isDated } from './types';
@@ -53,16 +50,6 @@ export const EVIDENCE_LABEL: Record<EvidenceLevel, string> = {
   practising: 'Practising',
   'independent-once': 'Answered unaided',
   retained: 'Held up on review',
-};
-
-export const EVIDENCE_DETAIL: Record<EvidenceLevel, string> = {
-  'not-checked': 'Nothing has been asked about this topic yet.',
-  practising:
-    'You have worked on this, with the tutor or with hints available, but have not yet answered correctly under exam conditions.',
-  'independent-once':
-    'You answered correctly under exam conditions, with no hints. One occasion so far, and a later question will show whether it held.',
-  retained:
-    'You answered a different question on this topic correctly, unaided, on a later day. That is the strongest evidence this prototype records.',
 };
 
 const DAY_MS = 1000 * 60 * 60 * 24;
@@ -306,139 +293,6 @@ export function upcomingAssessments(
   return assessments.filter(isDated)
     .filter((a) => a.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date));
-}
-
-export function pastAssessments(
-  assessments: PlannedAssessment[],
-  now: Date = new Date(),
-): DatedAssessment[] {
-  const today = localISO(now);
-  return assessments.filter(isDated)
-    .filter((a) => a.date < today)
-    .sort((a, b) => b.date.localeCompare(a.date));
-}
-
-/* ── Activity and streaks ─────────────────────────────────────────────── */
-
-/**
- * What counts as study, for the streak and for history.
- *
- * ── Why this is a function and not a filter written at each call site ─────
- *
- * The brief requires that page visits, generated sets and repeated submissions
- * of the same completion do not inflate a streak. All three are avoided by
- * counting *completed attempts* and *tutor sessions with real exchanges*, and
- * nothing else — but only if every caller agrees on that. Putting the rule here
- * means the streak, the history list and the "did I study today" check cannot
- * drift apart.
- *
- * A tutor session needs at least two student turns to count. One is the
- * greeting; a session that was opened and abandoned is not study.
- */
-export function activityEvents(
-  attempts: Attempt[],
-  tutorSessions: TutorTranscript[],
-): ActivityEvent[] {
-  const events: ActivityEvent[] = [];
-
-  for (const attempt of attempts) {
-    if (!attempt.completedAt) continue;
-    events.push({
-      id: attempt.id,
-      courseId: attempt.courseId,
-      at: attempt.completedAt,
-      kind:
-        attempt.kind === 'exam' ? 'exam' : attempt.kind === 'tutor' ? 'tutor' : 'practice',
-      title: attempt.title,
-      topicIds: attempt.topicIds,
-      marksAwarded: attempt.marksAwarded,
-      marksAvailable: attempt.marksAvailable,
-      mode: attempt.mode,
-      to:
-        attempt.kind === 'exam'
-          ? `/course/${attempt.courseId}/exams/results/${attempt.id}`
-          : `/course/${attempt.courseId}/practice/results/${attempt.id}`,
-      minutes: durationMinutes(attempt.startedAt, attempt.completedAt),
-    });
-  }
-
-  for (const session of tutorSessions) {
-    const studentTurns = session.messages.filter((m) => m.role === 'student').length;
-    if (studentTurns < 2) continue;
-    events.push({
-      id: session.id,
-      courseId: session.courseId,
-      at: session.endedAt ?? session.updatedAt,
-      kind: 'tutor',
-      title: 'Tutor session',
-      topicIds: session.topicId ? [session.topicId] : [],
-      to: `/course/${session.courseId}/tutor/${session.id}`,
-      minutes: durationMinutes(session.startedAt, session.endedAt ?? session.updatedAt),
-    });
-  }
-
-  return events.sort((a, b) => (a.at < b.at ? 1 : -1));
-}
-
-/**
- * Minutes between two timestamps, clamped to something a person could do.
- *
- * A session left open overnight would otherwise report fourteen hours of
- * study. Anything over three hours is treated as an abandoned tab rather than
- * a marathon, and the cap is stated wherever totals are shown.
- */
-function durationMinutes(from: string, to: string): number {
-  const ms = new Date(to).getTime() - new Date(from).getTime();
-  if (!Number.isFinite(ms) || ms <= 0) return 0;
-  return Math.min(180, Math.round(ms / 60000));
-}
-
-/**
- * The streak, over local calendar days.
- *
- * ── Two decisions worth stating ───────────────────────────────────────────
- *
- * Days are *local* days, via `localISO`, because a student studying at 11pm
- * expects that to count for the day they think it is rather than for tomorrow
- * in UTC.
- *
- * A streak survives today being empty. It breaks only once a whole day has
- * passed with nothing in it, so opening the app in the morning does not show a
- * streak of zero to someone who studied last night and has not started yet.
- */
-export function streak(events: ActivityEvent[], now: Date = new Date()): StreakSummary {
-  const days = [...new Set(events.map((e) => localISO(e.at)))].sort((a, b) =>
-    a < b ? 1 : -1,
-  );
-
-  const today = localISO(now);
-  const yesterday = localISO(new Date(now.getTime() - DAY_MS));
-
-  const gapBetween = (later: string, earlier: string) =>
-    Math.round(
-      (new Date(`${later}T12:00:00`).getTime() -
-        new Date(`${earlier}T12:00:00`).getTime()) /
-        DAY_MS,
-    );
-
-  let current = 0;
-  const first = days[0];
-  if (first === today || first === yesterday) {
-    current = 1;
-    for (let i = 1; i < days.length; i += 1) {
-      if (gapBetween(days[i - 1]!, days[i]!) === 1) current += 1;
-      else break;
-    }
-  }
-
-  let longest = 0;
-  let run = 0;
-  for (let i = 0; i < days.length; i += 1) {
-    run = i === 0 || gapBetween(days[i - 1]!, days[i]!) !== 1 ? 1 : run + 1;
-    longest = Math.max(longest, run);
-  }
-
-  return { current, longest, activeDays: days, todayCounted: days[0] === today };
 }
 
 /* ── The plan ─────────────────────────────────────────────────────────── */
@@ -903,6 +757,3 @@ export function buildPlan(input: PlanInput): Suggestion[] {
     .slice(0, 6);
 }
 
-/** A one-line description of how the plan was put together, for the UI. */
-export const PLAN_EXPLANATION =
-  'Suggestions are ordered by simple local rules: unfinished work first, then whatever you planned for today, then repeated mistakes, then what you said at check-in, then reviews that have come due, then topics with the weakest evidence weighted by how close the assessment covering them is.';

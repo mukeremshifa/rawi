@@ -290,13 +290,6 @@ export function enterSection(run: ExamRun, sectionIndex: number): ExamRun {
   };
 }
 
-/** The deadline for a section, or undefined when it has not started or is untimed. */
-export function deadlineFor(run: ExamRun, sectionId: string): string | undefined {
-  return run.configSnapshot.timing === 'per-section'
-    ? run.sectionDeadlines[sectionId]
-    : run.deadlineAt;
-}
-
 /** Whether a section's own clock has run out. */
 export function sectionExpired(
   run: ExamRun,
@@ -332,43 +325,6 @@ export function sectionLocked(
     return true;
   }
   return false;
-}
-
-/** Why a section is locked, for the banner that explains it. */
-export function lockReason(
-  run: ExamRun,
-  sectionIndex: number,
-  now: number = Date.now(),
-): string | null {
-  const section = run.configSnapshot.sections[sectionIndex];
-  if (!section) return null;
-  if (sectionExpired(run, section.id, now)) {
-    return 'The time for this section has run out, so its answers are fixed. You can still read them. Nothing is marked until you submit the whole paper.';
-  }
-  if (run.lockedSectionIds.includes(section.id)) {
-    return 'You finished this section, and this paper locks a section when you finish it. You can still read your answers. Nothing is marked until you submit the whole paper.';
-  }
-  if (
-    run.configSnapshot.navigation === 'sequential' &&
-    sectionIndex < run.currentSectionIndex
-  ) {
-    return 'This paper is sequential, so earlier sections cannot be returned to.';
-  }
-  return null;
-}
-
-/**
- * Whether the whole paper is out of time.
- *
- * For an overall timer this is the paper deadline. For per-section timing it is
- * every section having expired — which is the case a reload after a long
- * absence produces, and which must submit rather than leave a paper that can
- * never be worked on again.
- */
-export function paperExpired(run: ExamRun, now: number = Date.now()): boolean {
-  if (run.deadlineAt && now >= new Date(run.deadlineAt).getTime()) return true;
-  if (run.configSnapshot.timing !== 'per-section') return false;
-  return run.configSnapshot.sections.every((s) => sectionExpired(run, s.id, now));
 }
 
 /* ── Marking a finished paper ─────────────────────────────────────────── */
@@ -462,75 +418,3 @@ export function locate(
   return null;
 }
 
-/** How many questions in a section have an answer with content in it. */
-export function sectionAnsweredCount(run: ExamRun, sectionId: string): number {
-  const ids = run.sectionQuestions[sectionId] ?? [];
-  return ids.filter((id) => {
-    const answer = run.answers[id];
-    if (!answer) return false;
-    switch (answer.kind) {
-      case 'none':
-        return false;
-      case 'choice':
-        return answer.indices.length > 0;
-      case 'text':
-        return answer.text.trim().length > 0;
-      case 'blanks':
-        return answer.values.some((v) => v.trim().length > 0);
-      case 'ordering':
-        return answer.sequence.length > 0;
-      case 'matching':
-        return Object.values(answer.assignments).some(Boolean);
-      case 'self-rating':
-        return true;
-    }
-  }).length;
-}
-
-/**
- * The whole paper's state at submission time, for the final review.
- *
- * The brief requires the pre-submission review to account for the *entire*
- * paper rather than the current section, which is what this produces: totals
- * across every section, plus the per-section breakdown a student needs to
- * decide whether to go back.
- */
-export interface PaperSummary {
-  total: number;
-  answered: number;
-  unanswered: number;
-  flagged: number;
-  sections: {
-    id: string;
-    title: string;
-    total: number;
-    answered: number;
-    flagged: number;
-    locked: boolean;
-  }[];
-}
-
-export function summarisePaper(run: ExamRun, now: number = Date.now()): PaperSummary {
-  const sections = run.configSnapshot.sections.map((section, index) => {
-    const ids = run.sectionQuestions[section.id] ?? [];
-    return {
-      id: section.id,
-      title: section.title,
-      total: ids.length,
-      answered: sectionAnsweredCount(run, section.id),
-      flagged: ids.filter((id) => run.flagged.includes(id)).length,
-      locked: sectionLocked(run, index, now),
-    };
-  });
-
-  const total = sections.reduce((sum, s) => sum + s.total, 0);
-  const answered = sections.reduce((sum, s) => sum + s.answered, 0);
-
-  return {
-    total,
-    answered,
-    unanswered: total - answered,
-    flagged: run.flagged.length,
-    sections,
-  };
-}

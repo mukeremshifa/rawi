@@ -47,4 +47,3 @@ export function AiOperation() {
 }
 
 /** After a request that may have been charged without a result, the next press is a new request. */
-export const UNCERTAIN = ['ai_uncertain', 'operation_uncertain'];

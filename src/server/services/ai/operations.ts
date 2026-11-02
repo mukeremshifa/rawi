@@ -2,14 +2,13 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { BackendBindings } from '../../config';
 import type { ReadDb, SocketDb, Transaction } from '../../db/client';
 import { aiCalls, aiOperations, tutorMessages } from '../../db/schema';
-import { ApiError, notFound } from '../../errors';
+import { notFound } from '../../errors';
 import { routesFor } from '../../ai/engine';
 import { fundingFor } from '../../ai/funding';
 import { usageSnapshot } from '../../ai/meter';
 import { operation } from '../learning';
 
 /** A repeated request whose first run may have been charged without a result. */
-export const uncertainBefore = () => new ApiError(409, 'operation_uncertain', 'The earlier request stopped partway and may have used some of your allowance, so it was not repeated. Press again to start a new one.');
 
 /**
  * What the client may offer right now. Unavailable means a request would be refused before any

@@ -225,7 +225,7 @@ Counting only the last of these and concluding that resistance was exceptional i
         topicIds: ['topic-revolt', 'topic-debate'],
         text: `Maroon settlements in Jamaica, Suriname and the Brazilian interior achieved something no shipboard rising did: durable autonomous territory, in several cases recognised by treaty.
 
-The treaties are the difficulty. Recognition was typically purchased by agreeing to return future runaways. A community that had escaped bondage thereby became, in law, an instrument of its enforcement. Historians who read resistance as a single opposed force struggle with this; Mbeki's own position is that autonomy was won by people making the choices available to them rather than the choices we would wish them to have had, and that a history written to supply heroes will not be able to see it.`,
+The treaties are the difficulty. Recognition was typically purchased by agreeing to return future runaways. A community that had escaped bondage thereby became, in law, an instrument of its enforcement. Historians who read resistance as a single opposed force struggle with this. Mbeki's own position is that autonomy was won by people making the choices available to them rather than the choices we would wish them to have had, and that a history written to supply heroes will not be able to see it.`,
       },
       {
         id: 'p-rev-3',

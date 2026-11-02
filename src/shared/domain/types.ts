@@ -307,37 +307,6 @@ export type TutorIntent =
   | 'continue'
   | 'summary';
 
-export interface TutorTranscript {
-  review?: AnswerReview;
-  title?: string;
-  archived?: boolean;
-  id: string;
-  courseId: string;
-  /** A session is about a topic, or about a source with no topic. */
-  topicId?: string;
-  /** Set when the session was opened from blocks of a material. */
-  source?: SourceRef;
-  /** Set when the session was opened to review a specific exam mistake. */
-  fromAttemptId?: string;
-  fromQuestionId?: string;
-  messages: TutorTurn[];
-  stage: TutorStage;
-  startedAt: string;
-  updatedAt: string;
-  /** Set when the student ended the session and saw a summary. */
-  endedAt?: string;
-  /**
-   * The planner session this was opened from, when it was.
-   *
-   * A tutor session completes its planner session when it *reaches a completed
-   * learning state*, not when it is opened. Opening the tutor and leaving is
-   * not study, and the streak would be trivially inflatable if it were.
-   */
-  plannedSessionId?: string;
-  /** Practice sets launched from inside this session. */
-  launchedAttemptIds: string[];
-}
-
 export interface AnswerReview {
   attemptId: string;
   questionId: string;
@@ -355,8 +324,6 @@ export interface AnswerReview {
 /* ── Practice ─────────────────────────────────────────────────────────── */
 
 export type ActivityType = 'flashcards' | 'quiz' | 'self-check';
-
-export type FeedbackTiming = 'immediate' | 'end';
 
 /* ── Exams ────────────────────────────────────────────────────────────── */
 
@@ -715,52 +682,6 @@ export interface RecurringMistake {
   times: number;
   lastAttemptId: string;
   lastAt: string;
-}
-
-/* ── Activity and streaks ─────────────────────────────────────────────── */
-
-/**
- * One thing the student did, as history renders it.
- *
- * Derived from attempts, tutor sessions and completed planner sessions rather
- * than stored, so it cannot claim an event the underlying records do not have.
- */
-export interface ActivityEvent {
-  id: string;
-  courseId: string;
-  at: string;
-  kind: 'practice' | 'exam' | 'tutor' | 'session';
-  title: string;
-  topicIds: string[];
-  /** Present for marked work. Absent for tutoring and self-rated recall. */
-  marksAwarded?: number;
-  marksAvailable?: number;
-  mode?: AttemptMode;
-  /** Where this event's own record lives. */
-  to?: string;
-  /** Minutes the activity took, when it can be measured honestly. */
-  minutes?: number;
-}
-
-/**
- * What counts toward a streak, and how long it is.
- *
- * ── What is deliberately not counted ──────────────────────────────────────
- *
- * Visiting a page, generating a set, and saving a configuration are not study.
- * Only a *completed* attempt or a tutor session with real exchanges counts, and
- * each local calendar day counts once however much was done. That keeps the
- * number honest in the direction that matters: it cannot be inflated by
- * clicking around.
- */
-export interface StreakSummary {
-  /** Consecutive days ending today or yesterday. */
-  current: number;
-  longest: number;
-  /** ISO dates (YYYY-MM-DD) with qualifying activity, newest first. */
-  activeDays: string[];
-  /** True when today already has qualifying activity. */
-  todayCounted: boolean;
 }
 
 /** An assessment with a date, the only kind that affects scheduling. */
