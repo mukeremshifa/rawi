@@ -11,6 +11,7 @@ import { recoverReplies } from './services/ai/tutor';
 import { sweepGenerations } from './services/questions/practice';
 import { expireOpenCalls } from './ai/meter';
 import type { BackendBindings } from './config';
+import { ApiError } from './errors';
 
 const worker = new Hono<BackendContext>();
 worker.route('/api', api);
@@ -21,9 +22,22 @@ export default {
   fetch: worker.fetch,
   async scheduled(_controller: ScheduledController, env: BackendBindings) {
     if (!env.DATABASE_URL) return;
-    const connection = socketDb(env.DATABASE_URL);
-    try { await reconcileExams(connection.db); console.log(JSON.stringify({ operation: 'material-maintenance', ...await reconcile(connection.db, env), ...await sweepConversions(connection.db, env), ...await sweepOutlineJobs(connection.db, env), abandonedCalls: await expireOpenCalls(connection.db), recoveredReplies: await recoverReplies(connection.db, null), ...await sweepGenerations(connection.db, env), ...await sweepIngest(connection.db, env), ...await sweepOrphanAssets(connection.db, env) })); }
-    catch { throw new Error('Material maintenance failed. Retry after checking database and storage availability.'); }
+    const connection = socketDb(env.DATABASE_URL), db = connection.db;
+    // Each sweep runs on its own, so one failure never starves the others. Logs name the sweep, never SQL or provider details.
+    const sweeps: [string, () => Promise<unknown>][] = [
+      ['exams', () => reconcileExams(db)], ['uploads', () => reconcile(db, env)], ['conversions', () => sweepConversions(db, env)],
+      ['outline', () => sweepOutlineJobs(db, env)], ['abandonedCalls', () => expireOpenCalls(db)], ['recoveredReplies', () => recoverReplies(db, null)],
+      ['generations', () => sweepGenerations(db, env)], ['ingest', () => sweepIngest(db, env)], ['orphanAssets', () => sweepOrphanAssets(db, env)],
+    ];
+    const results: Record<string, unknown> = {}, failed: string[] = [];
+    try {
+      for (const [name, sweep] of sweeps) {
+        try { results[name] = await sweep() ?? 'done'; }
+        catch (error) { failed.push(name); results[name] = { failed: error instanceof ApiError ? error.code : 'unavailable' }; }
+      }
+      console.log(JSON.stringify({ operation: 'material-maintenance', ...results }));
+    }
     finally { await connection.close(); }
+    if (failed.length) throw new Error(`Maintenance failed for ${failed.join(', ')}. Retry after checking database and storage availability.`);
   },
 };
