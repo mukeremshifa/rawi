@@ -70,3 +70,32 @@ export const figureTask: Task<FigureInput, string> = {
   }),
   check: r => parsed(figureSchema, r.json)?.description.trim() || null,
 };
+
+export interface AnsweredInput { language: Language; parts: string[]; passages: { heading: string; text: string }[] }
+const answeredSchema = z.object({
+  parts: z.array(z.object({
+    part: z.number().describe('The number of the question part'),
+    quote: z.string().describe('The exact words of one passage that state the answer to this part, copied as written. Empty when no passage states it'),
+  })),
+});
+
+/**
+ * Whether passages that cover a question's words answer a part worded differently, as "how long
+ * was it meant to last" is answered by "a single lifetime". The answer is a quote, and code keeps
+ * only quotes it finds in the passages, so the model can widen the evidence but never invent it.
+ */
+export const answeredTask: Task<AnsweredInput, { part: number; quote: string }[]> = {
+  name: 'knowledge.answered', promptVersion: 'answered-v1', temperature: 0,
+  needs: { skill: 'extract', data: 'student', lane: 'interactive', maxOutput: 300, cache: 'none', attempts: 1 }, language: i => i.language,
+  build: i => ({
+    system: [
+      'You check whether course passages answer parts of a student question.',
+      'For each numbered part, copy the shortest exact words from one passage that give the specific answer it asks for. A passage that only mentions the subject, or answers a different question, does not count. When none answers it, leave the quote empty.',
+      'Copy words exactly as the passage writes them. Do not paraphrase or add knowledge from outside the passages.',
+      DATA_RULE,
+    ].join('\n'),
+    prompt: `<course_material>\n${i.passages.map((p, n) => `<passage n="${n + 1}" heading="${escapeTags(p.heading)}">\n${escapeTags(p.text)}\n</passage>`).join('\n')}\n</course_material>\n\nQuestion parts:\n${i.parts.map((p, n) => `${n + 1}. ${escapeTags(p)}`).join('\n')}`,
+    schema: schemaOf(answeredSchema),
+  }),
+  check: r => parsed(answeredSchema, r.json)?.parts ?? null,
+};

@@ -1,11 +1,12 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { blocks, courses, ingestJobs, knowledgeChunks, materials, materialVersions, sections } from '../../db/schema';
 import type { BackendBindings } from '../../config';
-import { embed, type CallContext } from '../../ai/engine';
+import { embed, run, type CallContext } from '../../ai/engine';
 import type { Language } from '../../ai/types';
 import type { Citation } from '../../../shared/contracts/document';
 import { blockMarkdown } from '../../../shared/domain/document-text';
 import { searchConfig } from './language';
+import { answeredTask } from './tasks';
 
 /**
  * Evidence for one tutor turn, chosen by what the turn needs.
@@ -91,8 +92,7 @@ function unanswered(question: string, passages: { heading: string; text: string 
   // A number the question gives, such as the year in "the New Laws of 1542", answers nothing.
   const fresh = (sentence: string) => NUMBER.test(sentence.replace(/\d+(?:[.,]\d+)*/g, n => question.includes(n) ? ' ' : n));
   const texts = passages.map(p => `${p.heading}\n${p.text}`.toLowerCase());
-  const parts = question.split(/[?;]|,?\s+(?:and|or|but)\s+(?=(?:what|which|who|whom|whose|when|where|why|how)\b)/i).map(s => s.trim()).filter(Boolean);
-  return parts.filter(part => {
+  return questionParts(question).filter(part => {
     const own = terms(part, language).filter(w => !LIGHT.has(w));
     if (!own.length) return false;
     const need = own.length <= 2 ? own.length : Math.ceil(0.6 * own.length);
@@ -100,6 +100,37 @@ function unanswered(question: string, passages: { heading: string; text: string 
     return !texts.some(p => own.filter(w => mentions(p, w)).length >= need
       && (!quantity || p.split(/(?<=[.!?])\s+|\n/).some(s => own.some(w => mentions(s, w)) && fresh(s))));
   }).map(part => part.replace(/^\W+|\W+$/g, ''));
+}
+
+/** The asked parts of an English question: "what did they change, and which officials enforced them". */
+const questionParts = (question: string) => question.split(/[?;]|,?\s+(?:and|or|but)\s+(?=(?:what|which|who|whom|whose|when|where|why|how)\b)/i).map(s => s.trim()).filter(Boolean);
+
+/** How much of each passage the paraphrase check reads. It reads every chosen passage, since they are in reading order. */
+const CHECK_CHARS = 1500;
+/** The check runs before the reply's first token, so a slow answer leaves the verdict partial instead. */
+const CHECK_MS = 3000;
+const flat = (text: string) => text.toLowerCase().replace(/[\s"“”‘’'*_]+/g, ' ').trim();
+
+/**
+ * The parts still unanswered once a model has looked for an answer worded differently. A quote
+ * counts only when a passage contains it and it adds a word the question does not already use,
+ * so restating the question is never an answer. Any failure or delay keeps every part unanswered.
+ */
+async function paraphrased(env: BackendBindings, ctx: CallContext, question: string, parts: string[], passages: { heading: string; text: string }[], language: Language) {
+  const shown = passages.map(p => ({ heading: p.heading, text: p.text.slice(0, CHECK_CHARS) }));
+  const texts = shown.map(p => flat(p.text));
+  const asked = new Set(terms(question, language).map(stem));
+  try {
+    const signal = AbortSignal.any([AbortSignal.timeout(CHECK_MS), ...(ctx.signal ? [ctx.signal] : [])]);
+    const { value } = await run(env, { ...ctx, signal }, answeredTask, { language, parts, passages: shown });
+    const answered = new Set(value.filter(v => {
+      const quote = flat(v.quote).replace(/^\W+|\W+$/g, '');
+      return quote.split(' ').length >= 2 && texts.some(t => t.includes(quote)) && terms(quote, language).some(w => !asked.has(stem(w)));
+    }).map(v => v.part - 1));
+    return parts.filter((_, i) => !answered.has(i));
+  } catch {
+    return parts;
+  }
 }
 
 /** Words that point back to the previous turn: "it", "they", "him", a bare "yes" or "why". */
@@ -257,9 +288,18 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: Ret
     : share >= 0.4 ? 'partial' : 'absent';
   // Words can all be there while the relation or the figure asked about is not. Then the evidence
   // covers only part of the question, and the reply is told which part it lacks.
-  const gaps = judgedWords === 'sufficient' && !bare ? unanswered(opts.query, [...(focus && !focus.earlier ? [focus] : []), ...chosen], opts.language) : [];
-  const verdict: Verdict = gaps.length ? 'partial' : judgedWords;
-  missing.push(...gaps);
+  const judgedPassages = [...(focus && !focus.earlier ? [focus] : []), ...chosen];
+  const gaps = judgedWords === 'sufficient' && !bare ? unanswered(opts.query, judgedPassages, opts.language) : [];
+  // Strong passages can still answer in other words: most of the words are there but a clause
+  // finds no passage, or half or more are there and the rest are worded differently. Only that
+  // borderline case gets one capped model check, and a part counts as answered only by a quote
+  // found in the passages. A question asking for an amount stays with the number rule.
+  const reworded = judgedWords === 'partial' && share >= 0.5 && !bare && opts.language === 'en' ? questionParts(opts.query) : [];
+  const doubtful = gaps.length ? gaps : reworded;
+  const left = doubtful.length && !QUANTITY.test(opts.query) ? await paraphrased(env, ctx, opts.query, doubtful, judgedPassages, opts.language) : doubtful;
+  const verdict: Verdict = gaps.length ? (left.length ? 'partial' : 'sufficient') : reworded.length && !left.length ? 'sufficient' : judgedWords;
+  if (verdict === 'sufficient') missing.length = 0;
+  else missing.push(...(gaps.length ? left : []));
 
   const courseNames = new Map((await courseTitles(db, workspaceId, [...new Set(chosen.map(c => c.courseId).filter(id => id !== opts.courseId))])).map(c => [c.id, c.name]));
   const passages: Passage[] = [
