@@ -37,6 +37,29 @@ export interface Assignment {
   newTopics: { title: string; module: string; summary: string }[];
 }
 
+/** Words from which a section is substantial enough to belong to a topic. */
+export const SUBSTANTIAL_WORDS = 80;
+
+/** Words from which a whole material is substantial enough that it should belong to some topic. */
+const SUBSTANTIAL_MATERIAL_WORDS = 150;
+
+/**
+ * Whether an assignment reads the batch: it links some substantial section to a topic it may use,
+ * a current key or a new topic it proposes, and while new topics are allowed, it links every
+ * substantial material somewhere. One that leaves those out is a failed reading, not an answer.
+ */
+export function linksEnough(input: AssignInput, value: Assignment) {
+  const keys = new Set(input.topics.map(t => t.key)), titles = new Set(value.newTopics.map(t => normalTitle(t.title)));
+  const linked = new Set(value.links.filter(l => l.topics.some(t => keys.has(t.topic) || titles.has(normalTitle(t.topic)))).map(l => l.section));
+  const substantial = input.sections.filter(s => s.words >= SUBSTANTIAL_WORDS);
+  if (!substantial.length || (!input.topics.length && !input.room)) return true;
+  if (!substantial.some(s => linked.has(s.key))) return false;
+  if (!input.room) return true;
+  const words = new Map<string, number>();
+  for (const s of input.sections) words.set(s.material, (words.get(s.material) ?? 0) + s.words);
+  return [...words].every(([material, n]) => n < SUBSTANTIAL_MATERIAL_WORDS || input.sections.some(s => s.material === material && linked.has(s.key)));
+}
+
 /** The rules pass. It runs when no model is available, and the outline says so. */
 export interface OutlineProvider {
   readSyllabus(input: SyllabusInput): Promise<{ value: SyllabusReading }>;

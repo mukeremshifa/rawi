@@ -1,6 +1,6 @@
 import type { AssessmentType } from '../../../shared/domain/types';
 import { OUTLINE_MAX } from '../../../shared/contracts/outline';
-import { normalTitle, type AssignInput, type Assignment, type OutlineProvider, type SyllabusInput, type SyllabusReading } from './provider';
+import { normalTitle, SUBSTANTIAL_WORDS, type AssignInput, type Assignment, type OutlineProvider, type SyllabusInput, type SyllabusReading } from './provider';
 
 /**
  * The rules pass, used without a key or budget. It reads structure rather
@@ -146,7 +146,7 @@ export function assignTopicsRules(input: AssignInput): Assignment {
       if (shared && shared / Math.min(heading.size, topic.title.size) >= 0.5) found.push({ topic: topic.key, depth: 'covers' });
       else if ([...body].filter(w => topic.title.has(w)).length >= 2) found.push({ topic: topic.key, depth: 'mentions' });
     }
-    if (!found.length && parts.length && section.words >= 80) {
+    if (!found.length && parts.length && section.words >= SUBSTANTIAL_WORDS) {
       const name = (parts.length >= 2 ? parts[1]! : parts[0]!).slice(0, 200);
       if (!NOISE.test(name) && !/^(summary|conclusions?|questions|further reading|key terms)/i.test(name)) {
         let topic = newTopics.find(t => normalTitle(t.title) === normalTitle(name));

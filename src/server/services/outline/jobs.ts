@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull, lte, ne, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { courses, knowledgeChunks, materials, outlineJobs, sections as sectionRows, topics, topicSections } from '../../db/schema';
 import { socketDb, transaction, type SocketDb } from '../../db/client';
 import type { BackendBindings } from '../../config';
@@ -10,9 +10,9 @@ import { run, type Task } from '../../ai/engine';
 import { fundingFor } from '../../ai/funding';
 import { outlineTasks } from './tasks';
 import { ingestPending, runIngest } from '../knowledge/ingest';
-import { rulesProvider } from './rules';
-import { citedOnly, housePunctuation, normalTitle, type AssignInput, type OutlineProvider, type SyllabusInput } from './provider';
-import { writeSuggestions } from './links';
+import { assignTopicsRules, rulesProvider } from './rules';
+import { citedOnly, housePunctuation, normalTitle, SUBSTANTIAL_WORDS, type AssignInput, type OutlineProvider, type SyllabusInput } from './provider';
+import { liveLinks, writeSuggestions } from './links';
 import { versionBlocks, type SectionBlock } from './sections';
 import { addTopics, applyAssessments, applyTopics, protectedTopics } from './outline';
 import { enqueueJob, reassignAll } from './queue';
@@ -34,6 +34,8 @@ const MAX_ATTEMPTS = 3;
 const ASSIGN_BATCH = 60;
 /** Topics a course outline can hold once materials have added theirs. */
 const TOPIC_CAP = 40;
+/** Cosine distance within which a section reads like a linked one, for this embedding model. */
+const NEAR = 0.2;
 type Job = typeof outlineJobs.$inferSelect;
 type Scope = { workspaceId: string; courseId: string };
 const OUTLINE_KINDS: OutlineJobKind[] = ['read_syllabus', 'assign_topics'];
@@ -230,7 +232,29 @@ async function prepare(db: SocketDb, job: Job): Promise<Prepared | null> {
         const s = sectionKeys.get(l.section);
         return s ? l.topics.slice(0, 3).flatMap(t => { const id = ids.get(t.topic) ?? ids.get(normalTitle(t.topic)); return id ? [{ materialId: s.materialId, sectionKey: s.key, topicId: id, depth: t.depth }] : []; }) : [];
       });
-      const links = await writeSuggestions(tx, scope, [...new Map(suggestions.map(x => [`${x.topicId}:${x.materialId}:${x.sectionKey}`, x])).values()]);
+      // A substantial section the model left out is linked by code: first by its heading and terms
+      // against the topic titles, then to the topic of the linked section it reads most like.
+      const all = [...topicKeys].map(([key, t]) => ({ key, title: t.title, summary: t.summary })).concat(created.map((t, i) => ({ key: normalTitle(fresh[i]!.title), title: t.title, summary: t.summary })));
+      const left = () => input.sections.filter(x => x.words >= SUBSTANTIAL_WORDS && !suggestions.some(y => { const s = sectionKeys.get(x.key)!; return y.materialId === s.materialId && y.sectionKey === s.key; }));
+      for (const l of assignTopicsRules({ ...input, room: 0, topics: all, sections: left() }).links) {
+        const s = sectionKeys.get(l.section)!;
+        for (const t of l.topics) { const id = ids.get(t.topic); if (id) suggestions.push({ materialId: s.materialId, sectionKey: s.key, topicId: id, depth: t.depth }); }
+      }
+      let links = await writeSuggestions(tx, scope, [...new Map(suggestions.map(x => [`${x.topicId}:${x.materialId}:${x.sectionKey}`, x])).values()]);
+      const unlinked = left().map(x => sectionKeys.get(x.key)!);
+      if (unlinked.length) {
+        const live = (await liveLinks(tx, scope)).filter(l => l.depth !== 'mentions');
+        const near = live.length ? (await tx.execute(sql`select u.section_id, n.section_id as near, n.distance from ${knowledgeChunks} u cross join lateral (
+            select k.section_id, k.embedding <=> u.embedding as distance from ${knowledgeChunks} k
+            where k.workspace_id = ${scope.workspaceId} and k.section_id in ${[...new Set(live.map(l => l.section.id))]} and k.embedding_model = u.embedding_model order by k.embedding <=> u.embedding limit 1) n
+          where u.section_id in ${unlinked.map(x => x.id)} and u.embedding is not null`)).rows as { section_id: string; near: string; distance: number }[] : [];
+        const extra = unlinked.flatMap(x => {
+          const best = near.filter(r => r.section_id === x.id).sort((a, b) => a.distance - b.distance)[0];
+          const topic = best && best.distance < NEAR ? live.find(l => l.section.id === best.near) : undefined;
+          return topic ? [{ materialId: x.materialId, sectionKey: x.key, topicId: topic.topicId, depth: 'mentions' as const }] : [];
+        });
+        links += await writeSuggestions(tx, scope, extra);
+      }
       await tx.update(sectionRows).set({ topicsAt: new Date() }).where(inArray(sectionRows.id, todo.map(s => s.id)));
       // Sections still waiting go in the next batch.
       if (waiting.length > todo.length) await enqueueJob(tx, scope, 'assign_topics');

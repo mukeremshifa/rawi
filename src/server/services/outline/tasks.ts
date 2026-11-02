@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { OUTLINE_MAX, OUTLINE_MIN, type OutlineJobKind } from '../../../shared/contracts/outline';
 import type { Task } from '../../ai/engine';
 import { DATA_RULE, escapeTags as escape, house, parsed, schemaOf } from '../../ai/style';
-import type { AssignInput, Assignment, SyllabusInput, SyllabusReading } from './provider';
+import { linksEnough, type AssignInput, type Assignment, type SyllabusInput, type SyllabusReading } from './provider';
 
 export const OUTLINE_PROMPT_VERSION = 'outline-v4';
 const HOUSE = (input: { language: string }) => `${house(input.language)} Copy titles exactly as the document writes them.`;
@@ -58,7 +58,9 @@ export function assignPrompt(input: AssignInput) {
 
 /**
  * Outline tasks. Both read structure in the background. Reading the syllabus is rare and decides
- * the outline, so it may try one more route when a reading fails its check.
+ * the outline, so it may try one more route when a reading fails its check. An assignment that
+ * leaves the substantial sections or materials unlinked fails its check too, so the next route
+ * reads the batch instead.
  */
 export const outlineTasks: { [K in OutlineJobKind]: Task<K extends 'read_syllabus' ? SyllabusInput : AssignInput, K extends 'read_syllabus' ? SyllabusReading : Assignment> } = {
   read_syllabus: {
@@ -67,6 +69,6 @@ export const outlineTasks: { [K in OutlineJobKind]: Task<K extends 'read_syllabu
   },
   assign_topics: {
     name: 'outline.assign_topics', promptVersion: OUTLINE_PROMPT_VERSION, temperature: 0, needs: { skill: 'extract', data: 'institution', lane: 'background', maxOutput: 6000, cache: 'none', attempts: 3 },
-    language: i => i.language, build: i => ({ ...assignPrompt(i), schema: schemaOf(assignSchema) }), check: r => parsed(assignSchema, r.json),
+    language: i => i.language, build: i => ({ ...assignPrompt(i), schema: schemaOf(assignSchema) }), check: (r, i) => { const v = parsed(assignSchema, r.json); return v && linksEnough(i, v) ? v : null; },
   },
 };

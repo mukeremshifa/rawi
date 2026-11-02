@@ -209,8 +209,6 @@ removes the tutor sessions it creates. A full run costs a few cents.
 - Owner decisions: prices and plan numbers, the Vertex abuse-monitoring
   exception, the AWS refusal of Anthropic and OpenAI models from this
   account, and vendor choice.
-- Topic linking with gpt-oss-20b varies between runs. A material can end up
-  linked to no topic, and Work out topics again usually fixes it.
 - A replaced version embeds the whole document again, not only changed
   sections. The cost is small.
 - Each database round trip from the development machine takes 100 to 130
