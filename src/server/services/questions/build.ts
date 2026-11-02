@@ -23,8 +23,22 @@ const SURE = 0.7;
 const normal = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const clip = (text: string, chars: number) => text.length <= chars ? text : `${text.slice(0, text.lastIndexOf(' ', chars) > chars / 2 ? text.lastIndexOf(' ', chars) : chars).trim()}…`;
 const sentence = (text: string) => { const t = text.trim().replace(/\s+/g, ' '); return /[.!?]$/.test(t) ? t : `${t}.`; };
-const lower = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const OPENERS = new Set('the a an this that these those it its in on of for to by as at when what which how'.split(' '));
+/**
+ * Lowers the first letter so a phrase can follow a prompt, unless it opens with an acronym
+ * ("ANNs", "GDP") or a proper noun. A proper noun is a word the context also capitalises
+ * mid-sentence, or one followed by another capitalised word ("New Spain"). Articles and other
+ * openers are never one, so "The Encomienda system" still lowers.
+ */
+const lower = (text: string, context = text) => {
+  const [first = '', second = ''] = text.trim().split(/\s+/);
+  const word = first.replace(/[^\p{L}\p{N}'-]/gu, '');
+  if (OPENERS.has(word.toLowerCase())) return text.charAt(0).toLowerCase() + text.slice(1);
+  const proper = /[\p{Lu}\p{N}]/u.test(word.slice(1)) || /^\p{Lu}\p{Ll}/u.test(second)
+    || (word.length > 1 && /^\p{Lu}/u.test(word) && new RegExp(`[^.!?:\\s]\\s+${escape(word)}\\b`, 'u').test(context));
+  return proper ? text : text.charAt(0).toLowerCase() + text.slice(1);
+};
 /**
  * What a definition says without its term: "The standard error is the spread of…" gives "the
  * spread of…". Null when the rest still names the term, since asking for it would give it away.
@@ -83,7 +97,7 @@ function placeKey<T>(key: T, others: T[], seed: string) {
 export function flashcards(facts: Fact[]): Built[] {
   return facts.filter(f => f.confidence >= SURE && (f.kind === 'definition' || f.kind === 'formula')).map(f => ({
     format: 'flashcard', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds,
-    prompt: f.kind === 'definition' ? `What is meant by ${f.subject}?` : `What is the formula for ${lower(f.subject)}?`,
+    prompt: f.kind === 'definition' ? `What is meant by ${f.subject}?` : `What is the formula for ${lower(f.subject, f.text)}?`,
     answer: f.kind === 'definition' ? sentence(f.text) : `$${f.text}$`, explanation: f.kind === 'definition' ? `${f.subject}: ${sentence(f.text)}` : `${f.subject}: $${f.text}$`,
   }));
 }
@@ -97,7 +111,7 @@ export function clozes(facts: Fact[], keyTerms: string[]): Built[] {
   for (const f of facts.filter(f => f.confidence >= SURE)) {
     if (f.kind === 'definition') {
       const rest = meaning(f);
-      if (rest) out.push({ format: 'cloze', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds, prompt: 'Fill in the term.', template: `___: ${lower(sentence(rest))}`, blanks: [[f.subject]], explanation: `${f.subject}: ${lower(sentence(rest))}` });
+      if (rest) out.push({ format: 'cloze', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds, prompt: 'Fill in the term.', template: `___: ${lower(sentence(rest), f.text)}`, blanks: [[f.subject]], explanation: `${f.subject}: ${lower(sentence(rest), f.text)}` });
     } else if (f.kind === 'number' && f.value !== null) {
       const written = [...f.text.matchAll(/-?\d[\d,]*(?:\.\d+)?/g)].find(m => Number(m[0].replace(/,/g, '')) === f.value);
       if (written) out.push({ format: 'cloze', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds, prompt: 'Fill in the number.', template: sentence(f.text.slice(0, written.index) + '___' + f.text.slice(written.index! + written[0].length)), blanks: [[written[0], String(f.value)]], explanation: sentence(f.text) });
@@ -134,7 +148,7 @@ export function matchings(own: Fact[], nearby: Fact[]): Built[] {
 export function orderings(facts: Fact[]): Built[] {
   return facts.filter(f => f.kind === 'steps' && f.confidence >= SURE && f.items && f.items.length >= 3 && f.items.length <= 8 && new Set(f.items.map(normal)).size === f.items.length).map(f => ({
     format: 'ordering', difficulty: 'reasoning', factIds: [f.id], blockIds: f.blockIds,
-    prompt: `Put the steps of ${lower(f.subject)} in order.`, sequence: f.items!.map(i => clip(i, 200)), explanation: f.items!.map((s, i) => `${i + 1}. ${s}`).join('\n'),
+    prompt: `Put the steps of ${lower(f.subject, f.text)} in order.`, sequence: f.items!.map(i => clip(i, 200)), explanation: f.items!.map((s, i) => `${i + 1}. ${s}`).join('\n'),
   }));
 }
 
@@ -170,7 +184,7 @@ export function choices(own: Fact[], siblings: Fact[]): Built[] {
       }
       if (picked.length < 3) continue;
       const { options, index } = placeKey(f.subject, picked.map(s => s.subject), f.id);
-      out.push({ format: 'multiple-choice', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds, prompt: `Which term means: ${lower(sentence(rest))}`, options, correctIndices: [index], answer: f.subject, explanation: `${f.subject}: ${lower(sentence(rest))}` });
+      out.push({ format: 'multiple-choice', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds, prompt: `Which term means: ${lower(sentence(rest), f.text)}`, options, correctIndices: [index], answer: f.subject, explanation: `${f.subject}: ${lower(sentence(rest), f.text)}` });
     } else if (f.kind === 'number' && f.value !== null) {
       const same = siblings.filter(s => s.kind === 'number' && s.value !== null && s.value !== f.value && normal(s.unit ?? '') === normal(f.unit ?? '')).map(s => s.value!);
       const values = [...new Set([...same, ...nearby(f.value)])].filter(v => v !== f.value).slice(0, 3);
@@ -178,7 +192,7 @@ export function choices(own: Fact[], siblings: Fact[]): Built[] {
       const show = (v: number) => `${formatNumber(v, f.value!)}${f.unit ? ` ${f.unit}` : ''}`;
       const { options, index } = placeKey(show(f.value), values.map(show), f.id);
       if (new Set(options).size !== options.length) continue;
-      out.push({ format: 'multiple-choice', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds, prompt: `According to the material, what is ${lower(f.subject)}?`, options, correctIndices: [index], answer: show(f.value), explanation: sentence(f.text) });
+      out.push({ format: 'multiple-choice', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds, prompt: `According to the material, what is ${lower(f.subject, f.text)}?`, options, correctIndices: [index], answer: show(f.value), explanation: sentence(f.text) });
     }
   }
   return out;

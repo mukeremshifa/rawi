@@ -98,12 +98,18 @@ export async function ensureBuilt(tx: Transaction, scope: Scope, list: SectionCo
   // The options belong to a multiple choice's identity, so a changed set of options is a new item.
   const keyOf = (e: { materialId: string | null; key: string | null; hash: string | null; format: string; prompt: string; template?: string | null; options?: string[] | null }) => `${e.materialId}:${e.key}:${e.hash}:${e.format}:${promptKey(`${e.prompt} ${e.template ?? ''}`)}${e.format === 'multiple-choice' ? `:${(e.options ?? []).map(promptKey).join('|')}` : ''}`;
   const seen = new Set(existing.map(keyOf));
+  const byKey = new Map(existing.map(e => [keyOf(e), e]));
   const rows: (typeof bankItems.$inferInsert)[] = [];
+  const recased: { id: string; patch: Pick<Built, 'prompt' | 'explanation' | 'template'> }[] = [];
   const built = new Set<string>();
   for (const ctx of list) {
     for (const b of buildAll(codeFormats, ctx.facts, ctx.siblings, ctx.keyTerms)) {
       const key = keyOf({ materialId: ctx.section.materialId, key: ctx.section.key, hash: ctx.hash, ...b });
       built.add(key);
+      // The same item worded in other letter case, such as "aNNs" before acronyms kept theirs, is
+      // corrected in place so its results stay with it.
+      const held = byKey.get(key);
+      if (held && (held.prompt !== b.prompt.trim() || (held.template ?? undefined) !== b.template?.trim())) recased.push({ id: held.id, patch: { prompt: b.prompt.trim(), explanation: b.explanation.trim(), ...(b.template ? { template: b.template } : {}) } });
       if (seen.has(key)) continue;
       seen.add(key);
       rows.push(row(scope, ctx, question(ctx, b, 'built'), { verification: { rules: ['built_from_facts'] } }));
@@ -112,6 +118,7 @@ export async function ensureBuilt(tx: Transaction, scope: Scope, list: SectionCo
   const current = new Set(list.map(c => `${c.section.materialId}:${c.section.key}:${c.hash}`));
   const stale = codeFormats.includes('multiple-choice') ? existing.filter(e => e.format === 'multiple-choice' && e.state === 'active' && current.has(`${e.materialId}:${e.key}:${e.hash}`) && !built.has(keyOf(e))) : [];
   if (stale.length) await tx.update(bankItems).set({ state: 'retired' }).where(inArray(bankItems.id, stale.map(e => e.id)));
+  for (const r of recased) await tx.update(bankItems).set({ content: sql`${bankItems.content} || ${JSON.stringify(r.patch)}::jsonb` }).where(eq(bankItems.id, r.id));
   for (let i = 0; i < rows.length; i += 200) await tx.insert(bankItems).values(rows.slice(i, i + 200));
   return rows.length;
 }
