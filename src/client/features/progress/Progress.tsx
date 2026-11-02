@@ -54,13 +54,14 @@ export function Progress() {
     observer.observe(node);
     return () => observer.disconnect();
   }, [history.length > shown]);
-  const header = <PageHeader title="Progress" description="Evidence by topic, recurring mistakes and everything you have finished." />;
+  const header = <PageHeader title="Progress" description="Mastery and evidence by topic, recurring mistakes and everything you have finished." />;
   if (data.isPending) return <Page>{header}<PageLoading label="Loading progress" /></Page>;
   if (data.error) return <Page>{header}<ErrorState error={data.error} onRetry={() => void data.refetch()} /></Page>;
   const r = data.data;
   const archived = new Set(r.courses.filter(c => c.archived).map(c => c.id));
   const topics = r.topics.filter(t => course ? t.courseId === course : !archived.has(t.courseId));
   const solid = r.evidence.filter(e => topics.some(t => t.id === e.topicId) && (e.level === 'independent-once' || e.level === 'retained')).length;
+  const secure = r.mastery.filter(m => topics.some(t => t.id === m.topicId) && m.level === 'secure').length;
   const topicName = topic ? r.topics.find(t => t.id === topic)?.title : null;
   return (
     <Page>
@@ -77,6 +78,7 @@ export function Progress() {
       <div className="grid grid-cols-2 gap-gutter sm:grid-cols-4">
         <Stat value={r.streak} label="Day streak" />
         <Stat value={history.length} label="Finished activities" />
+        <Stat value={`${secure}/${topics.length}`} label="Topics secure" />
         <div className="flex flex-col gap-1.5">
           <Stat value={`${solid}/${topics.length}`} label="Topics answered unaided" />
           {topics.length > 0 && <Meter value={solid / topics.length} label="Topics answered unaided" />}

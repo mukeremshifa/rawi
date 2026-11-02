@@ -16,6 +16,7 @@ import { Field, FieldError } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableLoading, TableRow } from '@/components/ui/table';
+import { lastStudied } from '@/features/progress/parts';
 import { useApi, useApiPages, useSave } from '@/lib/data';
 import { useUnsentGuard } from '@/lib/hooks';
 import { keys } from '@/lib/query';
@@ -36,7 +37,7 @@ export function CourseLibrary() {
     const p = progress.data;
     if (!p) return null;
     const deadline = p.assessments.filter(a => a.courseId === id).sort((a, b) => a.date.localeCompare(b.date))[0];
-    const last = p.evidence.filter(e => e.courseId === id && e.lastWorkedAt).map(e => e.lastWorkedAt!).sort().at(-1);
+    const last = lastStudied(p.evidence.filter(e => e.courseId === id && e.lastWorkedAt).map(e => e.lastWorkedAt!).sort().at(-1), p.mastery.filter(m => m.courseId === id && m.lastDay).map(m => m.lastDay!).sort().at(-1));
     return { topics: p.topics.filter(t => t.courseId === id).length, deadline, last };
   };
   const archive = (course: Course) => save.run<Course>(

@@ -101,7 +101,7 @@ export function CourseOverview() {
         </>
       )}
       {topics.length > 0 && (
-        <Section title="Topic readiness" description={`${row.evidence.filter(e => e.courseId === id && (e.level === 'independent-once' || e.level === 'retained')).length} of ${topics.length} topics answered unaided`}>
+        <Section title="Topic readiness" description={`${row.mastery.filter(m => m.courseId === id && m.level === 'secure').length} of ${topics.length} topics secure, ${row.evidence.filter(e => e.courseId === id && (e.level === 'independent-once' || e.level === 'retained')).length} answered unaided in exams`}>
           <TopicReadiness row={row} courseId={id} />
         </Section>
       )}

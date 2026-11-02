@@ -162,9 +162,10 @@ self-marked answers do not count. A section reads as not checked, shaky,
 learning or secure. A topic is due when a section it introduces or covers is
 due, and that drives review suggestions, the planner and review reminders. The
 tutor sees each level in the scope, what is due and the prerequisites the
-student has not shown, and asks most about shaky sections. Topic evidence on
-the progress pages still reads finished attempts, so tutor questions do not
-appear there.
+student has not shown, and asks most about shaky sections. Topic readiness
+shows a topic's mastery from its sections, tutor questions included, beside
+its exam evidence, which counts only unaided exam work as independent. The two
+are kept apart on purpose.
 
 ## Tutor
 

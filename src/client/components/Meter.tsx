@@ -1,5 +1,6 @@
 import type { EvidenceLevel } from '@shared/domain/types';
 import { EVIDENCE_LABEL } from '@shared/domain/progress';
+import { MASTERY_LABEL, type MasteryLevel } from '@shared/domain/mastery';
 import { cn } from '@/lib/utils';
 
 /**
@@ -23,6 +24,32 @@ export function Meter({ value, className, label }: {
 }
 
 const STEPS: Record<EvidenceLevel, number> = { 'not-checked': 0, practising: 1, 'independent-once': 2, retained: 3 };
+const MASTERY_STEPS: Record<MasteryLevel, number> = { 'not-checked': 0, shaky: 1, learning: 2, secure: 3 };
+
+/** Three grey steps, with not checked drawn as dashed outlines. */
+function Steps({ filled, label }: { filled: number; label: string }) {
+  return (
+    <span role="img" aria-label={label} className="flex gap-0.5">
+      {[1, 2, 3].map(step => (
+        <span key={step} className={cn('h-2 w-3.5 rounded-[2px]',
+          step <= filled ? 'bg-meter-fill' : filled === 0 ? 'border-border-strong border border-dashed' : 'bg-meter-track')} />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * MasteryMeter: a topic's mastery from all its marked answers, with how many of its sections are
+ * secure. Sits beside EvidenceMeter, which counts unaided exam work only.
+ */
+export function MasteryMeter({ level, secure, sections, className }: { level: MasteryLevel; secure: number; sections: number; className?: string }) {
+  return (
+    <span className={cn('inline-flex items-center gap-tight', className)}>
+      <Steps filled={MASTERY_STEPS[level]} label={`Mastery: ${MASTERY_LABEL[level]}`} />
+      <span className="text-muted-foreground text-sm whitespace-nowrap">{MASTERY_LABEL[level]}{level !== 'not-checked' && sections ? <span className="tabular">{` · ${secure} of ${sections} secure`}</span> : null}</span>
+    </span>
+  );
+}
 
 /**
  * EvidenceMeter: three filled steps for an evidence level, with its label.
@@ -33,12 +60,7 @@ export function EvidenceMeter({ level, showLabel = true, className }: { level: E
   const filled = STEPS[level];
   return (
     <span className={cn('inline-flex items-center gap-tight', className)}>
-      <span role="img" aria-label={`Evidence: ${EVIDENCE_LABEL[level]}`} className="flex gap-0.5">
-        {[1, 2, 3].map(step => (
-          <span key={step} className={cn('h-2 w-3.5 rounded-[2px]',
-            step <= filled ? 'bg-meter-fill' : filled === 0 ? 'border-border-strong border border-dashed' : 'bg-meter-track')} />
-        ))}
-      </span>
+      <Steps filled={filled} label={`Evidence: ${EVIDENCE_LABEL[level]}`} />
       {showLabel && <span className="text-muted-foreground text-sm whitespace-nowrap">{EVIDENCE_LABEL[level]}</span>}
     </span>
   );

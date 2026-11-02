@@ -1,4 +1,4 @@
-import { addDays, daysBetweenDates, localISO } from './planner';
+import { addDays, localISO } from './planner';
 
 /**
  * Section mastery, read from marked answers.
@@ -15,6 +15,8 @@ import { addDays, daysBetweenDates, localISO } from './planner';
  */
 
 export type MasteryLevel = 'not-checked' | 'shaky' | 'learning' | 'secure';
+
+export const MASTERY_LABEL: Record<MasteryLevel, string> = { 'not-checked': 'Not checked yet', shaky: 'Shaky', learning: 'Learning', secure: 'Secure' };
 
 export interface MarkedResult {
   score: number;
@@ -70,6 +72,3 @@ export function sectionMastery(results: MarkedResult[], timezone?: string): Sect
 
 /** Whether a section is due for review on a local date. Unchecked sections are not reviews. */
 export const isDue = (m: SectionMastery, today: string) => !!m.dueOn && m.dueOn <= today;
-
-/** Whole days since the section was last answered. */
-export const daysSince = (m: SectionMastery, today: string) => m.lastDay ? daysBetweenDates(m.lastDay, today) : null;

@@ -637,6 +637,26 @@ export interface Suggestion {
   sessionId?: string;
 }
 
+/**
+ * A topic's mastery, read from its sections' marked answers (`mastery.ts`), practice, exams and
+ * tutor questions alike. It sits beside topic evidence, which counts only unaided exam work as
+ * independent, rather than replacing it.
+ */
+export interface TopicMastery {
+  courseId: string;
+  topicId: string;
+  level: 'not-checked' | 'shaky' | 'learning' | 'secure';
+  /** Sections the topic introduces or covers, and how many of them have marked answers. */
+  sections: number;
+  answered: number;
+  secure: number;
+  shaky: number;
+  due: number;
+  dueOn: string | null;
+  lastDay: string | null;
+  daysSince: number | null;
+}
+
 /** A topic with a section due for review under the mastery ladder (`mastery.ts`). */
 export interface ReviewDue {
   courseId: string;

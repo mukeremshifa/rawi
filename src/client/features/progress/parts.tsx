@@ -5,7 +5,7 @@ import type { CheckInMood } from '@shared/domain/types';
 import { formatMinutes as clock } from '@shared/domain/planner';
 
 import { MOOD_LABEL, formatMinutes, formatRelative } from '@/components/domain';
-import { EvidenceMeter } from '@/components/Meter';
+import { EvidenceMeter, MasteryMeter } from '@/components/Meter';
 import { Button } from '@/components/ui/button';
 import { Field, FieldError } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -21,14 +21,20 @@ export type ProgressData = ProgressView;
 /** "09:00", from minutes after midnight. */
 export const timeOfDay = (minutes: number) => clock(minutes);
 
+/** The later of a topic's last finished attempt and its last marked answer, which includes tutor questions. */
+export function lastStudied(attemptAt?: string | null, answerDay?: string | null) {
+  const answered = answerDay ? `${answerDay}T12:00:00` : null;
+  return [attemptAt, answered].filter((d): d is string => !!d).sort((a, b) => new Date(a).getTime() - new Date(b).getTime()).at(-1) ?? null;
+}
+
 export function courseName(row: ProgressData, id: string) {
   return row.courses.find(c => c.id === id)?.name ?? 'Course';
 }
 
 /**
- * Topic readiness: each topic's evidence as a grey step meter, when it was
- * last worked on, and a way to practise it. Used on the course overview and
- * on Progress.
+ * Topic readiness: each topic's mastery from all its marked answers, its
+ * evidence from unaided exam work, when it was last studied, and a way to
+ * practise it. Used on the course overview and on Progress.
  */
 export function TopicReadiness({ row, courseId, showCourse, emptyAction }: { row: ProgressData; courseId?: string; showCourse?: boolean; emptyAction?: React.ReactNode }) {
   const archived = new Set(row.courses.filter(c => c.archived).map(c => c.id));
@@ -38,23 +44,27 @@ export function TopicReadiness({ row, courseId, showCourse, emptyAction }: { row
       <TableHeader>
         <TableRow>
           <TableHead>Topic</TableHead>
-          <TableHead>Evidence</TableHead>
+          <TableHead>Mastery</TableHead>
+          <TableHead className="hidden md:table-cell">Exam evidence</TableHead>
           <TableHead className="hidden sm:table-cell">Last studied</TableHead>
           <TableHead className="w-24"><span className="sr-only">Actions</span></TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {topics.length === 0 && <TableEmpty colSpan={4}>{emptyAction ?? 'No topics yet.'}</TableEmpty>}
+        {topics.length === 0 && <TableEmpty colSpan={5}>{emptyAction ?? 'No topics yet.'}</TableEmpty>}
         {topics.map(topic => {
           const evidence = row.evidence.find(e => e.topicId === topic.id);
+          const mastery = row.mastery.find(m => m.topicId === topic.id);
+          const last = lastStudied(evidence?.lastWorkedAt, mastery?.lastDay);
           return (
             <TableRow key={topic.id}>
               <TableCell className="max-w-0 min-w-40">
                 <span className="block truncate font-medium">{topic.title}</span>
                 {showCourse && <span className="text-muted-foreground block truncate text-sm">{courseName(row, topic.courseId)}</span>}
               </TableCell>
-              <TableCell><EvidenceMeter level={evidence?.level ?? 'not-checked'} /></TableCell>
-              <TableCell className="text-muted-foreground hidden text-sm sm:table-cell">{evidence?.lastWorkedAt ? formatRelative(evidence.lastWorkedAt) : 'Not yet'}</TableCell>
+              <TableCell><MasteryMeter level={mastery?.level ?? 'not-checked'} secure={mastery?.secure ?? 0} sections={mastery?.sections ?? 0} /></TableCell>
+              <TableCell className="hidden md:table-cell"><EvidenceMeter level={evidence?.level ?? 'not-checked'} /></TableCell>
+              <TableCell className="text-muted-foreground hidden text-sm sm:table-cell">{last ? formatRelative(last) : 'Not yet'}</TableCell>
               <TableCell className="text-right">
                 <Button asChild variant="ghost" size="sm"><Link to={`/course/${topic.courseId}/practice?topicId=${topic.id}`}>Practise</Link></Button>
               </TableCell>

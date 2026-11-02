@@ -4,7 +4,7 @@ import type { z } from 'zod';
 import type { Attempt, StudyMaterial, StudyTopic } from '../../shared/domain/types';
 import { planWeek, replacedByPlan, addDays } from '../../shared/domain/planner';
 import { deriveAllEvidence, recurringMistakes, buildPlan } from '../../shared/domain/progress';
-import { reviewsDue } from './questions/results';
+import { reviewsFrom, topicMastery } from './questions/results';
 import { zonedParts, type plannerWrite, type scheduleWrite, type assessmentWrite, type proposalInput, type checkInInput } from '../../shared/contracts/planner';
 import { plannerState, plannedSessions, assessments, checkIns, planProposals, courses, topics, learningAttempts, learningRuns, materials, materialVersions, bankItems, preferences, tutorSessions } from '../db/schema';
 import { operation } from './learning';
@@ -52,8 +52,9 @@ export async function planningData(tx: Transaction, workspaceId: string, options
   // The syllabus is a source for the outline, not teaching material.
   const materialData: StudyMaterial[] = materialRows.filter(r => r.material.kind !== 'syllabus').map(({ material: m, status }) => ({ id: m.id, courseId: m.courseId, title: m.title, kind: m.kind === 'slides' ? 'lecture-notes' : 'reading', archived: m.archived, addedAt: m.createdAt.toISOString(), topicIds: links.get(m.id) ?? [], readable: usableStatus(status) }));
   const { attempts, snapshots } = options.calendarOnly ? { attempts: [], snapshots: [] } : await learningData(tx, workspaceId);
-  const due = options.calendarOnly ? [] : await reviewsDue(tx, workspaceId, prefs?.timezone ?? 'UTC');
-  return { revision: planner.revision, availability: planner.availability, timezone: prefs?.timezone ?? 'UTC', courses: courseRows.map(c => ({ ...c, createdAt: c.createdAt.toISOString() })), topics: topicData, assessments: assessmentRows.map(r => ({ ...r.content, revision: r.revision, source: r.source })), sessions: sessionRows.map(r => ({ ...r.content, revision: r.revision })), checkIns: checkInRows.map(r => r.content), questions: [...new Map(snapshots.flatMap(a => a.questions.map(q => [q.question.id, q.question] as const))).values()], materials: materialData, attempts, snapshots, due };
+  const mastery = options.calendarOnly ? [] : await topicMastery(tx, workspaceId, prefs?.timezone ?? 'UTC');
+  const due = reviewsFrom(mastery);
+  return { revision: planner.revision, availability: planner.availability, timezone: prefs?.timezone ?? 'UTC', courses: courseRows.map(c => ({ ...c, createdAt: c.createdAt.toISOString() })), topics: topicData, assessments: assessmentRows.map(r => ({ ...r.content, revision: r.revision, source: r.source })), sessions: sessionRows.map(r => ({ ...r.content, revision: r.revision })), checkIns: checkInRows.map(r => r.content), questions: [...new Map(snapshots.flatMap(a => a.questions.map(q => [q.question.id, q.question] as const))).values()], materials: materialData, attempts, snapshots, due, mastery };
 }
 export async function plannerView(db: SocketDb, workspaceId: string) {
   return transaction(db, async tx => {
@@ -149,6 +150,6 @@ export async function progress(db: SocketDb, workspaceId: string) {
       const path = s.sessionId ? `/planner?session=${s.sessionId}` : `/course/${s.courseId}/${s.kind === 'exam' ? 'exams' : ['tutor', 'materials', 'setup'].includes(s.kind) ? 'materials' : 'practice'}${s.topicId ? `?topicId=${s.topicId}` : ''}`;
       return { ...s, to: path, ...(s.kind === 'tutor' ? { title: s.title.replace(/^Learn /, 'Read about '), reason: `${s.reason} Tutor replies are unavailable, so open the material to continue.` } : {}) };
     });
-    return { suggestions, unlinked, tutorActivity, rulesVersion: 'evidence-v1', today: now.date, timezone: data.timezone, streak, topics: data.topics, courses: data.courses, evidence: [...deriveAllEvidence(data.topics, data.attempts, data.timezone).values()], due: data.due, mistakes: recurringMistakes(data.attempts, id => data.questions.find(q => q.id === id)?.prompt), attempts: data.attempts, runs, sessions: data.sessions.filter(s => s.date === now.date), assessments: data.assessments.filter(isDated).filter(a => a.date >= now.date), checkIns: data.checkIns.filter(c => zonedParts(new Date(c.at), data.timezone).date === now.date) };
+    return { suggestions, unlinked, tutorActivity, rulesVersion: 'evidence-v1', today: now.date, timezone: data.timezone, streak, topics: data.topics, courses: data.courses, evidence: [...deriveAllEvidence(data.topics, data.attempts, data.timezone).values()], due: data.due, mastery: data.mastery, mistakes: recurringMistakes(data.attempts, id => data.questions.find(q => q.id === id)?.prompt), attempts: data.attempts, runs, sessions: data.sessions.filter(s => s.date === now.date), assessments: data.assessments.filter(isDated).filter(a => a.date >= now.date), checkIns: data.checkIns.filter(c => zonedParts(new Date(c.at), data.timezone).date === now.date) };
   }, { isolationLevel: 'repeatable read' });
 }
