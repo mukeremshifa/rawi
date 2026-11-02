@@ -86,23 +86,32 @@ function row(scope: Scope, ctx: SectionContext, content: VersionedQuestion, extr
 
 /**
  * Build every question code can make for these sections in the formats asked for, and save the
- * ones the bank does not hold yet. Code only, so it runs inside the request.
+ * ones the bank does not hold yet. Code only, so it runs inside the request. A built multiple
+ * choice whose options code would no longer choose, such as one with a near synonym of the key
+ * among them, is retired.
  */
 export async function ensureBuilt(tx: Transaction, scope: Scope, list: SectionContext[], formats: QuestionFormat[]) {
   const codeFormats = formats.filter(f => !MODEL.includes(f));
   if (!codeFormats.length || !list.length) return 0;
-  const existing = await tx.select({ materialId: bankItems.materialId, key: bankItems.sectionKey, format: bankItems.format, prompt: sql<string>`${bankItems.content}->>'prompt'`, template: sql<string | null>`${bankItems.content}->>'template'`, hash: bankItems.contentHash }).from(bankItems)
+  const existing = await tx.select({ id: bankItems.id, materialId: bankItems.materialId, key: bankItems.sectionKey, format: bankItems.format, state: bankItems.state, prompt: sql<string>`${bankItems.content}->>'prompt'`, template: sql<string | null>`${bankItems.content}->>'template'`, options: sql<string[] | null>`${bankItems.content}->'options'`, hash: bankItems.contentHash }).from(bankItems)
     .where(and(eq(bankItems.workspaceId, scope.workspaceId), inArray(bankItems.materialId, [...new Set(list.map(c => c.section.materialId))]), eq(bankItems.origin, 'built')));
-  const seen = new Set(existing.map(e => `${e.materialId}:${e.key}:${e.hash}:${e.format}:${promptKey(`${e.prompt} ${e.template ?? ''}`)}`));
+  // The options belong to a multiple choice's identity, so a changed set of options is a new item.
+  const keyOf = (e: { materialId: string | null; key: string | null; hash: string | null; format: string; prompt: string; template?: string | null; options?: string[] | null }) => `${e.materialId}:${e.key}:${e.hash}:${e.format}:${promptKey(`${e.prompt} ${e.template ?? ''}`)}${e.format === 'multiple-choice' ? `:${(e.options ?? []).map(promptKey).join('|')}` : ''}`;
+  const seen = new Set(existing.map(keyOf));
   const rows: (typeof bankItems.$inferInsert)[] = [];
+  const built = new Set<string>();
   for (const ctx of list) {
     for (const b of buildAll(codeFormats, ctx.facts, ctx.siblings, ctx.keyTerms)) {
-      const key = `${ctx.section.materialId}:${ctx.section.key}:${ctx.hash}:${b.format}:${promptKey(`${b.prompt} ${b.template ?? ''}`)}`;
+      const key = keyOf({ materialId: ctx.section.materialId, key: ctx.section.key, hash: ctx.hash, ...b });
+      built.add(key);
       if (seen.has(key)) continue;
       seen.add(key);
       rows.push(row(scope, ctx, question(ctx, b, 'built'), { verification: { rules: ['built_from_facts'] } }));
     }
   }
+  const current = new Set(list.map(c => `${c.section.materialId}:${c.section.key}:${c.hash}`));
+  const stale = codeFormats.includes('multiple-choice') ? existing.filter(e => e.format === 'multiple-choice' && e.state === 'active' && current.has(`${e.materialId}:${e.key}:${e.hash}`) && !built.has(keyOf(e))) : [];
+  if (stale.length) await tx.update(bankItems).set({ state: 'retired' }).where(inArray(bankItems.id, stale.map(e => e.id)));
   for (let i = 0; i < rows.length; i += 200) await tx.insert(bankItems).values(rows.slice(i, i + 200));
   return rows.length;
 }

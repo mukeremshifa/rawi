@@ -34,6 +34,44 @@ const meaning = (f: Fact) => {
   return rest.length >= 12 && !` ${normal(rest)} `.includes(` ${normal(f.subject)} `) ? rest : null;
 };
 
+/** Words that carry no meaning of their own when two definitions are compared. */
+const FILLER = new Set('the and for are but not does did have were its was one has can may all any into from with that this these those which while such each other than then also only more most less very what when where whose there their them they used uses using usually often commonly typically called known'.split(' '));
+/** Content words, crudely stemmed, so `reduces` meets `reducing`. */
+const words = (text: string) => new Set((normal(text).match(/[\p{L}\p{N}]+/gu) ?? []).filter(w => w.length >= 3 && !FILLER.has(w)).map(w => w.length > 5 ? w.slice(0, 5) : w.replace(/s$/, '')));
+/** Initials of a multiword name, so "Convolutional Neural Network" gives `cnn`. */
+const initials = (text: string) => { const w = normal(text.replace(/\([^)]*\)/g, '')).split(' ').filter(Boolean); return w.length >= 2 ? w.map(x => x[0]).join('') : ''; };
+/** A term's names: itself, what it puts in brackets, and the bracketed name's initials. */
+const names = (subject: string) => {
+  const inner = /\(([^)]+)\)/.exec(subject)?.[1];
+  return new Set([normal(subject.replace(/\([^)]*\)/g, '')), ...(inner ? [normal(inner)] : []), initials(subject)].filter(Boolean));
+};
+
+/**
+ * Whether two terms are one term under two names: one name contains or abbreviates the other
+ * (`pooling`, `pooling layers`, `CNN`), or one is defined as nothing but the other's name, as in
+ * "s is the sample standard deviation".
+ */
+function alias(p: Fact, q: Fact) {
+  const a = names(p.subject), b = names(q.subject);
+  for (const x of a) for (const y of b) if (x === y || ` ${x} `.includes(` ${y} `) || ` ${y} `.includes(` ${x} `)) return true;
+  const within = (f: Fact, name: string) => { const m = words(meaning(f) ?? ''), n = words(name); return m.size > 0 && [...m].every(w => n.has(w)); };
+  return within(p, q.subject) || within(q, p.subject);
+}
+
+/**
+ * Whether a sibling term could also answer "which term means" for the key, which would make two
+ * options right: an alias, or a definition that says most of what the key's says. Code cannot see
+ * a synonym worded differently, such as "a fixed value that does not change" beside "a fixed
+ * number that does not move".
+ */
+function overlaps(key: Fact, other: Fact) {
+  if (alias(key, other)) return true;
+  const x = words(meaning(key) ?? key.text), y = words(meaning(other) ?? other.text);
+  let shared = 0;
+  for (const w of x) if (y.has(w)) shared++;
+  return shared >= 2 && shared / Math.max(1, Math.min(x.size, y.size)) >= 0.6;
+}
+
 /** A stable order that does not put the key first, from the question's own text. */
 function placeKey<T>(key: T, others: T[], seed: string) {
   let h = 0;
@@ -122,9 +160,16 @@ export function choices(own: Fact[], siblings: Fact[]): Built[] {
     if (f.kind === 'definition') {
       const rest = meaning(f);
       if (!rest) continue;
-      const others = [...new Map([...siblings, ...own].filter(s => s.kind === 'definition' && s.id !== f.id && normal(s.subject) !== normal(f.subject)).map(s => [normal(s.subject), s.subject])).values()].slice(0, 3);
-      if (others.length < 3) continue;
-      const { options, index } = placeKey(f.subject, others, f.id);
+      // Wrong answers are sibling terms read as surely as the key that cannot also fit, and no
+      // two of them are one term.
+      const picked: Fact[] = [];
+      for (const s of [...siblings, ...own]) {
+        if (picked.length >= 3) break;
+        if (s.kind !== 'definition' || s.confidence < SURE || s.id === f.id || overlaps(f, s) || picked.some(p => alias(p, s))) continue;
+        picked.push(s);
+      }
+      if (picked.length < 3) continue;
+      const { options, index } = placeKey(f.subject, picked.map(s => s.subject), f.id);
       out.push({ format: 'multiple-choice', difficulty: 'recall', factIds: [f.id], blockIds: f.blockIds, prompt: `Which term means: ${lower(sentence(rest))}`, options, correctIndices: [index], answer: f.subject, explanation: `${f.subject}: ${lower(sentence(rest))}` });
     } else if (f.kind === 'number' && f.value !== null) {
       const same = siblings.filter(s => s.kind === 'number' && s.value !== null && s.value !== f.value && normal(s.unit ?? '') === normal(f.unit ?? '')).map(s => s.value!);
