@@ -217,7 +217,6 @@ removes the tutor sessions it creates. A full run costs a few cents.
   linked to no topic, and Work out topics again usually fixes it.
 - A replaced version embeds the whole document again, not only changed
   sections. The cost is small.
-- The self-check feedback shows the model answer twice.
 - Each database round trip from the development machine takes 100 to 130
   ms, so a tutor reply needs about 4 seconds to its first word and an answer
   save takes a few seconds. Planner and progress reads run their queries one

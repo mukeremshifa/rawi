@@ -12,9 +12,10 @@ import { cn } from '@/lib/utils';
 /**
  * What the learner sees once a question is marked: the outcome, their answer against the key, then
  * the explanation and its source. Flashcards and self-checks say that the student marked them.
- * Colour appears only on outcomes.
+ * Colour appears only on outcomes. `answerShown` is set where the question above already shows
+ * the student's answer and the model answer, so they are not repeated here.
  */
-export function QuestionFeedback({ question, attempt, discussTo }: { question: Question; attempt: QuestionAttempt; discussTo?: string }) {
+export function QuestionFeedback({ question, attempt, discussTo, answerShown = false }: { question: Question; attempt: QuestionAttempt; discussTo?: string; answerShown?: boolean }) {
   return (
     <div className="flex flex-col gap-gutter">
       <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
@@ -23,7 +24,7 @@ export function QuestionFeedback({ question, attempt, discussTo }: { question: Q
         <span aria-hidden>·</span><span>{FORMAT_LABEL[question.format]}</span>
         {attempt.usedHint && <><span aria-hidden>·</span><span>Hint used</span></>}
       </div>
-      <AnswerReview question={question} response={attempt.response} />
+      <AnswerReview question={question} response={attempt.response} answerShown={answerShown} />
       <section className="flex flex-col gap-1.5 border-t pt-gutter">
         <h3 className="text-base font-semibold">Explanation</h3>
         <Prose text={question.explanation} className="font-serif" />
@@ -45,7 +46,7 @@ function Row({ tone, children }: { tone: 'right' | 'wrong' | 'plain'; children: 
   return <li className={cn('flex items-start gap-snug rounded-md border px-3 py-2 text-base', tone === 'right' && 'border-success/40 bg-success-subtle', tone === 'wrong' && 'border-danger/30')}>{children}</li>;
 }
 
-function AnswerReview({ question, response }: { question: Question; response: AnswerValue }) {
+function AnswerReview({ question, response, answerShown }: { question: Question; response: AnswerValue; answerShown: boolean }) {
   switch (question.format) {
     case 'multiple-choice': {
       const given = response.kind === 'choice' ? response.indices : [];
@@ -134,7 +135,7 @@ function AnswerReview({ question, response }: { question: Question; response: An
       const rating = response.kind === 'self-rating' ? response.rating : null;
       return (
         <div className="flex flex-col gap-tight">
-          <div className="bg-surface rounded-md border px-4 py-3 font-serif"><Prose text={question.answer ?? ''} /></div>
+          {!answerShown && <div className="bg-surface rounded-md border px-4 py-3 font-serif"><Prose text={question.answer ?? ''} /></div>}
           <p className="text-muted-foreground text-sm">You rated your recall <span className="text-foreground font-medium">{rating ? RATING_LABEL[rating] : 'not at all'}</span>. Self-rated, so it counts separately from marked answers.</p>
         </div>
       );
@@ -144,14 +145,16 @@ function AnswerReview({ question, response }: { question: Question; response: An
       const mark = response.kind === 'self-check' ? response.mark : null;
       return (
         <div className="flex flex-col gap-gutter">
-          <div className="flex flex-col gap-1.5">
-            <h3 className="text-base font-semibold">Your answer</h3>
-            <div className="bg-surface rounded-md border px-4 py-3 font-serif">{text.trim() ? <Prose text={text} /> : <p className="text-muted-foreground italic">Nothing was written.</p>}</div>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <h3 className="text-base font-semibold">Model answer</h3>
-            <div className="rounded-md border px-4 py-3 font-serif"><Prose text={question.answer ?? ''} /></div>
-          </div>
+          {!answerShown && <>
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-base font-semibold">Your answer</h3>
+              <div className="bg-surface rounded-md border px-4 py-3 font-serif">{text.trim() ? <Prose text={text} /> : <p className="text-muted-foreground italic">Nothing was written.</p>}</div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-base font-semibold">Model answer</h3>
+              <div className="rounded-md border px-4 py-3 font-serif"><Prose text={question.answer ?? ''} /></div>
+            </div>
+          </>}
           <p className="text-muted-foreground text-sm">{mark ? <>You marked this <span className="text-foreground font-medium">{SELF_MARK_LABEL[mark]}</span>. Self-marked, so it counts separately from marked answers.</> : 'Not marked against the model answer.'}</p>
         </div>
       );

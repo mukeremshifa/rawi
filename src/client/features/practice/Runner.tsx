@@ -200,7 +200,7 @@ export function Run() {
             readOnly={item.checked || locked || (blocked && (!!exam || !pending.current?.path.endsWith('/answers')))} />
         )}
         {item.hinted && <div className="bg-warning-subtle text-warning-text flex items-start gap-tight rounded-md px-3 py-2.5 text-base"><LightbulbIcon className="mt-0.5 size-4 shrink-0" aria-hidden /><span><span className="font-medium">Hint. </span>{item.question.explanation.split(/(?<=\.)\s+/)[0]}</span></div>}
-        {item.feedback && <div className="border-t pt-gutter"><QuestionFeedback question={{ ...item.question, source: undefined }} attempt={item.feedback} /></div>}
+        {item.feedback && <div className="border-t pt-gutter"><QuestionFeedback question={{ ...item.question, source: undefined }} attempt={item.feedback} answerShown={item.revealed} /></div>}
         {dropped && <p role="alert" className="text-warning-text text-sm">Some answers changed while saving. They are still on this page and will save next.</p>}
         {save.error && !save.conflict && <p role="alert" className="text-danger-text text-sm sm:hidden">Not saved. {save.error}</p>}
         {save.conflict && (
