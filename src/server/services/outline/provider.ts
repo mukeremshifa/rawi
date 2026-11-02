@@ -44,6 +44,25 @@ export const SUBSTANTIAL_WORDS = 80;
 const SUBSTANTIAL_MATERIAL_WORDS = 150;
 
 /**
+ * An assignment with every new topic its links name. A model sometimes links sections to a title
+ * it never lists as a new topic. While new topics are allowed, such a title becomes one, with the
+ * summary of the first section linked to it, rather than failing a reading that is otherwise sound.
+ */
+export function withNamedTopics(input: AssignInput, value: Assignment): Assignment {
+  if (!input.room) return value;
+  const keys = new Set(input.topics.map(t => t.key)), titles = new Set(value.newTopics.map(t => normalTitle(t.title)));
+  const named: Assignment['newTopics'] = [];
+  for (const l of value.links) for (const t of l.topics) {
+    const title = t.topic.trim(), normal = normalTitle(title);
+    // A key the input never had, such as "t9", is a broken link, not a title.
+    if (!normal || keys.has(title) || titles.has(normal) || /^t\d+$/.test(title)) continue;
+    titles.add(normal);
+    named.push({ title, module: '', summary: input.sections.find(s => s.key === l.section)?.summary.split(/(?<=[.!?])\s/)[0] ?? '' });
+  }
+  return named.length ? { ...value, newTopics: [...value.newTopics, ...named] } : value;
+}
+
+/**
  * Whether an assignment reads the batch: it links some substantial section to a topic it may use,
  * a current key or a new topic it proposes, and while new topics are allowed, it links every
  * substantial material somewhere. One that leaves those out is a failed reading, not an answer.

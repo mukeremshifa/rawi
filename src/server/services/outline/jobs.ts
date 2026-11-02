@@ -36,6 +36,8 @@ const ASSIGN_BATCH = 60;
 const TOPIC_CAP = 40;
 /** Cosine distance within which a section reads like a linked one, for this embedding model. */
 const NEAR = 0.2;
+/** Substantial sections per topic a course without a syllabus may grow to, so its size follows its materials. */
+const SECTIONS_PER_TOPIC = 2;
 type Job = typeof outlineJobs.$inferSelect;
 type Scope = { workspaceId: string; courseId: string };
 const OUTLINE_KINDS: OutlineJobKind[] = ['read_syllabus', 'assign_topics'];
@@ -210,9 +212,13 @@ async function prepare(db: SocketDb, job: Job): Promise<Prepared | null> {
   const bare = todo.filter(s => !s.summary).map(s => s.id);
   const excerpts = new Map(bare.length ? (await db.select({ sectionId: knowledgeChunks.sectionId, text: knowledgeChunks.text }).from(knowledgeChunks).where(and(inArray(knowledgeChunks.sectionId, bare), eq(knowledgeChunks.kind, 'text'))).orderBy(asc(knowledgeChunks.ordinal))).reverse().map(r => [r.sectionId, r.text.slice(0, 300)] as const) : []);
   const topicKeys = keyMap('t', outline), sectionKeys = keyMap('s', todo);
-  // A course without a syllabus grows its outline from its materials. With one, a material that
-  // brings subjects the syllabus never named may still add a few.
-  const room = course.syllabusMaterialId ? Math.max(0, Math.min(3, TOPIC_CAP - outline.length)) : Math.max(0, Math.min(OUTLINE_MAX, TOPIC_CAP - outline.length));
+  // A course without a syllabus grows its outline from its materials, to a size its substantial
+  // sections set, so working it out again gives the same number of topics whatever the model
+  // would propose. With a syllabus, a material that brings subjects the syllabus never named may
+  // still add a few.
+  const substantial = list.filter(s => s.tokens * 0.75 >= SUBSTANTIAL_WORDS).length;
+  const size = Math.min(OUTLINE_MAX, Math.max(1, Math.ceil(substantial / SECTIONS_PER_TOPIC)));
+  const room = Math.max(0, Math.min(course.syllabusMaterialId ? 3 : size - outline.length, TOPIC_CAP - outline.length));
   const input: AssignInput = {
     courseName: course.name, language: todo[0]!.language, room,
     topics: [...topicKeys].map(([key, t]) => ({ key, title: t.title, summary: t.summary })),
