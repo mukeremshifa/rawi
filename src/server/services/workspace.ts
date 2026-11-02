@@ -9,7 +9,8 @@ import { operation } from './learning';
 
 const scope = (workspaceId: string, id: string) => and(eq(courses.workspaceId, workspaceId), eq(courses.id, id));
 export function publicCourse(row: typeof courses.$inferSelect) {
-  const { createFingerprint: _fingerprint, ...course } = row;
+  // Tutor notes are read on the tutor page only, never with every course.
+  const { createFingerprint: _fingerprint, tutorNotes: _notes, tutorNotesAt: _notesAt, ...course } = row;
   return course;
 }
 export async function bootstrap(db: SocketDb, userId: string) {

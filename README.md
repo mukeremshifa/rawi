@@ -194,6 +194,14 @@ student can ask anything instead. Study with the tutor, on the home page's next
 suggestion, starts a guided session whose first message says what it will work
 on and why. An ended session shows its next review date.
 
+Each course keeps short tutor notes (`courses.tutor_notes`). When a session
+with some learning in it ends, one background call rewrites them from the
+session's turns and marked answers: what the student understands, what they
+keep getting wrong, what help worked and what to come back to. Every tutor
+turn reads them, and a question the materials do not cover can still be
+answered from them. The course's tutor page shows the notes in full, and
+Forget clears them.
+
 ## AI engine
 
 One engine in `src/server/ai/` serves every task. A task declares what it

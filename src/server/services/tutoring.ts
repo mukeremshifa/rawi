@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { newTutorInput, tutorMessageInput, tutorMetadataInput } from '../../shared/contracts/tutor';
 import { answerKey, responseText } from '../../shared/domain/answer-review';
-import { tutorMessages, tutorSessions, topics, aiOperations, plannedSessions, scopes } from '../db/schema';
+import { courses, tutorMessages, tutorSessions, topics, aiOperations, plannedSessions, scopes } from '../db/schema';
 import { citationBlocks, validateCitation } from './materials';
 import { spansText } from '../../shared/domain/document-text';
 import { operation, attempt } from './learning';
@@ -107,6 +107,20 @@ export async function saveMessage(db: SocketDb, workspaceId: string, id: string,
     const { workspaceId: _w, ...visible } = updated!;
     const { workspaceId: _mw, courseId: _c, sessionId: _s, ...saved } = message!;
     return { session: visible, message: saved, pendingReply: input.operationId };
+  });
+}
+/** What the tutor remembers about the student in a course. */
+export async function tutorNotes(db: Db, workspaceId: string, courseId: string) {
+  await getCourse(db, workspaceId, courseId);
+  const [row] = await db.select({ notes: courses.tutorNotes, at: courses.tutorNotesAt }).from(courses).where(and(eq(courses.workspaceId, workspaceId), eq(courses.id, courseId)));
+  return { notes: row?.notes ?? null, updatedAt: row?.notes ? row.at?.toISOString() ?? null : null };
+}
+/** Forget the notes. The time is kept, so notes a session is writing at this moment are not saved over the clearing. */
+export async function clearNotes(db: SocketDb, workspaceId: string, courseId: string, operationId: string) {
+  return operation(db, workspaceId, operationId, { action: 'clear-tutor-notes', courseId }, async tx => {
+    await getCourse(tx, workspaceId, courseId);
+    await tx.update(courses).set({ tutorNotes: null, tutorNotesAt: new Date() }).where(and(eq(courses.workspaceId, workspaceId), eq(courses.id, courseId)));
+    return tutorNotes(tx, workspaceId, courseId);
   });
 }
 export async function patchSession(db: SocketDb, workspaceId: string, id: string, input: z.infer<typeof tutorMetadataInput>) {

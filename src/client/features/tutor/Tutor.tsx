@@ -85,8 +85,39 @@ export function TutorLibrary() {
         )}
         {sessions.hasNextPage && <Button variant="secondary" className="self-start" loading={sessions.isFetchingNextPage} onClick={() => void sessions.fetchNextPage()}>Load more</Button>}
       </div>
+      <TutorNotes courseId={id} />
       <NewSessionDialog courseId={id} open={creating} onOpenChange={setCreating} />
     </Page>
+  );
+}
+
+/**
+ * What the tutor remembers about the student in this course, written from sessions as they end
+ * and read at the start of every session. Shown in full, and the student can clear it.
+ */
+function TutorNotes({ courseId }: { courseId: string }) {
+  const { user } = useAccount();
+  const confirm = useConfirm();
+  const notes = useApi<{ notes: string | null; updatedAt: string | null }>(`/v1/courses/${courseId}/tutor/notes`);
+  const [clearing, setClearing] = useState(false);
+  if (!notes.data) return null;
+  const clear = async () => {
+    if (!await confirm({ title: 'Forget these notes?', description: 'The tutor starts the next session without them. New notes are written as later sessions end.', confirmLabel: 'Forget notes' })) return;
+    setClearing(true);
+    try { notes.setData(await request(`/v1/courses/${courseId}/tutor/notes/clear`, user.id, { operationId: crypto.randomUUID() }, 'POST')); }
+    catch (e) { toast.error(errorMessage(e)); }
+    finally { setClearing(false); }
+  };
+  return (
+    <section aria-labelledby="tutor-notes" className="bg-surface flex flex-col gap-tight rounded-lg border px-4 py-3">
+      <div className="flex items-center justify-between gap-snug">
+        <h2 id="tutor-notes" className="text-base font-medium">What the tutor remembers</h2>
+        {notes.data.notes && <Button variant="ghost" size="sm" loading={clearing} onClick={() => void clear()}>Forget</Button>}
+      </div>
+      {notes.data.notes
+        ? <><p className="font-serif text-base whitespace-pre-wrap">{notes.data.notes}</p>{notes.data.updatedAt && <p className="text-muted-foreground text-sm">Updated: {formatRelative(notes.data.updatedAt)}</p>}</>
+        : <p className="text-muted-foreground text-sm">Nothing yet. When a session ends, the tutor keeps a few notes on what you understood and what to come back to, and reads them at the start of the next one.</p>}
+    </section>
   );
 }
 

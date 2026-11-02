@@ -62,6 +62,9 @@ export const courses = pgTable('courses', {
   syllabusMaterialId: uuid('syllabus_material_id'),
   // Changes with every outline correction or job, so Undo applies only to the latest change.
   outlineRevision: integer('outline_revision').notNull().default(1),
+  // What earlier tutor sessions found about the student in this course, read by every tutor turn.
+  // Written from a session when it ends. The student can read and clear it.
+  tutorNotes: text('tutor_notes'), tutorNotesAt: timestamp('tutor_notes_at', { withTimezone: true }),
 }, t => [
   unique('courses_workspace_id_unique').on(t.workspaceId, t.id),
   foreignKey({ name: 'courses_syllabus_fk', columns: [t.workspaceId, t.id, t.syllabusMaterialId], foreignColumns: syllabusColumns() }),

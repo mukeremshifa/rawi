@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { uuid } from '../../shared/contracts/workspace';
 import * as tutoring from '../services/tutoring';
-import { replyConnection, streamReply, type ReplyEvent } from '../services/ai/tutor';
+import { rememberSession, replyConnection, streamReply, type ReplyEvent } from '../services/ai/tutor';
 import { newTutorInput, tutorMessageInput, tutorMetadataInput } from '../../shared/contracts/tutor';
 import { writeInput, pageQuery } from '../../shared/contracts/learning';
 import { jsonInput, type BackendContext } from '../http';
@@ -11,7 +11,15 @@ export const tutorRoutes = new Hono<BackendContext>();
 tutorRoutes.get('/courses/:id/tutor', async c => { const q = pageQuery.parse(c.req.query()); return c.json(await tutoring.listSessions(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), q.limit, q.cursor)); });
 tutorRoutes.post('/courses/:id/tutor', async c => c.json(await tutoring.createSession(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, newTutorInput))));
 tutorRoutes.get('/tutor/:id', async c => { const q = z.strictObject({ cursor: z.coerce.number().int().min(-1).max(1000000).default(-1) }).parse(c.req.query()); return c.json(await tutoring.detail(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), q.cursor)); });
-tutorRoutes.post('/tutor/:id/end', async c => c.json(await tutoring.endSession(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, writeInput))));
+/** Ending a session rewrites the course's tutor notes from it, after the response. */
+tutorRoutes.post('/tutor/:id/end', async c => {
+  const id = uuid.parse(c.req.param('id'));
+  const detail = await tutoring.endSession(c.get('socket'), c.get('workspaceId'), id, await jsonInput(c, writeInput));
+  c.executionCtx.waitUntil(rememberSession(c.env, c.get('workspaceId'), id).catch(error => console.error(JSON.stringify({ operation: 'tutor-notes', error: String(error) }))));
+  return c.json(detail);
+});
+tutorRoutes.get('/courses/:id/tutor/notes', async c => c.json(await tutoring.tutorNotes(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')))));
+tutorRoutes.post('/courses/:id/tutor/notes/clear', async c => c.json(await tutoring.clearNotes(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), (await jsonInput(c, z.strictObject({ operationId: uuid }))).operationId)));
 tutorRoutes.patch('/tutor/:id', async c => c.json(await tutoring.patchSession(c.get('socket'), c.get('workspaceId'), uuid.parse(c.req.param('id')), await jsonInput(c, tutorMetadataInput))));
 /** A reply streamed as newline-delimited JSON. It runs to completion and is saved even if the browser goes away. */
 function replyStream(c: Context<BackendContext>, operationId: string, first?: ReplyEvent, connection?: ReturnType<typeof replyConnection>, saved?: Parameters<typeof streamReply>[7]) {
