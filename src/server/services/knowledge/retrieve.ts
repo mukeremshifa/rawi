@@ -18,9 +18,11 @@ import { searchConfig } from './language';
  *   of the same one so that complementary passages are not crowded out.
  * - A follow-up is read with the last exchange before searching.
  *
- * The verdict compares the question's own terms with what the chosen passages say. Absent
- * evidence is answered without a model call. Partial evidence names the terms it lacks, so
- * the reply can say what the materials leave out instead of filling the gap.
+ * The verdict compares the question's own terms with what the chosen passages say, and then
+ * each asked part of the question with what one passage says, so a relation or a figure the
+ * passages never state makes the evidence partial even when every word appears somewhere. Absent
+ * evidence is answered without a model call. Partial evidence names the terms and parts it lacks,
+ * so the reply can say what the materials leave out instead of filling the gap.
  */
 export interface Passage {
   /** Short id the model cites, such as `p2`. */
@@ -52,7 +54,7 @@ export interface Retrieval {
 }
 
 /** English words that carry no topic. Other languages fall back to word length alone. */
-const STOP = new Set(('the and for are but not you all any can had her was one our out has him his how its may now see two way who did get let put say she too use what when where which while with why would could should will this that these those them they their there then than from into about over under after before again also just only very more most some such each other because been being does doing done have having here like make made many much must need want know tell explain describe give example examples help please thanks thank okay yes yeah sure mean means meant really actually think thought question answer between your yours mine whose whom ever every both either neither same something anything nothing still even quite rather maybe perhaps people thing things way ways happen happened catch detail details detailed several worked working example examples instance step steps simple simply briefly short long more less clear clearly own words').split(' '));
+const STOP = new Set(('the and for are but not you all any can had her was one our out has him his how its may now see two way who did get let put say she too use what when where which while with why would could should will this that these those them they their there then than from into about over under after before again also just only very more most some such each other because been being does doing done have having here like make made many much must need want know tell explain describe give example examples help please thanks thank okay yes yeah sure mean means meant really actually think thought question answer between your yours mine whose whom were ever every both either neither same something anything nothing still even quite rather maybe perhaps people thing things way ways happen happened catch detail details detailed several worked working example examples instance step steps simple simply briefly short long more less clear clearly own words').split(' '));
 
 /** Content words of a text, lower case, without repeats. */
 export function terms(text: string, language: Language) {
@@ -70,6 +72,35 @@ function names(text: string, language: Language) {
 /** A crude stem, so `enforced` finds `enforcement`. Enough to compare a question with its evidence. */
 const stem = (word: string) => word.length > 6 ? word.slice(0, Math.max(5, word.length - 3)) : word;
 const mentions = (text: string, word: string) => text.includes(stem(word));
+
+/** Verbs that say little about what is asked, as in "what cargo did it carry". */
+const LIGHT = new Set('carry carried carries contain contained contains include included includes involve involved involves cause caused causes lead led leads take took takes make made makes give gave gives play played plays show showed shows become became becomes'.split(' '));
+/** A question that asks for an amount, a count or a figure, which only a number in the evidence answers. */
+const QUANTITY = /\b(how (many|much)|(what|which)( \w+)? (year|date|percentage|proportion|share|fraction|number|amount|figure|total|rate|price|weight|size|tonnage))\b/i;
+const NUMBER = /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|hundred|thousand|million|billion|half|third|quarter|dozen)\b/i;
+
+/**
+ * The parts of an English question the evidence does not answer. Each asked part ("which officials
+ * enforced them", "how much is it worth") must find most of its own terms together in one
+ * passage, and a part that asks for an amount must find a number beside them that the question
+ * does not already give. Words scattered over unrelated passages are not an answer. A duration is
+ * often written in words, such as "a single lifetime", so only counts and amounts need a number.
+ */
+function unanswered(question: string, passages: { heading: string; text: string }[], language: Language) {
+  if (language !== 'en') return [];
+  // A number the question gives, such as the year in "the New Laws of 1542", answers nothing.
+  const fresh = (sentence: string) => NUMBER.test(sentence.replace(/\d+(?:[.,]\d+)*/g, n => question.includes(n) ? ' ' : n));
+  const texts = passages.map(p => `${p.heading}\n${p.text}`.toLowerCase());
+  const parts = question.split(/[?;]|,?\s+(?:and|or|but)\s+(?=(?:what|which|who|whom|whose|when|where|why|how)\b)/i).map(s => s.trim()).filter(Boolean);
+  return parts.filter(part => {
+    const own = terms(part, language).filter(w => !LIGHT.has(w));
+    if (!own.length) return false;
+    const need = own.length <= 2 ? own.length : Math.ceil(0.6 * own.length);
+    const quantity = QUANTITY.test(part);
+    return !texts.some(p => own.filter(w => mentions(p, w)).length >= need
+      && (!quantity || p.split(/(?<=[.!?])\s+|\n/).some(s => own.some(w => mentions(s, w)) && fresh(s))));
+  }).map(part => part.replace(/^\W+|\W+$/g, ''));
+}
 
 /** Words that point back to the previous turn: "it", "they", "him", a bare "yes" or "why". */
 const ANAPHORA = /\b(it|its|they|them|their|this|that|these|those|he|him|his|she|her|there|which|yes|yeah|ok|okay|why|how)\b/i;
@@ -221,9 +252,14 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: Ret
   // A name the student asks about that no passage mentions means the subject itself is missing.
   const subjectMissing = names(opts.query, opts.language).some(w => !mentions(evidence, w));
   const bare = !!opts.context && own.length < 2;
-  const verdict: Verdict = (!chosen.length && !(focus && !focus.earlier)) || subjectMissing ? 'absent'
+  const judgedWords: Verdict = (!chosen.length && !(focus && !focus.earlier)) || subjectMissing ? 'absent'
     : bare || share >= 0.75 || (close && share >= 0.5) ? 'sufficient'
     : share >= 0.4 ? 'partial' : 'absent';
+  // Words can all be there while the relation or the figure asked about is not. Then the evidence
+  // covers only part of the question, and the reply is told which part it lacks.
+  const gaps = judgedWords === 'sufficient' && !bare ? unanswered(opts.query, [...(focus && !focus.earlier ? [focus] : []), ...chosen], opts.language) : [];
+  const verdict: Verdict = gaps.length ? 'partial' : judgedWords;
+  missing.push(...gaps);
 
   const courseNames = new Map((await courseTitles(db, workspaceId, [...new Set(chosen.map(c => c.courseId).filter(id => id !== opts.courseId))])).map(c => [c.id, c.name]));
   const passages: Passage[] = [
