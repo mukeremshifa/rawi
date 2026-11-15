@@ -1,6 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
-import { preferences, tutorMessages, tutorSessions } from '../db/schema';
+import { aiOperations, preferences, tutorMessages, tutorSessions } from '../db/schema';
 import type { NextMove } from '../../shared/contracts/tutor';
 import { isDue, type MasteryLevel } from '../../shared/domain/mastery';
 import { localISO } from '../../shared/domain/planner';
@@ -40,7 +40,11 @@ async function ranked(db: Db, session: Session): Promise<{ list: Ranked[]; today
   const timezone = prefs?.timezone ?? 'UTC', today = localISO(new Date(), timezone);
   const sections = weighted.map(w => w.section).filter(s => s.tokens > 60);
   const state = await learnerState(db, session.workspaceId, sections.map(s => ({ materialId: s.materialId, key: s.key })), timezone);
-  const list = sections.map((s, i) => ({ ref: { materialId: s.materialId, key: s.key }, heading: s.heading || s.title, state: state[i]!, due: isDue(state[i]!.mastery, today) }));
+  // A heading two sections share, such as "A worked example", is named with the heading above it, or its material.
+  const name = (s: typeof sections[number]) => s.heading || s.title;
+  const shared = (s: typeof sections[number]) => sections.some(o => o !== s && name(o) === name(s));
+  const label = (s: typeof sections[number]) => !shared(s) ? name(s) : s.path.length > 1 ? `${s.path.at(-2)}: ${name(s)}` : `${name(s)} (${s.title})`;
+  const list = sections.map((s, i) => ({ ref: { materialId: s.materialId, key: s.key }, heading: label(s), state: state[i]!, due: isDue(state[i]!.mastery, today) }));
   const rank = (r: Ranked) => r.due && r.state.mastery.level !== 'shaky' ? 1 : ORDER[r.state.mastery.level];
   return { list: list.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i).map(x => x.r), today };
 }
@@ -49,7 +53,9 @@ export async function nextMove(db: Db, session: Session): Promise<NextMove | nul
   if (session.endedAt || session.archived) return null;
   const [{ list }, recent] = await Promise.all([
     ranked(db, session),
-    db.select({ ordinal: tutorMessages.ordinal, role: tutorMessages.role, text: tutorMessages.text, state: tutorMessages.state, provenance: tutorMessages.provenance }).from(tutorMessages)
+    // A student turn carries the step it took and the section it was about, saved with its reply.
+    db.select({ ordinal: tutorMessages.ordinal, role: tutorMessages.role, text: tutorMessages.text, state: tutorMessages.state, provenance: tutorMessages.provenance, step: aiOperations.input }).from(tutorMessages)
+      .leftJoin(aiOperations, and(eq(aiOperations.id, tutorMessages.operationId), eq(aiOperations.task, 'tutor')))
       .where(and(eq(tutorMessages.workspaceId, session.workspaceId), eq(tutorMessages.sessionId, session.id))).orderBy(desc(tutorMessages.ordinal)).limit(LOOKBACK),
   ]);
   if (!list.length) return null;
@@ -63,11 +69,12 @@ export async function nextMove(db: Db, session: Session): Promise<NextMove | nul
   if (questions >= QUESTIONS) return { label: 'Wrap up the session', end: true };
   if (!questions && list.some(r => r.due)) return { label: 'Start with a review question', text: 'Ask me a review question.', action: 'check' };
   // After an explanation, check that section. Otherwise explain the weakest section not yet explained.
-  const asked = new Set(recent.filter(m => m.role === 'student').map(m => m.text));
-  const lastAsked = recent.find(m => m.role === 'student')?.text;
-  const explained = list.find(r => explainText(r.heading) === lastAsked);
+  // The step is read from the saved action and section, never from the wording of the message.
+  const students = recent.filter(m => m.role === 'student').map(m => m.step as { action?: string; focus?: { materialId: string; key: string } } | null);
+  const about = (r: Ranked) => (step: typeof students[number]) => step?.action === 'explain' && step.focus?.materialId === r.ref.materialId && step.focus.key === r.ref.key;
+  const explained = students.length ? list.find(r => about(r)(students[0]!)) : undefined;
   if (explained) return { label: `Check me on ${explained.heading}`, text: checkText(explained.heading), action: 'check', focus: explained.ref };
-  const target = list.find(r => !asked.has(explainText(r.heading)));
+  const target = list.find(r => !students.some(about(r)));
   if (target) return { label: `Explain ${target.heading}`, text: explainText(target.heading), action: 'explain', focus: target.ref };
   return questions ? { label: 'Wrap up the session', end: true } : { label: 'Ask me a question', text: 'Ask me a question.', action: 'check' };
 }

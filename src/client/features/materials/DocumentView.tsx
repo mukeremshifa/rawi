@@ -1,10 +1,9 @@
-import { Fragment, useMemo, type ReactNode } from 'react';
-import katex from 'katex';
-import 'katex/dist/katex.min.css';
+import { Fragment, type ReactNode } from 'react';
 import { ImageOffIcon } from 'lucide-react';
 import type { DocumentBlock, ListContent, Pagination, Span, marks as markNames } from '@shared/contracts/document';
 import { spansText } from '@shared/domain/document-text';
 
+import { MathView } from '@/components/MathView';
 import { cn } from '@/lib/utils';
 
 /**
@@ -36,12 +35,6 @@ function marked(node: ReactNode, marks: (typeof markNames)[number][] | undefined
     else if (mark === 'sup') out = <sup>{out}</sup>;
   }
   return out;
-}
-
-export function MathView({ latex, display = false }: { latex: string; display?: boolean }) {
-  const html = useMemo(() => katex.renderToString(latex, { displayMode: display, throwOnError: false, trust: false, strict: 'ignore', maxSize: 50, maxExpand: 500 }), [latex, display]);
-  // KaTeX output with trust off: escaped source, no links, classes or styles from the input.
-  return <span className={display ? 'block overflow-x-auto py-1' : undefined} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 export function Spans({ spans }: { spans: Span[] }) {

@@ -22,7 +22,7 @@ import { localISO } from '../../../shared/domain/planner';
 import { draw, type Weighted } from '../questions/bank';
 import { scopeSections } from '../scopes';
 
-export const TUTOR_PROMPT_VERSION = 'tutor-v3';
+export const TUTOR_PROMPT_VERSION = 'tutor-v4';
 /** Turns sent verbatim. Older turns travel as a short summary. */
 const RECENT_TURNS = 6;
 /** Characters of scope digest, prerequisite context and learner state. Passages have their own budget. */
@@ -104,6 +104,7 @@ export const tutorTask: Task<TutorInput, string> = {
       '10. A hint is a nudge. Never state the answer in a hint, and never answer a question you set the student.',
       '11. When the student is working on a scope, keep to it. When a passage comes from outside it, say so in one short clause and name where it is. Never pretend the answer is in the scope.',
       '12. When the student seems ready, suggest practising the scope with questions.',
+      '13. Write a formula as LaTeX between single dollar signs, such as $\bar{x}$. Put a longer formula on its own line between $$ signs.',
       'Session stages, in order: orient, understand, recall, reason, apply, reflect. The current stage comes from the student\'s marked answers and says what kind of turn helps now.',
     ].join('\n'),
     context: [
