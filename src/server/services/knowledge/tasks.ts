@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Task } from '../../ai/engine';
 import type { Language } from '../../ai/types';
-import { DATA_RULE, escapeTags, house, parsed, schemaOf } from '../../ai/style';
+import { attribute, DATA_RULE, escapeTags, house, parsed, schemaOf } from '../../ai/style';
 
 export const KNOWLEDGE_PROMPT_VERSION = 'knowledge-v3';
 
@@ -46,7 +46,7 @@ export const digestTask: Task<DigestInput, Digest> = {
       'Do not add knowledge from outside the material. Return every section key you were given, in order.',
       DATA_RULE, house(i.language),
     ].join('\n'),
-    prompt: `<document title="${escapeTags(i.materialTitle)}">\n${i.sections.map(s => `<section key="${s.key}" heading="${escapeTags(s.heading)}">\n${s.blocks.map(b => `<block key="${b.key}">${escapeTags(b.text)}</block>`).join('\n')}\n</section>`).join('\n')}\n</document>`,
+    prompt: `<document title="${attribute(i.materialTitle)}">\n${i.sections.map(s => `<section key="${s.key}" heading="${attribute(s.heading)}">\n${s.blocks.map(b => `<block key="${b.key}">${escapeTags(b.text)}</block>`).join('\n')}\n</section>`).join('\n')}\n</document>`,
     schema: schemaOf(digestSchema),
   }),
   check: (r, i) => {
@@ -94,7 +94,7 @@ export const answeredTask: Task<AnsweredInput, { part: number; quote: string }[]
       'Copy words exactly as the passage writes them. Do not paraphrase or add knowledge from outside the passages.',
       DATA_RULE,
     ].join('\n'),
-    prompt: `<course_material>\n${i.passages.map((p, n) => `<passage n="${n + 1}" heading="${escapeTags(p.heading)}">\n${escapeTags(p.text)}\n</passage>`).join('\n')}\n</course_material>\n\nQuestion parts:\n${i.parts.map((p, n) => `${n + 1}. ${escapeTags(p)}`).join('\n')}`,
+    prompt: `<course_material>\n${i.passages.map((p, n) => `<passage n="${n + 1}" heading="${attribute(p.heading)}">\n${escapeTags(p.text)}\n</passage>`).join('\n')}\n</course_material>\n\nQuestion parts:\n${i.parts.map((p, n) => `${n + 1}. ${escapeTags(p)}`).join('\n')}`,
     schema: schemaOf(answeredSchema),
   }),
   check: r => parsed(answeredSchema, r.json)?.parts ?? null,

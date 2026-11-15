@@ -43,7 +43,8 @@ export function finishTutorText(raw: string, passages: { id: string; text: strin
   }));
   let text = body;
   // Rebuild in place so the reply keeps its own line breaks.
-  sentences.forEach((s, i) => { text = text.replace(s, kept[i]!); });
+  // A function replacement, so `$$` in a formula is kept as written and never read as a pattern.
+  sentences.forEach((s, i) => { text = text.replace(s, () => kept[i]!); });
 
   // Statements are sentences of six words or more that are not questions to the student.
   const statements = sentences.filter(s => !s.trim().endsWith('?') && s.split(/\s+/).length >= 6);

@@ -36,11 +36,20 @@ function markChoice(question: Question, answer: AnswerValue) {
   return { outcome: (ok ? 'correct' : 'incorrect') as Outcome, fraction: ok ? 1 : 0 };
 }
 
-/** A number typed with commas, spaces or a unit after it still reads as that number. */
+/**
+ * A number typed with commas, spaces or a unit after it still reads as that number. Arabic-Indic
+ * digits read as their Western forms. A single comma that does not group thousands is a decimal
+ * comma, so "3,5" is 3.5 while "1,234" stays 1234.
+ */
 export function readNumber(text: string): number | null {
-  const m = /-?\d[\d,\s]*(?:\.\d+)?|-?\.\d+/.exec(text.replace(/\u2212/g, '-'));
+  const western = text
+    .replace(/[\u0660-\u0669]/g, d => String(d.charCodeAt(0) - 0x660)).replace(/[\u06f0-\u06f9]/g, d => String(d.charCodeAt(0) - 0x6f0))
+    .replace(/\u066b/g, '.').replace(/\u066c/g, ',').replace(/\u2212/g, '-');
+  const m = /-?\d[\d,\s]*(?:\.\d+)?|-?\.\d+/.exec(western);
   if (!m) return null;
-  const n = Number(m[0].replace(/[,\s]/g, ''));
+  let raw = m[0].replace(/\s/g, '');
+  if (/^-?\d+,\d+$/.test(raw) && !/^-?[1-9]\d{0,2},\d{3}$/.test(raw)) raw = raw.replace(',', '.');
+  const n = Number(raw.replace(/,/g, ''));
   return Number.isFinite(n) ? n : null;
 }
 

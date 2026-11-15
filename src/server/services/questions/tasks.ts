@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Task } from '../../ai/engine';
 import type { Language } from '../../ai/types';
-import { DATA_RULE, escapeTags, house, parsed, schemaOf } from '../../ai/style';
+import { attribute, DATA_RULE, escapeTags, house, parsed, schemaOf } from '../../ai/style';
 
 /**
  * The model's part in questions: stems with their correct answers, numeric templates, self-check
@@ -16,7 +16,7 @@ export interface SectionInput {
   blocks: { key: string; text: string }[];
   facts: { key: string; kind: string; text: string }[];
 }
-const sectionsXml = (sections: SectionInput[]) => sections.map(s => `<section key="${s.key}" heading="${escapeTags(s.heading)}">\nFacts:\n${s.facts.map(f => `- [${f.key}] (${f.kind}) ${escapeTags(f.text)}`).join('\n')}\n${s.blocks.map(b => `<block key="${b.key}">${escapeTags(b.text)}</block>`).join('\n')}\n</section>`).join('\n');
+const sectionsXml = (sections: SectionInput[]) => sections.map(s => `<section key="${s.key}" heading="${attribute(s.heading)}">\nFacts:\n${s.facts.map(f => `- [${f.key}] (${f.kind}) ${escapeTags(f.text)}`).join('\n')}\n${s.blocks.map(b => `<block key="${b.key}">${escapeTags(b.text)}</block>`).join('\n')}\n</section>`).join('\n');
 const common = (language: Language) => [
   'Each question is answerable from its own section alone and tests understanding, not wording.',
   'Do not mention "the passage", "the text" or "the section": the student will not see it while answering.',
@@ -53,7 +53,7 @@ export const stemTask: Task<StemInput, Stems> = {
       'recall asks for what the material states. reasoning asks why or how, with a short answer.',
       ...common(i.language),
     ].join('\n'),
-    prompt: `<document title="${escapeTags(i.materialTitle)}">\n${sectionsXml(i.sections)}\n</document>\nWrite up to ${i.count} questions.`,
+    prompt: `<document title="${attribute(i.materialTitle)}">\n${sectionsXml(i.sections)}\n</document>\nWrite up to ${i.count} questions.`,
     schema: schemaOf(stemSchema),
   }),
   check: r => parsed(stemSchema, r.json),
@@ -84,7 +84,7 @@ export const numericTask: Task<NumericInput, Templates> = {
       'Write a template only when the material gives a formula or a calculation a student can repeat with new values. Otherwise return none.',
       ...common(i.language),
     ].join('\n'),
-    prompt: `<document title="${escapeTags(i.materialTitle)}">\n${sectionsXml(i.sections)}\n</document>\nWrite up to ${i.count} templates.`,
+    prompt: `<document title="${attribute(i.materialTitle)}">\n${sectionsXml(i.sections)}\n</document>\nWrite up to ${i.count} templates.`,
     schema: schemaOf(numericSchema),
   }),
   check: r => parsed(numericSchema, r.json),
@@ -111,7 +111,7 @@ export const selfCheckTask: Task<SelfCheckInput, SelfChecks> = {
       'Ask the student to explain why or how something happens, or to apply an idea to a case. Avoid questions with a one-word answer. The model answer says what a good answer must contain, briefly.',
       ...common(i.language),
     ].join('\n'),
-    prompt: `<document title="${escapeTags(i.materialTitle)}">\n${sectionsXml(i.sections)}\n</document>\nWrite up to ${i.count} questions, spread over the sections.`,
+    prompt: `<document title="${attribute(i.materialTitle)}">\n${sectionsXml(i.sections)}\n</document>\nWrite up to ${i.count} questions, spread over the sections.`,
     schema: schemaOf(selfCheckSchema),
   }),
   check: r => parsed(selfCheckSchema, r.json),

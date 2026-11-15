@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { OUTLINE_MAX, OUTLINE_MIN, type OutlineJobKind } from '../../../shared/contracts/outline';
 import type { Task } from '../../ai/engine';
-import { DATA_RULE, escapeTags as escape, house, parsed, schemaOf } from '../../ai/style';
+import { attribute, DATA_RULE, escapeTags as escape, house, parsed, schemaOf } from '../../ai/style';
 import { linksEnough, withNamedTopics, type AssignInput, type Assignment, type SyllabusInput, type SyllabusReading } from './provider';
 
 export const OUTLINE_PROMPT_VERSION = 'outline-v4';
@@ -51,7 +51,7 @@ export function assignPrompt(input: AssignInput) {
     DATA, HOUSE(input),
   ].join('\n');
   const topics = input.topics.length ? input.topics.map(t => `- ${t.key}: ${t.title}${t.summary ? `. ${t.summary}` : ''}`).join('\n') : '(none yet)';
-  const sections = input.sections.map(s => `<section key="${s.key}" material="${escape(s.material)}" heading="${escape(s.path)}" words="${s.words}">\n${escape(s.summary)}${s.terms.length ? `\nTerms: ${escape(s.terms.join(', '))}` : ''}\n</section>`).join('\n');
+  const sections = input.sections.map(s => `<section key="${s.key}" material="${attribute(s.material)}" heading="${attribute(s.path)}" words="${s.words}">\n${escape(s.summary)}${s.terms.length ? `\nTerms: ${escape(s.terms.join(', '))}` : ''}\n</section>`).join('\n');
   const prompt = `Topics:\n${topics}\n\n<document>\n${sections}\n</document>`;
   return { system, prompt };
 }
