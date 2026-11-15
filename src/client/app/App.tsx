@@ -3,33 +3,38 @@ import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-do
 import type { Me } from '@shared/contracts/workspace';
 import { authClient, RequestError, request, setActiveAccount } from '@/lib/api';
 import { CourseLibrary } from '@/features/courses/Courses';
-import { CourseSettings } from '@/features/courses/CourseSettings';
-import { MaterialReader } from '@/features/materials/Reader';
-import { Materials } from '@/features/materials/Library';
-import { Planner } from '@/features/planning/Planner';
 import { Home } from '@/features/home/Home';
 import { CourseOverview } from '@/features/courses/CourseOverview';
-import { Progress } from '@/features/progress/Progress';
-import { AiOperation } from '@/features/ai/AiOperation';
 import { DraftBoundary, hasUnsavedEdits } from '@/lib/hooks';
 import { Shell } from '@/app/Shell';
 import { CheckingScreen, ConnectionBanner, SignInScreen, UnavailableScreen } from '@/app/AuthScreens';
 import { NotFound } from '@/app/NotFound';
+import { Page } from '@/components/layout';
+import { LoadingState } from '@/components/states';
 import { useConfirm } from '@/components/ui/alert-dialog';
-import { Search, Notifications } from '@/features/support/Support';
-import { TutorLibrary, Tutor } from '@/features/tutor/Tutor';
-import { Exams } from '@/features/exams/Exams';
-import { Run } from '@/features/practice/Runner';
-import { AttemptReview } from '@/features/practice/Attempt';
-import { Practice } from '@/features/practice/PracticeHome';
-import { PracticeSet } from '@/features/practice/SetDetail';
 
 import { Onboarding } from '@/features/account/AccountSettings';
-import { Settings } from '@/features/account/Settings';
 import { safeReturnTo } from '@/app/return-to';
 import { UploadQueueProvider } from '@/features/materials/queue';
 import { AccountContext } from '@/lib/account';
 import { queryClient } from '@/lib/query';
+// Each area of the product loads when it is first opened. Home and the course pages ship with the shell.
+const CourseSettings = lazy(() => import('@/features/courses/CourseSettings').then(m => ({ default: m.CourseSettings })));
+const MaterialReader = lazy(() => import('@/features/materials/Reader').then(m => ({ default: m.MaterialReader })));
+const Materials = lazy(() => import('@/features/materials/Library').then(m => ({ default: m.Materials })));
+const Planner = lazy(() => import('@/features/planning/Planner').then(m => ({ default: m.Planner })));
+const Progress = lazy(() => import('@/features/progress/Progress').then(m => ({ default: m.Progress })));
+const AiOperation = lazy(() => import('@/features/ai/AiOperation').then(m => ({ default: m.AiOperation })));
+const Exams = lazy(() => import('@/features/exams/Exams').then(m => ({ default: m.Exams })));
+const Run = lazy(() => import('@/features/practice/Runner').then(m => ({ default: m.Run })));
+const AttemptReview = lazy(() => import('@/features/practice/Attempt').then(m => ({ default: m.AttemptReview })));
+const Practice = lazy(() => import('@/features/practice/PracticeHome').then(m => ({ default: m.Practice })));
+const PracticeSet = lazy(() => import('@/features/practice/SetDetail').then(m => ({ default: m.PracticeSet })));
+const Settings = lazy(() => import('@/features/account/Settings').then(m => ({ default: m.Settings })));
+const Search = lazy(() => import('@/features/support/Support').then(m => ({ default: m.Search })));
+const Notifications = lazy(() => import('@/features/support/Support').then(m => ({ default: m.Notifications })));
+const TutorLibrary = lazy(() => import('@/features/tutor/Tutor').then(m => ({ default: m.TutorLibrary })));
+const Tutor = lazy(() => import('@/features/tutor/Tutor').then(m => ({ default: m.Tutor })));
 // The component gallery never ships: the import is dropped from production builds.
 const Kit = import.meta.env.DEV ? lazy(() => import('@/features/dev/Kit')) : null;
 
@@ -40,6 +45,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   // Which action the banner's Retry repeats: the connection check or sign-out.
   const [failed, setFailed] = useState<'connection' | 'sign-out'>('connection');
+  const [attempt, setAttempt] = useState(0);
   const epoch = useRef(0), authBusy = useRef(false);
   const currentAccount = useRef<Me | null>(null);
   const sessionRequest = useRef<AbortController | null>(null);
@@ -96,6 +102,13 @@ export function App() {
       channel.current?.close();
     };
   }, [refresh, clear]);
+  // A first load that could not reach the server tries again by itself a few times, further apart each time.
+  useEffect(() => {
+    if (state !== 'unavailable' || me) { if (state !== 'checking' && attempt) setAttempt(0); return; }
+    if (attempt >= 3) return;
+    const timer = setTimeout(() => { setAttempt(n => n + 1); void refresh(); }, 2000 * 2 ** attempt);
+    return () => clearTimeout(timer);
+  }, [state, me, attempt, refresh]);
   useEffect(() => {
     const preferences = me?.preferences.values;
     const media = matchMedia('(prefers-color-scheme: dark)');
@@ -134,7 +147,7 @@ export function App() {
   return <AccountContext.Provider value={me}><DraftBoundary key={me.user.id}><UploadQueueProvider>
     {!me.preferences.values.onboardingCompleted ? <Onboarding onSaved={account => { currentAccount.current = account; setMe(account); }} /> :
     <Shell onSignOut={() => void signOut()} signingOut={busy} banner={error && <ConnectionBanner message={error} busy={busy} onRetry={() => void (failed === 'sign-out' ? signOut() : refresh())} />}>
-      <Routes>
+      <Suspense fallback={<Page><LoadingState lines={4} /></Page>}><Routes>
         {Kit && <Route path="/dev/kit" element={<Suspense><Kit /></Suspense>} />}
         <Route path="/sign-in" element={<Navigate replace to={returnTo} />} />
         <Route path="/storage" element={<Navigate replace to="/settings" />} />
@@ -169,7 +182,7 @@ export function App() {
         <Route path="/attempts/:id" element={<AttemptReview key={location.pathname} />} />
         <Route path="/settings" element={settings} />
         <Route path="*" element={<NotFound />} />
-      </Routes>
+      </Routes></Suspense>
     </Shell>}
   </UploadQueueProvider></DraftBoundary></AccountContext.Provider>;
 }
