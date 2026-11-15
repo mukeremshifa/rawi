@@ -19,14 +19,13 @@ const factSchema = z.object({
   items: z.array(z.string()).nullish().describe('steps only: each step in the order the text gives. Leave it out otherwise'),
   blocks: z.array(z.string()).describe('Keys of the blocks that state it'),
 });
-const digestSchema = z.object({
-  sections: z.array(z.object({
-    key: z.string(),
-    summary: z.string().describe('One or two sentences on what the section teaches, written only from its blocks'),
-    keyTerms: z.array(z.string()).describe('Up to six terms the section defines or relies on'),
-    facts: z.array(factSchema).describe('Up to ten facts worth testing a student on'),
-  })),
+const digestSection = z.object({
+  key: z.string(),
+  summary: z.string().describe('One or two sentences on what the section teaches, written only from its blocks'),
+  keyTerms: z.array(z.string()).describe('Up to six terms the section defines or relies on'),
+  facts: z.array(factSchema).describe('Up to ten facts worth testing a student on'),
 });
+const digestSchema = z.object({ sections: z.array(digestSection) });
 export type Digest = z.infer<typeof digestSchema>;
 
 /**
@@ -50,9 +49,16 @@ export const digestTask: Task<DigestInput, Digest> = {
     schema: schemaOf(digestSchema),
   }),
   check: (r, i) => {
-    const value = parsed(digestSchema, r.json);
+    // Some routes add a stray element after the real sections, or leave out the keys while keeping
+    // the order asked for. An element that is not a section is dropped, and keys left out are taken
+    // from the order when every section came back. Rejecting the whole answer would pay for another route.
+    const raw = (r.json as { sections?: unknown } | null | undefined)?.sections;
+    if (!Array.isArray(raw)) return null;
+    const shaped = raw.filter((s): s is Record<string, unknown> => !!s && typeof s === 'object' && 'summary' in s);
+    const keyed = shaped.every(s => typeof s.key !== 'string') && shaped.length === i.sections.length ? shaped.map((s, n) => ({ ...s, key: i.sections[n]!.key })) : shaped;
+    const sections = keyed.flatMap(s => { const p = digestSection.safeParse(s); return p.success ? [p.data] : []; });
     // Every section must come back. A partial digest moves to the next route rather than leaving gaps.
-    return value && i.sections.every(s => value.sections.some(o => o.key === s.key)) ? value : null;
+    return i.sections.every(s => sections.some(o => o.key === s.key)) ? { sections } : null;
   },
 };
 

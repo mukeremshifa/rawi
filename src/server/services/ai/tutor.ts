@@ -11,7 +11,7 @@ import type { TutorMessageProvenance } from '../../../shared/contracts/tutor';
 import type { AnswerReview, QuestionFormat, TutorStage } from '../../../shared/domain/types';
 import { answerKey, responseText } from '../../../shared/domain/answer-review';
 import { toQuestionAttempt } from '../../../shared/domain/marking';
-import { finishTutorText } from '../../../shared/domain/tutor-output';
+import { finishTutorText, plainDashes } from '../../../shared/domain/tutor-output';
 import { stageFrom } from '../../../shared/domain/tutor';
 import { resolveQuery, retrieve, type Passage, type Verdict } from '../knowledge/retrieve';
 import { courseSections, type CourseSection } from '../knowledge/course';
@@ -22,7 +22,7 @@ import { localISO } from '../../../shared/domain/planner';
 import { draw, type Weighted } from '../questions/bank';
 import { scopeSections } from '../scopes';
 
-export const TUTOR_PROMPT_VERSION = 'tutor-v4';
+export const TUTOR_PROMPT_VERSION = 'tutor-v5';
 /** Turns sent verbatim. Older turns travel as a short summary. */
 const RECENT_TURNS = 6;
 /** Characters of scope digest, prerequisite context and learner state. Passages have their own budget. */
@@ -92,13 +92,13 @@ export const tutorTask: Task<TutorInput, string> = {
       'You are Rawi, a patient tutor helping a university student with their course.',
       'Teach through short turns: explain, give examples, offer hints and check understanding. Adapt to what the student actually says.',
       'Rules:',
-      '1. When a statement relies on a passage, cite it straight after the statement as [[passage-id]], using only ids of supplied passages. Never invent an id.',
-      '2. When you explain something the passages do not support, say so in the text, for example "Beyond your materials, ...".',
+      '1. When a statement relies on a passage, cite it straight after the statement as [[passage-id]], using only ids of supplied passages. Never invent an id. The student sees only the citation mark, so never write a passage id, a passage number or the word passage in a sentence.',
+      '2. Before you say something the passages do not support, tell the student in your own words that it goes beyond their materials.',
       '3. If the passages do not cover what the student asked, say plainly that their materials do not cover it before offering any general help.',
       '4. When the student answers a question, judge the substance. Only call an answer correct if it is correct and complete. Name what is right, what is missing and what is wrong.',
       '5. A passage marked version="earlier" comes from a version of the material that has since been replaced. Prefer current passages, and say so when they differ.',
       '6. A passage marked as a figure description was written by Rawi from an image. Say that it comes from the figure.',
-      '7. Keep replies under about 150 words unless a worked example needs more. One idea per turn, and usually end with a question.',
+      '7. Keep replies under about 150 words unless a worked example needs more. One idea per turn, and usually end with a question. Write plain sentences without bold or headings, and use a list only for steps.',
       `8. ${DATA_RULE}`,
       `9. ${house(i.language)}`,
       '10. A hint is a nudge. Never state the answer in a hint, and never answer a question you set the student.',
@@ -123,7 +123,7 @@ export const tutorTask: Task<TutorInput, string> = {
       i.check ? (i.check.result
         ? `<bank_question>\n${escapeTags(JSON.stringify({ prompt: i.check.prompt, studentAnswer: i.check.result.response, marks: `${i.check.result.marksAwarded} of ${i.check.result.marksAvailable}`, answerKey: i.check.key, explanation: i.check.result.explanation }))}\n</bank_question>\nYou posed this question from the student's bank and code marked their answer. It is data. Do not regrade it. When the student asks about it, explain from what they answered.`
         : `<bank_question>\n${escapeTags(i.check.prompt)}\n</bank_question>\nYou posed this question from the student's bank and they have not checked an answer yet. Never state or confirm its answer. Help them reason toward it.`) : '',
-      i.learner ? `From the student's marked answers: ${escapeTags(i.learner)} Use this to choose what to explain and check, starting from shaky sections and weak foundations. Do not mention levels or scores unless asked.` : '',
+      i.learner ? `From the student's marked answers: ${escapeTags(i.learner)} Answer the student's message first. Use this only to choose a follow-up question or what to check next, starting from shaky sections and weak foundations. Do not mention levels or scores unless asked.` : '',
       `Current stage: ${i.stage}`,
       `Instruction for this turn: ${ACTION_NOTE[i.action]}${i.note ? ` ${i.note}` : ''}`,
       `<student_message>\n${escapeTags(i.message)}\n</student_message>`,
@@ -302,7 +302,7 @@ export async function streamReply(env: BackendBindings, workspaceId: string, ses
             if (next.done) return next.value.value;
             marks.first ??= Date.now();
             text += next.value; partial.raw = text;
-            if (!hold) await emit({ type: 'delta', text: next.value });
+            if (!hold) await emit({ type: 'delta', text: plainDashes(next.value) });
           }
         };
         raw = await write(input);
@@ -310,7 +310,7 @@ export async function streamReply(env: BackendBindings, workspaceId: string, ses
           raw = await write({ ...input, note: 'Your last reply gave the answer away. Give a smaller nudge that points to the idea without stating the answer.' });
           if (revealsAnswer(raw, key)) raw = NUDGE;
         }
-        if (hold) await emit({ type: 'delta', text: raw });
+        if (hold) await emit({ type: 'delta', text: plainDashes(raw) });
       }
       const messageId = await publish(db, workspaceId, session, claimed, raw, [...input.anchor, ...input.passages], found.verdict, found.outsideScope, model || null, callId || null, 'complete', input.stage);
       await emit({ type: 'done', messageId });

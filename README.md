@@ -253,12 +253,16 @@ npx tsx dev/measure.ts --email mukerem.dev@gmail.com --suites retrieval,question
 `measure.ts` measures retrieval, question yield and cost, and tutor latency
 and cost on the seeded courses. `--read` first runs all reading work. It
 removes the tutor sessions it creates. A full run costs a few cents.
+`--chat ROUTE` serves tutor replies from one catalog route for that run, and
+`--dump FILE` writes each reply to a file, so routes can be compared on the
+same cases and read side by side.
 
 ## Remaining work
 
-- Owner decisions: prices and plan numbers, the Vertex abuse-monitoring
-  exception, the AWS refusal of Anthropic and OpenAI models from this
-  account, and vendor choice.
+- Owner decisions: prices and plan numbers, and which route serves tutor
+  replies. Nothing a student writes goes to a vendor that keeps prompts, so
+  student-facing work stays on Bedrock. Anthropic models on Bedrock are refused
+  for this account's country, checked on 15 November 2026.
 - A replaced version embeds the whole document again, not only changed
   sections. The cost is small.
 - Each database round trip from the development machine takes 100 to 130

@@ -369,7 +369,9 @@ async function writeSelfChecks(env: BackendBindings, ctx: CallContext, scope: Sc
   const served = await run(env, ctx, on(selfCheckTask), { language, materialTitle: title, sections: prepared.map(p => p.input), count: Math.min(6, need + 1) });
   written(served.value.items.length);
   const candidates = served.value.items.flatMap((item, n) => {
-    const p = prepared.find(x => x.input.key === item.section);
+    // A writer sometimes names a section by its heading. That still says which one it meant, and so does there being only one.
+    const named = item.section.trim().toLowerCase();
+    const p = prepared.find(x => x.input.key === item.section) ?? prepared.find(x => x.input.heading.trim().toLowerCase() === named) ?? (prepared.length === 1 ? prepared[0] : undefined);
     if (!p) { reject('unknown_section'); return []; }
     if (item.prompt.trim().length < 12 || MENTIONS_SOURCE.test(item.prompt) || item.answer.trim().length < 40) { reject('prompt'); return []; }
     return [{ p, item, id: `c${n}` }];

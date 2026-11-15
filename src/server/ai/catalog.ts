@@ -45,6 +45,14 @@ export const ROUTES: Route[] = [
   bedrock('mistral-large-3', 'mistral.mistral-large-3-675b-instruct', { input: 0.5, cacheWrite: 0, cacheRead: 0, output: 1.5 }),
   bedrock('nova-lite', 'us.amazon.nova-lite-v1:0', { input: 0.06, cacheWrite: 0, cacheRead: 0.015, output: 0.24 }, { cache: 'explicit', vision: true, context: 300_000 }),
   bedrock('nova-micro', 'us.amazon.nova-micro-v1:0', { input: 0.035, cacheWrite: 0, cacheRead: 0.00875, output: 0.14 }, { cache: 'explicit' }),
+  // Candidates for chat, priced on 15 November 2026 from the AWS Price List API. A route serves
+  // nothing until it has a place in `PREFERENCE`. `dev/measure.ts --chat ID` tries one.
+  bedrock('nova-2-lite', 'us.amazon.nova-2-lite-v1:0', { input: 0.33, cacheWrite: 0, cacheRead: 0.0825, output: 2.75 }, { cache: 'explicit', vision: true, context: 300_000 }),
+  bedrock('nova-pro', 'us.amazon.nova-pro-v1:0', { input: 0.8, cacheWrite: 0, cacheRead: 0.2, output: 3.2 }, { cache: 'explicit', vision: true, context: 300_000, flex: true }),
+  bedrock('qwen3-next-80b', 'qwen.qwen3-next-80b-a3b', { input: 0.14, cacheWrite: 0, cacheRead: 0, output: 1.2 }),
+  bedrock('minimax-m2.5', 'minimax.minimax-m2.5', { input: 0.3, cacheWrite: 0, cacheRead: 0, output: 1.2 }, { flex: true }),
+  bedrock('deepseek-v3.2', 'deepseek.v3.2', { input: 0.62, cacheWrite: 0, cacheRead: 0, output: 1.85 }, { flex: true }),
+  bedrock('glm-5', 'zai.glm-5', { input: 1.0, cacheWrite: 0, cacheRead: 0, output: 3.2 }, { flex: true }),
   vertex('gemini-2.5-flash-lite', 'gemini-2.5-flash-lite', { input: 0.1, cacheWrite: 0, cacheRead: 0.01, output: 0.4 }),
   vertex('gemini-3.1-flash-lite', 'gemini-3.1-flash-lite', { input: 0.25, cacheWrite: 0, cacheRead: 0.025, output: 1.5 }),
   // Priced per character. Batches many texts per call, which keeps ingest within subrequest limits.

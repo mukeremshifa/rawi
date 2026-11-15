@@ -2,13 +2,14 @@
  * Development only. Measures the pipeline end to end on the seeded fictional courses, in the
  * workspace of an existing account, on the designated development database. No bundle imports it.
  *
- *   npx tsx dev/measure.ts --email EXISTING_EMAIL [--read] [--repeat 3] [--suites retrieval,questions,tutor]
+ *   npx tsx dev/measure.ts --email EXISTING_EMAIL [--read] [--repeat 3] [--suites retrieval,questions,tutor] [--chat ROUTE] [--dump FILE]
  *
  * `--read` first runs reading, topic and prerequisite work until every seeded material is done.
  * Provider calls are metered like any other, so cost is read back from `ai_calls`. Nothing here
- * compares models: it uses the routes the catalog prefers.
+ * compares models by itself: it uses the routes the catalog prefers, unless `--chat` names one
+ * catalog route to serve tutor replies for this run. `--dump` writes each tutor reply to a file.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { Client } from '@neondatabase/serverless';
 import { and, eq, sql } from 'drizzle-orm';
@@ -23,6 +24,7 @@ import { ensureScope } from '../src/server/services/scopes';
 import { contexts, ensureBuilt, generate } from '../src/server/services/questions/bank';
 import { createSession, saveMessage } from '../src/server/services/tutoring';
 import { replyConnection, streamReply } from '../src/server/services/ai/tutor';
+import { PREFERENCE, route } from '../src/server/ai/catalog';
 import { LIMITATION, TUTOR_CASES, type TutorCase } from './fixtures/eval';
 import { SEED_MATERIALS } from './fixtures/materials';
 
@@ -32,6 +34,8 @@ const email = option('--email')?.toLowerCase();
 const repeat = Number(option('--repeat', '3'));
 const suites = (option('--suites', 'retrieval,questions,tutor') ?? '').split(',');
 if (!email) throw new Error('Pass --email EXISTING_EMAIL.');
+const chat = option('--chat'), dump = option('--dump');
+if (chat) { if (!route(chat)) throw new Error(`No catalog route named ${chat}.`); PREFERENCE.chat = [chat]; }
 const config = parseEnv(readFileSync('.dev.vars', 'utf8'));
 if (!config.DATABASE_URL || config.R2_ENVIRONMENT !== 'development') throw new Error('The designated .dev.vars development backend is required.');
 const env = { ...config } as unknown as BackendBindings;
@@ -169,14 +173,18 @@ try {
         const [reply] = await db.select({ text: s.tutorMessages.text, provenance: s.tutorMessages.provenance }).from(s.tutorMessages).where(and(eq(s.tutorMessages.sessionId, session.session.id), eq(s.tutorMessages.role, 'tutor'))).orderBy(sql`${s.tutorMessages.ordinal} desc`).limit(1);
         const body = reply?.text ?? text;
         const pass = !error && c.answer.every(p => p.test(body)) && !(c.forbid ?? []).some(p => p.test(body)) && (!c.limitation || LIMITATION.test(body));
-        rows.push({ case: c.id, kind: c.kind, pass, firstMs: first, totalMs: Date.now() - t0, tripsToFirst: firstTrips, micros: cost.micros, noCall: cost.calls === 0, error });
+        rows.push({ case: c.id, kind: c.kind, pass, firstMs: first, totalMs: Date.now() - t0, tripsToFirst: firstTrips, micros: cost.micros, noCall: cost.calls === 0, error, words: body.split(/\s+/).filter(Boolean).length, cited: reply?.provenance?.citations.length ?? 0, dropped: reply?.provenance?.droppedCitations ?? 0, grounding: reply?.provenance?.grounding ?? null, body });
         // Measurement sessions would crowd the student's tutor list, so each is removed once read.
         await db.delete(s.tutorMessages).where(eq(s.tutorMessages.sessionId, session.session.id));
         await db.delete(s.tutorSessions).where(eq(s.tutorSessions.id, session.session.id));
       }
     }
     const called = rows.filter(r => !r.noCall);
+    if (dump) writeFileSync(dump, rows.map(r => `## ${r.case} (${r.kind}) ${r.pass ? 'pass' : 'FAIL'} ${r.error}\n${r.body}\n`).join('\n'));
+    const written = rows.filter(r => !r.noCall);
     out.tutor = {
+      chat: chat ?? PREFERENCE.chat[0], wordsMedian: median(written.map(r => r.words)), citedShare: written.length ? written.filter(r => r.cited > 0).length / written.length : null, droppedCitations: written.reduce((n, r) => n + r.dropped, 0),
+      grounding: Object.fromEntries(['materials', 'mixed', 'general', 'insufficient'].map(g => [g, written.filter(r => r.grounding === g).length])),
       runs: rows.length, pass: rows.filter(r => r.pass).length,
       firstMsMedian: median(called.flatMap(r => r.firstMs ?? [])), totalMsMedian: median(called.map(r => r.totalMs)), tripsToFirstMedian: median(called.flatMap(r => r.tripsToFirst ?? [])),
       microsPerReplyMedian: median(called.map(r => r.micros)), noCall: rows.length - called.length,

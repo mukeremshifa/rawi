@@ -20,6 +20,9 @@ const CITED_SUPPORT = 0.25;
 /** A sentence counts as resting on the materials when a passage covers this much of it. */
 const SENTENCE_SUPPORT = 0.4;
 
+/** Rawi's own sentences use no em dashes, and some models write them whatever they are told. A comma stands in. */
+export const plainDashes = (text: string) => text.replace(/\s*\u2014\s*/g, ', ');
+
 /**
  * Checks a finished reply against the passages it was given. Citations to unknown passages are
  * removed, and so are citations whose sentence the passage does not support. Grounding is
@@ -29,7 +32,7 @@ const SENTENCE_SUPPORT = 0.4;
 export function finishTutorText(raw: string, passages: { id: string; text: string }[], verdict: EvidenceVerdict) {
   // Older prompts asked for a trailer after the reply. Anything from it onwards is dropped.
   const at = raw.lastIndexOf('@@meta');
-  const body = (at >= 0 ? raw.slice(0, at) : raw).trim();
+  const body = plainDashes(at >= 0 ? raw.slice(0, at) : raw).trim();
   const byId = new Map(passages.map(p => [p.id, p.text]));
   const sentences = body.split(/(?<=[.!?])\s+|\n+/).filter(s => s.trim());
   const citations: string[] = [];
