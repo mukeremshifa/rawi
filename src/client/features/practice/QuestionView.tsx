@@ -3,6 +3,7 @@ import { ArrowDownIcon, ArrowUpIcon, CheckIcon } from 'lucide-react';
 
 import type { AnswerValue, Question, SelfMark, SelfRating } from '@shared/domain/types';
 
+import { InlineText } from '@/components/InlineText';
 import { Prose } from '@/components/Prose';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -68,7 +69,7 @@ function ChoiceInput({ options, selected, readOnly, onChange }: { options: strin
               checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border-strong text-muted-foreground')}>
               {checked ? <CheckIcon className="size-3" strokeWidth={3} aria-hidden /> : index < 9 ? index + 1 : ''}
             </span>
-            <span className="min-w-0 flex-1 leading-relaxed">{option}</span>
+            <span className="min-w-0 flex-1 leading-relaxed"><InlineText text={option} /></span>
           </button>
         );
       })}

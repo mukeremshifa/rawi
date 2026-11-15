@@ -62,7 +62,8 @@ export function TutorLibrary() {
   const sessions = useApiPages<TutorSession, 'sessions'>(`/v1/courses/${id}/tutor`, 'sessions');
   const ai = useApi<AiStatusView>('/v1/ai/status');
   const fromContext = !!(params.get('blockIds') || params.get('attemptId'));
-  const [creating, setCreating] = useState(fromContext);
+  // A link that names a topic, such as a suggestion on the home page, opens the new session form on it.
+  const [creating, setCreating] = useState(fromContext || !!params.get('topicId'));
   const rows = sessions.items?.filter(s => s.archived === (status === 'archived') && s.title.toLowerCase().includes(query.trim().toLowerCase())) ?? [];
   return (
     <Page>

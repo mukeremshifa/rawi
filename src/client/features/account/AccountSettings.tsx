@@ -10,20 +10,23 @@ import { Field, FieldError } from '@/components/ui/field';
 import { NumberField } from '@/components/ui/number-field';
 import { RadioCards } from '@/components/ui/radio-group';
 
+/** The browser's time zone, so days, streaks and review dates follow the student's own calendar from the start. */
+const browserZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; } catch { return undefined; } };
+
 export function Onboarding({ onSaved }: { onSaved: (account: Me) => void }) {
   const account = useAccount();
   const [name, setName] = useState(account.user.name);
   const [count, setCount] = useState(account.preferences.values.questionCount);
   const [feedback, setFeedback] = useState(account.preferences.values.feedback);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
-  const pending = useRef<{ operationId: string; expectedRevision: number; questionCount: number; feedback: 'immediate' | 'end'; onboardingCompleted: boolean } | null>(null);
+  const pending = useRef<{ operationId: string; expectedRevision: number; questionCount: number; feedback: 'immediate' | 'end'; onboardingCompleted: boolean; timezone?: string } | null>(null);
   const baseRevision = useRef(account.preferences.revision);
   const allowNavigation = useUnsentGuard(name !== account.user.name || count !== account.preferences.values.questionCount || feedback !== account.preferences.values.feedback || !!pending.current);
   async function finish() {
     setBusy(true); setError('');
     try {
       const user = await request<Me['user']>('/v1/profile', account.user.id, { name }, 'PATCH');
-      pending.current ??= { operationId: crypto.randomUUID(), expectedRevision: baseRevision.current, questionCount: count, feedback, onboardingCompleted: true };
+      pending.current ??= { operationId: crypto.randomUUID(), expectedRevision: baseRevision.current, questionCount: count, feedback, onboardingCompleted: true, ...(browserZone() ? { timezone: browserZone() } : {}) };
       const preferences = await request<Preferences>('/v1/preferences', account.user.id, pending.current, 'PATCH');
       pending.current = null; allowNavigation(); onSaved({ ...account, user, preferences });
     } catch (e) {

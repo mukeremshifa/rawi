@@ -57,6 +57,9 @@ export function Shell({ children, onSignOut, signingOut, banner }: { children: R
   const crumbs = meta?.crumbs
     ? (meta.courseId || routeCourse) && course ? [{ label: 'Courses', to: '/courses' }, { label: course.name, to: `/course/${course.id}` }, ...meta.crumbs] : meta.crumbs
     : routeCrumbs(pathname, course);
+  // The tab title names the page: its last breadcrumb, such as "Planner · Rawi".
+  const here = [...crumbs].reverse().map(c => typeof c.label === 'string' ? c.label : '').find(Boolean);
+  useEffect(() => { document.title = here ? `${here} · Rawi` : 'Rawi'; return () => { document.title = 'Rawi'; }; }, [here]);
   const sidebar = <Sidebar courses={courses.data?.courses} courseId={courseId} onNavigate={() => setNavOpen(false)} onSignOut={onSignOut} signingOut={signingOut} />;
   const command = <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} courses={courses.data?.courses} courseId={courseId} />;
 
@@ -65,6 +68,7 @@ export function Shell({ children, onSignOut, signingOut, banner }: { children: R
   }
   return (
     <ShellProvider value={report}>
+      <a href="#main" className="bg-card text-foreground focus-visible:ring-ring sr-only z-50 rounded-md border px-3 py-2 text-sm shadow-raised outline-none focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus-visible:ring-2">Skip to content</a>
       <div className="flex min-h-0 flex-1">
         {desktop && <aside className="bg-surface w-60 shrink-0 overflow-y-auto border-r">{sidebar}</aside>}
         {!desktop && (
@@ -87,7 +91,7 @@ export function Shell({ children, onSignOut, signingOut, banner }: { children: R
             </button>
             <RemindersButton />
           </header>
-          <main className="min-h-0 flex-1 overflow-y-auto">{banner}{children}</main>
+          <main id="main" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto outline-none">{banner}{children}</main>
           <UploadTray className="absolute bottom-4 left-4 z-40" />
         </div>
       </div>

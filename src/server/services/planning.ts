@@ -147,8 +147,11 @@ export async function progress(db: SocketDb, workspaceId: string) {
     for (const t of looseSessions) if (t.source) bucket(t.courseId, t.source.materialId).tutorSessions++;
     const unlinked = [...unlinkedRows.values()];
     const suggestions = buildPlan({ ...data, todaysSessions: data.sessions.filter(s => s.date === now.date), now: new Date() }).map(s => {
-      const path = s.sessionId ? `/planner?session=${s.sessionId}` : `/course/${s.courseId}/${s.kind === 'exam' ? 'exams' : ['tutor', 'materials', 'setup'].includes(s.kind) ? 'materials' : 'practice'}${s.topicId ? `?topicId=${s.topicId}` : ''}`;
-      return { ...s, to: path, ...(s.kind === 'tutor' ? { title: s.title.replace(/^Learn /, 'Read about '), reason: `${s.reason} Tutor replies are unavailable, so open the material to continue.` } : {}) };
+      // A tutor suggestion opens a new session on its topic. Whether replies are available is the tutor page's to say.
+      const course = `/course/${s.courseId}`, topic = s.topicId ? `?topicId=${s.topicId}` : '';
+      const to = s.sessionId ? `/planner?session=${s.sessionId}` : s.kind === 'exam' ? `${course}/exams` : s.kind === 'tutor' ? `${course}/tutor${topic}`
+        : s.kind === 'materials' || s.kind === 'setup' ? `${course}/materials` : `${course}/practice${topic}`;
+      return { ...s, to };
     });
     return { suggestions, unlinked, tutorActivity, rulesVersion: 'evidence-v1', today: now.date, timezone: data.timezone, streak, topics: data.topics, courses: data.courses, evidence: [...deriveAllEvidence(data.topics, data.attempts, data.timezone).values()], due: data.due, mastery: data.mastery, mistakes: recurringMistakes(data.attempts, id => data.questions.find(q => q.id === id)?.prompt), attempts: data.attempts, runs, sessions: data.sessions.filter(s => s.date === now.date), assessments: data.assessments.filter(isDated).filter(a => a.date >= now.date), checkIns: data.checkIns.filter(c => zonedParts(new Date(c.at), data.timezone).date === now.date) };
   }, { isolationLevel: 'repeatable read' });

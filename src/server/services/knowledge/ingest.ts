@@ -125,7 +125,7 @@ async function step(db: SocketDb, env: BackendBindings, jobId: string, deadline:
       const next = await stages[job.stage as Exclude<Job['stage'], 'done'>](db, env, ctx, job);
       // Progress clears the failure count. Only consecutive failures stop a job.
       await save(db, job, token, { ...next, attempts: 0 });
-      job = { ...job, ...next };
+      job = { ...job, ...next, attempts: 0 };
       // A stage that asks to come back later releases the job until then.
       if (next.nextRunAt) break;
     }
