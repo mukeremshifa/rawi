@@ -48,7 +48,9 @@ later migrations follow. Applied migrations remain unchanged.
   Server state goes through TanStack Query: `lib/query.ts` has the client and
   path-shaped keys, `lib/data.ts` has `useApi`, `useApiPages`, `useApiAll`
   and `useSave`. Design tokens live in `styles/globals.css`. In development,
-  `/dev/kit` shows every kit component in both themes.
+  `/dev/kit` shows every kit component in both themes. Feature pages load on
+  first use, and so does KaTeX, which sets formulas in materials, questions and
+  tutor replies.
 - `src/server`: the Hono Worker. `worker.ts` is the entry point, `app.ts`
   applies middleware and mounts `routes/`, which call `services/`. The
   database client, schema and migration runner live in `db/`.
@@ -193,7 +195,8 @@ the bank has nothing for the session.
 Every open session offers one next step, chosen by code from the learner model
 and the turns so far (`services/guide.ts`): a review question when part of the
 scope is due, talking through a wrong answer, explaining the weakest section
-and then checking that section, and wrapping up after five questions. The
+and then checking that section, and wrapping up after five questions. It reads
+each step from the action saved with the turn, not from its wording. The
 student can ask anything instead. Study with the tutor, on the home page's next
 suggestion, starts a guided session whose first message says what it will work
 on and why. An ended session shows its next review date.
@@ -217,7 +220,10 @@ Funding sources are rows in `funding_sources`. The `platform` row uses the
 credentials in `.dev.vars` and allows $2 a day and $20 a month per workspace.
 A student can add their own Bedrock or Vertex key in Settings. Keys are sealed
 with a key derived from `BETTER_AUTH_SECRET`, so rotating that secret retires
-them. Student content goes only to routes that keep no prompts.
+them. Student content goes only to routes that keep no prompts. The one
+embedding route keeps prompts, so under the platform source a student's
+question is searched by text alone. Search by meaning runs under a source that
+allows it, such as a student's own key with that setting on.
 
 Every provider call is a row in `ai_calls`, reserved before sending and
 settled from usage after. An uncertain outcome stays charged and is never
@@ -262,5 +268,7 @@ removes the tutor sessions it creates. A full run costs a few cents.
 - R2 holds objects from before the database reset that no row points to.
 - The figure path of retrieval needs an uploaded document with figures to
   check.
-- Deferred: Arabic prompts and search, voice, chart specs, shared question
-  pools, organisation policy, illustrations and a topic map.
+- Deferred: Arabic prompts and search, and with them an embedding route that
+  keeps no prompts. Request rate limiting waits for deployment work, and
+  account deletion for launch preparation. Also voice, chart specs, shared
+  question pools, organisation policy, illustrations and a topic map.
