@@ -11,8 +11,10 @@ import type {
   ReviewDue,
   StudyTopic,
   TopicEvidence,
+  TopicMastery,
 } from './types';
-import { gradeWeight, localISO } from './planner';
+import type { MasteryLevel } from './mastery';
+import { gradeWeight, levelOf, localISO, MASTERY_REASON } from './planner';
 import { isDated } from './types';
 import {
   NO_CONTENT_REASON,
@@ -321,6 +323,8 @@ export interface PlanInput {
   materials?: StudyMaterial[];
   /** Topics due for review under the mastery ladder, worked out from marked answers on the server. */
   due: ReviewDue[];
+  /** Each topic's mastery, from marked answers. It decides which topics read as weak. */
+  mastery?: TopicMastery[];
   /** Set when a tutor session or exam is part-finished and can be resumed. */
   resumable?: { courseId: string; title: string; to: string; kind: Suggestion['kind'] };
   now?: Date;
@@ -343,7 +347,7 @@ export interface PlanInput {
  * Weights, summed from a few local rules, then sorted. In descending force:
  * unfinished work, then today's planned sessions, then the check-in, then
  * repeated mistakes, then reviews that have come due, then topics with weak
- * evidence weighted by assessment proximity and the assessment's share of the
+ * mastery weighted by assessment proximity and the assessment's share of the
  * grade.
  */
 export function buildPlan(input: PlanInput): Suggestion[] {
@@ -555,22 +559,20 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   }
 
   /* 7 — Weak topics, weighted by assessment proximity and the share of the grade. */
-  const levelWeight: Record<EvidenceLevel, number> = {
-    'not-checked': 30,
-    practising: 22,
-    'independent-once': 8,
-    retained: 0,
-  };
+  /* Mastery decides what is weak: unaided practice and tutor checks count, as
+     they do for reviews. Exam evidence stays a separate measure on the progress
+     pages. A secure topic comes back through its review date, not from here. */
+  const levelWeight: Record<MasteryLevel, number> = { shaky: 32, 'not-checked': 30, learning: 18, secure: 0 };
 
   for (const topic of activeTopics) {
-    const evidence = deriveEvidence(topic.id, attempts, input.timezone);
-    if (evidence.level === 'retained') continue;
+    const level = levelOf(input.mastery ?? [], topic.id);
+    if (level === 'secure') continue;
     if (suggestions.some((s) => s.topicId === topic.id)) continue;
 
     /* Scoped to this topic's own course, so one subject's content cannot make
        another subject's topic look workable. */
     const capabilities = capabilitiesOf(topic);
-    const preferredActivity = evidence.level === 'not-checked' ? 'tutor' : 'practice';
+    const preferredActivity = level === 'not-checked' ? 'tutor' : 'practice';
     const chosen = bestActivity(preferredActivity, capabilities);
 
     const covering = upcomingAssessments(
@@ -581,22 +583,15 @@ export function buildPlan(input: PlanInput): Suggestion[] {
     const proximity = daysAway <= 7 ? 20 : daysAway <= 14 ? 12 : daysAway <= 28 ? 6 : 0;
 
     const weight =
-      levelWeight[evidence.level] + gradeWeight(covering) + proximity;
+      levelWeight[level] + gradeWeight(covering) + proximity;
 
     const assessmentClause = covering
       ? ` ${covering.title} is in ${daysAway} day${daysAway === 1 ? '' : 's'} and covers it.`
       : '';
 
-    const reason =
-      evidence.level === 'not-checked'
-        ? `Nothing recorded on this topic yet.${assessmentClause}${
-            covering?.weightPercent !== undefined && covering.weightPercent >= 25 ? ` It is worth ${covering.weightPercent}% of the grade.` : ''
-          }`
-        : `Evidence here is “${EVIDENCE_LABEL[evidence.level].toLowerCase()}”. ${
-            evidence.level === 'practising'
-              ? 'You have worked on it but not yet answered unaided.'
-              : 'One unaided answer so far, and a second on a different question would confirm it.'
-          }${assessmentClause}`;
+    const reason = `${MASTERY_REASON[level]}${assessmentClause}${
+      level === 'not-checked' && covering?.weightPercent !== undefined && covering.weightPercent >= 25 ? ` It is worth ${covering.weightPercent}% of the grade.` : ''
+    }`;
 
     /* Nothing behind this topic at all: say so and offer the setup that would
        fix it, rather than a link into an empty activity. */

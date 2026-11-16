@@ -28,7 +28,7 @@ import { createMaterialInput } from '../src/shared/contracts/materials';
 import { SEED_COURSE } from './fixtures/topics';
 import { SEED_MATERIALS } from './fixtures/materials';
 import { STATS_COURSE, STATS_MATERIALS } from './fixtures/stats';
-import { EVAL_MATERIALS } from './fixtures/eval';
+import { EVAL_MATERIALS, FIGURE } from './fixtures/eval';
 import type { FixtureMaterial } from './fixtures/types';
 
 const VERSION = 'rawi-dev-v3';
@@ -78,6 +78,25 @@ try {
   const atlantic = await course('atlantic', SEED_COURSE.name, `Fictional development course. ${SEED_COURSE.description}`);
   for (const m of SEED_MATERIALS) await material(atlantic, m.id, m.title, [markdown(m)]);
   for (const m of EVAL_MATERIALS) await material(atlantic, `extra:${m.key}`, m.title, m.versions ?? [m.markdown.replace('FIGURE_PLACEHOLDER\n\n', '')]);
+
+  // The winds material carries a figure whose content exists only in its description. Its
+  // placeholder paragraph becomes a figure block, with the description a vision model would
+  // write, before the material is read, so reading builds a figure passage without an image.
+  // A workspace seeded before this gets the figure as a new version of the material.
+  const winds = EVAL_MATERIALS.find(m => m.key === FIGURE.material)!;
+  const [windsRow] = await db.select().from(s.materials).where(and(eq(s.materials.workspaceId, wid), eq(s.materials.id, id(`extra:${winds.key}`))));
+  const [drawn] = windsRow ? await db.select({ id: s.blocks.id }).from(s.blocks).where(and(eq(s.blocks.versionId, windsRow.currentVersionId!), eq(s.blocks.type, 'figure'))).limit(1) : [];
+  if (windsRow && !drawn) await transaction(db, async tx => {
+    const [locked] = await tx.select().from(s.materials).where(eq(s.materials.id, windsRow.id)).for('update');
+    await publishVersion(tx, locked!, { requestId: id('extra:winds:figure'), fingerprint: VERSION, origin: 'paste', sourceObjectId: null, format: 'md', conversion: { adapter: 'markdown', text: winds.markdown, format: 'md' } });
+    const [current] = await tx.select({ versionId: s.materials.currentVersionId }).from(s.materials).where(eq(s.materials.id, windsRow.id));
+    const versionId = current!.versionId!;
+    const [placeholder] = await tx.select({ id: s.blocks.id }).from(s.blocks).where(and(eq(s.blocks.versionId, versionId), eq(s.blocks.type, 'paragraph'), sql`${s.blocks.content}::text like '%FIGURE_PLACEHOLDER%'`));
+    if (!placeholder) throw new Error('The figure placeholder was not found in the winds material.');
+    await tx.update(s.blocks).set({ type: 'figure', content: { assetId: null, caption: [{ type: 'text', text: FIGURE.caption }] } }).where(eq(s.blocks.id, placeholder.id));
+    await tx.insert(s.figureDescriptions).values({ blockId: placeholder.id, workspaceId: wid, courseId: atlantic, materialId: windsRow.id, versionId, description: FIGURE.description, language: 'en', model: 'fixture' });
+    made.push('Figure in Winds and routes of the North Atlantic');
+  });
 
   const stats = await course('stats', STATS_COURSE.name, `Fictional development course. ${STATS_COURSE.description}`);
   for (const m of STATS_MATERIALS) await material(stats, m.id, m.title, [markdown(m)]);

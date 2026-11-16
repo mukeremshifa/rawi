@@ -12,8 +12,10 @@ import type {
   UnscheduledWork,
   Weekday,
   ReviewDue,
+  TopicMastery,
 } from './types';
-import { deriveEvidence, reviewReason } from './progress';
+import type { MasteryLevel } from './mastery';
+import { reviewReason } from './progress';
 import {
   NO_CONTENT_REASON,
   bestActivity,
@@ -297,6 +299,8 @@ export interface PlanInputs {
   materials: StudyMaterial[];
   /** Topics due for review under the mastery ladder. */
   due: ReviewDue[];
+  /** Each topic's mastery, from marked answers on its sections. A topic left out has not been checked. */
+  mastery: TopicMastery[];
   weekStart: string;
   today: string;
 }
@@ -327,11 +331,24 @@ export function gradeWeight(assessment: { weightPercent?: number } | undefined):
   return assessment.weightPercent === undefined ? 4 : Math.min(12, Math.round(assessment.weightPercent / 4));
 }
 
+/** A topic's mastery level. A topic with no marked answer on any section has not been checked. */
+export const levelOf = (mastery: TopicMastery[], topicId: string): MasteryLevel => mastery.find(m => m.topicId === topicId)?.level ?? 'not-checked';
+
+/** How much a topic's level adds to its priority in a week's plan. A missed topic comes before one not started. A secure topic is planned only before an assessment. */
+const PLAN_WEIGHT: Record<MasteryLevel, number> = { shaky: 28, 'not-checked': 26, learning: 16, secure: 0 };
+
+/** Why a topic is suggested, in a sentence that says only what the marked answers show. */
+export const MASTERY_REASON: Record<MasteryLevel, string> = {
+  'not-checked': 'Nothing marked on this topic yet.',
+  shaky: 'You missed a question here the last time you worked on it.',
+  learning: 'You have answered some of this right, and not yet on enough days for it to hold.',
+  secure: 'This reads as secure, and a short check keeps it so.',
+};
+
 function candidates(input: PlanInputs): Candidate[] {
   const {
     courses,
     topics,
-    attempts,
     assessments,
     today,
   } = input;
@@ -364,7 +381,10 @@ function candidates(input: PlanInputs): Candidate[] {
       .sort((a, b) => a.date.localeCompare(b.date));
 
     for (const topic of courseTopics) {
-      const evidence = deriveEvidence(topic.id, attempts, input.timezone);
+      /* What the student has shown on the topic, from marked answers: unaided
+         practice and tutor checks count, as they do for reviews. Exam evidence
+         is a separate measure, shown on the progress pages. */
+      const level = levelOf(input.mastery, topic.id);
 
       /* The nearest assessment that actually covers this topic. An assessment
          with no recorded coverage is treated as covering the whole course,
@@ -374,14 +394,7 @@ function candidates(input: PlanInputs): Candidate[] {
       );
       const daysAway = covering ? daysBetweenDates(today, covering.date) : 999;
 
-      const evidenceWeight =
-        evidence.level === 'not-checked'
-          ? 26
-          : evidence.level === 'practising'
-            ? 18
-            : evidence.level === 'independent-once'
-              ? 7
-              : 0;
+      const evidenceWeight = PLAN_WEIGHT[level];
 
       if (evidenceWeight === 0 && daysAway > 14) continue;
 
@@ -400,7 +413,7 @@ function candidates(input: PlanInputs): Candidate[] {
        */
       const capabilities = topicCapabilities(topic, courseMaterials);
       const preferred: SessionActivity =
-        evidence.level === 'not-checked' ? 'tutor' : 'practice';
+        level === 'not-checked' ? 'tutor' : 'practice';
       const activity = bestActivity(preferred, capabilities);
 
       if (!activity) {
@@ -427,12 +440,7 @@ function candidates(input: PlanInputs): Candidate[] {
           } and covers it.`
         : '';
 
-      const evidenceClause =
-        evidence.level === 'not-checked'
-          ? 'Nothing recorded on this topic yet.'
-          : evidence.level === 'practising'
-            ? 'You have worked on this but not yet answered unaided.'
-            : 'One unaided answer so far, and a second would confirm it.';
+      const evidenceClause = MASTERY_REASON[level];
 
       /* A reading session names the material it opens, so it is actionable
          rather than a note to go and find something. The first material

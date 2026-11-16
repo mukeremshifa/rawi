@@ -170,7 +170,9 @@ tutor sees each level in the scope, what is due and the prerequisites the
 student has not shown, and asks most about shaky sections. Topic readiness
 shows a topic's mastery from its sections, tutor questions included, beside
 its exam evidence, which counts only unaided exam work as independent. The two
-are kept apart on purpose.
+are kept apart on purpose. The planner and the home suggestions decide what
+is weak from mastery, so unaided practice counts there, and a close assessment
+still asks for a timed rehearsal.
 
 ## Tutor
 
@@ -270,8 +272,9 @@ same cases and read side by side.
   save takes a few seconds. Planner and progress reads run their queries one
   after another.
 - R2 holds objects from before the database reset that no row points to.
-- The figure path of retrieval needs an uploaded document with figures to
-  check.
+- The seed gives the winds material a figure with a written description, so
+  figure retrieval is measured. Describing a real image with the vision route
+  still needs an uploaded document with figures to check.
 - Deferred: Arabic prompts and search, and with them an embedding route that
   keeps no prompts. Request rate limiting waits for deployment work, and
   account deletion for launch preparation. Also voice, chart specs, shared
