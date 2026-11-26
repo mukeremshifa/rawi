@@ -9,8 +9,8 @@ import { addDays, localISO } from './planner';
  * further out, and a day with a wrong answer brings it back to tomorrow.
  *
  * Self-marked answers (flashcards and self-checks) are attempts, but neither
- * raise nor lower mastery. A hinted right answer, or a partly right one, holds
- * the ladder where it is. Days are local, so "answered on three days" means
+ * raise nor lower mastery. A right answer given with a hint or with language
+ * support, or a partly right one, holds the ladder where it is. Days are local, so "answered on three days" means
  * three days on the student's own calendar.
  */
 
@@ -28,6 +28,8 @@ export interface MarkedResult {
   at: Date | string;
   mode: 'practice' | 'exam' | 'self-rated' | 'tutored';
   usedHint: boolean;
+  /** A glossary entry or a first-language explanation was used. Like a hint, it is not independent. */
+  languageSupport?: boolean;
 }
 
 export interface SectionMastery {
@@ -59,7 +61,8 @@ export function sectionMastery(results: MarkedResult[], timezone?: string): Sect
     lastDay = day;
     if (r.mode === 'self-rated') continue;
     markedDay = day;
-    const outcome = r.score < WRONG ? 'wrong' : r.score >= RIGHT && !r.usedHint ? 'right' : 'held';
+    const outcome =
+      r.score < WRONG ? 'wrong' : r.score >= RIGHT && !r.usedHint && !r.languageSupport ? 'right' : 'held';
     if (outcome === 'wrong') misses++;
     // A wrong answer settles the day. A right one counts only when nothing that day was wrong.
     const prior = days.get(day);

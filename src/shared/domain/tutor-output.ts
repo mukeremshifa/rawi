@@ -1,6 +1,6 @@
 const CITATION = /(\s?)\[\[([^\]\s]{1,200})\]\]/g;
 
-export type Grounding = 'materials' | 'mixed' | 'general' | 'insufficient';
+export type Grounding = 'materials' | 'mixed' | 'general' | 'insufficient' | 'translated';
 export type EvidenceVerdict = 'sufficient' | 'partial' | 'absent' | 'conversational';
 
 const STOP = new Set(
@@ -21,6 +21,10 @@ export function support(sentence: string, passage: string) {
   return own.filter(w => text.includes(stem(w))).length / own.length;
 }
 
+/** The Latin-script words of a sentence, which is what a reply in Arabic quotes from English passages. */
+const latinWords = (sentence: string) =>
+  (sentence.replace(CITATION, ' ').match(/[A-Za-z][A-Za-z'-]*/g) ?? []).join(' ');
+
 /** A citation stands when its sentence shares at least this much with the cited passage. */
 const CITED_SUPPORT = 0.25;
 /** A sentence counts as resting on the materials when a passage covers this much of it. */
@@ -34,8 +38,18 @@ export const plainDashes = (text: string) => text.replace(/\s*\u2014\s*/g, ', ')
  * removed, and so are citations whose sentence the passage does not support. Grounding is
  * worked out here from the retrieval verdict and how many of the reply's statements the
  * passages cover. The model is never asked for it.
+ *
+ * A reply written in another language than its passages cannot be compared word by word. Its
+ * citations are checked only against the words it quotes in the passages' language, a sentence
+ * that quotes nothing keeps a citation to a real passage, and its grounding says it is a
+ * translation of the cited passages rather than claiming they cover it.
  */
-export function finishTutorText(raw: string, passages: { id: string; text: string }[], verdict: EvidenceVerdict) {
+export function finishTutorText(
+  raw: string,
+  passages: { id: string; text: string }[],
+  verdict: EvidenceVerdict,
+  crossLanguage = false,
+) {
   // Older prompts asked for a trailer after the reply. Anything from it onwards is dropped.
   const at = raw.lastIndexOf('@@meta');
   const body = plainDashes(at >= 0 ? raw.slice(0, at) : raw).trim();
@@ -51,7 +65,8 @@ export function finishTutorText(raw: string, passages: { id: string; text: strin
         dropped++;
         return '';
       }
-      if (support(sentence, passage) < CITED_SUPPORT) {
+      const compared = crossLanguage ? latinWords(sentence) : sentence;
+      if (compared.trim() && support(compared, passage) < CITED_SUPPORT) {
         unsupported++;
         return '';
       }
@@ -75,10 +90,12 @@ export function finishTutorText(raw: string, passages: { id: string; text: strin
       ? 'insufficient'
       : verdict === 'conversational'
         ? undefined
-        : share >= 0.7 && verdict === 'sufficient'
-          ? 'materials'
-          : share >= 0.3 || verdict === 'partial'
-            ? 'mixed'
-            : 'general';
+        : crossLanguage
+          ? 'translated'
+          : share >= 0.7 && verdict === 'sufficient'
+            ? 'materials'
+            : share >= 0.3 || verdict === 'partial'
+              ? 'mixed'
+              : 'general';
   return { text: text.trim(), citations, dropped, unsupported, grounding, supportedShare: share };
 }

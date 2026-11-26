@@ -25,6 +25,7 @@ import { Progress } from '@/components/ui/progress';
 import { Hint } from '@/components/ui/tooltip';
 import { QuestionFeedback } from '@/features/practice/QuestionFeedback';
 import { QuestionView } from '@/features/practice/QuestionView';
+import { QuestionTerms } from '@/features/language/QuestionTerms';
 import { useAccount } from '@/lib/account';
 import { request } from '@/lib/api';
 import { useApi, useSave } from '@/lib/data';
@@ -136,7 +137,7 @@ export function Run() {
     };
     send({ path: `/v1/runs/${id}/${submit ? 'submit' : 'answers'}`, method: submit ? 'POST' : 'PUT', body }, submit);
   }
-  const transition = (action: 'check' | 'reveal' | 'hint') => {
+  const transition = (action: 'check' | 'reveal' | 'hint' | 'language') => {
     if (run && item)
       send({
         path: `/v1/runs/${id}/transition`,
@@ -429,6 +430,17 @@ export function Run() {
             </span>
           </div>
         )}
+        {!exam && item.question.format !== 'flashcard' && (
+          <QuestionTerms
+            key={`terms-${item.id}`}
+            courseId={r.courseId}
+            question={item.question}
+            used={item.languageSupport}
+            checked={item.checked}
+            disabled={dirty || blocked}
+            onOpen={() => transition('language')}
+          />
+        )}
         {item.feedback && (
           <div className="border-t pt-gutter">
             <QuestionFeedback
@@ -436,6 +448,13 @@ export function Run() {
               attempt={item.feedback}
               answerShown={item.revealed}
             />
+            {item.languageSupport && item.feedback.marksAvailable > 0 && (
+              <p className="bg-primary-subtle text-primary-text mt-snug rounded-md px-3 py-2 text-base">
+                {item.feedback.marksAwarded >= 0.8 * item.feedback.marksAvailable
+                  ? 'Right, with language support. Rawi records it as supported, not independent, and will offer a check on this section without support.'
+                  : 'Answered with language support.'}
+              </p>
+            )}
           </div>
         )}
         {dropped && (

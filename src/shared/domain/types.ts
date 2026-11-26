@@ -262,7 +262,7 @@ export interface TutorTurn {
   /** `interrupted` turns were cut off and are not complete teaching. */
   status?: 'complete' | 'interrupted';
   /** How far the reply rests on the course material. */
-  grounding?: 'materials' | 'mixed' | 'general' | 'insufficient';
+  grounding?: 'materials' | 'mixed' | 'general' | 'insufficient' | 'translated';
   /** Validated block citations in the text, in citation order. */
   citations?: SourceRef[];
   /** Citations the model made to passages it was not given, removed. */

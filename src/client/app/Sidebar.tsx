@@ -8,6 +8,7 @@ import {
   ClipboardListIcon,
   GraduationCapIcon,
   HomeIcon,
+  LanguagesIcon,
   LayersIcon,
   LayoutDashboardIcon,
   LogOutIcon,
@@ -99,6 +100,7 @@ export function Sidebar({
         { to: `${base}/practice`, label: 'Practice', icon: ClipboardListIcon },
         { to: `${base}/exams`, label: 'Exams', icon: GraduationCapIcon },
         { to: `${base}/tutor`, label: 'Tutor', icon: MessageSquareIcon },
+        { to: `${base}/glossary`, label: 'Glossary', icon: LanguagesIcon },
       ]
     : [];
   return (

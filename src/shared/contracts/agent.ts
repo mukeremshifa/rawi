@@ -113,4 +113,9 @@ export interface AgentView {
   runs: AgentRun[];
   /** Plain counts over the runs shown, so the page never estimates. */
   totals: { runs: number; actions: number; byCode: number; costMicros: number };
+  /**
+   * Marked answers in the last thirty days, self-marked ones left out: right alone, right with a hint,
+   * right with language support, and not right. Counted from results, never estimated.
+   */
+  checks: { days: number; unaided: number; concept: number; language: number; notRight: number };
 }

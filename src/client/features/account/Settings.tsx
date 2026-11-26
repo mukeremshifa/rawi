@@ -288,6 +288,21 @@ function PreferencesSection({
             <Field layout="row" label="Allow hints" description="Hinted answers count as assisted work.">
               <Switch checked={v.hints} onCheckedChange={hints => set({ hints })} />
             </Field>
+            <Field
+              layout="row"
+              label="First language"
+              description="Rawi offers a glossary and explanations in it. Checks stay in English, and an answer given with language support is recorded as supported, not independent."
+            >
+              <Select
+                className="w-44"
+                value={v.firstLanguage}
+                onValueChange={l => set({ firstLanguage: l as 'none' | 'ar' })}
+                options={[
+                  { value: 'none', label: 'English only' },
+                  { value: 'ar', label: 'Arabic' },
+                ]}
+              />
+            </Field>
           </Group>
           <Group title="Reminders" description="Shown in the app. Nothing is sent by email." footer={footer}>
             <div className="grid gap-x-gutter gap-y-1.5 py-snug sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">

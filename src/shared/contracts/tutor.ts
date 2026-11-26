@@ -30,6 +30,8 @@ export const tutorMessageInput = writeInput.extend({
   text: z.string().trim().min(1).max(4000),
   action: z.enum(['message', 'explain', 'example', 'hint', 'check', 'simpler', 'discuss']).default('message'),
   focus: z.strictObject({ materialId: uuid, key: z.string().min(1).max(500) }).optional(),
+  // Explain in the student's first language. Passages are still quoted in the course's language.
+  reply: z.enum(['ar']).optional(),
 });
 /** The step Rawi suggests next in a session, chosen by code from the learner model. `end` wraps the session up. */
 export type NextMove =

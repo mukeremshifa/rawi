@@ -13,6 +13,7 @@ import {
   PencilIcon,
   PlusIcon,
   SearchIcon,
+  LanguagesIcon,
 } from 'lucide-react';
 import type { CourseDetail } from '@shared/contracts/workspace';
 import type { BlockPage } from '@shared/contracts/document';
@@ -52,6 +53,9 @@ import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Select } from '@/components/ui/select';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
+import { Hint } from '@/components/ui/tooltip';
+import { FIRST_LANGUAGES } from '@shared/contracts/language';
+import { useFirstLanguage } from '@/features/language/Glossary';
 import { renderCitations } from '@/features/tutor/citations';
 import { QuestionFeedback } from '@/features/practice/QuestionFeedback';
 import { QuestionView } from '@/features/practice/QuestionView';
@@ -80,6 +84,7 @@ const GROUNDING_LABEL: Record<string, string> = {
   mixed: 'Partly beyond your materials',
   general: 'General explanation, not from your materials',
   insufficient: 'Your materials do not cover this',
+  translated: 'Explained in your language from the cited sources. Rawi cannot check a translation word for word',
 };
 
 /** Tutor sessions for a course, and New session in a dialog. */
@@ -497,6 +502,8 @@ export function Tutor() {
       });
   };
   const busy = asking || save.busy || !!pending.current || !!pendingReply || !!live;
+  const firstLanguage = useFirstLanguage();
+  const [inFirst, setInFirst] = useState(false);
   const quick = (text: string, action: string, focus?: { materialId: string; key: string }) => {
     if (!busy && data.data)
       ask({
@@ -665,7 +672,7 @@ export function Tutor() {
                       : 'Tutor'
                     : 'You'}
                 </span>
-                <div className={cn(tutor ? 'font-serif' : 'bg-surface rounded-lg border px-4 py-3')}>
+                <div dir="auto" className={cn(tutor ? 'font-serif' : 'bg-surface rounded-lg border px-4 py-3')}>
                   <Prose
                     text={body}
                     size={tutor ? 'reading' : 'compact'}
@@ -801,7 +808,13 @@ export function Tutor() {
               ask({
                 path: `/v1/tutor/${id}/ask`,
                 method: 'POST',
-                body: { operationId: crypto.randomUUID(), expectedRevision: s.revision, text, action },
+                body: {
+                  operationId: crypto.randomUUID(),
+                  expectedRevision: s.revision,
+                  text,
+                  action,
+                  ...(firstLanguage && inFirst ? { reply: firstLanguage } : {}),
+                },
               });
           }}
         >
@@ -847,6 +860,23 @@ export function Tutor() {
                   disabled={busy}
                   options={ACTIONS}
                 />
+                {firstLanguage && (
+                  <Hint
+                    label={`Explanations come in ${FIRST_LANGUAGES[firstLanguage]}, quoting your materials in English. During an open question it counts as language support.`}
+                  >
+                    <Button
+                      type="button"
+                      variant={inFirst ? 'primary' : 'ghost'}
+                      size="sm"
+                      aria-pressed={inFirst}
+                      disabled={busy}
+                      onClick={() => setInFirst(v => !v)}
+                    >
+                      <LanguagesIcon />
+                      In {FIRST_LANGUAGES[firstLanguage]}
+                    </Button>
+                  </Hint>
+                )}
                 <Button
                   type="button"
                   variant="secondary"

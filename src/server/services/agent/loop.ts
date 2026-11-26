@@ -37,6 +37,8 @@ const LEASE_SECONDS = 300;
 const GAP_SECONDS: Record<AgentTrigger, number> = { schedule: 6 * 3600, session: 600, student: 60 };
 /** Workspaces one sweep looks at. */
 const SWEEP = 10;
+/** Days of marked answers the support split reads. */
+const CHECK_DAYS = 30;
 /** How long a decision's key keeps it from being acted on again. */
 const MEMORY_DAYS = 45;
 
@@ -381,6 +383,21 @@ export async function agentView(db: ReadDb | SocketDb, workspaceId: string, limi
       );
     return Number(row?.micros ?? 0);
   })();
+  const [checks] = await db
+    .select({
+      unaided: sql<number>`count(*) filter (where ${itemResults.score} >= 0.8 and not ${itemResults.usedHint} and not ${itemResults.languageSupport})::int`,
+      concept: sql<number>`count(*) filter (where ${itemResults.score} >= 0.8 and ${itemResults.usedHint} and not ${itemResults.languageSupport})::int`,
+      language: sql<number>`count(*) filter (where ${itemResults.score} >= 0.8 and ${itemResults.languageSupport})::int`,
+      notRight: sql<number>`count(*) filter (where ${itemResults.score} < 0.8)::int`,
+    })
+    .from(itemResults)
+    .where(
+      and(
+        eq(itemResults.workspaceId, workspaceId),
+        sql`${itemResults.mode} <> 'self-rated'`,
+        gte(itemResults.at, new Date(Date.now() - CHECK_DAYS * 86_400_000)),
+      ),
+    );
   const all = shown.flatMap(r => r.actions);
   return {
     goals,
@@ -391,6 +408,7 @@ export async function agentView(db: ReadDb | SocketDb, workspaceId: string, limi
       byCode: all.filter(a => a.decidedBy === 'code').length,
       costMicros: runCost + all.reduce((n, a) => n + a.costMicros, 0),
     },
+    checks: { days: CHECK_DAYS, ...(checks ?? { unaided: 0, concept: 0, language: 0, notRight: 0 }) },
   };
 }
 

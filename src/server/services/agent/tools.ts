@@ -1,12 +1,14 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { BackendBindings } from '../../config';
 import type { SocketDb } from '../../db/client';
-import { courses } from '../../db/schema';
+import { courses, preferences } from '../../db/schema';
 import type { Decision } from '../../../shared/domain/agent';
 import { MODEL_FORMATS } from '../questions/bank';
 import { topUp } from '../questions/practice';
 import { applyProposal, propose } from '../planning';
 import { makeGoal, setGoalStatus } from './goals';
+import { buildGlossary } from '../language/glossary';
+import { FIRST_LANGUAGES } from '../../../shared/contracts/language';
 
 /**
  * The agent's tools: thin wrappers over services that already hold the rules. A tool acts only in
@@ -64,8 +66,19 @@ const tools: Record<Decision['tool'], Tool> = {
       ? done(`Wrote and checked ${plural(written, 'new question')}.`)
       : skipped('The bank already holds unseen questions for the weakest sections.');
   },
-  async prepare_glossary() {
-    return skipped('The glossary is not available yet.');
+  async prepare_glossary(env, db, workspaceId, ids, d) {
+    const [prefs] = await db
+      .select({ values: preferences.values })
+      .from(preferences)
+      .where(eq(preferences.workspaceId, workspaceId));
+    const language = prefs?.values.firstLanguage;
+    if (!language || language === 'none') return skipped('No first language is set in Settings.');
+    const built = await buildGlossary(env, db, workspaceId, d.courseId!, language, { operationId: ids.actionId });
+    return built.written
+      ? done(
+          `Glossed ${plural(built.written, 'term')} in ${FIRST_LANGUAGES[language]}${built.remaining ? `, with ${built.remaining} still to do` : ''}.`,
+        )
+      : skipped('The course materials define no terms yet.');
   },
   async schedule_check(_env, _db, _workspaceId, _ids, d) {
     return done(`Reminder set for ${(d.input as { date: string }).date}.`);

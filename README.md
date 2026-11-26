@@ -227,6 +227,31 @@ recorded with what was seen, the reason, the outcome and its cost, and the
 the top of a run, and a note with a number the actions do not contain is
 refused in favour of the code's own.
 
+## Studying in a second language
+
+A student can set a first language (Arabic for now) under Study defaults. Rawi
+then keeps two things apart: understanding the concept, and handling it in
+the language of the course. Checks and exams stay in English.
+
+- The course glossary (`services/language/glossary.ts`) lists every term the
+  materials define, with the material's own definition and a gloss and one
+  sentence in the first language, written once per definition and kept.
+- In practice, a question that uses glossary terms offers them. Opening them
+  before checking is language support: `item_results.language_support` records
+  it apart from a hint, and like a hint it holds the mastery ladder, so a
+  supported right answer never counts as independent.
+- The tutor explains in the first language on request, quoting the material in
+  English. A question written in Arabic is rewritten as an English search query
+  on a route that keeps no copy, then answered in Arabic. Asking in Arabic while
+  a bank question waits records language support on it. A reply in another
+  language than its passages keeps citations to real passages and is labelled
+  as a translation, since it cannot be checked word for word.
+- The agent reads these signals. After a right answer with language support it
+  schedules a check on that section without support three days later, and when
+  support keeps coming up it prepares the glossary and tells the tutor notes.
+  The agent page counts answers that were right alone, with a hint, or with
+  language support.
+
 ## AI engine
 
 One engine in `src/server/ai/` serves every task. A task declares what it
@@ -291,7 +316,7 @@ same cases and read side by side.
 - The seed gives the winds material a figure with a written description, so
   figure retrieval is measured. Describing a real image with the vision route
   still needs an uploaded document with figures to check.
-- Deferred: Arabic prompts and search, and with them an embedding route that
-  keeps no prompts. Request rate limiting waits for deployment work, and
+- Deferred: an embedding route that keeps no prompts, so Arabic questions are
+  searched through an English rewrite and text search. Request rate limiting waits for deployment work, and
   account deletion for launch preparation. Also voice, chart specs, shared
   question pools, organisation policy, illustrations and a topic map.
