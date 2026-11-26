@@ -182,7 +182,6 @@ export async function resolveScope(db: SocketDb, workspaceId: string, id: string
   await db.update(scopes).set({ lastUsedAt: new Date() }).where(eq(scopes.id, id));
   return resolveRow(db, row);
 }
-export type ResolvedScope = Awaited<ReturnType<typeof resolveScope>>;
 /** The scope's sections, read inside the caller's transaction without marking the scope used. */
 export async function scopeSections(db: Db, workspaceId: string, id: string) {
   return resolveRow(db, await ownScope(db, workspaceId, id));

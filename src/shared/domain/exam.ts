@@ -7,11 +7,11 @@ const newId = (_prefix: string) => crypto.randomUUID();
 /**
  * Exam construction, validation, timing and completion.
  *
- * ── The rule this file now enforces ───────────────────────────────────────
+ * ── The rule this file enforces ───────────────────────────────────────────
  *
- * **Nothing is marked until the whole paper is submitted.** The previous
- * checkpoint could release feedback section by section and could offer tutor
- * hints inside a paper; both are gone. What finishing a section can still do is
+ * **Nothing is marked until the whole paper is submitted.** There is no
+ * feedback section by section and no tutor hint inside a paper. What finishing
+ * a section can do is
  * *lock* it, and that is a separate, explicit setting whose consequence is
  * stated before the student confirms.
  *

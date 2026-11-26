@@ -52,7 +52,7 @@ import { NO_CONTENT_REASON, bestActivity, substitutionNote, topicCapabilities } 
  * placement loop carries a *cutoff* for every candidate and will not schedule
  * past it. An assessment with a known time cuts off at that minute on that day;
  * one with only a date cuts off at the end of the day before, because the
- * prototype does not know whether a date-only quiz is at nine or at four and
+ * planner does not know whether a date-only quiz is at nine or at four and
  * inventing a time would be a fact it made up. Work that cannot be placed
  * before its cutoff is listed as unscheduled saying exactly that, which is the
  * one outcome that is honest when a deadline has already passed.
@@ -216,7 +216,7 @@ export interface TimeRange {
  *
  * Returns the last minute that is still useful, as a date plus minutes from
  * midnight. An assessment with a time cuts off at that time. One with only a
- * date cuts off at the end of the previous day: the prototype does not know
+ * date cuts off at the end of the previous day: the planner does not know
  * whether it is at nine in the morning or four in the afternoon, and finishing
  * the day before is the conservative reading that cannot be wrong in the
  * direction that matters.
@@ -784,8 +784,7 @@ export function planWeek(input: PlanInputs, options: PlanOptions = {}): PlanProp
  * What a generated session opens.
  *
  * Every generated session that claims to be actionable gets a link. A
- * rehearsal used to get none, which left the most urgent entry in a plan as
- * the only one with nothing to click. It now opens the course's exam area with
+ * rehearsal opens the course's exam area with
  * the assessment named, so the student lands where the rehearsal is chosen
  * rather than having to find their way there.
  *

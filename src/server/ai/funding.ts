@@ -104,8 +104,6 @@ function adaptersOf(credentials: Credentials[]) {
 }
 
 /** Whether the platform has any vendor configured. Background work without one uses rules. */
-export const platformConfigured = (env: BackendBindings) => platformCredentials(env).length > 0;
-
 /**
  * Kept per isolate. Adapters are keyed by source and its sealed value, so a Vertex token is signed
  * once an hour rather than per call, and a changed key builds new adapters.

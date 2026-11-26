@@ -15,13 +15,11 @@ export function materialsForTopic(topic: StudyTopic, materials: StudyMaterial[])
  *
  * ── Why this exists ───────────────────────────────────────────────────────
  *
- * Both planners used to decide what to recommend from one fact: whether the
- * topic had *any* question behind it. That is not the same question as "can
- * the student do the thing I am about to suggest", and the gap showed. The
- * planner proposed a flashcard round for topics whose only questions were
- * essays, which is an actionable-looking entry with no action behind it.
+ * Whether a topic has *any* question behind it is not the same as "can the
+ * student do the thing about to be suggested". A flashcard round for a topic
+ * with no definitions would be an entry with no action behind it.
  *
- * The tutor is a model now, so it can talk about anything, but it can only
+ * The tutor can talk about anything, but it can only
  * *teach from the course* when there is readable material that relates to the
  * topic. That is the test, and a placeholder for a file Rawi could not read
  * does not count.

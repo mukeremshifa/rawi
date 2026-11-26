@@ -1,15 +1,9 @@
 /**
  * The Rawi domain, as plain types.
  *
- * ── Why types and not Zod schemas ─────────────────────────────────────────
- *
- * The previous prototype validated everything through Zod because it was
- * designed against a server contract. There is no server here and there is not
- * going to be one at this checkpoint, so parsing our own literals at startup
- * buys nothing but startup cost. The one place untrusted data genuinely enters
- * is restored `localStorage`, and that is handled where it belongs — in the
- * store's restore path, which validates shape defensively and falls back to a
- * fresh seed rather than trusting a JSON blob written by an older build.
+ * These are shapes for the pure logic in `shared/domain` and for responses.
+ * Untrusted input is validated by the Zod schemas in `shared/contracts` at the
+ * API boundary, so nothing here is parsed again.
  *
  * ── The shape of the domain ───────────────────────────────────────────────
  *
@@ -25,9 +19,8 @@
  *
  * Blocks of a converted document are the addressable unit inside a material,
  * because "ask the tutor about this bit" and "this exam question came from
- * that bit" both need an id to point at. Everything a student does becomes an `Attempt`, and Progress is
- * a read over the attempt log rather than a separate score that can drift away
- * from it.
+ * that bit" both need an id to point at. Mastery is read from marked answers
+ * (`item_results`) rather than stored, so it cannot drift away from them.
  */
 
 /* ── Course and topics ────────────────────────────────────────────────── */
@@ -37,7 +30,6 @@ export interface StudyCourse {
   name: string;
   /** One or two sentences about the course itself. Optional. */
   description: string;
-  /** Set when the student finished setup rather than landing on the seed. */
   createdAt: string;
   /**
    * Archived courses stay readable and keep their history, but drop out of
@@ -54,7 +46,7 @@ export interface StudyTopic {
   summary: string;
   /**
    * Which module/week of the outline this topic sits in. Free text, because a
-   * syllabus says "Week 3" or "Unit II" and the prototype should not impose
+   * syllabus says "Week 3" or "Unit II" and Rawi should not impose
    * one of those on a student whose course uses the other.
    */
   module?: string;
@@ -416,9 +408,9 @@ export interface ExamRun {
  *
  * A `PlannedAssessment` is a thing that happens to the student on a date the
  * institution chose. An `ExamConfig` is a rehearsal setup the student built. An
- * `Attempt` is one run of a rehearsal. The previous checkpoint had a single
- * `examDate` on the course and called all three "the exam", which meant a
- * rehearsal could not be distinguished from the thing it rehearsed for.
+ * `Attempt` is one run of a rehearsal.
+ * One `examDate` on the course would call all three "the exam", and a
+ * rehearsal could not be told apart from the thing it rehearses for.
  *
  * Keeping them separate is what lets a course have four assessments, each with
  * its own coverage, and lets one of them be rehearsed five times without any of
@@ -438,7 +430,7 @@ export interface PlannedAssessment {
   date: string | null;
   /**
    * HH:MM, when the student knows it. Optional because a syllabus often gives
-   * only a date, and inventing "09:00" would be a fact the prototype made up.
+   * only a date, and inventing "09:00" would be a fact Rawi made up.
    */
   time?: string;
   /** Minutes the assessment itself lasts, when known. */
@@ -634,8 +626,7 @@ export interface ReviewDue {
 }
 
 /**
- * The four evidence levels, carried over from the earlier prototype because
- * the distinction is exactly what the brief asks for: practice with help,
+ * The four evidence levels. Practice with help,
  * self-rated recall and independent exam work must not collapse into one
  * number. The ramp tokens in `globals.css` are keyed to these names.
  */

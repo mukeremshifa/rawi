@@ -821,7 +821,7 @@ export const aiOperations = pgTable(
   {
     id: uuid('id').primaryKey(),
     ...materialScope(),
-    task: text('task').$type<'tutor' | 'generate' | 'grade' | OutlineJobKind>().notNull(),
+    task: text('task').$type<'tutor' | 'generate' | OutlineJobKind>().notNull(),
     targetId: uuid('target_id').notNull(),
     fingerprint: text('fingerprint').notNull(),
     input: jsonb('input').$type<unknown>().notNull(),

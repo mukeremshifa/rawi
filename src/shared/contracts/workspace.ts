@@ -104,10 +104,6 @@ export interface CourseDetail {
   course: Course;
   topics: Topic[];
 }
-export interface CoursePage {
-  courses: Course[];
-  nextCursor: string | null;
-}
 export interface ApiErrorBody {
   error: { code: string; message: string; requestId: string };
 }
