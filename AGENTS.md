@@ -13,6 +13,21 @@ user-facing JSON recovery/export remain excluded.
 - Run `npm run format` before committing.
 - Keep documentation minimal and commit coherent changes.
 
+## Git and GitHub
+
+`main` on GitHub is the source of truth and always runs. It takes changes only
+through pull requests and keeps a linear history.
+
+- Start each piece of work on a short branch from an up-to-date `main`, named
+  for the work, such as `learning-record` or `fix-upload-retry`.
+- Commit coherent steps. Before pushing, run `npm run format`,
+  `npm run typecheck` and `npm run build`.
+- Push the branch and open a pull request that says what changed and what was
+  checked in the dev server.
+- Merge with rebase, or squash for a single small change. The branch is deleted
+  on merge. Then update local `main` with `git pull --ff-only`.
+- Schema changes ship their generated migration in the same pull request.
+
 ## Punctuation in first-party prose
 
 Do not use em dashes or semicolons in text the product writes: labels, headings,
