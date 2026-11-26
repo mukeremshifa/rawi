@@ -1,3 +1,4 @@
+import { agentReminders } from './agent/loop';
 import { isDated } from '../../shared/domain/types';
 import { transaction } from '../db/client';
 import { and, asc, eq, ilike, sql } from 'drizzle-orm';
@@ -120,6 +121,8 @@ async function reminders(tx: Transaction, workspaceId: string) {
         category: 'Due review',
         to: `/course/${d.courseId}/practice`,
       });
+  // What the agent sent, such as a goal countdown or a check without support.
+  rows.push(...(await agentReminders(tx, workspaceId, today)));
   const states = await tx.select().from(reminderStates).where(eq(reminderStates.workspaceId, workspaceId));
   return rows
     .map(r => ({ ...r, status: states.find(s => s.key === r.key)?.status }))

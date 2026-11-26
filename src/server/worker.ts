@@ -10,6 +10,7 @@ import { sweepIngest } from './services/knowledge/ingest';
 import { recoverReplies } from './services/ai/tutor';
 import { sweepGenerations } from './services/questions/practice';
 import { expireOpenCalls } from './ai/meter';
+import { sweepAgent } from './services/agent/loop';
 import type { BackendBindings } from './config';
 import { ApiError } from './errors';
 
@@ -38,6 +39,7 @@ export default {
       ['generations', () => sweepGenerations(db, env)],
       ['ingest', () => sweepIngest(db, env)],
       ['orphanAssets', () => sweepOrphanAssets(db, env)],
+      ['agent', () => sweepAgent(db, env)],
     ];
     const results: Record<string, unknown> = {},
       failed: string[] = [];

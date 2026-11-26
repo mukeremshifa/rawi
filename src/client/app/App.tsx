@@ -27,6 +27,7 @@ const Materials = lazy(() => import('@/features/materials/Library').then(m => ({
 const Planner = lazy(() => import('@/features/planning/Planner').then(m => ({ default: m.Planner })));
 const Progress = lazy(() => import('@/features/progress/Progress').then(m => ({ default: m.Progress })));
 const AiOperation = lazy(() => import('@/features/ai/AiOperation').then(m => ({ default: m.AiOperation })));
+const Agent = lazy(() => import('@/features/agent/Agent').then(m => ({ default: m.Agent })));
 const Exams = lazy(() => import('@/features/exams/Exams').then(m => ({ default: m.Exams })));
 const Run = lazy(() => import('@/features/practice/Runner').then(m => ({ default: m.Run })));
 const AttemptReview = lazy(() => import('@/features/practice/Attempt').then(m => ({ default: m.AttemptReview })));
@@ -292,6 +293,7 @@ export function App() {
                   <Route path="/notifications" element={<Notifications />} />
                   <Route path="/data" element={<Navigate replace to="/settings" />} />
                   <Route path="/planner" element={<Planner />} />
+                  <Route path="/agent" element={<Agent />} />
                   <Route path="/progress" element={<Progress />} />
                   <Route path="/course/:id/progress" element={<CourseRedirect />} />
                   <Route path="/course/:id/overview" element={<CourseRedirect />} />

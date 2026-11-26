@@ -6,6 +6,7 @@ import { rememberSession, replyConnection, streamReply, type ReplyEvent } from '
 import { newTutorInput, tutorMessageInput, tutorMetadataInput } from '../../shared/contracts/tutor';
 import { writeInput, pageQuery } from '../../shared/contracts/learning';
 import { jsonInput, type BackendContext } from '../http';
+import { runAgent } from '../services/agent/loop';
 
 export const tutorRoutes = new Hono<BackendContext>();
 tutorRoutes.get('/courses/:id/tutor', async c => {
@@ -28,14 +29,15 @@ tutorRoutes.get('/tutor/:id', async c => {
   const q = z.strictObject({ cursor: z.coerce.number().int().min(-1).max(1000000).default(-1) }).parse(c.req.query());
   return c.json(await tutoring.detail(c.get('db'), c.get('workspaceId'), uuid.parse(c.req.param('id')), q.cursor));
 });
-/** Ending a session rewrites the course's tutor notes from it, after the response. */
+/** Ending a session rewrites the course's tutor notes from it, after the response, and then runs the agent. */
 tutorRoutes.post('/tutor/:id/end', async c => {
   const id = uuid.parse(c.req.param('id'));
   const detail = await tutoring.endSession(c.get('socket'), c.get('workspaceId'), id, await jsonInput(c, writeInput));
+  // Then the agent looks at what the session changed.
   c.executionCtx.waitUntil(
-    rememberSession(c.env, c.get('workspaceId'), id).catch(error =>
-      console.error(JSON.stringify({ operation: 'tutor-notes', error: String(error) })),
-    ),
+    rememberSession(c.env, c.get('workspaceId'), id)
+      .catch(error => console.error(JSON.stringify({ operation: 'tutor-notes', error: String(error) })))
+      .then(() => runAgent(c.env, c.get('workspaceId'), 'session')),
   );
   return c.json(detail);
 });

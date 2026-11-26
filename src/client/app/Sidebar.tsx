@@ -1,6 +1,7 @@
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpenIcon,
+  BotIcon,
   CalendarDaysIcon,
   CheckIcon,
   ChevronsUpDownIcon,
@@ -83,6 +84,7 @@ export function Sidebar({
     { to: '/', label: 'Home', icon: HomeIcon, end: true },
     { to: '/courses', label: 'Courses', icon: LayersIcon, match: /^\/courses(\/|$)/ },
     { to: '/planner', label: 'Planner', icon: CalendarDaysIcon },
+    { to: '/agent', label: 'Rawi agent', icon: BotIcon },
     { to: '/progress', label: 'Progress', icon: TrendingUpIcon, match: /^\/(progress|history)(\/|$)/ },
   ];
   const sections: Item[] = courseId

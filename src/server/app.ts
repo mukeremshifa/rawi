@@ -18,6 +18,7 @@ import { plannerRoutes } from './routes/planner';
 import { tutorRoutes } from './routes/tutor';
 import { supportRoutes } from './routes/support';
 import { aiRoutes } from './routes/ai';
+import { agentRoutes } from './routes/agent';
 
 export const api = new Hono<BackendContext>();
 api.use('*', async (c, next) => {
@@ -117,6 +118,7 @@ app.route('/', plannerRoutes);
 app.route('/', tutorRoutes);
 app.route('/', supportRoutes);
 app.route('/', aiRoutes);
+app.route('/', agentRoutes);
 configured.route('/v1', app);
 api.route('/', configured);
 api.notFound(() => {

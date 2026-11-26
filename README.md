@@ -207,6 +207,26 @@ turn reads them, and a question the materials do not cover can still be
 answered from them. The course's tutor page shows the notes in full, and
 Forget clears them.
 
+## Study agent
+
+Rawi works toward each student's goals on its own (`services/agent/`). A goal
+is a course and usually an assessment, set by the student or made from a dated
+assessment in the syllabus. The agent runs on the cron sweep, after a practice
+run or tutor session ends, and when the student chooses Check now on the
+agent page, one run per workspace at a time under a lease.
+
+Each run observes the learner model, goals, the week's plan and missed
+sessions, then code decides what to do (`shared/domain/agent.ts`): set or close
+a goal, plan the week through the planner, write questions ahead of the next
+session, send a reminder, or add a line to the tutor notes. A decision carries
+a key, so nothing is repeated. Tools wrap the services that already hold the
+rules, so the agent never marks an answer or writes evidence, and its model
+work goes through the engine within the workspace caps. Every action is
+recorded with what was seen, the reason, the outcome and its cost, and the
+"What Rawi did and why" page shows them. A model writes only the short note at
+the top of a run, and a note with a number the actions do not contain is
+refused in favour of the code's own.
+
 ## AI engine
 
 One engine in `src/server/ai/` serves every task. A task declares what it
