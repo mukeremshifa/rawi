@@ -7,6 +7,7 @@ import type { Language } from './types';
  */
 const HOUSE: Record<string, string> = {
   en: 'Write plain British English. Do not use em dashes or semicolons in anything you write: use a colon, a comma or a full stop.',
+  ar: 'Write clear Modern Standard Arabic that a university student reads easily. Do not use em dashes or semicolons, Arabic or Latin: use a comma or a full stop.',
 };
 export const house = (language: Language) =>
   HOUSE[language] ?? `Write in the language with code "${language}", plainly. Do not use em dashes or semicolons.`;

@@ -34,6 +34,7 @@ import {
 } from '../../ai/engine';
 import { attribute, DATA_RULE, escapeTags, house, parsed, schemaOf } from '../../ai/style';
 import type { Language } from '../../ai/types';
+import { detectLanguage } from '../knowledge/language';
 import type { TutorMessageProvenance } from '../../../shared/contracts/tutor';
 import type { AnswerReview, QuestionFormat, TutorStage } from '../../../shared/domain/types';
 import { answerKey, responseText } from '../../../shared/domain/answer-review';
@@ -91,6 +92,8 @@ interface TutorInput {
   message: string;
   /** Added when a held-back hint is written again. */
   note?: string;
+  /** The student's first language, when the reply explains in it. Passages are quoted in the course's language. */
+  replyIn?: Language;
 }
 
 const ACTION_NOTE: Record<Action, string> = {
@@ -131,7 +134,7 @@ export const tutorTask: Task<TutorInput, string> = {
   promptVersion: TUTOR_PROMPT_VERSION,
   temperature: 0.4,
   needs: { skill: 'chat', data: 'student', lane: 'interactive', maxOutput: 900, cache: 'long' },
-  language: i => i.language,
+  language: i => i.replyIn ?? i.language,
   build: i => ({
     system: [
       'You are Rawi, a patient tutor helping a university student with their course.',
@@ -145,11 +148,16 @@ export const tutorTask: Task<TutorInput, string> = {
       '6. A passage marked as a figure description was written by Rawi from an image. Say that it comes from the figure.',
       '7. Keep replies under about 150 words unless a worked example needs more. One idea per turn, and usually end with a question. Write plain sentences without bold or headings, and use a list only for steps.',
       `8. ${DATA_RULE}`,
-      `9. ${house(i.language)}`,
+      `9. ${house(i.replyIn ?? i.language)}`,
       '10. A hint is a nudge. Never state the answer in a hint, and never answer a question you set the student.',
       '11. When the student is working on a scope, keep to it. When a passage comes from outside it, say so in one short clause and name where it is. Never pretend the answer is in the scope.',
       '12. When the student seems ready, suggest practising the scope with questions.',
       '13. Write a formula as LaTeX between single dollar signs, such as $\\bar{x}$. Put a longer formula on its own line between $$ signs.',
+      ...(i.replyIn && i.replyIn !== i.language
+        ? [
+            `14. Explain in ${i.replyIn === 'ar' ? 'Arabic' : i.replyIn} for a student who studies in English. When you rely on a passage, quote its key wording exactly in English, in quotation marks, then explain it, and cite it as usual. Keep each technical term in English the first time, with its translation after it in brackets. Keep formulas and symbols as written. Any question you ask the student to answer is in English, because their checks and exams are in English.`,
+          ]
+        : []),
       "Session stages, in order: orient, understand, recall, reason, apply, reflect. The current stage comes from the student's marked answers and says what kind of turn helps now.",
     ].join('\n'),
     context: [
@@ -201,6 +209,43 @@ export const tutorTask: Task<TutorInput, string> = {
   }),
   check: r => (r.text.trim() ? r.text : null),
 };
+
+const searchSchema = z.object({
+  query: z.string().describe('The question as a short search query in the target language'),
+});
+/**
+ * A question the student wrote in another language than the material, rewritten as a search query
+ * in the material's language. It is student text, so it goes only to routes that keep no copy.
+ */
+const searchTask: Task<{ text: string; to: Language }, string> = {
+  name: 'tutor.search-query',
+  promptVersion: TUTOR_PROMPT_VERSION,
+  temperature: 0,
+  needs: { skill: 'chat', data: 'student', lane: 'interactive', maxOutput: 120, cache: 'none', attempts: 1 },
+  language: i => i.to,
+  build: i => ({
+    system: [
+      `Rewrite the student's question as a short search query in ${i.to === 'en' ? 'English' : i.to}, for searching their course material.`,
+      'Translate the technical terms with the words a textbook would use. Do not answer the question.',
+      DATA_RULE,
+    ].join('\n'),
+    prompt: `<student_message>\n${escapeTags(i.text.slice(0, 1000))}\n</student_message>`,
+    schema: schemaOf(searchSchema),
+  }),
+  check: r => {
+    const q = parsed(searchSchema, r.json)?.query.trim();
+    return q && q.length <= 300 && detectLanguage(q) !== 'ar' ? q : null;
+  },
+};
+/** The search text for a cross-language question, or the question itself when no route can rewrite it. */
+async function searchQuery(env: BackendBindings, ctx: CallContext, text: string, to: Language) {
+  try {
+    return (await run(env, ctx, searchTask, { text, to })).value;
+  } catch (error) {
+    if (error instanceof Cancelled) throw error;
+    return text;
+  }
+}
 
 const summarySchema = z.object({ summary: z.string() });
 const summaryTask: Task<{ language: Language; prior: string | null; turns: { role: string; text: string }[] }, string> =
@@ -338,7 +383,7 @@ export async function queueReply(
   workspaceId: string,
   session: { id: string; courseId: string; revision: number },
   operationId: string,
-  input: { text: string; action: Action; focus?: SectionRef },
+  input: { text: string; action: Action; focus?: SectionRef; reply?: 'ar' },
 ) {
   await tx.insert(aiOperations).values({
     id: operationId,
@@ -403,7 +448,7 @@ export async function streamReply(
   emit: (event: ReplyEvent) => Promise<void>,
   defer: (work: Promise<unknown>) => void,
   given?: ReturnType<typeof socketDb>,
-  saved?: { text: string; action: Action; sessionRevision: number; focus?: SectionRef },
+  saved?: { text: string; action: Action; sessionRevision: number; focus?: SectionRef; reply?: 'ar' },
 ) {
   const connection = given ?? replyConnection(env);
   const db = connection.db;
@@ -499,7 +544,12 @@ export async function streamReply(
     try {
       // The funding source is resolved while the turn is prepared, so it is ready when the call starts.
       const [{ input, session, found }] = await Promise.all([
-        prepare(env, ctx, sessionId, claimed.input as { text: string; action: Action; sessionRevision: number }),
+        prepare(
+          env,
+          ctx,
+          sessionId,
+          claimed.input as { text: string; action: Action; sessionRevision: number; reply?: 'ar' },
+        ),
         funding(env, ctx),
       ]);
       marks.prepared = Date.now();
@@ -661,7 +711,7 @@ export async function prepare(
   env: BackendBindings,
   ctx: CallContext,
   sessionId: string,
-  saved: { text: string; action: Action; sessionRevision: number },
+  saved: { text: string; action: Action; sessionRevision: number; reply?: 'ar' },
 ) {
   const { db, workspaceId } = ctx;
   const [[row], latest] = await Promise.all([
@@ -739,7 +789,11 @@ export async function prepare(
   const tracked = scopeRow ? inScope : sourceSections(list, session.source);
   // Talking through a bank question searches for the question and its answer. A message that leans
   // on earlier turns carries the last bank question as context.
-  const asked = resolveQuery(saved.text, history, language);
+  // A question written in Arabic about English material is searched in English, and answered in Arabic.
+  const crossLanguage = language !== 'ar' && detectLanguage(saved.text) === 'ar';
+  const replyIn: Language | undefined = saved.reply ?? (crossLanguage ? 'ar' : undefined);
+  const searchText = crossLanguage ? await searchQuery(env, ctx, saved.text, language) : saved.text;
+  const asked = resolveQuery(searchText, history, language);
   const resolved =
     check && saved.action === 'discuss'
       ? { query: `${check.prompt}\n${check.result ? check.key : ''}`.trim(), context: saved.text }
@@ -831,6 +885,7 @@ export async function prepare(
     stage,
     action: saved.action,
     message: saved.text,
+    ...(replyIn ? { replyIn } : {}),
   };
   return { input, session, found };
 }
@@ -1100,7 +1155,17 @@ async function publish(
     const [current] = await tx.select().from(tutorSessions).where(eq(tutorSessions.id, session.id)).for('update');
     if (!current) throw notFound();
     // Grounding comes from the retrieval verdict and the checked citations, never from the model.
-    const checked = finishTutorText(raw, passages, verdict);
+    // A reply in another language than its passages, such as Arabic about English slides, is checked as a translation.
+    const crossLanguage =
+      passages.length > 0 &&
+      detectLanguage(raw) !==
+        detectLanguage(
+          passages
+            .map(p => p.text)
+            .join(' ')
+            .slice(0, 3000),
+        );
+    const checked = finishTutorText(raw, passages, verdict, crossLanguage);
     if (!checked.text) throw new ApiError(502, 'ai_invalid', 'No readable tutor reply was returned.');
     const cite = (p: Passage) => ({ materialId: p.materialId, versionId: p.versionId, blockIds: p.blockIds });
     const attached =

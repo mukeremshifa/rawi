@@ -21,7 +21,7 @@ type Run = { id: string; workspaceId: string; courseId: string; exam: unknown };
 export async function recordResults(
   tx: Transaction,
   run: Run,
-  answered: { itemId: string; result: QuestionAttempt }[],
+  answered: { itemId: string; result: QuestionAttempt; languageSupport?: boolean }[],
   tutored = false,
 ) {
   const marked = answered.filter(a => a.result.outcome !== 'skipped' && a.result.marksAvailable > 0);
@@ -67,6 +67,7 @@ export async function recordResults(
         mode,
         score: a.result.marksAwarded / a.result.marksAvailable,
         usedHint: a.result.usedHint,
+        languageSupport: !!a.languageSupport,
       },
     ];
   });
@@ -76,7 +77,12 @@ export async function recordResults(
       .values(rows)
       .onConflictDoUpdate({
         target: [itemResults.runId, itemResults.itemId],
-        set: { score: sql`excluded.score`, usedHint: sql`excluded.used_hint`, at: new Date() },
+        set: {
+          score: sql`excluded.score`,
+          usedHint: sql`excluded.used_hint`,
+          languageSupport: sql`excluded.language_support`,
+          at: new Date(),
+        },
       });
 }
 
@@ -115,6 +121,7 @@ export async function learnerState(
       score: itemResults.score,
       mode: itemResults.mode,
       usedHint: itemResults.usedHint,
+      languageSupport: itemResults.languageSupport,
       at: itemResults.at,
       prompt: sql<string>`${bankItems.content}->>'prompt'`,
     })
@@ -161,6 +168,7 @@ export async function topicMastery(db: Db, workspaceId: string, timezone?: strin
         score: itemResults.score,
         mode: itemResults.mode,
         usedHint: itemResults.usedHint,
+        languageSupport: itemResults.languageSupport,
         at: itemResults.at,
       })
       .from(itemResults)

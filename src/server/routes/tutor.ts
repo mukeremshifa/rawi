@@ -124,6 +124,7 @@ tutorRoutes.post('/tutor/:id/ask', async c => {
     action: input.action,
     sessionRevision: input.expectedRevision,
     focus: input.focus,
+    reply: input.reply,
   });
 });
 /** Resume the reply to a saved question, such as after a reload while it was queued. */

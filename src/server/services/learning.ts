@@ -263,6 +263,7 @@ export async function runView(tx: Transaction, workspaceId: string, id: string):
           checked: !!a?.checked,
           revealed: !!a?.revealed,
           hinted: !!a?.hinted,
+          languageSupport: !!a?.languageSupport,
           ...((!run.exam && a?.checked) || run.state === 'submitted'
             ? { feedback: toQuestionAttempt(item.question, response, !!a?.hinted) }
             : {}),
@@ -357,7 +358,11 @@ async function saveBatch(tx: Transaction, run: typeof learningRuns.$inferSelect,
       });
     if (settled && !run.exam)
       await recordResults(tx, run, [
-        { itemId: item.itemId, result: toQuestionAttempt(item.question, entry.response, !!prior?.hinted) },
+        {
+          itemId: item.itemId,
+          result: toQuestionAttempt(item.question, entry.response, !!prior?.hinted),
+          languageSupport: !!prior?.languageSupport,
+        },
       ]);
   }
 }
@@ -416,7 +421,8 @@ export async function transition(
     if (
       (input.action === 'reveal' && !selfMarked) ||
       (input.action === 'hint' && (!set.hintsAllowed || item.question.format === 'flashcard')) ||
-      (input.action === 'check' && (set.feedback !== 'immediate' || selfMarked))
+      (input.action === 'check' && (set.feedback !== 'immediate' || selfMarked)) ||
+      (input.action === 'language' && item.question.format === 'flashcard')
     )
       throw new ApiError(400, 'invalid_transition', 'This action is unavailable for this question.');
     const [prior] = await tx
@@ -432,8 +438,16 @@ export async function transition(
       )
     )
       throw new ApiError(409, 'answer_required', 'Write your answer before you see the model answer.');
+    // Language support counts only before the answer is checked: afterwards it is reading, not help.
+    if (input.action === 'language' && prior?.checked) return runView(tx, workspaceId, id);
     const flag =
-      input.action === 'check' ? { checked: true } : input.action === 'reveal' ? { revealed: true } : { hinted: true };
+      input.action === 'check'
+        ? { checked: true }
+        : input.action === 'reveal'
+          ? { revealed: true }
+          : input.action === 'language'
+            ? { languageSupport: true }
+            : { hinted: true };
     await tx
       .insert(runAnswers)
       .values({
@@ -455,6 +469,7 @@ export async function transition(
           {
             itemId: item.itemId,
             result: toQuestionAttempt(item.question, prior?.response ?? { kind: 'none' }, !!prior?.hinted),
+            languageSupport: !!prior?.languageSupport,
           },
         ],
         set.purpose === 'tutor',
@@ -587,6 +602,7 @@ export async function finalizeRun(
       itemId: item.itemId,
       question: item.question,
       result: toQuestionAttempt(item.question, a?.response ?? { kind: 'none' }, !!a?.hinted),
+      languageSupport: !!a?.languageSupport,
     };
   });
   const questions = answered.map(({ question, result }) => ({ question, result }));

@@ -2,7 +2,17 @@ import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { newTutorInput, tutorMessageInput, tutorMetadataInput } from '../../shared/contracts/tutor';
 import { answerKey, responseText } from '../../shared/domain/answer-review';
-import { courses, tutorMessages, tutorSessions, topics, aiOperations, plannedSessions, scopes } from '../db/schema';
+import {
+  courses,
+  tutorMessages,
+  tutorSessions,
+  topics,
+  aiOperations,
+  plannedSessions,
+  scopes,
+  runAnswers,
+  learningRuns,
+} from '../db/schema';
 import { citationBlocks, validateCitation } from './materials';
 import { spansText } from '../../shared/domain/document-text';
 import { operation, attempt } from './learning';
@@ -15,6 +25,7 @@ import { getCourse } from './workspace';
 import { sectionTopic } from './outline/links';
 import { conflict, notFound, ApiError } from '../errors';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
+import { detectLanguage } from './knowledge/language';
 
 type Db = ReadDb | Transaction;
 async function ownSession(db: Db, workspaceId: string, id: string, lock = false) {
@@ -300,7 +311,10 @@ export async function saveMessage(
       text: input.text,
       action: input.action,
       ...(input.focus ? { focus: input.focus } : {}),
+      ...(input.reply ? { reply: input.reply } : {}),
     });
+    // Asking in Arabic, or for an explanation in Arabic, while a bank question waits is language support.
+    if (input.reply || detectLanguage(input.text) === 'ar') await markLanguageSupport(tx, id);
     const [updated] = await tx
       .update(tutorSessions)
       .set({ revision: session.revision + 1, updatedAt: new Date() })
@@ -310,6 +324,30 @@ export async function saveMessage(
     const { workspaceId: _mw, courseId: _c, sessionId: _s, ...saved } = message!;
     return { session: visible, message: saved, pendingReply: input.operationId };
   });
+}
+/** Record language support on the session's open bank question, if one waits for an answer. */
+async function markLanguageSupport(tx: Transaction, sessionId: string) {
+  const [message] = await tx
+    .select({ provenance: tutorMessages.provenance })
+    .from(tutorMessages)
+    .where(and(eq(tutorMessages.sessionId, sessionId), sql`${tutorMessages.provenance} ? 'check'`))
+    .orderBy(desc(tutorMessages.ordinal))
+    .limit(1);
+  const check = message?.provenance?.check;
+  if (!check) return;
+  const [run] = await tx
+    .select({ workspaceId: learningRuns.workspaceId, courseId: learningRuns.courseId, setId: learningRuns.setId })
+    .from(learningRuns)
+    .where(eq(learningRuns.id, check.runId));
+  if (!run) return;
+  await tx
+    .insert(runAnswers)
+    .values({ ...run, runId: check.runId, itemId: check.itemId, response: { kind: 'none' }, languageSupport: true })
+    .onConflictDoUpdate({
+      target: [runAnswers.runId, runAnswers.itemId],
+      set: { languageSupport: true },
+      setWhere: sql`${runAnswers.checked} = false`,
+    });
 }
 /** What the tutor remembers about the student in a course. */
 export async function tutorNotes(db: Db, workspaceId: string, courseId: string) {

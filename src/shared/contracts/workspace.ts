@@ -12,6 +12,8 @@ export const preferenceFields = z.strictObject({
   readingSize: z.enum(['normal', 'large', 'larger']),
   motion: z.enum(['system', 'reduced', 'full']),
   theme: z.enum(['system', 'light', 'dark']),
+  // The language the student thinks in, for glossaries and explanations. Checks stay in the course's language.
+  firstLanguage: z.enum(['none', 'ar']).default('none'),
   reminders: z.strictObject({
     assessments: z.boolean(),
     study: z.boolean(),
@@ -30,6 +32,7 @@ export const defaultPreferences: PreferenceFields = {
   readingSize: 'normal',
   motion: 'system',
   theme: 'system',
+  firstLanguage: 'none',
   reminders: { assessments: true, study: true, review: false, days: 1 },
 };
 export const timezone = z

@@ -583,6 +583,8 @@ export const runAnswers = pgTable(
     checked: boolean('checked').notNull().default(false),
     revealed: boolean('revealed').notNull().default(false),
     hinted: boolean('hinted').notNull().default(false),
+    // The student opened a glossary entry or a first-language explanation before checking.
+    languageSupport: boolean('language_support').notNull().default(false),
   },
   t => [
     primaryKey({ columns: [t.runId, t.itemId] }),
@@ -634,6 +636,9 @@ export const itemResults = pgTable(
     mode: text('mode').$type<'practice' | 'exam' | 'self-rated' | 'tutored'>().notNull(),
     score: real('score').notNull(),
     usedHint: boolean('used_hint').notNull(),
+    // Answered with language support: a glossary entry or a first-language explanation. Kept apart
+    // from a hint, so "understands it, needs the term in Arabic" stays visible. It is not independent.
+    languageSupport: boolean('language_support').notNull().default(false),
     at: timestamp('at', { withTimezone: true }).defaultNow().notNull(),
   },
   t => [
@@ -1334,5 +1339,31 @@ export const agentActions = pgTable(
     unique('agent_actions_order_unique').on(t.runId, t.ordinal),
     index('agent_actions_recent_idx').on(t.workspaceId, t.at),
     index('agent_actions_key_idx').on(t.workspaceId, t.key),
+  ],
+);
+/**
+ * A first-language gloss for a term the material defines, written once per fact and language and
+ * kept, like digests. The English definition and its blocks stay the source.
+ */
+export const glosses = pgTable(
+  'glosses',
+  {
+    ...materialScope(),
+    factId: uuid('fact_id')
+      .notNull()
+      .references(() => facts.id, { onDelete: 'cascade' }),
+    language: text('language').$type<Language>().notNull(),
+    term: text('term').notNull(),
+    gloss: text('gloss').notNull(),
+    explanation: text('explanation').notNull(),
+    writtenBy: text('written_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  t => [
+    primaryKey({ columns: [t.factId, t.language] }),
+    index('glosses_course_idx').on(t.workspaceId, t.courseId, t.language),
+    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete(
+      'cascade',
+    ),
   ],
 );

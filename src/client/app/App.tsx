@@ -28,6 +28,7 @@ const Planner = lazy(() => import('@/features/planning/Planner').then(m => ({ de
 const Progress = lazy(() => import('@/features/progress/Progress').then(m => ({ default: m.Progress })));
 const AiOperation = lazy(() => import('@/features/ai/AiOperation').then(m => ({ default: m.AiOperation })));
 const Agent = lazy(() => import('@/features/agent/Agent').then(m => ({ default: m.Agent })));
+const Glossary = lazy(() => import('@/features/language/Glossary').then(m => ({ default: m.Glossary })));
 const Exams = lazy(() => import('@/features/exams/Exams').then(m => ({ default: m.Exams })));
 const Run = lazy(() => import('@/features/practice/Runner').then(m => ({ default: m.Run })));
 const AttemptReview = lazy(() => import('@/features/practice/Attempt').then(m => ({ default: m.AttemptReview })));
@@ -301,6 +302,7 @@ export function App() {
                   <Route path="/courses/new" element={<Navigate replace to="/courses?new=1" />} />
                   <Route path="/course/:id" element={<CourseOverview key={location.pathname} />} />
                   <Route path="/course/:id/materials" element={<Materials key={location.pathname} />} />
+                  <Route path="/course/:id/glossary" element={<Glossary key={location.pathname} />} />
                   <Route path="/materials/:materialId" element={<MaterialReader key={location.pathname} />} />
                   <Route
                     path="/materials/:materialId/versions/:versionId"

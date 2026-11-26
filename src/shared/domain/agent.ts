@@ -160,7 +160,14 @@ export function decide(input: PolicyInput): Decision[] {
         courseId: c.courseId,
         key: `unaided:${s.materialId}:${s.key}:${s.on}`,
         reason: `The answer on "${s.heading}" was right, with language support. Rawi scheduled a check without support for ${on}, so the section counts once it is answered alone.`,
-        input: { materialId: s.materialId, key: s.key, heading: s.heading, date: on < today ? today : on },
+        input: {
+          materialId: s.materialId,
+          key: s.key,
+          heading: s.heading,
+          date: on < today ? today : on,
+          title: `Try "${s.heading}" without support`,
+          to: `/course/${c.courseId}/practice`,
+        },
         notify: true,
         remindOn: on < today ? today : on,
       });
@@ -171,7 +178,7 @@ export function decide(input: PolicyInput): Decision[] {
         courseId: c.courseId,
         key: `glossary:${c.courseId}`,
         reason: `${plural(c.languageSupportCount, 'answer')} in ${c.name} used language support in the last two weeks, so Rawi prepared the course glossary.`,
-        input: {},
+        input: { title: `The ${c.name} glossary is ready`, to: `/course/${c.courseId}/glossary` },
         notify: true,
         remindOn: today,
       });

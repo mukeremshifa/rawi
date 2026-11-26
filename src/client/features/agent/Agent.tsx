@@ -38,7 +38,7 @@ export function Agent() {
   const save = useSave();
   if (view.isPending) return <PageLoading label="Loading what Rawi did" />;
   if (view.error) return <ErrorState error={view.error} onRetry={() => void view.refetch()} />;
-  const { goals, runs, totals } = view.data;
+  const { goals, runs, totals, checks } = view.data;
   const courseName = (id: string | null) => planner.data?.courses.find(c => c.id === id)?.name ?? '';
   const checkNow = () =>
     save.run<{ started: boolean; view: AgentView }>(
@@ -65,6 +65,7 @@ export function Agent() {
       />
       {save.error && <p className="text-danger-text text-sm">{save.error}</p>}
       <Goals goals={goals} planner={planner.data} courseName={courseName} />
+      <Checks checks={checks} />
       <Section
         title="Runs"
         description={
@@ -88,6 +89,33 @@ export function Agent() {
         )}
       </Section>
     </Page>
+  );
+}
+
+/** How answers were reached lately: alone, with a hint, or with language support. Counts, never a score. */
+function Checks({ checks }: { checks: AgentView['checks'] }) {
+  const total = checks.unaided + checks.concept + checks.language + checks.notRight;
+  if (!total) return null;
+  const rows = [
+    { label: 'Right on your own', n: checks.unaided },
+    { label: 'Right with a hint', n: checks.concept },
+    { label: 'Right with language support', n: checks.language },
+    { label: 'Not right yet', n: checks.notRight },
+  ];
+  return (
+    <Section
+      title="How your answers went"
+      description={`Marked answers in the last ${checks.days} days. Only answers given alone move a section toward secure.`}
+    >
+      <dl className="grid grid-cols-2 gap-snug sm:grid-cols-4">
+        {rows.map(r => (
+          <div key={r.label} className="bg-card flex flex-col gap-0.5 rounded-lg border p-snug">
+            <dt className="text-muted-foreground text-sm">{r.label}</dt>
+            <dd className="text-xl font-semibold tabular-nums">{r.n}</dd>
+          </div>
+        ))}
+      </dl>
+    </Section>
   );
 }
 
@@ -209,10 +237,16 @@ function Goals({
                 <span className="font-medium">{g.title}</span>
                 <span className="text-muted-foreground text-sm">
                   <Link className="hover:underline" to={`/course/${g.courseId}`}>
-                    {courseName(g.courseId)}
+                    {courseName(g.courseId) || 'Course'}
                   </Link>
-                  {g.date && `, ${g.date}${today ? `, ${daysLeft(daysBetweenDates(today, g.date))}` : ''}`}
-                  {g.source === 'syllabus' && ', from the syllabus'}
+                  {[
+                    g.date,
+                    g.date && today ? daysLeft(daysBetweenDates(today, g.date)) : '',
+                    g.source === 'syllabus' ? 'from the syllabus' : '',
+                  ]
+                    .filter(Boolean)
+                    .map(part => `, ${part}`)
+                    .join('')}
                 </span>
               </div>
               <div className="flex gap-tight">

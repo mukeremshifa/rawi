@@ -19,6 +19,7 @@ import { tutorRoutes } from './routes/tutor';
 import { supportRoutes } from './routes/support';
 import { aiRoutes } from './routes/ai';
 import { agentRoutes } from './routes/agent';
+import { languageRoutes } from './routes/language';
 
 export const api = new Hono<BackendContext>();
 api.use('*', async (c, next) => {
@@ -119,6 +120,7 @@ app.route('/', tutorRoutes);
 app.route('/', supportRoutes);
 app.route('/', aiRoutes);
 app.route('/', agentRoutes);
+app.route('/', languageRoutes);
 configured.route('/v1', app);
 api.route('/', configured);
 api.notFound(() => {

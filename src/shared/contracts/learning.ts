@@ -133,7 +133,10 @@ export const answerBatch = z
   .max(50)
   .refine(v => unique(v.map(i => i.itemId)));
 export const runWriteInput = writeInput.extend({ answers: answerBatch, position: z.number().int().min(0).max(49) });
-export const transitionInput = writeInput.extend({ itemId: uuid, action: z.enum(['check', 'reveal', 'hint']) });
+export const transitionInput = writeInput.extend({
+  itemId: uuid,
+  action: z.enum(['check', 'reveal', 'hint', 'language']),
+});
 export const pageQuery = z.strictObject({
   cursor: uuid.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
@@ -156,6 +159,8 @@ export type RunItem = {
   checked: boolean;
   revealed: boolean;
   hinted: boolean;
+  /** A glossary entry or a first-language explanation was opened before checking. */
+  languageSupport: boolean;
   feedback?: QuestionAttempt;
 };
 export type FlashcardReview = {
