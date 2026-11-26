@@ -51,14 +51,17 @@ api.get('/status', c => {
 });
 
 const configured = new Hono<BackendContext>();
+let routePatterns: RegExp[] | undefined;
+/** Whether a path matches a mounted route, read from the router so a new route needs no list. */
+function knownPath(path: string) {
+  routePatterns ??= configured.routes
+    .filter(route => route.method !== 'ALL')
+    .map(route => new RegExp(`^/api${route.path.replace(/:[^/]+/g, '[^/]+').replace(/\*/g, '.*')}$`));
+  return routePatterns.some(pattern => pattern.test(path));
+}
 configured.use('*', async (c, next) => {
   // Unknown paths return 404 even when configuration is absent.
-  const known =
-    c.req.path.startsWith('/api/auth/') ||
-    /^\/api\/v1\/(ai\/status|ai\/funding(?:\/key|\/use)?|ai\/operations\/[^/]+(?:\/cancel)?|me|profile|preferences|search|notifications|planner|progress|planner\/(availability|sessions|proposals|check-ins)|planner\/proposals\/[^/]+\/apply|courses(?:\/[^/]+(?:\/(topics|outline|outline\/corrections|outline\/undo|outline\/read|materials|uploads|originals|practice|sets|runs|attempts|exams|assessments|tutor|tutor\/notes|tutor\/notes\/clear|scopes))?)?|scopes\/[^/]+|materials\/[^/]+(?:\/covers|\/versions(?:\/[^/]+(?:\/(download|blocks|convert|assets\/[^/]+))?)?)?|uploads\/[^/]+(?:\/finalize)?|sets\/[^/]+(?:\/runs)?|runs\/[^/]+(?:\/(answers|submit|transition|exam-transition|revisit))?|attempts\/[^/]+|exams\/[^/]+(?:\/runs)?|tutor\/[^/]+(?:\/(ask|end|reply))?)$/.test(
-      c.req.path,
-    );
-  if (!known) throw notFound();
+  if (!knownPath(c.req.path)) throw notFound();
   const missing = configurationProblems(c.env);
   if (missing.length)
     throw new ApiError(503, 'not_configured', 'Your workspace is temporarily unavailable. Please try again.');
