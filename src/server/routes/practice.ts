@@ -13,6 +13,7 @@ import {
 } from '../../shared/contracts/learning';
 import { fillRun, practise } from '../services/questions/practice';
 import { jsonInput, type BackendContext } from '../http';
+import { runAgent } from '../services/agent/loop';
 
 export const practiceRoutes = new Hono<BackendContext>();
 practiceRoutes.post('/courses/:id/practice', async c => {
@@ -93,17 +94,18 @@ practiceRoutes.put('/runs/:id/answers', async c =>
     ),
   ),
 );
-practiceRoutes.post('/runs/:id/submit', async c =>
-  c.json(
-    await learning.writeRun(
-      c.get('socket'),
-      c.get('workspaceId'),
-      uuid.parse(c.req.param('id')),
-      await jsonInput(c, runWriteInput),
-      true,
-    ),
-  ),
-);
+/** A submitted run changes the learner state, so the agent looks again after the response. */
+practiceRoutes.post('/runs/:id/submit', async c => {
+  const view = await learning.writeRun(
+    c.get('socket'),
+    c.get('workspaceId'),
+    uuid.parse(c.req.param('id')),
+    await jsonInput(c, runWriteInput),
+    true,
+  );
+  c.executionCtx.waitUntil(runAgent(c.env, c.get('workspaceId'), 'session'));
+  return c.json(view);
+});
 practiceRoutes.post('/runs/:id/transition', async c =>
   c.json(
     await learning.transition(

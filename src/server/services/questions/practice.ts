@@ -239,6 +239,7 @@ export async function topUp(
   courseId: string,
   scopeId: string,
   formats: QuestionFormat[],
+  ids: { operationId?: string; jobId?: string } = {},
 ) {
   const wanted = formats.filter(f => MODEL_FORMATS.includes(f) || f === 'multiple-choice');
   if (!wanted.length) return 0;
@@ -271,7 +272,7 @@ export async function topUp(
     if (new Set(shortfall.map(s => s.sectionId)).size >= 3) break;
   }
   if (!shortfall.length) return 0;
-  const ctx: CallContext = { db, workspaceId, budget: budget(6, 30_000, 240) };
+  const ctx: CallContext = { db, workspaceId, ...ids, budget: budget(6, 30_000, 240) };
   const result = await generate(env, ctx, { workspaceId, courseId }, shortfall, 'background');
   return result.items.length;
 }

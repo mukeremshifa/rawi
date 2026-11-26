@@ -48,6 +48,14 @@ import type {
   TopicDepth,
   TopicOrigin,
 } from '../../shared/contracts/outline';
+import type {
+  AgentObservation,
+  AgentRunState,
+  AgentTool,
+  AgentTrigger,
+  GoalSource,
+  GoalStatus,
+} from '../../shared/contracts/agent';
 
 const timestamps = () => ({
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1228,5 +1236,103 @@ export const scopes = pgTable(
       .where(sql`${t.kind} = 'course'`),
     index('scopes_list_idx').on(t.workspaceId, t.courseId, t.archived),
     check('scopes_kind_valid', sql`${t.kind} in ('topic', 'sections', 'assessment', 'course')`),
+  ],
+);
+/**
+ * The study agent. A goal ties a course to what the student works toward, usually an assessment,
+ * through a scope. Goals come from the student or from the syllabus's dated assessments.
+ */
+export const studyGoals = pgTable(
+  'study_goals',
+  {
+    id: uuid('id').primaryKey(),
+    ...materialScope(),
+    title: text('title').notNull(),
+    date: date('date', { mode: 'string' }),
+    assessmentId: uuid('assessment_id'),
+    scopeId: uuid('scope_id').notNull(),
+    source: text('source').$type<GoalSource>().notNull(),
+    status: text('status').$type<GoalStatus>().notNull().default('active'),
+    ...timestamps(),
+  },
+  t => [
+    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete(
+      'cascade',
+    ),
+    foreignKey({
+      name: 'study_goals_scope_fk',
+      columns: [t.workspaceId, t.courseId, t.scopeId],
+      foreignColumns: [scopes.workspaceId, scopes.courseId, scopes.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'study_goals_assessment_fk',
+      columns: [t.workspaceId, t.courseId, t.assessmentId],
+      foreignColumns: [assessments.workspaceId, assessments.courseId, assessments.id],
+    }).onDelete('cascade'),
+    // One goal per assessment, so the syllabus pass never adds a second.
+    uniqueIndex('study_goals_assessment_unique')
+      .on(t.courseId, t.assessmentId)
+      .where(sql`${t.assessmentId} is not null`),
+    index('study_goals_list_idx').on(t.workspaceId, t.status),
+    check('study_goals_source_valid', sql`${t.source} in ('student', 'syllabus')`),
+    check('study_goals_status_valid', sql`${t.status} in ('active', 'done', 'dropped')`),
+  ],
+);
+/** One pass of the agent over a workspace. At most one runs at a time, held by a lease. */
+export const agentRuns = pgTable(
+  'agent_runs',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    trigger: text('trigger').$type<AgentTrigger>().notNull(),
+    state: text('state').$type<AgentRunState>().notNull().default('running'),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }).notNull(),
+    observation: jsonb('observation').$type<AgentObservation>(),
+    summary: text('summary'),
+    summaryBy: text('summary_by').$type<'code' | 'model'>(),
+    error: text('error'),
+    startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  t => [
+    uniqueIndex('agent_runs_one_running')
+      .on(t.workspaceId)
+      .where(sql`${t.state} = 'running'`),
+    index('agent_runs_recent_idx').on(t.workspaceId, t.startedAt),
+    check('agent_runs_state_valid', sql`${t.state} in ('running', 'done', 'failed')`),
+  ],
+);
+/** What the agent did, why, and what it cost. Rows are written once and never edited. */
+export const agentActions = pgTable(
+  'agent_actions',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id').notNull(),
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => agentRuns.id, { onDelete: 'cascade' }),
+    courseId: uuid('course_id').references(() => courses.id, { onDelete: 'cascade' }),
+    ordinal: integer('ordinal').notNull(),
+    tool: text('tool').$type<AgentTool>().notNull(),
+    // What the decision was about, such as a goal and a day. A key acted on is not acted on again.
+    key: text('key').notNull(),
+    decidedBy: text('decided_by').$type<'code' | 'model'>().notNull(),
+    reason: text('reason').notNull(),
+    input: jsonb('input').$type<unknown>().notNull(),
+    outcome: text('outcome').notNull(),
+    status: text('status').$type<'done' | 'skipped' | 'failed'>().notNull(),
+    // Shown among the student's reminders.
+    notify: boolean('notify').notNull().default(false),
+    // For a reminder: the local date it is for.
+    remindOn: date('remind_on', { mode: 'string' }),
+    costMicros: bigint('cost_micros', { mode: 'number' }).notNull().default(0),
+    at: timestamp('at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  t => [
+    unique('agent_actions_order_unique').on(t.runId, t.ordinal),
+    index('agent_actions_recent_idx').on(t.workspaceId, t.at),
+    index('agent_actions_key_idx').on(t.workspaceId, t.key),
   ],
 );
