@@ -9,8 +9,6 @@ import { App } from '@/app/App';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/query';
 import '@/styles/globals.css';
-import { retireBrowserStorage } from '@/app/retire-storage';
-retireBrowserStorage();
 const router = createBrowserRouter([{ path: '*', element: <App /> }]);
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
