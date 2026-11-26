@@ -3,10 +3,16 @@ const CITATION = /(\s?)\[\[([^\]\s]{1,200})\]\]/g;
 export type Grounding = 'materials' | 'mixed' | 'general' | 'insufficient';
 export type EvidenceVerdict = 'sufficient' | 'partial' | 'absent' | 'conversational';
 
-const STOP = new Set('this that with from have they their them were what when which while would could should about there these those also into than then your some such more most only other because been being does just like make made many much must over very will after before again between through during under where who whom whose'.split(' '));
-const words = (text: string) => [...new Set((text.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? []).filter(w => !STOP.has(w)))];
+const STOP = new Set(
+  'this that with from have they their them were what when which while would could should about there these those also into than then your some such more most only other because been being does just like make made many much must over very will after before again between through during under where who whom whose'.split(
+    ' ',
+  ),
+);
+const words = (text: string) => [
+  ...new Set((text.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? []).filter(w => !STOP.has(w))),
+];
 /** A crude stem, so `enforced` finds `enforcement`. Enough to compare a sentence with a passage. */
-const stem = (word: string) => word.length > 6 ? word.slice(0, Math.max(5, word.length - 3)) : word;
+const stem = (word: string) => (word.length > 6 ? word.slice(0, Math.max(5, word.length - 3)) : word);
 /** Share of a sentence's content words that a passage mentions. */
 export function support(sentence: string, passage: string) {
   const own = words(sentence.replace(CITATION, ' '));
@@ -36,26 +42,43 @@ export function finishTutorText(raw: string, passages: { id: string; text: strin
   const byId = new Map(passages.map(p => [p.id, p.text]));
   const sentences = body.split(/(?<=[.!?])\s+|\n+/).filter(s => s.trim());
   const citations: string[] = [];
-  let dropped = 0, unsupported = 0;
-  const kept = sentences.map(sentence => sentence.replace(CITATION, (_match, space: string, id: string) => {
-    const passage = byId.get(id);
-    if (passage === undefined) { dropped++; return ''; }
-    if (support(sentence, passage) < CITED_SUPPORT) { unsupported++; return ''; }
-    if (!citations.includes(id)) citations.push(id);
-    return `${space}[[${id}]]`;
-  }));
+  let dropped = 0,
+    unsupported = 0;
+  const kept = sentences.map(sentence =>
+    sentence.replace(CITATION, (_match, space: string, id: string) => {
+      const passage = byId.get(id);
+      if (passage === undefined) {
+        dropped++;
+        return '';
+      }
+      if (support(sentence, passage) < CITED_SUPPORT) {
+        unsupported++;
+        return '';
+      }
+      if (!citations.includes(id)) citations.push(id);
+      return `${space}[[${id}]]`;
+    }),
+  );
   let text = body;
   // Rebuild in place so the reply keeps its own line breaks.
   // A function replacement, so `$$` in a formula is kept as written and never read as a pattern.
-  sentences.forEach((s, i) => { text = text.replace(s, () => kept[i]!); });
+  sentences.forEach((s, i) => {
+    text = text.replace(s, () => kept[i]!);
+  });
 
   // Statements are sentences of six words or more that are not questions to the student.
   const statements = sentences.filter(s => !s.trim().endsWith('?') && s.split(/\s+/).length >= 6);
   const covered = statements.filter(s => passages.some(p => support(s, p.text) >= SENTENCE_SUPPORT)).length;
   const share = statements.length ? covered / statements.length : 0;
-  const grounding: Grounding | undefined = verdict === 'absent' ? 'insufficient'
-    : verdict === 'conversational' ? undefined
-    : share >= 0.7 && verdict === 'sufficient' ? 'materials'
-    : share >= 0.3 || verdict === 'partial' ? 'mixed' : 'general';
+  const grounding: Grounding | undefined =
+    verdict === 'absent'
+      ? 'insufficient'
+      : verdict === 'conversational'
+        ? undefined
+        : share >= 0.7 && verdict === 'sufficient'
+          ? 'materials'
+          : share >= 0.3 || verdict === 'partial'
+            ? 'mixed'
+            : 'general';
   return { text: text.trim(), citations, dropped, unsupported, grounding, supportedShare: share };
 }

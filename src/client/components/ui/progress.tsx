@@ -8,15 +8,30 @@ import { cn } from '@/lib/utils';
  * `value={null}` when the size is unknown. For a fact that is true now (a
  * count of topics), use Meter instead.
  */
-function Progress({ className, value, ...props }: Omit<React.ComponentProps<typeof ProgressPrimitive.Root>, 'value'> & { value: number | null }) {
+function Progress({
+  className,
+  value,
+  ...props
+}: Omit<React.ComponentProps<typeof ProgressPrimitive.Root>, 'value'> & { value: number | null }) {
   const indeterminate = value === null;
   const clamped = indeterminate ? 0 : Math.min(100, Math.max(0, value));
   return (
-    <ProgressPrimitive.Root data-slot="progress" value={indeterminate ? undefined : clamped}
-      className={cn('bg-muted relative h-1 w-full overflow-hidden rounded-full', className)} {...props}>
+    <ProgressPrimitive.Root
+      data-slot="progress"
+      value={indeterminate ? undefined : clamped}
+      className={cn('bg-muted relative h-1 w-full overflow-hidden rounded-full', className)}
+      {...props}
+    >
       <ProgressPrimitive.Indicator
-        className={cn('bg-primary h-full w-full rounded-full', indeterminate ? 'ui-generating' : 'transition-transform')}
-        style={{ transform: indeterminate ? undefined : `translateX(-${100 - clamped}%)`, transitionDuration: 'var(--duration-moving)' }} />
+        className={cn(
+          'bg-primary h-full w-full rounded-full',
+          indeterminate ? 'ui-generating' : 'transition-transform',
+        )}
+        style={{
+          transform: indeterminate ? undefined : `translateX(-${100 - clamped}%)`,
+          transitionDuration: 'var(--duration-moving)',
+        }}
+      />
     </ProgressPrimitive.Root>
   );
 }

@@ -38,7 +38,6 @@ export function materialsForTopic(topic: StudyTopic, materials: StudyMaterial[])
  * of them is the only way that holds as any of them changes.
  */
 
-
 export interface TopicCapabilities {
   /** Readable course material relates to this topic, so the tutor can teach it. */
   tutor: boolean;
@@ -71,10 +70,7 @@ export function topicCapabilities(topic: StudyTopic, materials: StudyMaterial[])
  * testing before reading when it is not. `null` means nothing is possible and
  * the caller must say so rather than inventing a task.
  */
-export function bestActivity(
-  preferred: SessionActivity,
-  capabilities: TopicCapabilities,
-): SessionActivity | null {
+export function bestActivity(preferred: SessionActivity, capabilities: TopicCapabilities): SessionActivity | null {
   const possible = (activity: SessionActivity): boolean => {
     switch (activity) {
       case 'tutor':
@@ -113,10 +109,7 @@ export function bestActivity(
  * Used in the reason a suggestion carries, so a student who wonders why they
  * are being sent to a reading rather than the tutor gets the actual answer.
  */
-export function substitutionNote(
-  preferred: SessionActivity,
-  chosen: SessionActivity,
-): string {
+export function substitutionNote(preferred: SessionActivity, chosen: SessionActivity): string {
   if (preferred === chosen) return '';
   if (preferred === 'tutor') {
     return ' There is no readable material for the tutor to teach this topic from, so this is the next best thing available.';
@@ -130,4 +123,3 @@ export function substitutionNote(
 /** Why nothing could be suggested for a topic, as a sentence. */
 export const NO_CONTENT_REASON =
   'There is no readable material or question behind this topic yet, so there is nothing to study it with. Add a reading or link this topic to material first.';
-

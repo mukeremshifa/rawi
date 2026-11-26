@@ -98,22 +98,11 @@ export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
  * from nowhere". It now says the source is unavailable, as plain text rather
  * than an enabled link into a 404.
  */
-export function SourceLink({
-  source,
-  className,
-}: {
-  source: SourceRef | undefined;
-  className?: string;
-}) {
+export function SourceLink({ source, className }: { source: SourceRef | undefined; className?: string }) {
   if (!source) return null;
   if (!source.versionId || !source.blockIds.length) {
     return (
-      <span
-        className={cn(
-          'text-muted-foreground inline-flex items-center gap-hairline text-xs',
-          className,
-        )}
-      >
+      <span className={cn('text-muted-foreground inline-flex items-center gap-hairline text-xs', className)}>
         <BookOpenIcon className="size-3 shrink-0" aria-hidden />
         <span className="truncate">Source no longer available</span>
       </span>
@@ -129,9 +118,7 @@ export function SourceLink({
       )}
     >
       <BookOpenIcon className="size-3 shrink-0" aria-hidden />
-      <span className="truncate">
-        Read the exact source
-      </span>
+      <span className="truncate">Read the exact source</span>
     </Link>
   );
 }
@@ -158,9 +145,7 @@ export function formatDate(iso: string): string {
 }
 
 export function formatRelative(iso: string): string {
-  const days = Math.floor(
-    (Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24),
-  );
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24));
   if (days <= 0) return 'Today';
   if (days === 1) return 'Yesterday';
   if (days < 7) return `${days} days ago`;
@@ -186,9 +171,7 @@ export function formatMinutes(minutes: number): string {
 /** A date label that leads with today/tomorrow, for deadlines. */
 export function formatDueDate(iso: string, now: Date = new Date()): string {
   const days = Math.round(
-    (new Date(`${iso}T12:00:00`).getTime() -
-      new Date(`${localISO(now)}T12:00:00`).getTime()) /
-      86_400_000,
+    (new Date(`${iso}T12:00:00`).getTime() - new Date(`${localISO(now)}T12:00:00`).getTime()) / 86_400_000,
   );
   if (days === 0) return 'Today';
   if (days === 1) return 'Tomorrow';
@@ -285,7 +268,9 @@ export const ACTIVITY_LABEL: Record<SessionActivity, string> = {
 
 /** Whole days from today to an ISO date, in the learner's local calendar. */
 export function daysUntil(date: string, now: Date = new Date()): number {
-  return Math.round((new Date(`${date}T12:00:00`).getTime() - new Date(`${localISO(now)}T12:00:00`).getTime()) / 86_400_000);
+  return Math.round(
+    (new Date(`${date}T12:00:00`).getTime() - new Date(`${localISO(now)}T12:00:00`).getTime()) / 86_400_000,
+  );
 }
 
 /**
@@ -297,7 +282,14 @@ export function DueLabel({ date, className }: { date: string; className?: string
   const days = daysUntil(date);
   const urgent = days >= 0 && days <= 3;
   return (
-    <span className={cn('tabular text-sm whitespace-nowrap', urgent ? 'text-danger-text font-medium' : 'text-muted-foreground', className)} title={formatDate(`${date}T12:00:00`)}>
+    <span
+      className={cn(
+        'tabular text-sm whitespace-nowrap',
+        urgent ? 'text-danger-text font-medium' : 'text-muted-foreground',
+        className,
+      )}
+      title={formatDate(`${date}T12:00:00`)}
+    >
       {formatDueDate(date)}
     </span>
   );

@@ -89,13 +89,7 @@ export interface StudyMaterial {
  * and a self-check answer is compared with a model answer. Nothing is marked by a model.
  */
 export type QuestionFormat =
-  | 'flashcard'
-  | 'multiple-choice'
-  | 'numeric'
-  | 'cloze'
-  | 'ordering'
-  | 'matching'
-  | 'self-check';
+  'flashcard' | 'multiple-choice' | 'numeric' | 'cloze' | 'ordering' | 'matching' | 'self-check';
 
 export type Difficulty = 'recall' | 'reasoning' | 'stretch';
 
@@ -253,13 +247,7 @@ export interface Attempt {
 
 /* ── Tutor ────────────────────────────────────────────────────────────── */
 
-export type TutorStage =
-  | 'orient'
-  | 'understand'
-  | 'recall'
-  | 'reason'
-  | 'apply'
-  | 'reflect';
+export type TutorStage = 'orient' | 'understand' | 'recall' | 'reason' | 'apply' | 'reflect';
 
 export type TutorRole = 'tutor' | 'student';
 
@@ -296,16 +284,7 @@ export interface TutorSuggestion {
 }
 
 export type TutorIntent =
-  | 'explain'
-  | 'simpler'
-  | 'example'
-  | 'hint'
-  | 'answer'
-  | 'check'
-  | 'why'
-  | 'practice'
-  | 'continue'
-  | 'summary';
+  'explain' | 'simpler' | 'example' | 'hint' | 'answer' | 'check' | 'why' | 'practice' | 'continue' | 'summary';
 
 export interface AnswerReview {
   attemptId: string;
@@ -445,13 +424,7 @@ export interface ExamRun {
  * its own coverage, and lets one of them be rehearsed five times without any of
  * those rehearsals being mistaken for the assessment itself.
  */
-export type AssessmentType =
-  | 'quiz'
-  | 'midterm'
-  | 'final'
-  | 'essay'
-  | 'presentation'
-  | 'other';
+export type AssessmentType = 'quiz' | 'midterm' | 'final' | 'essay' | 'presentation' | 'other';
 
 export interface PlannedAssessment {
   id: string;
@@ -514,14 +487,7 @@ export interface Availability {
 }
 
 /** What a scheduled session is for. Decides which activity it opens. */
-export type SessionActivity =
-  | 'tutor'
-  | 'read'
-  | 'practice'
-  | 'flashcards'
-  | 'exam'
-  | 'review'
-  | 'other';
+export type SessionActivity = 'tutor' | 'read' | 'practice' | 'flashcards' | 'exam' | 'review' | 'other';
 
 export type SessionStatus = 'planned' | 'completed' | 'skipped';
 
@@ -673,11 +639,7 @@ export interface ReviewDue {
  * self-rated recall and independent exam work must not collapse into one
  * number. The ramp tokens in `globals.css` are keyed to these names.
  */
-export type EvidenceLevel =
-  | 'not-checked'
-  | 'practising'
-  | 'independent-once'
-  | 'retained';
+export type EvidenceLevel = 'not-checked' | 'practising' | 'independent-once' | 'retained';
 
 export interface TopicEvidence {
   courseId: string;

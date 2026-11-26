@@ -9,4 +9,5 @@ export function detectLanguage(text: string): Language {
 }
 
 /** The Postgres text search configuration for a language. Unknown languages use `simple`. */
-export const searchConfig = (language: Language) => language === 'en' ? 'english' : language === 'ar' ? 'arabic' : 'simple';
+export const searchConfig = (language: Language) =>
+  language === 'en' ? 'english' : language === 'ar' ? 'arabic' : 'simple';

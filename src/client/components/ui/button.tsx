@@ -34,13 +34,23 @@ const buttonVariants = cva(
   },
 );
 
-type ButtonProps = React.ComponentProps<'button'> & VariantProps<typeof buttonVariants> & {
-  asChild?: boolean;
-  /** Shows a spinner and blocks repeat activation. Keep the label. */
-  loading?: boolean;
-};
+type ButtonProps = React.ComponentProps<'button'> &
+  VariantProps<typeof buttonVariants> & {
+    asChild?: boolean;
+    /** Shows a spinner and blocks repeat activation. Keep the label. */
+    loading?: boolean;
+  };
 
-function Button({ className, variant, size, asChild = false, loading = false, disabled, children, ...props }: ButtonProps) {
+function Button({
+  className,
+  variant,
+  size,
+  asChild = false,
+  loading = false,
+  disabled,
+  children,
+  ...props
+}: ButtonProps) {
   const Comp = asChild ? Slot.Root : 'button';
   return (
     <Comp
@@ -50,7 +60,14 @@ function Button({ className, variant, size, asChild = false, loading = false, di
       aria-busy={loading || undefined}
       {...props}
     >
-      {asChild ? children : <>{loading && <Loader2Icon className="animate-spin" aria-hidden />}{children}</>}
+      {asChild ? (
+        children
+      ) : (
+        <>
+          {loading && <Loader2Icon className="animate-spin" aria-hidden />}
+          {children}
+        </>
+      )}
     </Comp>
   );
 }

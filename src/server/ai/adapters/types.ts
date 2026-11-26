@@ -36,15 +36,33 @@ export interface ModelResult {
  * may be tried. Anything else may have generated tokens, so it stays charged and is not retried.
  */
 export class ProviderError extends Error {
-  constructor(message: string, readonly certain: boolean, readonly status?: number) { super(message); }
+  constructor(
+    message: string,
+    readonly certain: boolean,
+    readonly status?: number,
+  ) {
+    super(message);
+  }
 }
 
 export interface Adapter {
   generate(route: Route, request: ModelRequest, signal?: AbortSignal): Promise<ModelResult>;
   /** Yields text as it arrives and returns the final result. */
   stream(route: Route, request: ModelRequest, signal?: AbortSignal): AsyncGenerator<string, ModelResult>;
-  embed(route: Route, texts: string[], purpose: 'document' | 'query', signal?: AbortSignal): Promise<{ vectors: number[][]; chars: number; latencyMs: number }>;
+  embed(
+    route: Route,
+    texts: string[],
+    purpose: 'document' | 'query',
+    signal?: AbortSignal,
+  ): Promise<{ vectors: number[][]; chars: number; latencyMs: number }>;
 }
 
 /** Statuses that mean the request was refused before any generation. */
-export const refused = (status: number) => status === 400 || status === 401 || status === 403 || status === 404 || status === 413 || status === 422 || status === 429;
+export const refused = (status: number) =>
+  status === 400 ||
+  status === 401 ||
+  status === 403 ||
+  status === 404 ||
+  status === 413 ||
+  status === 422 ||
+  status === 429;

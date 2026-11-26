@@ -28,10 +28,16 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     return (
       <main className="flex flex-1 items-center overflow-y-auto">
         <div className="mx-auto flex w-full max-w-md flex-col items-start gap-2 px-4 py-16">
-          <h1 className="font-serif text-2xl leading-tight font-medium tracking-tight">Something went wrong on this screen</h1>
+          <h1 className="font-serif text-2xl leading-tight font-medium tracking-tight">
+            Something went wrong on this screen
+          </h1>
           <p className="text-muted-foreground text-md">Work you already saved is safe. Reloading usually fixes this.</p>
-          <p className="text-muted-foreground bg-muted mt-1 rounded-md px-2 py-1 font-mono text-xs break-all">{this.state.error.message}</p>
-          <Button className="mt-3" onClick={() => window.location.reload()}>Reload</Button>
+          <p className="text-muted-foreground bg-muted mt-1 rounded-md px-2 py-1 font-mono text-xs break-all">
+            {this.state.error.message}
+          </p>
+          <Button className="mt-3" onClick={() => window.location.reload()}>
+            Reload
+          </Button>
         </div>
       </main>
     );

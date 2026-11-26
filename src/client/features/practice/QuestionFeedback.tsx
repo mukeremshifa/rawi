@@ -15,14 +15,32 @@ import { cn } from '@/lib/utils';
  * Colour appears only on outcomes. `answerShown` is set where the question above already shows
  * the student's answer and the model answer, so they are not repeated here.
  */
-export function QuestionFeedback({ question, attempt, discussTo, answerShown = false }: { question: Question; attempt: QuestionAttempt; discussTo?: string; answerShown?: boolean }) {
+export function QuestionFeedback({
+  question,
+  attempt,
+  discussTo,
+  answerShown = false,
+}: {
+  question: Question;
+  attempt: QuestionAttempt;
+  discussTo?: string;
+  answerShown?: boolean;
+}) {
   return (
     <div className="flex flex-col gap-gutter">
       <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
         <OutcomeBadge outcome={attempt.outcome} />
-        <span className="tabular">{attempt.marksAwarded} of {attempt.marksAvailable} {attempt.marksAvailable === 1 ? 'mark' : 'marks'}</span>
-        <span aria-hidden>·</span><span>{FORMAT_LABEL[question.format]}</span>
-        {attempt.usedHint && <><span aria-hidden>·</span><span>Hint used</span></>}
+        <span className="tabular">
+          {attempt.marksAwarded} of {attempt.marksAvailable} {attempt.marksAvailable === 1 ? 'mark' : 'marks'}
+        </span>
+        <span aria-hidden>·</span>
+        <span>{FORMAT_LABEL[question.format]}</span>
+        {attempt.usedHint && (
+          <>
+            <span aria-hidden>·</span>
+            <span>Hint used</span>
+          </>
+        )}
       </div>
       <AnswerReview question={question} response={attempt.response} answerShown={answerShown} />
       <section className="flex flex-col gap-1.5 border-t pt-gutter">
@@ -31,7 +49,12 @@ export function QuestionFeedback({ question, attempt, discussTo, answerShown = f
         {question.source && <SourceLink source={question.source} className="mt-1" />}
       </section>
       {discussTo && attempt.outcome !== 'correct' && (
-        <Button variant="secondary" size="sm" asChild className="self-start"><Link to={discussTo}><MessageSquareIcon />Work through this with the tutor</Link></Button>
+        <Button variant="secondary" size="sm" asChild className="self-start">
+          <Link to={discussTo}>
+            <MessageSquareIcon />
+            Work through this with the tutor
+          </Link>
+        </Button>
       )}
     </div>
   );
@@ -39,14 +62,36 @@ export function QuestionFeedback({ question, attempt, discussTo, answerShown = f
 
 function Mark({ ok }: { ok: boolean | null }) {
   if (ok === null) return <span className="block size-4 shrink-0" />;
-  return ok ? <CheckIcon className="text-success mt-0.5 size-4 shrink-0" aria-label="Correct" /> : <XIcon className="text-danger mt-0.5 size-4 shrink-0" aria-label="Incorrect" />;
+  return ok ? (
+    <CheckIcon className="text-success mt-0.5 size-4 shrink-0" aria-label="Correct" />
+  ) : (
+    <XIcon className="text-danger mt-0.5 size-4 shrink-0" aria-label="Incorrect" />
+  );
 }
 
 function Row({ tone, children }: { tone: 'right' | 'wrong' | 'plain'; children: React.ReactNode }) {
-  return <li className={cn('flex items-start gap-snug rounded-md border px-3 py-2 text-base', tone === 'right' && 'border-success/40 bg-success-subtle', tone === 'wrong' && 'border-danger/30')}>{children}</li>;
+  return (
+    <li
+      className={cn(
+        'flex items-start gap-snug rounded-md border px-3 py-2 text-base',
+        tone === 'right' && 'border-success/40 bg-success-subtle',
+        tone === 'wrong' && 'border-danger/30',
+      )}
+    >
+      {children}
+    </li>
+  );
 }
 
-function AnswerReview({ question, response, answerShown }: { question: Question; response: AnswerValue; answerShown: boolean }) {
+function AnswerReview({
+  question,
+  response,
+  answerShown,
+}: {
+  question: Question;
+  response: AnswerValue;
+  answerShown: boolean;
+}) {
   switch (question.format) {
     case 'multiple-choice': {
       const given = response.kind === 'choice' ? response.indices : [];
@@ -54,12 +99,17 @@ function AnswerReview({ question, response, answerShown }: { question: Question;
       return (
         <ul className="flex flex-col gap-tight">
           {(question.options ?? []).map((option, index) => {
-            const picked = given.includes(index), isCorrect = correct.includes(index);
+            const picked = given.includes(index),
+              isCorrect = correct.includes(index);
             return (
               <Row key={index} tone={isCorrect ? 'right' : picked ? 'wrong' : 'plain'}>
                 <Mark ok={isCorrect ? true : picked ? false : null} />
                 <span className="flex-1 leading-relaxed">{option}</span>
-                {(picked || isCorrect) && <span className="text-muted-foreground shrink-0 text-sm">{picked && isCorrect ? 'Your answer' : picked ? 'Your answer' : 'Correct answer'}</span>}
+                {(picked || isCorrect) && (
+                  <span className="text-muted-foreground shrink-0 text-sm">
+                    {picked && isCorrect ? 'Your answer' : picked ? 'Your answer' : 'Correct answer'}
+                  </span>
+                )}
               </Row>
             );
           })}
@@ -69,13 +119,22 @@ function AnswerReview({ question, response, answerShown }: { question: Question;
     case 'numeric': {
       const given = response.kind === 'number' ? response.value.trim() : '';
       const unit = question.numeric?.unit ? ` ${question.numeric.unit}` : '';
-      const read = readNumber(given), ok = read !== null && !!question.numeric && Math.abs(read - question.numeric.value) <= question.numeric.tolerance;
+      const read = readNumber(given),
+        ok =
+          read !== null && !!question.numeric && Math.abs(read - question.numeric.value) <= question.numeric.tolerance;
       return (
         <ul className="flex flex-col gap-tight">
           <Row tone={ok ? 'right' : 'wrong'}>
             <Mark ok={ok} />
-            <span className={cn('font-medium', !given && 'text-muted-foreground')}>{given ? `${given}${unit}` : 'Left blank'}</span>
-            {!ok && question.numeric && <span className="text-muted-foreground text-sm">Expected {question.numeric.value.toLocaleString()}{unit}</span>}
+            <span className={cn('font-medium', !given && 'text-muted-foreground')}>
+              {given ? `${given}${unit}` : 'Left blank'}
+            </span>
+            {!ok && question.numeric && (
+              <span className="text-muted-foreground text-sm">
+                Expected {question.numeric.value.toLocaleString()}
+                {unit}
+              </span>
+            )}
           </Row>
         </ul>
       );
@@ -107,7 +166,12 @@ function AnswerReview({ question, response, answerShown }: { question: Question;
             return (
               <Row key={item} tone={inPlace ? 'right' : 'wrong'}>
                 <span className="text-muted-foreground tabular w-4 text-sm">{index + 1}</span>
-                <span className="flex flex-1 flex-col"><span>{item}</span>{!inPlace && given[index] && <span className="text-muted-foreground text-sm">You put: {given[index]}</span>}</span>
+                <span className="flex flex-1 flex-col">
+                  <span>{item}</span>
+                  {!inPlace && given[index] && (
+                    <span className="text-muted-foreground text-sm">You put: {given[index]}</span>
+                  )}
+                </span>
               </Row>
             );
           })}
@@ -119,12 +183,17 @@ function AnswerReview({ question, response, answerShown }: { question: Question;
       return (
         <ul className="flex flex-col gap-tight">
           {(question.pairs ?? []).map(pair => {
-            const given = assignments[pair.left], ok = given === pair.right;
+            const given = assignments[pair.left],
+              ok = given === pair.right;
             return (
               <Row key={pair.left} tone={ok ? 'right' : 'wrong'}>
                 <Mark ok={ok} />
-                <span className="flex flex-1 flex-col"><span className="font-medium">{pair.left}</span>
-                  <span className="text-muted-foreground text-sm">{ok ? pair.right : `You chose ${given || 'nothing'}. Correct: ${pair.right}`}</span></span>
+                <span className="flex flex-1 flex-col">
+                  <span className="font-medium">{pair.left}</span>
+                  <span className="text-muted-foreground text-sm">
+                    {ok ? pair.right : `You chose ${given || 'nothing'}. Correct: ${pair.right}`}
+                  </span>
+                </span>
               </Row>
             );
           })}
@@ -135,8 +204,16 @@ function AnswerReview({ question, response, answerShown }: { question: Question;
       const rating = response.kind === 'self-rating' ? response.rating : null;
       return (
         <div className="flex flex-col gap-tight">
-          {!answerShown && <div className="bg-surface rounded-md border px-4 py-3 font-serif"><Prose text={question.answer ?? ''} /></div>}
-          <p className="text-muted-foreground text-sm">You rated your recall <span className="text-foreground font-medium">{rating ? RATING_LABEL[rating] : 'not at all'}</span>. Self-rated, so it counts separately from marked answers.</p>
+          {!answerShown && (
+            <div className="bg-surface rounded-md border px-4 py-3 font-serif">
+              <Prose text={question.answer ?? ''} />
+            </div>
+          )}
+          <p className="text-muted-foreground text-sm">
+            You rated your recall{' '}
+            <span className="text-foreground font-medium">{rating ? RATING_LABEL[rating] : 'not at all'}</span>.
+            Self-rated, so it counts separately from marked answers.
+          </p>
         </div>
       );
     }
@@ -145,17 +222,36 @@ function AnswerReview({ question, response, answerShown }: { question: Question;
       const mark = response.kind === 'self-check' ? response.mark : null;
       return (
         <div className="flex flex-col gap-gutter">
-          {!answerShown && <>
-            <div className="flex flex-col gap-1.5">
-              <h3 className="text-base font-semibold">Your answer</h3>
-              <div className="bg-surface rounded-md border px-4 py-3 font-serif">{text.trim() ? <Prose text={text} /> : <p className="text-muted-foreground italic">Nothing was written.</p>}</div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <h3 className="text-base font-semibold">Model answer</h3>
-              <div className="rounded-md border px-4 py-3 font-serif"><Prose text={question.answer ?? ''} /></div>
-            </div>
-          </>}
-          <p className="text-muted-foreground text-sm">{mark ? <>You marked this <span className="text-foreground font-medium">{SELF_MARK_LABEL[mark]}</span>. Self-marked, so it counts separately from marked answers.</> : 'Not marked against the model answer.'}</p>
+          {!answerShown && (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <h3 className="text-base font-semibold">Your answer</h3>
+                <div className="bg-surface rounded-md border px-4 py-3 font-serif">
+                  {text.trim() ? (
+                    <Prose text={text} />
+                  ) : (
+                    <p className="text-muted-foreground italic">Nothing was written.</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <h3 className="text-base font-semibold">Model answer</h3>
+                <div className="rounded-md border px-4 py-3 font-serif">
+                  <Prose text={question.answer ?? ''} />
+                </div>
+              </div>
+            </>
+          )}
+          <p className="text-muted-foreground text-sm">
+            {mark ? (
+              <>
+                You marked this <span className="text-foreground font-medium">{SELF_MARK_LABEL[mark]}</span>.
+                Self-marked, so it counts separately from marked answers.
+              </>
+            ) : (
+              'Not marked against the model answer.'
+            )}
+          </p>
         </div>
       );
     }

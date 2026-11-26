@@ -12,11 +12,18 @@ export interface DigestInput {
 }
 const factSchema = z.object({
   kind: z.enum(['fact', 'definition', 'number', 'steps', 'formula']),
-  subject: z.string().describe('definition: the term. number: what is measured, as a noun phrase such as "the population of Lisbon in 1550". steps: the process, as a noun phrase. formula: what it computes. fact: what the claim is about, in a few words'),
+  subject: z
+    .string()
+    .describe(
+      'definition: the term. number: what is measured, as a noun phrase such as "the population of Lisbon in 1550". steps: the process, as a noun phrase. formula: what it computes. fact: what the claim is about, in a few words',
+    ),
   text: z.string().describe('The claim, definition, formula or summary of the steps, readable on its own'),
   value: z.number().nullish().describe('number only: the value exactly as the text gives it. Leave it out otherwise'),
   unit: z.string().nullish().describe('number only: the unit. Leave it out otherwise'),
-  items: z.array(z.string()).nullish().describe('steps only: each step in the order the text gives. Leave it out otherwise'),
+  items: z
+    .array(z.string())
+    .nullish()
+    .describe('steps only: each step in the order the text gives. Leave it out otherwise'),
   blocks: z.array(z.string()).describe('Keys of the blocks that state it'),
 });
 const digestSection = z.object({
@@ -34,8 +41,11 @@ export type Digest = z.infer<typeof digestSchema>;
  * the background lane and its results are kept per section text and reused.
  */
 export const digestTask: Task<DigestInput, Digest> = {
-  name: 'knowledge.digest', promptVersion: KNOWLEDGE_PROMPT_VERSION, temperature: 0,
-  needs: { skill: 'extract', data: 'institution', lane: 'background', maxOutput: 7000, cache: 'none', attempts: 3 }, language: i => i.language,
+  name: 'knowledge.digest',
+  promptVersion: KNOWLEDGE_PROMPT_VERSION,
+  temperature: 0,
+  needs: { skill: 'extract', data: 'institution', lane: 'background', maxOutput: 7000, cache: 'none', attempts: 3 },
+  language: i => i.language,
   build: i => ({
     system: [
       'You read sections of a university course material and record what each one teaches.',
@@ -43,7 +53,8 @@ export const digestTask: Task<DigestInput, Digest> = {
       'Each fact has a kind. definition: a term and what the section says it means. number: a quantity the section states, with its value and unit exactly as written. steps: a process the section gives in order, with each step. formula: an equation, written as the section writes it, and what it computes. fact: any other single claim.',
       'Write each fact so it makes sense on its own. Cite the keys of the blocks that state it. Use only keys from that section. Leave out anything you cannot tie to a block.',
       'Do not add knowledge from outside the material. Return every section key you were given, in order.',
-      DATA_RULE, house(i.language),
+      DATA_RULE,
+      house(i.language),
     ].join('\n'),
     prompt: `<document title="${attribute(i.materialTitle)}">\n${i.sections.map(s => `<section key="${s.key}" heading="${attribute(s.heading)}">\n${s.blocks.map(b => `<block key="${b.key}">${escapeTags(b.text)}</block>`).join('\n')}\n</section>`).join('\n')}\n</document>`,
     schema: schemaOf(digestSchema),
@@ -55,34 +66,68 @@ export const digestTask: Task<DigestInput, Digest> = {
     const raw = (r.json as { sections?: unknown } | null | undefined)?.sections;
     if (!Array.isArray(raw)) return null;
     const shaped = raw.filter((s): s is Record<string, unknown> => !!s && typeof s === 'object' && 'summary' in s);
-    const keyed = shaped.every(s => typeof s.key !== 'string') && shaped.length === i.sections.length ? shaped.map((s, n) => ({ ...s, key: i.sections[n]!.key })) : shaped;
-    const sections = keyed.flatMap(s => { const p = digestSection.safeParse(s); return p.success ? [p.data] : []; });
+    const keyed =
+      shaped.every(s => typeof s.key !== 'string') && shaped.length === i.sections.length
+        ? shaped.map((s, n) => ({ ...s, key: i.sections[n]!.key }))
+        : shaped;
+    const sections = keyed.flatMap(s => {
+      const p = digestSection.safeParse(s);
+      return p.success ? [p.data] : [];
+    });
     // Every section must come back. A partial digest moves to the next route rather than leaving gaps.
     return i.sections.every(s => sections.some(o => o.key === s.key)) ? { sections } : null;
   },
 };
 
-export interface FigureInput { language: Language; caption: string; context: string; image: { mime: string; data: Uint8Array } }
-const figureSchema = z.object({ description: z.string().describe('What the figure shows and what a student should take from it, in two to four sentences') });
+export interface FigureInput {
+  language: Language;
+  caption: string;
+  context: string;
+  image: { mime: string; data: Uint8Array };
+}
+const figureSchema = z.object({
+  description: z
+    .string()
+    .describe('What the figure shows and what a student should take from it, in two to four sentences'),
+});
 
 /** One description per figure, from the image itself, written once at ingest. */
 export const figureTask: Task<FigureInput, string> = {
-  name: 'knowledge.figure', promptVersion: KNOWLEDGE_PROMPT_VERSION, temperature: 0,
-  needs: { skill: 'vision', data: 'institution', lane: 'background', maxOutput: 400, cache: 'none' }, language: i => i.language,
+  name: 'knowledge.figure',
+  promptVersion: KNOWLEDGE_PROMPT_VERSION,
+  temperature: 0,
+  needs: { skill: 'vision', data: 'institution', lane: 'background', maxOutput: 400, cache: 'none' },
+  language: i => i.language,
   build: i => ({
-    system: ['You describe a figure from a university course material for a student who cannot see it.', 'Say what it shows and the point it makes. Read any labels, axes and values that matter. Do not guess at what is not visible.', DATA_RULE, house(i.language)].join('\n'),
+    system: [
+      'You describe a figure from a university course material for a student who cannot see it.',
+      'Say what it shows and the point it makes. Read any labels, axes and values that matter. Do not guess at what is not visible.',
+      DATA_RULE,
+      house(i.language),
+    ].join('\n'),
     prompt: `Caption: ${escapeTags(i.caption) || '(none)'}\nNearby text: ${escapeTags(i.context).slice(0, 600) || '(none)'}`,
-    images: [i.image], schema: schemaOf(figureSchema),
+    images: [i.image],
+    schema: schemaOf(figureSchema),
   }),
   check: r => parsed(figureSchema, r.json)?.description.trim() || null,
 };
 
-export interface AnsweredInput { language: Language; parts: string[]; passages: { heading: string; text: string }[] }
+export interface AnsweredInput {
+  language: Language;
+  parts: string[];
+  passages: { heading: string; text: string }[];
+}
 const answeredSchema = z.object({
-  parts: z.array(z.object({
-    part: z.number().describe('The number of the question part'),
-    quote: z.string().describe('The exact words of one passage that state the answer to this part, copied as written. Empty when no passage states it'),
-  })),
+  parts: z.array(
+    z.object({
+      part: z.number().describe('The number of the question part'),
+      quote: z
+        .string()
+        .describe(
+          'The exact words of one passage that state the answer to this part, copied as written. Empty when no passage states it',
+        ),
+    }),
+  ),
 });
 
 /**
@@ -91,8 +136,11 @@ const answeredSchema = z.object({
  * only quotes it finds in the passages, so the model can widen the evidence but never invent it.
  */
 export const answeredTask: Task<AnsweredInput, { part: number; quote: string }[]> = {
-  name: 'knowledge.answered', promptVersion: 'answered-v1', temperature: 0,
-  needs: { skill: 'extract', data: 'student', lane: 'interactive', maxOutput: 300, cache: 'none', attempts: 1 }, language: i => i.language,
+  name: 'knowledge.answered',
+  promptVersion: 'answered-v1',
+  temperature: 0,
+  needs: { skill: 'extract', data: 'student', lane: 'interactive', maxOutput: 300, cache: 'none', attempts: 1 },
+  language: i => i.language,
   build: i => ({
     system: [
       'You check whether course passages answer parts of a student question.',

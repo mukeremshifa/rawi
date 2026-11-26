@@ -16,7 +16,12 @@ import { addDays, localISO } from './planner';
 
 export type MasteryLevel = 'not-checked' | 'shaky' | 'learning' | 'secure';
 
-export const MASTERY_LABEL: Record<MasteryLevel, string> = { 'not-checked': 'Not checked yet', shaky: 'Shaky', learning: 'Learning', secure: 'Secure' };
+export const MASTERY_LABEL: Record<MasteryLevel, string> = {
+  'not-checked': 'Not checked yet',
+  shaky: 'Shaky',
+  learning: 'Learning',
+  secure: 'Secure',
+};
 
 export interface MarkedResult {
   score: number;
@@ -46,7 +51,9 @@ const SECURE = 3;
 
 export function sectionMastery(results: MarkedResult[], timezone?: string): SectionMastery {
   const days = new Map<string, 'right' | 'wrong' | 'held'>();
-  let lastDay: string | null = null, markedDay: string | null = null, misses = 0;
+  let lastDay: string | null = null,
+    markedDay: string | null = null,
+    misses = 0;
   for (const r of [...results].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())) {
     const day = localISO(r.at, timezone);
     lastDay = day;
@@ -60,10 +67,16 @@ export function sectionMastery(results: MarkedResult[], timezone?: string): Sect
   }
   const attempts = results.length;
   if (!markedDay) return { level: 'not-checked', streak: 0, lastDay, dueOn: null, attempts, misses };
-  let streak = 0, missedLast = false;
+  let streak = 0,
+    missedLast = false;
   for (const outcome of days.values()) {
-    if (outcome === 'wrong') { streak = 0; missedLast = true; }
-    else if (outcome === 'right') { streak++; missedLast = false; }
+    if (outcome === 'wrong') {
+      streak = 0;
+      missedLast = true;
+    } else if (outcome === 'right') {
+      streak++;
+      missedLast = false;
+    }
   }
   const interval = streak ? INTERVALS[Math.min(streak, INTERVALS.length) - 1]! : 1;
   const level: MasteryLevel = missedLast ? 'shaky' : streak >= SECURE ? 'secure' : 'learning';

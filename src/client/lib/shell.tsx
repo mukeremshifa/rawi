@@ -18,8 +18,15 @@ export const ShellContext = createContext<(meta: PageMeta | null) => void>(() =>
  */
 export function usePageMeta(meta: PageMeta) {
   const set = useContext(ShellContext);
-  const key = JSON.stringify({ c: meta.crumbs?.map(c => [typeof c.label === 'string' ? c.label : '', c.to]), id: meta.courseId, f: meta.focus });
-  useEffect(() => { set(meta); return () => set(null); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const key = JSON.stringify({
+    c: meta.crumbs?.map(c => [typeof c.label === 'string' ? c.label : '', c.to]),
+    id: meta.courseId,
+    f: meta.focus,
+  });
+  useEffect(() => {
+    set(meta);
+    return () => set(null);
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 export function ShellProvider({ value, children }: { value: (meta: PageMeta | null) => void; children: ReactNode }) {

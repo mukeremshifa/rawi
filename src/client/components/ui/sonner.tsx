@@ -17,12 +17,14 @@ const Toaster = (props: ToasterProps) => (
       error: <OctagonXIcon className="text-danger size-4" />,
       loading: <Loader2Icon className="size-4 animate-spin" />,
     }}
-    style={{
-      '--normal-bg': 'var(--popover)',
-      '--normal-text': 'var(--popover-foreground)',
-      '--normal-border': 'var(--border)',
-      '--border-radius': '0.5rem',
-    } as React.CSSProperties}
+    style={
+      {
+        '--normal-bg': 'var(--popover)',
+        '--normal-text': 'var(--popover-foreground)',
+        '--normal-border': 'var(--border)',
+        '--border-radius': '0.5rem',
+      } as React.CSSProperties
+    }
     {...props}
   />
 );

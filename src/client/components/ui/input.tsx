@@ -12,7 +12,18 @@ export const controlClass = cn(
 
 /** Input: single-line text. Wrap in Field for a label and errors. */
 function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
-  return <input type={type} data-slot="input" className={cn(controlClass, 'file:text-foreground file:mr-2 file:border-0 file:bg-transparent file:text-sm file:font-medium', className)} {...props} />;
+  return (
+    <input
+      type={type}
+      data-slot="input"
+      className={cn(
+        controlClass,
+        'file:text-foreground file:mr-2 file:border-0 file:bg-transparent file:text-sm file:font-medium',
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 export { Input };

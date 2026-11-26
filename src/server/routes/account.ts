@@ -7,7 +7,10 @@ import { jsonInput, type BackendContext } from '../http';
 export const accountRoutes = new Hono<BackendContext>();
 accountRoutes.get('/me', async c => {
   const user = c.get('user');
-  return c.json({ user: { id: user.id, name: user.name, email: user.email, image: user.image ?? null }, ...await service.findAccount(c.get('db'), user.id) ?? await service.bootstrap(c.get('socket'), user.id) });
+  return c.json({
+    user: { id: user.id, name: user.name, email: user.email, image: user.image ?? null },
+    ...((await service.findAccount(c.get('db'), user.id)) ?? (await service.bootstrap(c.get('socket'), user.id))),
+  });
 });
 accountRoutes.patch('/profile', async c => {
   const body = await jsonInput(c, z.strictObject({ name: z.string().trim().min(1).max(80) }));
@@ -17,4 +20,6 @@ accountRoutes.patch('/profile', async c => {
   return c.json({ id: user.id, name: body.name, email: user.email, image: user.image ?? null });
 });
 accountRoutes.get('/preferences', async c => c.json(await service.getPreferences(c.get('db'), c.get('workspaceId'))));
-accountRoutes.patch('/preferences', async c => c.json(await service.updatePreferences(c.get('socket'), c.get('workspaceId'), await jsonInput(c, preferencesPatch))));
+accountRoutes.patch('/preferences', async c =>
+  c.json(await service.updatePreferences(c.get('socket'), c.get('workspaceId'), await jsonInput(c, preferencesPatch))),
+);

@@ -16,12 +16,7 @@ import type {
 import type { MasteryLevel } from './mastery';
 import { gradeWeight, levelOf, localISO, MASTERY_REASON } from './planner';
 import { isDated } from './types';
-import {
-  NO_CONTENT_REASON,
-  bestActivity,
-  substitutionNote,
-  topicCapabilities,
-} from './capabilities';
+import { NO_CONTENT_REASON, bestActivity, substitutionNote, topicCapabilities } from './capabilities';
 
 /**
  * Everything derived from the attempt log.
@@ -79,11 +74,7 @@ export function deriveEvidence(topicId: string, attempts: Attempt[], timezone?: 
   const relevant = attempts
     /* An answer awaiting feedback is neither evidence for nor against a topic
        until it is marked, so it is left out entirely. */
-    .filter(
-      (a) =>
-        a.completedAt &&
-        a.questions.some((q) => q.topicId === topicId),
-    )
+    .filter(a => a.completedAt && a.questions.some(q => q.topicId === topicId))
     .sort((a, b) => (a.completedAt! < b.completedAt! ? 1 : -1));
 
   let tutored = 0;
@@ -98,7 +89,10 @@ export function deriveEvidence(topicId: string, attempts: Attempt[], timezone?: 
   for (const attempt of relevant) {
     for (const qa of attempt.questions) {
       if (qa.topicId !== topicId) continue;
-      if (qa.format === 'flashcard' || qa.format === 'self-check') { selfRated += 1; continue; }
+      if (qa.format === 'flashcard' || qa.format === 'self-check') {
+        selfRated += 1;
+        continue;
+      }
       switch (attempt.mode) {
         case 'tutored':
           tutored += 1;
@@ -118,11 +112,7 @@ export function deriveEvidence(topicId: string, attempts: Attempt[], timezone?: 
            * their `usedHint: false` as trustworthy would quietly convert
            * assisted work into the strongest claim the app makes.
            */
-          if (
-            qa.outcome === 'correct' &&
-            !qa.usedHint &&
-            attempt.assistanceRecord !== 'unknown'
-          ) {
+          if (qa.outcome === 'correct' && !qa.usedHint && attempt.assistanceRecord !== 'unknown') {
             independentCorrect += 1;
             unaidedWins.push({
               questionId: qa.questionId,
@@ -138,8 +128,8 @@ export function deriveEvidence(topicId: string, attempts: Attempt[], timezone?: 
   if (relevant.length > 0) level = 'practising';
   if (unaidedWins.length >= 1) level = 'independent-once';
 
-  const distinctQuestions = new Set(unaidedWins.map((w) => w.questionId));
-  const distinctDays = new Set(unaidedWins.map((w) => w.day));
+  const distinctQuestions = new Set(unaidedWins.map(w => w.questionId));
+  const distinctDays = new Set(unaidedWins.map(w => w.day));
   if (distinctQuestions.size >= 2 && distinctDays.size >= 2) level = 'retained';
 
   const last = relevant[0];
@@ -152,7 +142,7 @@ export function deriveEvidence(topicId: string, attempts: Attempt[], timezone?: 
     selfRated,
     independent,
     independentCorrect,
-    attemptIds: relevant.map((a) => a.id),
+    attemptIds: relevant.map(a => a.id),
     ...(last ? { lastWorkedAt: last.completedAt ?? last.startedAt } : {}),
   };
 }
@@ -162,7 +152,7 @@ export function deriveAllEvidence(
   attempts: Attempt[],
   timezone?: string,
 ): Map<string, TopicEvidence> {
-  return new Map(topics.map((t) => [t.id, deriveEvidence(t.id, attempts, timezone)]));
+  return new Map(topics.map(t => [t.id, deriveEvidence(t.id, attempts, timezone)]));
 }
 
 /* ── Reviews ──────────────────────────────────────────────────────────── */
@@ -197,9 +187,7 @@ export function recurringMistakes(
     }
   >();
 
-  const ordered = [...attempts]
-    .filter((a) => a.completedAt)
-    .sort((a, b) => (a.completedAt! < b.completedAt! ? -1 : 1));
+  const ordered = [...attempts].filter(a => a.completedAt).sort((a, b) => (a.completedAt! < b.completedAt! ? -1 : 1));
 
   for (const attempt of ordered) {
     for (const qa of attempt.questions) {
@@ -235,10 +223,7 @@ export function recurringMistakes(
 /** Whole days from today until an assessment. Negative once it has passed. */
 export function daysUntil(date: string, now: Date = new Date(), timezone?: string): number {
   const today = localISO(now, timezone);
-  return Math.round(
-    (new Date(`${date}T12:00:00Z`).getTime() - new Date(`${today}T12:00:00Z`).getTime()) /
-      DAY_MS,
-  );
+  return Math.round((new Date(`${date}T12:00:00Z`).getTime() - new Date(`${today}T12:00:00Z`).getTime()) / DAY_MS);
 }
 
 /**
@@ -250,21 +235,25 @@ export function daysUntil(date: string, now: Date = new Date(), timezone?: strin
  */
 export function nextAssessment(
   assessments: PlannedAssessment[],
-  now: Date = new Date(), timezone?: string,
+  now: Date = new Date(),
+  timezone?: string,
 ): DatedAssessment | undefined {
   const today = localISO(now, timezone);
-  return assessments.filter(isDated)
-    .filter((a) => a.date >= today)
+  return assessments
+    .filter(isDated)
+    .filter(a => a.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date))[0];
 }
 
 export function upcomingAssessments(
   assessments: PlannedAssessment[],
-  now: Date = new Date(), timezone?: string,
+  now: Date = new Date(),
+  timezone?: string,
 ): DatedAssessment[] {
   const today = localISO(now, timezone);
-  return assessments.filter(isDated)
-    .filter((a) => a.date >= today)
+  return assessments
+    .filter(isDated)
+    .filter(a => a.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
@@ -274,22 +263,20 @@ export function upcomingAssessments(
 export function minutesToday(
   plannedMinutes: number,
   checkIns: CheckIn[],
-  now: Date = new Date(), timezone?: string,
+  now: Date = new Date(),
+  timezone?: string,
 ): number {
   const today = localISO(now, timezone);
-  const todays = checkIns.filter((c) => localISO(c.at, timezone) === today);
+  const todays = checkIns.filter(c => localISO(c.at, timezone) === today);
   const latest = todays[todays.length - 1];
   if (latest?.minutesToday !== undefined) return latest.minutesToday;
   return plannedMinutes;
 }
 
 /** The most recent check-in from today, if any. */
-export function todaysCheckIn(
-  checkIns: CheckIn[],
-  now: Date = new Date(), timezone?: string,
-): CheckIn | undefined {
+export function todaysCheckIn(checkIns: CheckIn[], now: Date = new Date(), timezone?: string): CheckIn | undefined {
   const today = localISO(now, timezone);
-  return [...checkIns].reverse().find((c) => localISO(c.at, timezone) === today);
+  return [...checkIns].reverse().find(c => localISO(c.at, timezone) === today);
 }
 
 /** The subset of a planner session this module needs. */
@@ -351,25 +338,21 @@ export interface PlanInput {
  * grade.
  */
 export function buildPlan(input: PlanInput): Suggestion[] {
-  const {
-    courses,
-    topics,
-    attempts,
-    assessments,
-    checkIns,
-    todaysSessions,
-  } = input;
+  const { courses, topics, attempts, assessments, checkIns, todaysSessions } = input;
   const now = input.now ?? new Date();
   const suggestions: Suggestion[] = [];
   const checkIn = todaysCheckIn(checkIns, now, input.timezone);
-  const active = courses.filter((c) => !c.archived);
-  const courseName = new Map(active.map((c) => [c.id, c.name]));
+  const active = courses.filter(c => !c.archived);
+  const courseName = new Map(active.map(c => [c.id, c.name]));
 
   const allMaterials = input.materials ?? [];
 
   /** What a topic supports, scoped to its own course. */
   const capabilitiesOf = (topic: StudyTopic) =>
-    topicCapabilities(topic, allMaterials.filter((m) => m.courseId === topic.courseId));
+    topicCapabilities(
+      topic,
+      allMaterials.filter(m => m.courseId === topic.courseId),
+    );
 
   /* 1 — Resume. Nothing outranks work already started. */
   if (input.resumable) {
@@ -377,8 +360,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
       id: 'sug-resume',
       courseId: input.resumable.courseId,
       title: input.resumable.title,
-      reason:
-        'You left this part-finished. Picking it up is cheaper than starting again.',
+      reason: 'You left this part-finished. Picking it up is cheaper than starting again.',
       minutes: 20,
       to: input.resumable.to,
       kind: input.resumable.kind,
@@ -396,9 +378,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
       reason:
         session.reason ??
         `You planned this for today${
-          courseName.has(session.courseId)
-            ? ` in ${courseName.get(session.courseId)}`
-            : ''
+          courseName.has(session.courseId) ? ` in ${courseName.get(session.courseId)}` : ''
         }.`,
       minutes: session.durationMinutes,
       to: `/planner?session=${session.id}`,
@@ -425,9 +405,9 @@ export function buildPlan(input: PlanInput): Suggestion[] {
        but no material would open a tutor session with nothing to teach from, which
        is a poor first impression and an avoidable one. */
     const first = topics
-      .filter((t) => t.courseId === course.id)
-      .map((topic) => ({ topic, chosen: bestActivity('tutor', capabilitiesOf(topic)) }))
-      .find((row) => row.chosen !== null);
+      .filter(t => t.courseId === course.id)
+      .map(topic => ({ topic, chosen: bestActivity('tutor', capabilitiesOf(topic)) }))
+      .find(row => row.chosen !== null);
 
     if (first?.chosen) {
       const { topic, chosen } = first;
@@ -452,7 +432,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
 
   /* 4 — The check-in, which overrides the ordinary ranking. */
   if (checkIn?.mood === 'struggling' && checkIn.topicId) {
-    const topic = topics.find((t) => t.id === checkIn.topicId);
+    const topic = topics.find(t => t.id === checkIn.topicId);
     if (topic) {
       const capabilities = capabilitiesOf(topic);
       /* An explanation is what a struggling student needs, so the tutor is the
@@ -478,8 +458,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
           id: `sug-struggle-${topic.id}`,
           courseId: topic.courseId,
           title: `Re-read the material on ${topic.title}`,
-          reason:
-            'You said this one is not landing. The reading is the explanation available here.',
+          reason: 'You said this one is not landing. The reading is the explanation available here.',
           minutes: 20,
           to: `/course/${topic.courseId}/materials`,
           topicId: topic.id,
@@ -505,7 +484,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
 
   /* 5 — Recurring mistakes. */
   for (const mistake of recurringMistakes(attempts, () => undefined).slice(0, 2)) {
-    const topic = topics.find((t) => t.id === mistake.topicId);
+    const topic = topics.find(t => t.id === mistake.topicId);
     if (!topic) continue;
     /* Discussing the mistake is best, but only where the tutor has something
        to say. Otherwise the useful action is another go at the question. */
@@ -530,11 +509,11 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   }
 
   /* 6 — Reviews that have come due. */
-  const activeTopics = topics.filter((t) => active.some((c) => c.id === t.courseId));
+  const activeTopics = topics.filter(t => active.some(c => c.id === t.courseId));
   for (const review of input.due.filter(d => activeTopics.some(t => t.id === d.topicId)).slice(0, 2)) {
-    const topic = activeTopics.find((t) => t.id === review.topicId);
+    const topic = activeTopics.find(t => t.id === review.topicId);
     if (!topic) continue;
-    if (suggestions.some((s) => s.topicId === topic.id)) continue;
+    if (suggestions.some(s => s.topicId === topic.id)) continue;
     /* A flashcard round needs flashcards, not merely some question for this
        topic: the old test sent students to an empty flashcard set whenever the
        topic's only questions were essays. */
@@ -544,10 +523,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
       id: `sug-review-${topic.id}`,
       courseId: topic.courseId,
       title: `Review ${topic.title}`,
-      reason: `${reviewReason(review.daysSince)}${substitutionNote(
-        'flashcards',
-        chosen,
-      )}`,
+      reason: `${reviewReason(review.daysSince)}${substitutionNote('flashcards', chosen)}`,
       minutes: 10,
       to: `/course/${topic.courseId}/practice/new?topic=${topic.id}${
         chosen === 'flashcards' ? '&activity=flashcards' : ''
@@ -567,7 +543,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   for (const topic of activeTopics) {
     const level = levelOf(input.mastery ?? [], topic.id);
     if (level === 'secure') continue;
-    if (suggestions.some((s) => s.topicId === topic.id)) continue;
+    if (suggestions.some(s => s.topicId === topic.id)) continue;
 
     /* Scoped to this topic's own course, so one subject's content cannot make
        another subject's topic look workable. */
@@ -576,21 +552,23 @@ export function buildPlan(input: PlanInput): Suggestion[] {
     const chosen = bestActivity(preferredActivity, capabilities);
 
     const covering = upcomingAssessments(
-      assessments.filter((a) => a.courseId === topic.courseId),
-      now, input.timezone,
-    ).find((a) => a.topicIds.length === 0 || a.topicIds.includes(topic.id));
+      assessments.filter(a => a.courseId === topic.courseId),
+      now,
+      input.timezone,
+    ).find(a => a.topicIds.length === 0 || a.topicIds.includes(topic.id));
     const daysAway = covering ? daysUntil(covering.date, now, input.timezone) : 999;
     const proximity = daysAway <= 7 ? 20 : daysAway <= 14 ? 12 : daysAway <= 28 ? 6 : 0;
 
-    const weight =
-      levelWeight[level] + gradeWeight(covering) + proximity;
+    const weight = levelWeight[level] + gradeWeight(covering) + proximity;
 
     const assessmentClause = covering
       ? ` ${covering.title} is in ${daysAway} day${daysAway === 1 ? '' : 's'} and covers it.`
       : '';
 
     const reason = `${MASTERY_REASON[level]}${assessmentClause}${
-      level === 'not-checked' && covering?.weightPercent !== undefined && covering.weightPercent >= 25 ? ` It is worth ${covering.weightPercent}% of the grade.` : ''
+      level === 'not-checked' && covering?.weightPercent !== undefined && covering.weightPercent >= 25
+        ? ` It is worth ${covering.weightPercent}% of the grade.`
+        : ''
     }`;
 
     /* Nothing behind this topic at all: say so and offer the setup that would
@@ -649,17 +627,16 @@ export function buildPlan(input: PlanInput): Suggestion[] {
 
   /* 8 — A rehearsal, when an assessment is close enough for pace to matter. */
   const soon = nextAssessment(
-    assessments.filter((a) => active.some((c) => c.id === a.courseId)),
-    now, input.timezone,
+    assessments.filter(a => active.some(c => c.id === a.courseId)),
+    now,
+    input.timezone,
   );
   if (soon && attempts.length > 0) {
     const daysAway = daysUntil(soon.date, now, input.timezone);
     const lastExam = [...attempts]
-      .filter((a) => a.kind === 'exam' && a.courseId === soon.courseId)
+      .filter(a => a.kind === 'exam' && a.courseId === soon.courseId)
       .sort((a, b) => ((a.completedAt ?? '') < (b.completedAt ?? '') ? 1 : -1))[0];
-    const daysSinceExam = lastExam?.completedAt
-      ? daysBetween(lastExam.completedAt, now.toISOString())
-      : 99;
+    const daysSinceExam = lastExam?.completedAt ? daysBetween(lastExam.completedAt, now.toISOString()) : 99;
     if (daysAway <= 21 && daysSinceExam >= 2) {
       suggestions.push({
         id: 'sug-exam',
@@ -686,9 +663,7 @@ export function buildPlan(input: PlanInput): Suggestion[] {
     /* Only offer the short round if that course actually has flashcards. */
     const hasFlashcards =
       course !== undefined &&
-      topics
-        .filter((t) => t.courseId === course)
-        .some((t) => capabilitiesOf(t).activities.includes('flashcards'));
+      topics.filter(t => t.courseId === course).some(t => capabilitiesOf(t).activities.includes('flashcards'));
 
     if (course && hasFlashcards) {
       suggestions.unshift({
@@ -714,14 +689,11 @@ export function buildPlan(input: PlanInput): Suggestion[] {
   const seen = new Set<string>();
   return suggestions
     .sort((a, b) => b.weight - a.weight)
-    .filter((s) => {
-      const key = s.sessionId
-        ? `session:${s.sessionId}`
-        : `${s.kind}:${s.topicId ?? s.to}`;
+    .filter(s => {
+      const key = s.sessionId ? `session:${s.sessionId}` : `${s.kind}:${s.topicId ?? s.to}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     })
     .slice(0, 6);
 }
-

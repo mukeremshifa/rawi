@@ -28,6 +28,7 @@ first upload after a long idle can fail once while the binding reconnects, and
 Retry then succeeds.
 
 ```sh
+npm run format
 npm run typecheck
 npm run build
 npx wrangler deploy --dry-run

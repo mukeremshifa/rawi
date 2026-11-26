@@ -182,7 +182,6 @@
      Colour would suggest a grade, and evidence is a described state. */
   --meter-track: var(--gray-5);
   --meter-fill: var(--gray-11);
-
 }
 
 /* Roles that differ in dark beyond what the grey scale already changes. */
@@ -192,8 +191,14 @@
   --ring: var(--accent-text);
 }
 
-html[data-reading-size='large'] { --reading-size: 1.0625rem; --reading-leading: 1.72; }
-html[data-reading-size='larger'] { --reading-size: 1.125rem; --reading-leading: 1.75; }
+html[data-reading-size='large'] {
+  --reading-size: 1.0625rem;
+  --reading-leading: 1.72;
+}
+html[data-reading-size='larger'] {
+  --reading-size: 1.125rem;
+  --reading-leading: 1.75;
+}
 
 @theme inline {
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
@@ -324,24 +329,34 @@ html[data-reading-size='larger'] { --reading-size: 1.125rem; --reading-leading: 
     background-color: color-mix(in oklab, var(--primary) 22%, transparent);
   }
 
-  main h1 { overflow-wrap: anywhere; }
-  main h1:focus { outline: none; }
+  main h1 {
+    overflow-wrap: anywhere;
+  }
+  main h1:focus {
+    outline: none;
+  }
 
   /* Numbers that are compared line up. */
-  .tabular { font-variant-numeric: tabular-nums; }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 /* ── Motion preference ──────────────────────────────────────────────────────
    The account preference wins, and "system" defers to the OS. All motion here
    decorates a state change that happens either way. */
-html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-motion='reduced'] *::after {
+html[data-motion='reduced'] *,
+html[data-motion='reduced'] *::before,
+html[data-motion='reduced'] *::after {
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  html:not([data-motion='full']) *, html:not([data-motion='full']) *::before, html:not([data-motion='full']) *::after {
+  html:not([data-motion='full']) *,
+  html:not([data-motion='full']) *::before,
+  html:not([data-motion='full']) *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -349,46 +364,194 @@ html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-
   }
 }
 
-@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-@keyframes breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
-@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes overlay-out { from { opacity: 1; } to { opacity: 0; } }
-@keyframes panel-in { from { opacity: 0; transform: translateY(4px) scale(0.98); } to { opacity: 1; transform: none; } }
-@keyframes panel-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.98); } }
-@keyframes pop-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
-@keyframes pop-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.97); } }
-@keyframes sheet-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
-@keyframes sheet-out-right { from { transform: translateX(0); } to { transform: translateX(100%); } }
-@keyframes sheet-in-left { from { transform: translateX(-100%); } to { transform: translateX(0); } }
-@keyframes sheet-out-left { from { transform: translateX(0); } to { transform: translateX(-100%); } }
-@keyframes sheet-in-bottom { from { transform: translateY(100%); } to { transform: translateY(0); } }
-@keyframes sheet-out-bottom { from { transform: translateY(0); } to { transform: translateY(100%); } }
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes panel-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes pop-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@keyframes sheet-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes sheet-out-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes sheet-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes sheet-out-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes sheet-in-bottom {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes sheet-out-bottom {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
 
 @layer components {
-  .ui-overlay[data-state='open'] { animation: overlay-in var(--duration-quick) var(--ease-standard); }
-  .ui-overlay[data-state='closed'] { animation: overlay-out var(--duration-quick) var(--ease-exit); }
-  .ui-panel[data-state='open'] { animation: panel-in var(--duration-moving) var(--ease-standard); }
-  .ui-panel[data-state='closed'] { animation: panel-out var(--duration-quick) var(--ease-exit); }
-  .ui-pop[data-state='open'] { animation: pop-in var(--duration-quick) var(--ease-standard); transform-origin: var(--radix-popper-transform-origin, center); }
-  .ui-pop[data-state='closed'] { animation: pop-out var(--duration-instant) var(--ease-exit); transform-origin: var(--radix-popper-transform-origin, center); }
-  .ui-sheet[data-state='open'] { animation-duration: var(--duration-moving); animation-timing-function: var(--ease-standard); }
-  .ui-sheet[data-state='closed'] { animation-duration: var(--duration-quick); animation-timing-function: var(--ease-exit); }
-  .ui-sheet[data-side='right'][data-state='open'] { animation-name: sheet-in-right; }
-  .ui-sheet[data-side='right'][data-state='closed'] { animation-name: sheet-out-right; }
-  .ui-sheet[data-side='left'][data-state='open'] { animation-name: sheet-in-left; }
-  .ui-sheet[data-side='left'][data-state='closed'] { animation-name: sheet-out-left; }
-  .ui-sheet[data-side='bottom'][data-state='open'] { animation-name: sheet-in-bottom; }
-  .ui-sheet[data-side='bottom'][data-state='closed'] { animation-name: sheet-out-bottom; }
+  .ui-overlay[data-state='open'] {
+    animation: overlay-in var(--duration-quick) var(--ease-standard);
+  }
+  .ui-overlay[data-state='closed'] {
+    animation: overlay-out var(--duration-quick) var(--ease-exit);
+  }
+  .ui-panel[data-state='open'] {
+    animation: panel-in var(--duration-moving) var(--ease-standard);
+  }
+  .ui-panel[data-state='closed'] {
+    animation: panel-out var(--duration-quick) var(--ease-exit);
+  }
+  .ui-pop[data-state='open'] {
+    animation: pop-in var(--duration-quick) var(--ease-standard);
+    transform-origin: var(--radix-popper-transform-origin, center);
+  }
+  .ui-pop[data-state='closed'] {
+    animation: pop-out var(--duration-instant) var(--ease-exit);
+    transform-origin: var(--radix-popper-transform-origin, center);
+  }
+  .ui-sheet[data-state='open'] {
+    animation-duration: var(--duration-moving);
+    animation-timing-function: var(--ease-standard);
+  }
+  .ui-sheet[data-state='closed'] {
+    animation-duration: var(--duration-quick);
+    animation-timing-function: var(--ease-exit);
+  }
+  .ui-sheet[data-side='right'][data-state='open'] {
+    animation-name: sheet-in-right;
+  }
+  .ui-sheet[data-side='right'][data-state='closed'] {
+    animation-name: sheet-out-right;
+  }
+  .ui-sheet[data-side='left'][data-state='open'] {
+    animation-name: sheet-in-left;
+  }
+  .ui-sheet[data-side='left'][data-state='closed'] {
+    animation-name: sheet-out-left;
+  }
+  .ui-sheet[data-side='bottom'][data-state='open'] {
+    animation-name: sheet-in-bottom;
+  }
+  .ui-sheet[data-side='bottom'][data-state='closed'] {
+    animation-name: sheet-out-bottom;
+  }
 
   .ui-skeleton {
-    background-image: linear-gradient(90deg, var(--muted) 0%, color-mix(in oklab, var(--muted) 50%, var(--background)) 50%, var(--muted) 100%);
+    background-image: linear-gradient(
+      90deg,
+      var(--muted) 0%,
+      color-mix(in oklab, var(--muted) 50%, var(--background)) 50%,
+      var(--muted) 100%
+    );
     background-size: 200% 100%;
     animation: shimmer 1.6s linear infinite;
   }
-  .ui-generating { animation: breathe 2s var(--ease-standard) infinite; }
+  .ui-generating {
+    animation: breathe 2s var(--ease-standard) infinite;
+  }
 
   /* The reading measure: about 68 characters per line at any reading size. */
-  .ui-reading { max-width: 68ch; }
+  .ui-reading {
+    max-width: 68ch;
+  }
 
   /* Long-form text: the reader, tutor turns, explanations. */
   .rawi-prose {
@@ -396,33 +559,133 @@ html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-
     line-height: var(--reading-leading);
     overflow-wrap: anywhere;
   }
-  .rawi-prose a { color: var(--primary-text); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
-  .rawi-prose :where(h1, h2, h3) { font-family: var(--font-serif); font-weight: 600; font-size: 1.15em; line-height: 1.3; margin-top: 1.6em; }
-  .rawi-prose :where(p, ul, ol, blockquote, pre) { margin-top: 0.9em; }
-  .rawi-prose :where(ul) { list-style: disc; padding-left: 1.25em; }
-  .rawi-prose :where(ol) { list-style: decimal; padding-left: 1.25em; }
-  .rawi-prose :where(blockquote) { border-left: 2px solid var(--border-strong); padding-left: 1em; color: var(--muted-foreground); }
-  .rawi-prose :where(code) { font-family: var(--font-mono); font-size: 0.875em; background: var(--muted); border-radius: var(--radius-sm); padding: 0.1em 0.3em; }
-  .rawi-prose > :first-child { margin-top: 0; }
-  .rawi-prose :where(ul ul, ol ol, ul ol, ol ul) { margin-top: 0.3em; }
-  .rawi-prose :where(pre) { font-family: var(--font-mono); font-size: 0.8em; line-height: 1.5; background: var(--muted); border-radius: var(--radius-md); padding: 0.75em 1em; overflow-x: auto; white-space: pre; }
-  .rawi-prose :where(pre code) { background: none; padding: 0; font-size: 1em; }
+  .rawi-prose a {
+    color: var(--primary-text);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+  }
+  .rawi-prose :where(h1, h2, h3) {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    font-size: 1.15em;
+    line-height: 1.3;
+    margin-top: 1.6em;
+  }
+  .rawi-prose :where(p, ul, ol, blockquote, pre) {
+    margin-top: 0.9em;
+  }
+  .rawi-prose :where(ul) {
+    list-style: disc;
+    padding-left: 1.25em;
+  }
+  .rawi-prose :where(ol) {
+    list-style: decimal;
+    padding-left: 1.25em;
+  }
+  .rawi-prose :where(blockquote) {
+    border-left: 2px solid var(--border-strong);
+    padding-left: 1em;
+    color: var(--muted-foreground);
+  }
+  .rawi-prose :where(code) {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background: var(--muted);
+    border-radius: var(--radius-sm);
+    padding: 0.1em 0.3em;
+  }
+  .rawi-prose > :first-child {
+    margin-top: 0;
+  }
+  .rawi-prose :where(ul ul, ol ol, ul ol, ol ul) {
+    margin-top: 0.3em;
+  }
+  .rawi-prose :where(pre) {
+    font-family: var(--font-mono);
+    font-size: 0.8em;
+    line-height: 1.5;
+    background: var(--muted);
+    border-radius: var(--radius-md);
+    padding: 0.75em 1em;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .rawi-prose :where(pre code) {
+    background: none;
+    padding: 0;
+    font-size: 1em;
+  }
 
   /* Converted documents: one block per wrapper, each an anchor. */
-  .rawi-document > .rawi-block:first-child > :first-child { margin-top: 0; }
-  .rawi-document :where(h2, h3, h4, h5) { font-family: var(--font-serif); font-weight: 600; line-height: 1.3; margin-top: 1.6em; }
-  .rawi-document :where(h2) { font-size: 1.35em; }
-  .rawi-document :where(h3) { font-size: 1.15em; }
-  .rawi-document :where(h4, h5) { font-size: 1em; }
-  .rawi-document .rawi-block { border-radius: var(--radius-sm); transition: background-color 600ms var(--ease-standard); }
-  .rawi-document .rawi-highlight { background: var(--primary-subtle); box-shadow: 0 0 0 6px var(--primary-subtle); }
-  .rawi-page-label { margin-top: 1.4em; font-family: var(--font-sans); font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-foreground); }
-  .rawi-equation { margin-top: 0.9em; }
-  .rawi-table { margin-top: 0.9em; overflow-x: auto; }
-  .rawi-table table { border-collapse: collapse; font-size: 0.9em; line-height: 1.45; }
-  .rawi-table :where(th, td) { border: 1px solid var(--border); padding: 0.35em 0.6em; text-align: left; vertical-align: top; }
-  .rawi-table th { font-weight: 600; background: var(--surface); }
-  .rawi-document figure { margin-top: 1.2em; }
-  .rawi-document figure img { max-width: 100%; height: auto; border-radius: var(--radius-sm); background: white; }
-  .rawi-document figcaption { margin-top: 0.4em; font-size: 0.875em; color: var(--muted-foreground); }
+  .rawi-document > .rawi-block:first-child > :first-child {
+    margin-top: 0;
+  }
+  .rawi-document :where(h2, h3, h4, h5) {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    line-height: 1.3;
+    margin-top: 1.6em;
+  }
+  .rawi-document :where(h2) {
+    font-size: 1.35em;
+  }
+  .rawi-document :where(h3) {
+    font-size: 1.15em;
+  }
+  .rawi-document :where(h4, h5) {
+    font-size: 1em;
+  }
+  .rawi-document .rawi-block {
+    border-radius: var(--radius-sm);
+    transition: background-color 600ms var(--ease-standard);
+  }
+  .rawi-document .rawi-highlight {
+    background: var(--primary-subtle);
+    box-shadow: 0 0 0 6px var(--primary-subtle);
+  }
+  .rawi-page-label {
+    margin-top: 1.4em;
+    font-family: var(--font-sans);
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  .rawi-equation {
+    margin-top: 0.9em;
+  }
+  .rawi-table {
+    margin-top: 0.9em;
+    overflow-x: auto;
+  }
+  .rawi-table table {
+    border-collapse: collapse;
+    font-size: 0.9em;
+    line-height: 1.45;
+  }
+  .rawi-table :where(th, td) {
+    border: 1px solid var(--border);
+    padding: 0.35em 0.6em;
+    text-align: left;
+    vertical-align: top;
+  }
+  .rawi-table th {
+    font-weight: 600;
+    background: var(--surface);
+  }
+  .rawi-document figure {
+    margin-top: 1.2em;
+  }
+  .rawi-document figure img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+    background: white;
+  }
+  .rawi-document figcaption {
+    margin-top: 0.4em;
+    font-size: 0.875em;
+    color: var(--muted-foreground);
+  }
 }

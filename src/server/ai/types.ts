@@ -25,10 +25,22 @@ export interface Usage {
   audioSeconds: number;
   images: number;
 }
-export const noUsage = (): Usage => ({ input: 0, cacheWrite: 0, cacheRead: 0, output: 0, reasoning: 0, audioSeconds: 0, images: 0 });
+export const noUsage = (): Usage => ({
+  input: 0,
+  cacheWrite: 0,
+  cacheRead: 0,
+  output: 0,
+  reasoning: 0,
+  audioSeconds: 0,
+  images: 0,
+});
 
 /** Spend limits in micro-dollars, null for none, and calls running at once. */
-export interface Limits { dailyMicros: number | null; monthlyMicros: number | null; concurrent: number }
+export interface Limits {
+  dailyMicros: number | null;
+  monthlyMicros: number | null;
+  concurrent: number;
+}
 
 /** `student`: tutor turns and anything a student wrote. `institution`: course material only. */
 export type DataClass = 'student' | 'institution';

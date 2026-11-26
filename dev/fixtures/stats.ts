@@ -17,7 +17,6 @@ export const STATS_COURSE: StudyCourse = {
   createdAt: new Date('2026-10-07T08:00:00.000Z').toISOString(),
 };
 
-
 const ADDED = new Date(Date.parse('2026-10-07T08:00:00.000Z') - 1000 * 60 * 60 * 24 * 9).toISOString();
 
 export const STATS_MATERIALS: FixtureMaterial[] = [
@@ -27,8 +26,7 @@ export const STATS_MATERIALS: FixtureMaterial[] = [
     title: 'What the interval is an interval of',
     kind: 'lecture-notes',
     origin: 'authored',
-    attribution:
-      'Lecture notes, R. Adeyemi, *Inference for Social Research* (fictional, week 3)',
+    attribution: 'Lecture notes, R. Adeyemi, *Inference for Social Research* (fictional, week 3)',
     topicIds: ['stat-intervals'],
     addedAt: ADDED,
     sections: [

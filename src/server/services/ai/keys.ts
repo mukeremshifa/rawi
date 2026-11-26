@@ -13,8 +13,25 @@ import { forgetFunding, seal, type Credentials } from '../../ai/funding';
  */
 export const ownKeyInput = z.strictObject({
   credentials: z.discriminatedUnion('vendor', [
-    z.strictObject({ vendor: z.literal('bedrock'), accessKeyId: z.string().trim().regex(/^[A-Z0-9]{16,128}$/, 'Enter the access key ID as AWS shows it.'), secretAccessKey: z.string().trim().min(20).max(256) }),
-    z.strictObject({ vendor: z.literal('vertex'), project: z.string().trim().min(3).max(100), clientEmail: z.string().trim().email().max(320), privateKey: z.string().trim().min(100).max(8000).refine(k => k.includes('PRIVATE KEY'), 'Paste the private_key value from the JSON key file.') }),
+    z.strictObject({
+      vendor: z.literal('bedrock'),
+      accessKeyId: z
+        .string()
+        .trim()
+        .regex(/^[A-Z0-9]{16,128}$/, 'Enter the access key ID as AWS shows it.'),
+      secretAccessKey: z.string().trim().min(20).max(256),
+    }),
+    z.strictObject({
+      vendor: z.literal('vertex'),
+      project: z.string().trim().min(3).max(100),
+      clientEmail: z.string().trim().email().max(320),
+      privateKey: z
+        .string()
+        .trim()
+        .min(100)
+        .max(8000)
+        .refine(k => k.includes('PRIVATE KEY'), 'Paste the private_key value from the JSON key file.'),
+    }),
   ]),
   // Deliberate and visible: lets routes that keep prompts receive what the student writes.
   studentRetention: z.enum(['none', 'standard']),
@@ -23,39 +40,89 @@ export const ownKeyInput = z.strictObject({
 export const useSourceInput = z.strictObject({ source: z.enum(['own', 'platform']) });
 
 export async function fundingView(db: ReadDb | SocketDb, workspaceId: string) {
-  const [ws] = await db.select({ source: workspaces.fundingSourceId }).from(workspaces).where(eq(workspaces.id, workspaceId));
-  const [own] = await db.select().from(fundingSources).where(and(eq(fundingSources.ownerWorkspaceId, workspaceId), eq(fundingSources.kind, 'user')));
-  const [assigned] = ws?.source ? await db.select({ kind: fundingSources.kind, label: fundingSources.label }).from(fundingSources).where(eq(fundingSources.id, ws.source)) : [];
+  const [ws] = await db
+    .select({ source: workspaces.fundingSourceId })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId));
+  const [own] = await db
+    .select()
+    .from(fundingSources)
+    .where(and(eq(fundingSources.ownerWorkspaceId, workspaceId), eq(fundingSources.kind, 'user')));
+  const [assigned] = ws?.source
+    ? await db
+        .select({ kind: fundingSources.kind, label: fundingSources.label })
+        .from(fundingSources)
+        .where(eq(fundingSources.id, ws.source))
+    : [];
   return {
-    using: own?.active ? 'user' as const : assigned?.kind ?? 'platform' as const,
+    using: own?.active ? ('user' as const) : (assigned?.kind ?? ('platform' as const)),
     fallback: assigned?.label ?? 'Rawi',
-    ownKey: own ? { vendor: own.vendors[0]!, active: own.active, studentRetention: own.studentRetention, monthlyCapUsd: own.limits.monthlyMicros === null ? null : own.limits.monthlyMicros / 1e6, savedAt: own.updatedAt.toISOString() } : null,
+    ownKey: own
+      ? {
+          vendor: own.vendors[0]!,
+          active: own.active,
+          studentRetention: own.studentRetention,
+          monthlyCapUsd: own.limits.monthlyMicros === null ? null : own.limits.monthlyMicros / 1e6,
+          savedAt: own.updatedAt.toISOString(),
+        }
+      : null,
   };
 }
 
-export async function saveOwnKey(env: BackendBindings, db: SocketDb, workspaceId: string, input: z.infer<typeof ownKeyInput>) {
-  const credentials: Credentials = input.credentials.vendor === 'vertex' ? { ...input.credentials, privateKey: input.credentials.privateKey.replace(/\\n/g, '\n') } : input.credentials;
+export async function saveOwnKey(
+  env: BackendBindings,
+  db: SocketDb,
+  workspaceId: string,
+  input: z.infer<typeof ownKeyInput>,
+) {
+  const credentials: Credentials =
+    input.credentials.vendor === 'vertex'
+      ? { ...input.credentials, privateKey: input.credentials.privateKey.replace(/\\n/g, '\n') }
+      : input.credentials;
   const sealed = await seal(env, [credentials]);
   const values = {
-    kind: 'user' as const, label: 'Your own key', ownerWorkspaceId: workspaceId, credentials: sealed, vendors: [credentials.vendor], routes: null,
-    limits: { dailyMicros: null, monthlyMicros: input.monthlyCapUsd === null ? null : Math.round(input.monthlyCapUsd * 1e6), concurrent: 4 }, perWorkspace: null,
-    retention: 'standard' as const, studentRetention: input.studentRetention, active: true, updatedAt: new Date(),
+    kind: 'user' as const,
+    label: 'Your own key',
+    ownerWorkspaceId: workspaceId,
+    credentials: sealed,
+    vendors: [credentials.vendor],
+    routes: null,
+    limits: {
+      dailyMicros: null,
+      monthlyMicros: input.monthlyCapUsd === null ? null : Math.round(input.monthlyCapUsd * 1e6),
+      concurrent: 4,
+    },
+    perWorkspace: null,
+    retention: 'standard' as const,
+    studentRetention: input.studentRetention,
+    active: true,
+    updatedAt: new Date(),
   };
-  const [saved] = await db.insert(fundingSources).values({ id: crypto.randomUUID(), ...values })
-    .onConflictDoUpdate({ target: [fundingSources.ownerWorkspaceId, fundingSources.kind], set: values }).returning({ id: fundingSources.id });
+  const [saved] = await db
+    .insert(fundingSources)
+    .values({ id: crypto.randomUUID(), ...values })
+    .onConflictDoUpdate({ target: [fundingSources.ownerWorkspaceId, fundingSources.kind], set: values })
+    .returning({ id: fundingSources.id });
   forgetFunding(workspaceId, saved!.id);
   return fundingView(db, workspaceId);
 }
 
 export async function removeOwnKey(db: SocketDb, workspaceId: string) {
-  const rows = await db.delete(fundingSources).where(and(eq(fundingSources.ownerWorkspaceId, workspaceId), eq(fundingSources.kind, 'user'))).returning({ id: fundingSources.id });
+  const rows = await db
+    .delete(fundingSources)
+    .where(and(eq(fundingSources.ownerWorkspaceId, workspaceId), eq(fundingSources.kind, 'user')))
+    .returning({ id: fundingSources.id });
   forgetFunding(workspaceId, rows[0]?.id);
   return fundingView(db, workspaceId);
 }
 
 /** Switch between the student's own key and the workspace's usual source. The key stays stored. */
 export async function useSource(db: SocketDb, workspaceId: string, input: z.infer<typeof useSourceInput>) {
-  const rows = await db.update(fundingSources).set({ active: input.source === 'own', updatedAt: new Date() }).where(and(eq(fundingSources.ownerWorkspaceId, workspaceId), eq(fundingSources.kind, 'user'))).returning({ id: fundingSources.id });
+  const rows = await db
+    .update(fundingSources)
+    .set({ active: input.source === 'own', updatedAt: new Date() })
+    .where(and(eq(fundingSources.ownerWorkspaceId, workspaceId), eq(fundingSources.kind, 'user')))
+    .returning({ id: fundingSources.id });
   if (input.source === 'own' && !rows.length) throw new ApiError(409, 'no_key', 'Add your own key first.');
   forgetFunding(workspaceId, rows[0]?.id);
   return fundingView(db, workspaceId);

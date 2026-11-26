@@ -23,14 +23,23 @@ function Checkbox({ className, ...props }: React.ComponentProps<typeof CheckboxP
       {...props}
     >
       <CheckboxPrimitive.Indicator className="flex items-center justify-center text-current">
-        {props.checked === 'indeterminate' ? <MinusIcon className="size-3" aria-hidden /> : <CheckIcon className="size-3" strokeWidth={3} aria-hidden />}
+        {props.checked === 'indeterminate' ? (
+          <MinusIcon className="size-3" aria-hidden />
+        ) : (
+          <CheckIcon className="size-3" strokeWidth={3} aria-hidden />
+        )}
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );
 }
 
 /** A checkbox with its label, for lists of choices. */
-function CheckboxRow({ label, description, className, ...props }: React.ComponentProps<typeof CheckboxPrimitive.Root> & { label: React.ReactNode; description?: React.ReactNode }) {
+function CheckboxRow({
+  label,
+  description,
+  className,
+  ...props
+}: React.ComponentProps<typeof CheckboxPrimitive.Root> & { label: React.ReactNode; description?: React.ReactNode }) {
   const id = React.useId();
   return (
     <div className={cn('flex items-start gap-tight py-1', className)}>

@@ -11,9 +11,15 @@ import { useApi, useSave } from '@/lib/data';
 
 type Operation = AiOperationView;
 
-const TASK_LABEL: Record<string, string> = { tutor: 'Tutor reply', generate: 'Question generation', };
+const TASK_LABEL: Record<string, string> = { tutor: 'Tutor reply', generate: 'Question generation' };
 const STATE_LABEL: Record<string, string> = {
-  blocked: 'Not sent', queued: 'Waiting', running: 'Working', complete: 'Finished', cancelled: 'Stopped', failed: 'Failed', interrupted: 'Interrupted',
+  blocked: 'Not sent',
+  queued: 'Waiting',
+  running: 'Working',
+  complete: 'Finished',
+  cancelled: 'Stopped',
+  failed: 'Failed',
+  interrupted: 'Interrupted',
 };
 
 /**
@@ -25,21 +31,52 @@ export function AiOperation() {
   const data = useApi<Operation>(`/v1/ai/operations/${id}`);
   const stop = useSave();
   const stopId = useRef(crypto.randomUUID());
-  if (data.isPending) return <Page width="narrow"><PageLoading label="Loading request" /></Page>;
-  if (data.error) return <Page width="narrow"><ErrorState error={data.error} onRetry={() => void data.refetch()} /></Page>;
+  if (data.isPending)
+    return (
+      <Page width="narrow">
+        <PageLoading label="Loading request" />
+      </Page>
+    );
+  if (data.error)
+    return (
+      <Page width="narrow">
+        <ErrorState error={data.error} onRetry={() => void data.refetch()} />
+      </Page>
+    );
   const op = data.data;
   return (
     <Page width="narrow">
-      <PageHeader title={TASK_LABEL[op.task] ?? 'AI request'} description="Saved with the materials it would use." actions={<Badge>{STATE_LABEL[op.state] ?? op.state}</Badge>} />
+      <PageHeader
+        title={TASK_LABEL[op.task] ?? 'AI request'}
+        description="Saved with the materials it would use."
+        actions={<Badge>{STATE_LABEL[op.state] ?? op.state}</Badge>}
+      />
       {op.reason && <Notice>{op.reason}</Notice>}
-      {op.calls.filter(e => e.partial).map(e => (
-        <div key={e.id} className="rawi-prose rounded-md border p-4 whitespace-pre-wrap">{e.partial}</div>
-      ))}
+      {op.calls
+        .filter(e => e.partial)
+        .map(e => (
+          <div key={e.id} className="rawi-prose rounded-md border p-4 whitespace-pre-wrap">
+            {e.partial}
+          </div>
+        ))}
       <div className="flex flex-wrap gap-tight">
         {['queued', 'failed'].includes(op.state) && (
-          <Button variant="secondary" loading={stop.busy} onClick={() => stop.run<Operation>({ path: `/v1/ai/operations/${id}/cancel`, body: { operationId: stopId.current } }, { id: 'stop', onSuccess: data.setData })}>Stop this request</Button>
+          <Button
+            variant="secondary"
+            loading={stop.busy}
+            onClick={() =>
+              stop.run<Operation>(
+                { path: `/v1/ai/operations/${id}/cancel`, body: { operationId: stopId.current } },
+                { id: 'stop', onSuccess: data.setData },
+              )
+            }
+          >
+            Stop this request
+          </Button>
         )}
-        <Button variant="ghost" loading={data.isFetching} onClick={() => void data.refetch()}>Refresh status</Button>
+        <Button variant="ghost" loading={data.isFetching} onClick={() => void data.refetch()}>
+          Refresh status
+        </Button>
       </div>
       {stop.error && <FieldError>{stop.error}</FieldError>}
     </Page>

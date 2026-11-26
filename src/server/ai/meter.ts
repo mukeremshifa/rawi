@@ -13,16 +13,32 @@ const dayStart = sql`date_trunc('day', now() at time zone 'UTC') at time zone 'U
 
 /** What a workspace has spent under its source today and this month. */
 export async function usageSnapshot(db: ReadDb | SocketDb, workspaceId: string, sourceId: string) {
-  const [row] = await db.select({
-    today: sql<number>`coalesce(sum(${counted}) filter (where ${aiCalls.state} <> 'released' and ${aiCalls.createdAt} >= ${dayStart}), 0)::float8`,
-    month: sql<number>`coalesce(sum(${counted}) filter (where ${aiCalls.state} <> 'released'), 0)::float8`,
-  }).from(aiCalls).where(and(eq(aiCalls.workspaceId, workspaceId), eq(aiCalls.fundingSourceId, sourceId), sql`${aiCalls.createdAt} >= ${monthStart}`));
+  const [row] = await db
+    .select({
+      today: sql<number>`coalesce(sum(${counted}) filter (where ${aiCalls.state} <> 'released' and ${aiCalls.createdAt} >= ${dayStart}), 0)::float8`,
+      month: sql<number>`coalesce(sum(${counted}) filter (where ${aiCalls.state} <> 'released'), 0)::float8`,
+    })
+    .from(aiCalls)
+    .where(
+      and(
+        eq(aiCalls.workspaceId, workspaceId),
+        eq(aiCalls.fundingSourceId, sourceId),
+        sql`${aiCalls.createdAt} >= ${monthStart}`,
+      ),
+    );
   return row ?? { today: 0, month: 0 };
 }
 
 export interface CallStart {
-  workspaceId: string; operationId?: string; jobId?: string; task: string; step: number;
-  route: Route; serviceTier: ServiceTier; language: Language; reservedMicros: number;
+  workspaceId: string;
+  operationId?: string;
+  jobId?: string;
+  task: string;
+  step: number;
+  route: Route;
+  serviceTier: ServiceTier;
+  language: Language;
+  reservedMicros: number;
 }
 
 /**
@@ -33,9 +49,12 @@ export interface CallStart {
  */
 export async function reserve(db: SocketDb, funding: Funding, start: CallStart) {
   const { limits, perWorkspace, id: sourceId } = funding.source;
-  const r = start.reservedMicros, id = crypto.randomUUID(), background = !!start.jobId;
+  const r = start.reservedMicros,
+    id = crypto.randomUUID(),
+    background = !!start.jobId;
   const own = perWorkspace ?? { dailyMicros: null, monthlyMicros: null, concurrent: limits.concurrent };
-  const under = (spent: ReturnType<typeof sql>, cap: number | null) => cap === null ? sql`true` : sql`${spent} + ${r} <= ${cap}`;
+  const under = (spent: ReturnType<typeof sql>, cap: number | null) =>
+    cap === null ? sql`true` : sql`${spent} + ${r} <= ${cap}`;
   return db.transaction(async tx => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${sourceId}))`);
     const rows = await tx.execute(sql`with n as (select
@@ -53,36 +72,65 @@ export async function reserve(db: SocketDb, funding: Funding, start: CallStart) 
           and ${under(sql`n.own_month`, own.monthlyMicros)} and ${under(sql`n.all_month`, limits.monthlyMicros)}
         returning id)
       select n.*, (select id from ins) as id from n`);
-    const n = rows.rows[0] as { own_open: number; all_open: number; own_day: number; all_day: number; id: string | null };
+    const n = rows.rows[0] as {
+      own_open: number;
+      all_open: number;
+      own_day: number;
+      all_day: number;
+      id: string | null;
+    };
     if (n.id) return n.id;
-    if (n.own_open >= own.concurrent || n.all_open >= limits.concurrent) throw new ApiError(429, 'ai_busy', 'Another AI request is still running. Try again when it finishes.');
+    if (n.own_open >= own.concurrent || n.all_open >= limits.concurrent)
+      throw new ApiError(429, 'ai_busy', 'Another AI request is still running. Try again when it finishes.');
     const overDay = (spent: number, cap: number | null) => cap !== null && spent + r > cap;
-    if (overDay(n.own_day, own.dailyMicros) || overDay(n.all_day, limits.dailyMicros)) throw new ApiError(429, 'ai_budget', 'The AI allowance for today is used up. It resets at midnight UTC.');
+    if (overDay(n.own_day, own.dailyMicros) || overDay(n.all_day, limits.dailyMicros))
+      throw new ApiError(429, 'ai_budget', 'The AI allowance for today is used up. It resets at midnight UTC.');
     throw new ApiError(429, 'ai_budget', 'The AI allowance for this month is used up.');
   });
 }
 
 export type Settlement =
-  | { state: 'settled'; chargedMicros: number; usage: Usage; latencyMs: number; ttftMs: number | null; validation: Validation; error?: string }
+  | {
+      state: 'settled';
+      chargedMicros: number;
+      usage: Usage;
+      latencyMs: number;
+      ttftMs: number | null;
+      validation: Validation;
+      error?: string;
+    }
   | { state: 'ambiguous'; error: string; latencyMs: number }
   | { state: 'released'; error: string; latencyMs: number };
 
 /** Settle once. An uncertain outcome keeps its reservation as the charge. */
 export async function settle(db: SocketDb, id: string, s: Settlement) {
-  await db.update(aiCalls).set({
-    state: s.state, settledAt: s.state === 'ambiguous' ? null : new Date(), latencyMs: s.latencyMs, error: s.error ?? null,
-    chargedMicros: s.state === 'settled' ? s.chargedMicros : s.state === 'released' ? 0 : null,
-    ...(s.state === 'settled' ? { usage: s.usage, ttftMs: s.ttftMs, validation: s.validation } : {}),
-  }).where(and(eq(aiCalls.id, id), eq(aiCalls.state, 'reserved')));
+  await db
+    .update(aiCalls)
+    .set({
+      state: s.state,
+      settledAt: s.state === 'ambiguous' ? null : new Date(),
+      latencyMs: s.latencyMs,
+      error: s.error ?? null,
+      chargedMicros: s.state === 'settled' ? s.chargedMicros : s.state === 'released' ? 0 : null,
+      ...(s.state === 'settled' ? { usage: s.usage, ttftMs: s.ttftMs, validation: s.validation } : {}),
+    })
+    .where(and(eq(aiCalls.id, id), eq(aiCalls.state, 'reserved')));
 }
 
 /** Streamed text saved as it arrives, so an interrupted reply can be recovered. */
 export async function checkpoint(db: SocketDb, id: string, partial: string) {
-  await db.update(aiCalls).set({ partial }).where(and(eq(aiCalls.id, id), eq(aiCalls.state, 'reserved')));
+  await db
+    .update(aiCalls)
+    .set({ partial })
+    .where(and(eq(aiCalls.id, id), eq(aiCalls.state, 'reserved')));
 }
 
 /** A reservation left open by a Worker that died is uncertain. It stays charged and frees its slot. */
 export async function expireOpenCalls(db: SocketDb) {
-  const rows = await db.update(aiCalls).set({ state: 'ambiguous', error: 'abandoned' }).where(and(eq(aiCalls.state, 'reserved'), lt(aiCalls.createdAt, new Date(Date.now() - 15 * 60_000)))).returning({ id: aiCalls.id });
+  const rows = await db
+    .update(aiCalls)
+    .set({ state: 'ambiguous', error: 'abandoned' })
+    .where(and(eq(aiCalls.state, 'reserved'), lt(aiCalls.createdAt, new Date(Date.now() - 15 * 60_000))))
+    .returning({ id: aiCalls.id });
   return rows.length;
 }

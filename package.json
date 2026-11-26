@@ -17,7 +17,9 @@
     "db:migrate": "tsx src/server/db/migrate.ts",
     "build": "vite build",
     "preview": "vite preview",
-    "db:seed": "tsx dev/seed.ts"
+    "db:seed": "tsx dev/seed.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.7.7",
@@ -59,6 +61,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "concurrently": "^10.0.5",
     "drizzle-kit": "0.31.11",
+    "prettier": "3.10.1",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^5.7.2",

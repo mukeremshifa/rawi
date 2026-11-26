@@ -8,7 +8,9 @@ import * as schema from './db/schema';
 export function createAuth(env: BackendBindings, db: SocketDb | ReadDb, transaction = true) {
   return betterAuth({
     database: drizzleAdapter(db, { provider: 'pg', schema, transaction }),
-    secret: env.BETTER_AUTH_SECRET!, baseURL: env.BETTER_AUTH_URL!, basePath: '/api/auth',
+    secret: env.BETTER_AUTH_SECRET!,
+    baseURL: env.BETTER_AUTH_URL!,
+    basePath: '/api/auth',
     trustedOrigins: [env.BETTER_AUTH_URL!],
     socialProviders: { google: { clientId: env.GOOGLE_CLIENT_ID!, clientSecret: env.GOOGLE_CLIENT_SECRET! } },
     account: { accountLinking: { enabled: false } },

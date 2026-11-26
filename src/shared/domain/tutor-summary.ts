@@ -6,10 +6,18 @@ import { STAGE_ORDER } from './tutor';
  * reached and the student's own turns.
  */
 
-export function summariseTutorTurns(session: { id: string; courseId?: string; scopeId?: string | null; topicId?: string | null; stage: TutorStage; stages: TutorStage[]; studentTurns: number }) {
+export function summariseTutorTurns(session: {
+  id: string;
+  courseId?: string;
+  scopeId?: string | null;
+  topicId?: string | null;
+  stage: TutorStage;
+  stages: TutorStage[];
+  studentTurns: number;
+}) {
   const stages = new Set(session.stages);
   stages.add(session.stage);
-  const reached = STAGE_ORDER.filter((s) => stages.has(s));
+  const reached = STAGE_ORDER.filter(s => stages.has(s));
   const stageReached = reached[reached.length - 1] ?? 'orient';
 
   const covered: string[] = [];

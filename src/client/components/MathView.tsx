@@ -8,7 +8,11 @@ const KatexMath = lazy(() => import('@/components/KatexMath'));
  */
 export function MathView({ latex, display = false }: { latex: string; display?: boolean }) {
   return (
-    <Suspense fallback={<span className={display ? 'block py-1 font-mono text-[0.9em]' : 'font-mono text-[0.9em]'}>{latex}</span>}>
+    <Suspense
+      fallback={
+        <span className={display ? 'block py-1 font-mono text-[0.9em]' : 'font-mono text-[0.9em]'}>{latex}</span>
+      }
+    >
       <KatexMath latex={latex} display={display} />
     </Suspense>
   );

@@ -1,9 +1,4 @@
-import type {
-  AnswerValue,
-  Outcome,
-  Question,
-  QuestionAttempt,
-} from './types';
+import type { AnswerValue, Outcome, Question, QuestionAttempt } from './types';
 
 /**
  * Marking, for every format, by code. A multiple-choice answer matches its key or it does not, a
@@ -43,8 +38,11 @@ function markChoice(question: Question, answer: AnswerValue) {
  */
 export function readNumber(text: string): number | null {
   const western = text
-    .replace(/[\u0660-\u0669]/g, d => String(d.charCodeAt(0) - 0x660)).replace(/[\u06f0-\u06f9]/g, d => String(d.charCodeAt(0) - 0x6f0))
-    .replace(/\u066b/g, '.').replace(/\u066c/g, ',').replace(/\u2212/g, '-');
+    .replace(/[\u0660-\u0669]/g, d => String(d.charCodeAt(0) - 0x660))
+    .replace(/[\u06f0-\u06f9]/g, d => String(d.charCodeAt(0) - 0x6f0))
+    .replace(/\u066b/g, '.')
+    .replace(/\u066c/g, ',')
+    .replace(/\u2212/g, '-');
   const m = /-?\d[\d,\s]*(?:\.\d+)?|-?\.\d+/.exec(western);
   if (!m) return null;
   let raw = m[0].replace(/\s/g, '');
@@ -54,7 +52,8 @@ export function readNumber(text: string): number | null {
 }
 
 function markNumber(question: Question, answer: AnswerValue) {
-  if (answer.kind !== 'number' || !answer.value.trim() || !question.numeric) return { outcome: 'skipped' as Outcome, fraction: 0 };
+  if (answer.kind !== 'number' || !answer.value.trim() || !question.numeric)
+    return { outcome: 'skipped' as Outcome, fraction: 0 };
   const n = readNumber(answer.value);
   const ok = n !== null && Math.abs(n - question.numeric.value) <= question.numeric.tolerance;
   return { outcome: (ok ? 'correct' : 'incorrect') as Outcome, fraction: ok ? 1 : 0 };
@@ -64,18 +63,17 @@ function markBlanks(question: Question, answer: AnswerValue) {
   if (answer.kind !== 'blanks') return { outcome: 'skipped' as Outcome, fraction: 0 };
   const keys = question.blanks ?? [];
   if (keys.length === 0) return { outcome: 'skipped' as Outcome, fraction: 0 };
-  if (answer.values.every((v) => !v.trim())) {
+  if (answer.values.every(v => !v.trim())) {
     return { outcome: 'skipped' as Outcome, fraction: 0 };
   }
 
   let hits = 0;
   keys.forEach((accepted, i) => {
     const given = (answer.values[i] ?? '').trim().toLowerCase();
-    if (given && accepted.some((a) => a.trim().toLowerCase() === given)) hits += 1;
+    if (given && accepted.some(a => a.trim().toLowerCase() === given)) hits += 1;
   });
   const fraction = hits / keys.length;
-  const outcome: Outcome =
-    fraction === 1 ? 'correct' : fraction === 0 ? 'incorrect' : 'partial';
+  const outcome: Outcome = fraction === 1 ? 'correct' : fraction === 0 ? 'incorrect' : 'partial';
   return { outcome, fraction };
 }
 
@@ -92,8 +90,7 @@ function markOrdering(question: Question, answer: AnswerValue) {
     if (answer.sequence[i] === item) hits += 1;
   });
   const fraction = hits / correct.length;
-  const outcome: Outcome =
-    fraction === 1 ? 'correct' : fraction === 0 ? 'incorrect' : 'partial';
+  const outcome: Outcome = fraction === 1 ? 'correct' : fraction === 0 ? 'incorrect' : 'partial';
   return { outcome, fraction };
 }
 
@@ -109,8 +106,7 @@ function markMatching(question: Question, answer: AnswerValue) {
     if (answer.assignments[pair.left] === pair.right) hits += 1;
   }
   const fraction = hits / pairs.length;
-  const outcome: Outcome =
-    fraction === 1 ? 'correct' : fraction === 0 ? 'incorrect' : 'partial';
+  const outcome: Outcome = fraction === 1 ? 'correct' : fraction === 0 ? 'incorrect' : 'partial';
   return { outcome, fraction };
 }
 
@@ -155,10 +151,13 @@ export function mark(question: Question, answer: AnswerValue): MarkResult {
     case 'self-check': {
       // The student compares their answer with the model answer and marks it. An answer they
       // never marked counts as skipped, not as wrong.
-      if (answer.kind !== 'self-check' || !answer.mark || !answer.text.trim()) return { outcome: 'skipped', marksAwarded: 0 };
-      return answer.mark === 'got' ? { outcome: 'correct', marksAwarded: question.marks }
-        : answer.mark === 'partly' ? { outcome: 'partial', marksAwarded: Math.round(question.marks / 2) }
-        : { outcome: 'incorrect', marksAwarded: 0 };
+      if (answer.kind !== 'self-check' || !answer.mark || !answer.text.trim())
+        return { outcome: 'skipped', marksAwarded: 0 };
+      return answer.mark === 'got'
+        ? { outcome: 'correct', marksAwarded: question.marks }
+        : answer.mark === 'partly'
+          ? { outcome: 'partial', marksAwarded: Math.round(question.marks / 2) }
+          : { outcome: 'incorrect', marksAwarded: 0 };
     }
     case 'flashcard': {
       // A flashcard is self-rated; there is no key to mark against. "good" and
@@ -177,6 +176,14 @@ export function mark(question: Question, answer: AnswerValue): MarkResult {
 /** Builds the stored record for one answer. */
 export function toQuestionAttempt(question: Question, answer: AnswerValue, usedHint: boolean): QuestionAttempt {
   const result = mark(question, answer);
-  return { questionId: question.id, topicId: question.topicId, format: question.format, response: answer, outcome: result.outcome, marksAwarded: result.marksAwarded, marksAvailable: question.marks, usedHint };
+  return {
+    questionId: question.id,
+    topicId: question.topicId,
+    format: question.format,
+    response: answer,
+    outcome: result.outcome,
+    marksAwarded: result.marksAwarded,
+    marksAvailable: question.marks,
+    usedHint,
+  };
 }
-

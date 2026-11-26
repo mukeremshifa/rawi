@@ -1,10 +1,4 @@
-import type {
-  Attempt,
-  ExamConfig,
-  ExamRun,
-  Question,
-  QuestionAttempt,
-} from './types';
+import type { Attempt, ExamConfig, ExamRun, Question, QuestionAttempt } from './types';
 import { attemptTotals, toQuestionAttempt } from './marking';
 
 import { selectQuestions } from './question-selection';
@@ -59,8 +53,7 @@ export function validateConfig(config: ExamConfig, pool: Question[]): Validation
 
   for (const section of config.sections) {
     if (section.formats.length === 0) {
-      sectionProblems[section.id] =
-        'No question formats selected, so this section cannot be filled.';
+      sectionProblems[section.id] = 'No question formats selected, so this section cannot be filled.';
       problems.push(`“${section.title}” has no question formats selected.`);
       continue;
     }
@@ -81,10 +74,9 @@ export function validateConfig(config: ExamConfig, pool: Question[]): Validation
     }
 
     if (available.length < section.count) {
-      sectionProblems[section.id] =
-        `Asking for ${section.count} but only ${available.length} ${
-          available.length === 1 ? 'question matches' : 'questions match'
-        } these formats and topics${claimed.size > 0 ? ' after the earlier sections take theirs' : ''}. Reduce the count, or widen the formats or topics.`;
+      sectionProblems[section.id] = `Asking for ${section.count} but only ${available.length} ${
+        available.length === 1 ? 'question matches' : 'questions match'
+      } these formats and topics${claimed.size > 0 ? ' after the earlier sections take theirs' : ''}. Reduce the count, or widen the formats or topics.`;
       problems.push(
         `“${section.title}” asks for ${section.count} questions and only ${available.length} are available.`,
       );
@@ -95,11 +87,7 @@ export function validateConfig(config: ExamConfig, pool: Question[]): Validation
       claimed.add(question.id);
     }
 
-    if (
-      config.timing === 'per-section' &&
-      section.minutes > 0 &&
-      section.count / section.minutes > 1.5
-    ) {
+    if (config.timing === 'per-section' && section.minutes > 0 && section.count / section.minutes > 1.5) {
       warnings.push(
         `“${section.title}” gives under 40 seconds a question. That may be the point, but it is worth checking.`,
       );
@@ -111,11 +99,11 @@ export function validateConfig(config: ExamConfig, pool: Question[]): Validation
   }
 
   if (config.timing === 'per-section') {
-    const zero = config.sections.filter((s) => s.minutes <= 0);
+    const zero = config.sections.filter(s => s.minutes <= 0);
     if (zero.length > 0) {
       problems.push(
         `Per-section timing needs a duration for every section. ${zero
-          .map((s) => `“${s.title}”`)
+          .map(s => `“${s.title}”`)
           .join(', ')} ${zero.length === 1 ? 'has' : 'have'} none.`,
       );
     }
@@ -131,9 +119,7 @@ export function validateConfig(config: ExamConfig, pool: Question[]): Validation
   }
 
   if (config.timing === 'untimed' && config.extraTimePercent > 0) {
-    warnings.push(
-      'Extra time has no effect on an untimed paper. It is kept in case you switch the timing back.',
-    );
+    warnings.push('Extra time has no effect on an untimed paper. It is kept in case you switch the timing back.');
   }
 
   /*
@@ -210,8 +196,8 @@ export function buildRun(
       section.count,
     );
     if (chosen.length === 0) return null;
-    sectionQuestions[section.id] = chosen.map((q) => q.id);
-    claimed.push(...chosen.map((q) => q.id));
+    sectionQuestions[section.id] = chosen.map(q => q.id);
+    claimed.push(...chosen.map(q => q.id));
   }
 
   const first = config.sections[0];
@@ -221,9 +207,7 @@ export function buildRun(
     courseId: config.courseId,
     configId: config.id,
     configSnapshot: config,
-    ...(context.plannedSessionId
-      ? { plannedSessionId: context.plannedSessionId }
-      : {}),
+    ...(context.plannedSessionId ? { plannedSessionId: context.plannedSessionId } : {}),
     ...(context.assessmentId
       ? { assessmentId: context.assessmentId }
       : config.assessmentIds?.[0]
@@ -246,9 +230,7 @@ export function buildRun(
     sectionDeadlines:
       config.timing === 'per-section' && first
         ? {
-            [first.id]: new Date(
-              now + withExtraTime(first.minutes, config.extraTimePercent) * 60_000,
-            ).toISOString(),
+            [first.id]: new Date(now + withExtraTime(first.minutes, config.extraTimePercent) * 60_000).toISOString(),
           }
         : {},
     ...(config.timing === 'overall'
@@ -291,11 +273,7 @@ export function enterSection(run: ExamRun, sectionIndex: number): ExamRun {
 }
 
 /** Whether a section's own clock has run out. */
-export function sectionExpired(
-  run: ExamRun,
-  sectionId: string,
-  now: number = Date.now(),
-): boolean {
+export function sectionExpired(run: ExamRun, sectionId: string, now: number = Date.now()): boolean {
   if (run.configSnapshot.timing !== 'per-section') return false;
   const deadline = run.sectionDeadlines[sectionId];
   return deadline !== undefined && now >= new Date(deadline).getTime();
@@ -309,19 +287,12 @@ export function sectionExpired(
  * moved past it. Collecting them here means the runner asks one question
  * instead of three, and the read-only view cannot disagree with the input.
  */
-export function sectionLocked(
-  run: ExamRun,
-  sectionIndex: number,
-  now: number = Date.now(),
-): boolean {
+export function sectionLocked(run: ExamRun, sectionIndex: number, now: number = Date.now()): boolean {
   const section = run.configSnapshot.sections[sectionIndex];
   if (!section) return true;
   if (run.lockedSectionIds.includes(section.id)) return true;
   if (sectionExpired(run, section.id, now)) return true;
-  if (
-    run.configSnapshot.navigation === 'sequential' &&
-    sectionIndex < run.currentSectionIndex
-  ) {
+  if (run.configSnapshot.navigation === 'sequential' && sectionIndex < run.currentSectionIndex) {
     return true;
   }
   return false;
@@ -348,11 +319,7 @@ export function sectionLocked(
  * is now true of the mechanism rather than of a flag someone remembered to set,
  * which is why the field can be trusted for runs created by this build.
  */
-export function finishRun(
-  run: ExamRun,
-  pool: Map<string, Question>,
-  finish: 'manual' | 'expired',
-): Attempt {
+export function finishRun(run: ExamRun, pool: Map<string, Question>, finish: 'manual' | 'expired'): Attempt {
   const config = run.configSnapshot;
   const questions: QuestionAttempt[] = [];
 
@@ -378,7 +345,7 @@ export function finishRun(
     examConfigId: config.id,
     examConfigSnapshot: config,
     assistanceRecord: 'tracked',
-    topicIds: [...new Set(questions.flatMap((q) => q.topicId ?? []))],
+    topicIds: [...new Set(questions.flatMap(q => q.topicId ?? []))],
     startedAt: run.startedAt,
     completedAt: new Date().toISOString(),
     questions,
@@ -399,16 +366,11 @@ export function finishRun(
 
 /** A flat list of every question in the paper, in section order. */
 export function flatQuestionIds(run: ExamRun): string[] {
-  return run.configSnapshot.sections.flatMap(
-    (section) => run.sectionQuestions[section.id] ?? [],
-  );
+  return run.configSnapshot.sections.flatMap(section => run.sectionQuestions[section.id] ?? []);
 }
 
 /** Where a question sits in the paper, so a flag can navigate to it. */
-export function locate(
-  run: ExamRun,
-  questionId: string,
-): { sectionIndex: number; questionIndex: number } | null {
+export function locate(run: ExamRun, questionId: string): { sectionIndex: number; questionIndex: number } | null {
   const sections = run.configSnapshot.sections;
   for (let s = 0; s < sections.length; s += 1) {
     const ids = run.sectionQuestions[sections[s]!.id] ?? [];
@@ -417,4 +379,3 @@ export function locate(
   }
   return null;
 }
-

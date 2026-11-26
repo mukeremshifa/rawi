@@ -16,12 +16,7 @@ import type {
 } from './types';
 import type { MasteryLevel } from './mastery';
 import { reviewReason } from './progress';
-import {
-  NO_CONTENT_REASON,
-  bestActivity,
-  substitutionNote,
-  topicCapabilities,
-} from './capabilities';
+import { NO_CONTENT_REASON, bestActivity, substitutionNote, topicCapabilities } from './capabilities';
 
 /**
  * The local study planner.
@@ -93,7 +88,12 @@ export function addDays(date: string, n: number): string {
 export function localISO(date: Date | string, timezone?: string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   if (timezone) {
-    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(d);
     return ['year', 'month', 'day'].map(k => parts.find(p => p.type === k)!.value).join('-');
   }
   const year = d.getFullYear();
@@ -116,10 +116,7 @@ export function weekDates(monday: string): string[] {
 }
 
 export function daysBetweenDates(from: string, to: string): number {
-  return Math.round(
-    (new Date(`${to}T12:00:00Z`).getTime() - new Date(`${from}T12:00:00Z`).getTime()) /
-      DAY_MS,
-  );
+  return Math.round((new Date(`${to}T12:00:00Z`).getTime() - new Date(`${from}T12:00:00Z`).getTime()) / DAY_MS);
 }
 
 export function weekdayOf(date: string): Weekday {
@@ -153,11 +150,11 @@ export function windowsForDate(
   availability: Availability,
   date: string,
 ): { startMinutes: number; endMinutes: number }[] {
-  const exception = availability.exceptions.find((e) => e.date === date);
+  const exception = availability.exceptions.find(e => e.date === date);
   if (exception) return [...exception.windows].sort((a, b) => a.startMinutes - b.startMinutes);
   return availability.windows
-    .filter((w) => w.day === weekdayOf(date))
-    .map((w) => ({ startMinutes: w.startMinutes, endMinutes: w.endMinutes }))
+    .filter(w => w.day === weekdayOf(date))
+    .map(w => ({ startMinutes: w.startMinutes, endMinutes: w.endMinutes }))
     .sort((a, b) => a.startMinutes - b.startMinutes);
 }
 
@@ -180,12 +177,12 @@ export function freeSlots(
 ): FreeSlot[] {
   const occupied = [
     ...busy
-      .filter((s) => s.date === date)
-      .map((s) => ({
+      .filter(s => s.date === date)
+      .map(s => ({
         start: s.startMinutes,
         end: s.startMinutes + s.durationMinutes,
       })),
-    ...blocked.filter((b) => b.date === date).map((b) => ({ start: b.start, end: b.end })),
+    ...blocked.filter(b => b.date === date).map(b => ({ start: b.start, end: b.end })),
   ].sort((a, b) => a.start - b.start);
 
   const slots: FreeSlot[] = [];
@@ -204,7 +201,7 @@ export function freeSlots(
     }
   }
 
-  return slots.filter((s) => s.endMinutes > s.startMinutes);
+  return slots.filter(s => s.endMinutes > s.startMinutes);
 }
 
 /** A span of one day that is not available, in minutes from midnight. */
@@ -332,7 +329,8 @@ export function gradeWeight(assessment: { weightPercent?: number } | undefined):
 }
 
 /** A topic's mastery level. A topic with no marked answer on any section has not been checked. */
-export const levelOf = (mastery: TopicMastery[], topicId: string): MasteryLevel => mastery.find(m => m.topicId === topicId)?.level ?? 'not-checked';
+export const levelOf = (mastery: TopicMastery[], topicId: string): MasteryLevel =>
+  mastery.find(m => m.topicId === topicId)?.level ?? 'not-checked';
 
 /** How much a topic's level adds to its priority in a week's plan. A missed topic comes before one not started. A secure topic is planned only before an assessment. */
 const PLAN_WEIGHT: Record<MasteryLevel, number> = { shaky: 28, 'not-checked': 26, learning: 16, secure: 0 };
@@ -346,14 +344,9 @@ export const MASTERY_REASON: Record<MasteryLevel, string> = {
 };
 
 function candidates(input: PlanInputs): Candidate[] {
-  const {
-    courses,
-    topics,
-    assessments,
-    today,
-  } = input;
+  const { courses, topics, assessments, today } = input;
   const out: Candidate[] = [];
-  const active = courses.filter((c) => !c.archived);
+  const active = courses.filter(c => !c.archived);
   const sessionMinutes = input.availability.sessionMinutes || 45;
 
   /*
@@ -363,7 +356,7 @@ function candidates(input: PlanInputs): Candidate[] {
    * rather than of today: planning three weeks ahead must not propose revision
    * for a quiz that will be long over by then.
    */
-  const firstPlannable = weekDates(input.weekStart).find((d) => d >= today);
+  const firstPlannable = weekDates(input.weekStart).find(d => d >= today);
 
   const stillAhead = (a: DatedAssessment) => {
     if (!firstPlannable) return false;
@@ -372,12 +365,12 @@ function candidates(input: PlanInputs): Candidate[] {
   };
 
   for (const course of active) {
-    const courseTopics = topics.filter((t) => t.courseId === course.id);
+    const courseTopics = topics.filter(t => t.courseId === course.id);
     /* Scoped per course, so one subject's content can never make another
        subject's topic look practisable. */
-    const courseMaterials = input.materials.filter((m) => m.courseId === course.id);
+    const courseMaterials = input.materials.filter(m => m.courseId === course.id);
     const upcoming = assessments
-      .filter((a) => a.courseId === course.id && stillAhead(a))
+      .filter(a => a.courseId === course.id && stillAhead(a))
       .sort((a, b) => a.date.localeCompare(b.date));
 
     for (const topic of courseTopics) {
@@ -389,17 +382,14 @@ function candidates(input: PlanInputs): Candidate[] {
       /* The nearest assessment that actually covers this topic. An assessment
          with no recorded coverage is treated as covering the whole course,
          because that is the safer reading of "not recorded yet". */
-      const covering = upcoming.find(
-        (a) => a.topicIds.length === 0 || a.topicIds.includes(topic.id),
-      );
+      const covering = upcoming.find(a => a.topicIds.length === 0 || a.topicIds.includes(topic.id));
       const daysAway = covering ? daysBetweenDates(today, covering.date) : 999;
 
       const evidenceWeight = PLAN_WEIGHT[level];
 
       if (evidenceWeight === 0 && daysAway > 14) continue;
 
-      const weight =
-        evidenceWeight + gradeWeight(covering) + urgency(daysAway);
+      const weight = evidenceWeight + gradeWeight(covering) + urgency(daysAway);
 
       /*
        * What this topic can actually support.
@@ -412,8 +402,7 @@ function candidates(input: PlanInputs): Candidate[] {
        * rather than a session that opens onto an apology.
        */
       const capabilities = topicCapabilities(topic, courseMaterials);
-      const preferred: SessionActivity =
-        level === 'not-checked' ? 'tutor' : 'practice';
+      const preferred: SessionActivity = level === 'not-checked' ? 'tutor' : 'practice';
       const activity = bestActivity(preferred, capabilities);
 
       if (!activity) {
@@ -432,11 +421,7 @@ function candidates(input: PlanInputs): Candidate[] {
 
       const assessmentClause = covering
         ? ` ${covering.title} is ${
-            daysAway === 0
-              ? 'today'
-              : daysAway === 1
-                ? 'tomorrow'
-                : `in ${daysAway} days`
+            daysAway === 0 ? 'today' : daysAway === 1 ? 'tomorrow' : `in ${daysAway} days`
           } and covers it.`
         : '';
 
@@ -447,9 +432,7 @@ function candidates(input: PlanInputs): Candidate[] {
          covering the topic is the obvious choice and the student can change
          it by editing the session. */
       const readingMaterial =
-        activity === 'read'
-          ? courseMaterials.find((m) => m.topicIds.includes(topic.id))
-          : undefined;
+        activity === 'read' ? courseMaterials.find(m => m.topicIds.includes(topic.id)) : undefined;
 
       out.push({
         courseId: course.id,
@@ -466,10 +449,7 @@ function candidates(input: PlanInputs): Candidate[] {
         } ${topic.title}`,
         activity,
         minutes: sessionMinutes,
-        reason: `${evidenceClause}${assessmentClause}${substitutionNote(
-          preferred,
-          activity,
-        )}`,
+        reason: `${evidenceClause}${assessmentClause}${substitutionNote(preferred, activity)}`,
         weight,
         ...(covering
           ? {
@@ -484,7 +464,7 @@ function candidates(input: PlanInputs): Candidate[] {
 
     /* Reviews that have come due are their own, shorter, kind of work. */
     for (const review of input.due.filter(d => courseTopics.some(t => t.id === d.topicId)).slice(0, 2)) {
-      const topic = courseTopics.find((t) => t.id === review.topicId);
+      const topic = courseTopics.find(t => t.id === review.topicId);
       if (!topic) continue;
       /* A review is a flashcard round when flashcards exist, and whatever
          practice the topic does support when they do not. "Any question for
@@ -499,10 +479,7 @@ function candidates(input: PlanInputs): Candidate[] {
         title: `Review ${topic.title}`,
         activity,
         minutes: Math.min(sessionMinutes, 30),
-        reason: `${reviewReason(review.daysSince)}${substitutionNote(
-          'flashcards',
-          activity,
-        )}`,
+        reason: `${reviewReason(review.daysSince)}${substitutionNote('flashcards', activity)}`,
         weight: 30 + Math.min(review.daysSince, 10),
         key: `gen-${course.id}-review-${topic.id}`,
       });
@@ -608,16 +585,12 @@ export function planWeek(input: PlanInputs, options: PlanOptions = {}): PlanProp
     s.date >= today &&
     dates.includes(s.date);
 
-  const standing = sessions.filter(
-    (s) => dates.includes(s.date) && !isReplaceable(s),
-  );
+  const standing = sessions.filter(s => dates.includes(s.date) && !isReplaceable(s));
 
   const pool = candidates(input);
 
   /* Work already standing this week does not need proposing again. */
-  const alreadyCovered = new Set(
-    standing.flatMap((s) => s.topicIds.map((t) => `${s.activity}:${t}`)),
-  );
+  const alreadyCovered = new Set(standing.flatMap(s => s.topicIds.map(t => `${s.activity}:${t}`)));
 
   const placed: PlannedSession[] = [];
   const unscheduled: UnscheduledWork[] = [];
@@ -625,7 +598,7 @@ export function planWeek(input: PlanInputs, options: PlanOptions = {}): PlanProp
 
   /* Only days from today onward: the planner cannot schedule work into a day
      that has already happened. */
-  const plannableDates = dates.filter((d) => d >= today);
+  const plannableDates = dates.filter(d => d >= today);
 
   let minutesAvailable = 0;
   for (const date of plannableDates) {
@@ -652,7 +625,7 @@ export function planWeek(input: PlanInputs, options: PlanOptions = {}): PlanProp
   const perCoursePerDay = new Map<string, number>();
 
   for (const candidate of pool) {
-    if (candidate.topicIds.some((t) => alreadyCovered.has(`${candidate.activity}:${t}`))) {
+    if (candidate.topicIds.some(t => alreadyCovered.has(`${candidate.activity}:${t}`))) {
       continue;
     }
 
@@ -678,9 +651,7 @@ export function planWeek(input: PlanInputs, options: PlanOptions = {}): PlanProp
     /* Days this candidate could use at all: in the week, not in the past, and
        not after its deadline. */
     const cutoff = candidate.cutoff;
-    const eligibleDates = plannableDates.filter(
-      (d) => !cutoff || d <= cutoff.date,
-    );
+    const eligibleDates = plannableDates.filter(d => !cutoff || d <= cutoff.date);
 
     if (cutoff && eligibleDates.length === 0) {
       decline(
@@ -714,20 +685,15 @@ export function planWeek(input: PlanInputs, options: PlanOptions = {}): PlanProp
 
       /* On the cutoff's own day, the work must also *end* before the deadline
          minute, not merely start on the right date. */
-      const latestEnd =
-        cutoff && date === cutoff.date ? cutoff.minutes : Number.POSITIVE_INFINITY;
+      const latestEnd = cutoff && date === cutoff.date ? cutoff.minutes : Number.POSITIVE_INFINITY;
 
       const slot = freeSlots(availability, date, busy(), blocked).find(
-        (s) =>
-          s.endMinutes - s.startMinutes >= candidate.minutes &&
-          s.startMinutes + candidate.minutes <= latestEnd,
+        s => s.endMinutes - s.startMinutes >= candidate.minutes && s.startMinutes + candidate.minutes <= latestEnd,
       );
       if (!slot) {
         if (
           latestEnd !== Number.POSITIVE_INFINITY &&
-          freeSlots(availability, date, busy(), blocked).some(
-            (s) => s.endMinutes - s.startMinutes >= candidate.minutes,
-          )
+          freeSlots(availability, date, busy(), blocked).some(s => s.endMinutes - s.startMinutes >= candidate.minutes)
         ) {
           hitCutoffTime = true;
         }
@@ -793,22 +759,20 @@ export function planWeek(input: PlanInputs, options: PlanOptions = {}): PlanProp
     );
   }
 
-  if (standing.some((s) => s.status === 'planned')) {
+  if (standing.some(s => s.status === 'planned')) {
     notes.push(
-      `${standing.filter((s) => s.status === 'planned').length} session${
-        standing.filter((s) => s.status === 'planned').length === 1 ? '' : 's'
+      `${standing.filter(s => s.status === 'planned').length} session${
+        standing.filter(s => s.status === 'planned').length === 1 ? '' : 's'
       } already on your calendar ${
-        standing.filter((s) => s.status === 'planned').length === 1 ? 'was' : 'were'
-      } kept, and the plan works around ${
-        standing.filter((s) => s.status === 'planned').length === 1 ? 'it' : 'them'
-      }.`,
+        standing.filter(s => s.status === 'planned').length === 1 ? 'was' : 'were'
+      } kept, and the plan works around ${standing.filter(s => s.status === 'planned').length === 1 ? 'it' : 'them'}.`,
     );
   }
 
   return {
     weekStart: monday,
     sessions: placed,
-    keptSessionIds: standing.map((s) => s.id),
+    keptSessionIds: standing.map(s => s.id),
     unscheduled,
     minutesPlanned,
     minutesAvailable,
@@ -840,9 +804,7 @@ function linkFor(candidate: Candidate): PlannedSession['link'] {
     case 'practice':
       return { kind: 'practice-new', topicIds: candidate.topicIds, activity: 'quiz' };
     case 'read':
-      return candidate.materialId
-        ? { kind: 'material', materialId: candidate.materialId }
-        : undefined;
+      return candidate.materialId ? { kind: 'material', materialId: candidate.materialId } : undefined;
     default:
       return undefined;
   }
@@ -855,15 +817,11 @@ function linkFor(candidate: Candidate): PlannedSession['link'] {
  * suggested earlier" before anything is applied, rather than the student
  * discovering it afterwards.
  */
-export function replacedByPlan(
-  sessions: PlannedSession[],
-  proposal: PlanProposal,
-  today: string,
-): PlannedSession[] {
+export function replacedByPlan(sessions: PlannedSession[], proposal: PlanProposal, today: string): PlannedSession[] {
   const dates = weekDates(proposal.weekStart);
   const kept = new Set(proposal.keptSessionIds);
   return sessions.filter(
-    (s) =>
+    s =>
       dates.includes(s.date) &&
       s.date >= today &&
       s.generated === true &&

@@ -22,20 +22,14 @@ export interface QuestionFilter {
  * topic — `exclude` is the mechanism, which is honest about what it is doing in
  * a way that a random shuffle is not.
  */
-export function selectQuestions(
-  pool: Question[],
-  filter: QuestionFilter,
-  limit?: number,
-): Question[] {
+export function selectQuestions(pool: Question[], filter: QuestionFilter, limit?: number): Question[] {
   const excluded = new Set(filter.exclude ?? []);
   const topics = filter.topicIds?.length ? new Set(filter.topicIds) : null;
   const formats = filter.formats?.length ? new Set(filter.formats) : null;
-  const difficulties = filter.difficulties?.length
-    ? new Set(filter.difficulties)
-    : null;
+  const difficulties = filter.difficulties?.length ? new Set(filter.difficulties) : null;
   const materials = filter.materialIds?.length ? new Set(filter.materialIds) : null;
 
-  const matches = pool.filter((q) => {
+  const matches = pool.filter(q => {
     if (excluded.has(q.id)) return false;
     if (topics && (!q.topicId || !topics.has(q.topicId))) return false;
     if (formats && !formats.has(q.format)) return false;

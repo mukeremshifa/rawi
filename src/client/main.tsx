@@ -13,7 +13,16 @@ import { retireBrowserStorage } from '@/app/retire-storage';
 retireBrowserStorage();
 const router = createBrowserRouter([{ path: '*', element: <App /> }]);
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><ErrorBoundary><QueryClientProvider client={queryClient}><TooltipProvider delayDuration={300}><ConfirmProvider>
-    <RouterProvider router={router} /><Toaster />
-  </ConfirmProvider></TooltipProvider></QueryClientProvider></ErrorBoundary></StrictMode>,
+  <StrictMode>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider delayDuration={300}>
+          <ConfirmProvider>
+            <RouterProvider router={router} />
+            <Toaster />
+          </ConfirmProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
+  </StrictMode>,
 );

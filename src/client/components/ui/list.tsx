@@ -13,7 +13,17 @@ function List({ className, ...props }: React.ComponentProps<'ul'>) {
   return <ul role="list" className={cn('divide-y border-y', className)} {...props} />;
 }
 
-function ListRow({ title, meta, leading, trailing, actions, to, onClick, className, titleClassName }: {
+function ListRow({
+  title,
+  meta,
+  leading,
+  trailing,
+  actions,
+  to,
+  onClick,
+  className,
+  titleClassName,
+}: {
   title: React.ReactNode;
   meta?: React.ReactNode;
   leading?: React.ReactNode;
@@ -38,10 +48,23 @@ function ListRow({ title, meta, leading, trailing, actions, to, onClick, classNa
   );
   const inner = 'flex min-w-0 flex-1 items-center gap-snug py-2.5 outline-none';
   return (
-    <li className={cn('group hover:bg-surface flex items-center gap-tight transition-colors has-[a:focus-visible]:bg-surface', className)}>
-      {to ? <Link to={to} className={cn(inner, 'focus-visible:underline')}>{body}</Link>
-        : onClick ? <button type="button" onClick={onClick} className={cn(inner, 'text-left')}>{body}</button>
-          : <div className={inner}>{body}</div>}
+    <li
+      className={cn(
+        'group hover:bg-surface flex items-center gap-tight transition-colors has-[a:focus-visible]:bg-surface',
+        className,
+      )}
+    >
+      {to ? (
+        <Link to={to} className={cn(inner, 'focus-visible:underline')}>
+          {body}
+        </Link>
+      ) : onClick ? (
+        <button type="button" onClick={onClick} className={cn(inner, 'text-left')}>
+          {body}
+        </button>
+      ) : (
+        <div className={inner}>{body}</div>
+      )}
       {actions && <span className="flex shrink-0 items-center gap-1">{actions}</span>}
     </li>
   );

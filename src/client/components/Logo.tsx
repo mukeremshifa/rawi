@@ -16,21 +16,10 @@ import { cn } from '@/lib/utils';
  */
 export function LogoMark({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      className={cn('size-6', className)}
-      role="img"
-      aria-label="Rawi"
-    >
+    <svg viewBox="0 0 24 24" fill="none" className={cn('size-6', className)} role="img" aria-label="Rawi">
       {/* The bracket: structure, in ink. Round joins so it reads as drawn
           rather than as a chart axis. */}
-      <path
-        d="M15.5 3.5 A 10.5 10.5 0 0 0 15.5 20.5"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
+      <path d="M15.5 3.5 A 10.5 10.5 0 0 0 15.5 20.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       <path
         d="M19.5 6.5 A 6.5 6.5 0 0 0 19.5 17.5"
         stroke="currentColor"

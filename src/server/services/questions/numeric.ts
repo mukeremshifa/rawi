@@ -6,7 +6,14 @@ import type { NumericTemplate } from './types';
  * as code.
  */
 const FUNCTIONS: Record<string, (...a: number[]) => number> = {
-  sqrt: Math.sqrt, abs: Math.abs, ln: Math.log, log: Math.log10, exp: Math.exp, round: Math.round, min: Math.min, max: Math.max,
+  sqrt: Math.sqrt,
+  abs: Math.abs,
+  ln: Math.log,
+  log: Math.log10,
+  exp: Math.exp,
+  round: Math.round,
+  min: Math.min,
+  max: Math.max,
 };
 const CONSTANTS: Record<string, number> = { pi: Math.PI, e: Math.E };
 
@@ -27,29 +34,86 @@ function tokens(text: string): Token[] {
 }
 
 /** Typeset symbols and {name} placeholders a model may write, read as plain operators and names. */
-const plain = (text: string) => text.replace(/\{(\w+)\}/g, '$1').replace(/[×·]/g, '*').replace(/÷/g, '/').replace(/[−–]/g, '-').replace(/²/g, '^2').replace(/³/g, '^3').replace(/√\s*\(/g, 'sqrt(').replace(/√\s*([A-Za-z_]\w*|\d+(?:\.\d+)?)/g, 'sqrt($1)');
+const plain = (text: string) =>
+  text
+    .replace(/\{(\w+)\}/g, '$1')
+    .replace(/[×·]/g, '*')
+    .replace(/÷/g, '/')
+    .replace(/[−–]/g, '-')
+    .replace(/²/g, '^2')
+    .replace(/³/g, '^3')
+    .replace(/√\s*\(/g, 'sqrt(')
+    .replace(/√\s*([A-Za-z_]\w*|\d+(?:\.\d+)?)/g, 'sqrt($1)');
 
 /** Evaluates an expression with the given values. Throws on anything it does not understand. */
 export function evaluate(expression: string, values: Record<string, number>): number {
   const list = tokens(plain(expression));
   let i = 0;
   const peek = () => list[i];
-  const take = (op?: string) => { const t = list[i]; if (op && !(t?.kind === 'op' && t.op === op)) throw new Error(`expected ${op}`); i++; return t; };
-  const isOp = (op: string) => { const t = peek(); return t?.kind === 'op' && t.op === op; };
-  const sum = (): number => { let v = product(); while (isOp('+') || isOp('-')) { const op = (take() as { op: string }).op; const r = product(); v = op === '+' ? v + r : v - r; } return v; };
-  const product = (): number => { let v = power(); while (isOp('*') || isOp('/')) { const op = (take() as { op: string }).op; const r = power(); v = op === '*' ? v * r : v / r; } return v; };
-  const power = (): number => { const base = unary(); if (isOp('^')) { take(); return Math.pow(base, power()); } return base; };
-  const unary = (): number => { if (isOp('-')) { take(); return -unary(); } if (isOp('+')) { take(); return unary(); } return atom(); };
+  const take = (op?: string) => {
+    const t = list[i];
+    if (op && !(t?.kind === 'op' && t.op === op)) throw new Error(`expected ${op}`);
+    i++;
+    return t;
+  };
+  const isOp = (op: string) => {
+    const t = peek();
+    return t?.kind === 'op' && t.op === op;
+  };
+  const sum = (): number => {
+    let v = product();
+    while (isOp('+') || isOp('-')) {
+      const op = (take() as { op: string }).op;
+      const r = product();
+      v = op === '+' ? v + r : v - r;
+    }
+    return v;
+  };
+  const product = (): number => {
+    let v = power();
+    while (isOp('*') || isOp('/')) {
+      const op = (take() as { op: string }).op;
+      const r = power();
+      v = op === '*' ? v * r : v / r;
+    }
+    return v;
+  };
+  const power = (): number => {
+    const base = unary();
+    if (isOp('^')) {
+      take();
+      return Math.pow(base, power());
+    }
+    return base;
+  };
+  const unary = (): number => {
+    if (isOp('-')) {
+      take();
+      return -unary();
+    }
+    if (isOp('+')) {
+      take();
+      return unary();
+    }
+    return atom();
+  };
   const atom = (): number => {
     const t = take();
     if (!t) throw new Error('unexpected end');
     if (t.kind === 'num') return t.value;
-    if (t.kind === 'op' && t.op === '(') { const v = sum(); take(')'); return v; }
+    if (t.kind === 'op' && t.op === '(') {
+      const v = sum();
+      take(')');
+      return v;
+    }
     if (t.kind === 'id') {
       if (FUNCTIONS[t.name] && isOp('(')) {
         take('(');
         const args = [sum()];
-        while (isOp(',')) { take(); args.push(sum()); }
+        while (isOp(',')) {
+          take();
+          args.push(sum());
+        }
         take(')');
         return FUNCTIONS[t.name]!(...args);
       }
@@ -83,9 +147,14 @@ export function checkTemplate(t: NumericTemplate): string[] {
   try {
     for (let k = 0; k < 5; k++) {
       const values = Object.fromEntries(t.params.map(p => [p.name, pick(p, Math.random)]));
-      if (!Number.isFinite(evaluate(t.expression, values))) { out.push('not_finite'); break; }
+      if (!Number.isFinite(evaluate(t.expression, values))) {
+        out.push('not_finite');
+        break;
+      }
     }
-  } catch { out.push('expression'); }
+  } catch {
+    out.push('expression');
+  }
   return out;
 }
 
@@ -95,7 +164,9 @@ export function variant(t: NumericTemplate, random: () => number = Math.random) 
     const values = Object.fromEntries(t.params.map(p => [p.name, pick(p, random)]));
     const answer = round(evaluate(t.expression, values), t.decimals);
     if (!Number.isFinite(answer)) continue;
-    const stem = t.stem.replace(/\{(\w+)\}/g, (_m, name: string) => name in values ? values[name]!.toLocaleString('en-GB') : `{${name}}`);
+    const stem = t.stem.replace(/\{(\w+)\}/g, (_m, name: string) =>
+      name in values ? values[name]!.toLocaleString('en-GB') : `{${name}}`,
+    );
     // Half of the last decimal place, so a correctly rounded answer always counts.
     const tolerance = Math.max(0.5 * 10 ** -t.decimals, Math.abs(answer) * 1e-9);
     return { stem, values, answer, tolerance };
