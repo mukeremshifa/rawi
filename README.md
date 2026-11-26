@@ -76,11 +76,6 @@ failures do not establish sign-out or open a cached account.
 
 There is no offline workspace, device-storage screen or JSON import/export flow.
 Original uploaded files remain available through authorized material downloads.
-Temporary retirement code in `src/client/app/retire-storage.ts` and `public/sw.js`
-removes the previous Rawi caches, offline database and known legacy keys without
-clearing unrelated storage or session cookies. Open tabs are never forced to
-reload. Remove both files and the `/sw.js` no-store header together once
-returning-browser retirement has been checked and old installations are gone.
 
 ## How it fits together
 
