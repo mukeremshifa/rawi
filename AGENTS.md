@@ -10,6 +10,7 @@ user-facing JSON recovery/export remain excluded.
 - Keep changes focused and explain the main tradeoff. Avoid speculative infrastructure.
 - Do not add tests, CI, environment setup, or approval gates unless requested.
 - Check affected behavior in the dev server and report what was actually checked.
+- Run `npm run format` before committing.
 - Keep documentation minimal and commit coherent changes.
 
 ## Punctuation in first-party prose

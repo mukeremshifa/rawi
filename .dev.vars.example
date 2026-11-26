@@ -20,7 +20,7 @@ MATERIAL_PENDING_LIMIT=10
 DATALAB_API_KEY=
 
 # AI vendors. Each is used when its credentials are present. Without either, outlines use a rules pass
-# and tutor, generation and feedback report that AI is unavailable.
+# and the tutor and question writing report that AI is unavailable.
 # Bedrock: an IAM user allowed only bedrock:InvokeModel and bedrock:InvokeModelWithResponseStream.
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=

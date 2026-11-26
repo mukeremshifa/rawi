@@ -238,7 +238,7 @@ Fictional fixtures live in `dev/fixtures`. Seed an existing development
 account, which must have signed in once:
 
 ```sh
-npm run db:seed -- --email mukerem.dev@gmail.com
+npm run db:seed -- --email you@example.com
 ```
 
 PowerShell users should use `npm.cmd run db:seed -- --email ...` if the npm
@@ -250,7 +250,7 @@ questions are not seeded. Rawi reads the materials when a course page opens.
 `dev/fixtures/originals` holds small originals for the Datalab path.
 
 ```sh
-npx tsx dev/measure.ts --email mukerem.dev@gmail.com --suites retrieval,questions,tutor
+npx tsx dev/measure.ts --email you@example.com --suites retrieval,questions,tutor
 ```
 
 `measure.ts` measures retrieval, question yield and cost, and tutor latency
@@ -262,8 +262,8 @@ same cases and read side by side.
 
 ## Remaining work
 
-- Owner decisions: prices and plan numbers, and which route serves tutor
-  replies. Nothing a student writes goes to a vendor that keeps prompts, so
+- Owner decisions: prices and plan numbers. Tutor replies stay on Nova Lite in
+  development and move to a frontier model for production. Nothing a student writes goes to a vendor that keeps prompts, so
   student-facing work stays on Bedrock. Anthropic models on Bedrock are refused
   for this account's country, checked on 15 November 2026.
 - A replaced version embeds the whole document again, not only changed
