@@ -37,6 +37,7 @@ const SECTIONS = [
   { id: 'study', label: 'Study defaults' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'ai', label: 'AI' },
+  { id: 'data', label: 'Your data' },
 ] as const;
 type Section = (typeof SECTIONS)[number]['id'];
 
@@ -87,8 +88,9 @@ export function Settings({
         </nav>
         <div className="min-w-0 flex-1">
           {section === 'profile' ? (
+            <ProfileSection onSaved={onProfile} />
+          ) : section === 'data' ? (
             <>
-              <ProfileSection onSaved={onProfile} />
               <Group title="Your data" description="What Rawi keeps, where it goes, and how to delete it.">
                 <div className="py-snug">
                   <DataNote />
@@ -99,7 +101,10 @@ export function Settings({
           ) : section === 'ai' ? (
             <AiSection />
           ) : (
-            <PreferencesSection section={section as Exclude<Section, 'profile' | 'ai'>} onSaved={onPreferences} />
+            <PreferencesSection
+              section={section as Exclude<Section, 'profile' | 'ai' | 'data'>}
+              onSaved={onPreferences}
+            />
           )}
         </div>
       </div>

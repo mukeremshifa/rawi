@@ -84,6 +84,39 @@ export function TopicReadiness({
     .sort((a, b) => (order.get(a.t.courseId) ?? 0) - (order.get(b.t.courseId) ?? 0) || a.i - b.i)
     .map(({ t }) => t);
   return (
+    <>
+      {/* On a phone each topic is a short stacked row. The table needs more width than a phone has. */}
+      <ul className="flex flex-col divide-y border-y sm:hidden">
+        {topics.length === 0 && (
+          <li className="text-muted-foreground py-3 text-base">{emptyAction ?? 'No topics yet.'}</li>
+        )}
+        {topics.map(topic => (
+          <li key={topic.id} className="flex flex-col gap-1 py-2.5">
+            <span className="font-medium">{topic.title}</span>
+            {showCourse && <span className="text-muted-foreground text-sm">{courseName(row, topic.courseId)}</span>}
+            <TopicStatus row={row} topicId={topic.id} />
+          </li>
+        ))}
+      </ul>
+      <div className="hidden sm:block">
+        <ReadinessTable row={row} topics={topics} showCourse={showCourse} emptyAction={emptyAction} />
+      </div>
+    </>
+  );
+}
+
+function ReadinessTable({
+  row,
+  topics,
+  showCourse,
+  emptyAction,
+}: {
+  row: ProgressData;
+  topics: ProgressData['topics'];
+  showCourse?: boolean;
+  emptyAction?: React.ReactNode;
+}) {
+  return (
     <Table>
       <TableHeader>
         <TableRow>
