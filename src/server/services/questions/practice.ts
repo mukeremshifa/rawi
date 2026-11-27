@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { BackendBindings } from '../../config';
-import { socketDb, transaction, type SocketDb, type Transaction } from '../../db/client';
+import { databaseUrl, socketDb, transaction, type SocketDb, type Transaction } from '../../db/client';
 import { aiOperations, bankItems, learningRuns, learningSets, setItems } from '../../db/schema';
 import { ApiError, notFound } from '../../errors';
 import { budget, type CallContext } from '../../ai/engine';
@@ -102,7 +102,7 @@ export async function practise(
  */
 export async function fillRun(env: BackendBindings, workspaceId: string, runId: string) {
   if (!env.DATABASE_URL) return;
-  const connection = socketDb(env.DATABASE_URL);
+  const connection = socketDb(databaseUrl(env));
   const db = connection.db;
   try {
     const [op] = await db

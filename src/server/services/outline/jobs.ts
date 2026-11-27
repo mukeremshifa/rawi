@@ -8,7 +8,7 @@ import {
   topics,
   topicSections,
 } from '../../db/schema';
-import { socketDb, transaction, type SocketDb } from '../../db/client';
+import { databaseUrl, socketDb, transaction, type SocketDb } from '../../db/client';
 import type { BackendBindings } from '../../config';
 import { ApiError } from '../../errors';
 import type { Citation } from '../../../shared/contracts/document';
@@ -91,7 +91,7 @@ export async function runCourseJobs(env: BackendBindings, scope: Scope) {
 }
 
 async function runOutline(env: BackendBindings, scope: Scope) {
-  const connection = socketDb(env.DATABASE_URL!);
+  const connection = socketDb(databaseUrl(env));
   try {
     for (let i = 0; i < 25; i++) {
       const next = await connection.db

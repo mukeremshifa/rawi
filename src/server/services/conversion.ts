@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNull, lt, lte, notExists, or, sql } from 'drizzle-orm';
-import { socketDb, transaction, type ReadDb, type SocketDb } from '../db/client';
+import { databaseUrl, socketDb, transaction, type ReadDb, type SocketDb } from '../db/client';
 import { materialVersions, fileObjects, blocks } from '../db/schema';
 import type { BackendBindings } from '../config';
 import { ApiError, conflict, notFound } from '../errors';
@@ -55,7 +55,7 @@ export function conversionDue(
 /** Advance one version by one step on its own connection. Safe to call from `waitUntil`. */
 export async function advance(env: BackendBindings, versionId: string) {
   if (!env.DATABASE_URL) return;
-  const connection = socketDb(env.DATABASE_URL);
+  const connection = socketDb(databaseUrl(env));
   let scope: { workspaceId: string; courseId: string } | null = null;
   try {
     await step(connection.db, env, versionId);

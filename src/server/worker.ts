@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { api } from './app';
 import type { BackendContext } from './http';
-import { socketDb } from './db/client';
+import { databaseUrl, socketDb } from './db/client';
 import { reconcileExams } from './services/learning';
 import { reconcile } from './services/uploads';
 import { sweepConversions, sweepOrphanAssets } from './services/conversion';
@@ -11,6 +11,7 @@ import { recoverReplies } from './services/ai/tutor';
 import { sweepGenerations } from './services/questions/practice';
 import { expireOpenCalls } from './ai/meter';
 import { sweepAgent } from './services/agent/loop';
+import { consume } from './services/jobs';
 import type { BackendBindings } from './config';
 import { ApiError } from './errors';
 
@@ -24,9 +25,10 @@ worker.all('/api/*', c => {
 worker.all('*', c => c.env.ASSETS.fetch(c.req.raw));
 export default {
   fetch: worker.fetch,
+  queue: consume,
   async scheduled(_controller: ScheduledController, env: BackendBindings) {
     if (!env.DATABASE_URL) return;
-    const connection = socketDb(env.DATABASE_URL),
+    const connection = socketDb(databaseUrl(env)),
       db = connection.db;
     // Each sweep runs on its own, so one failure never starves the others. Logs name the sweep, never SQL or provider details.
     const sweeps: [string, () => Promise<unknown>][] = [

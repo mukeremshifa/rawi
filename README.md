@@ -17,8 +17,10 @@ an unavailable screen. Startup and sign-in never seed a workspace.
 
 ## Stack and development
 
-React and Vite, Cloudflare Workers Static Assets and Hono, Neon PostgreSQL,
-Drizzle, Better Auth with Google sign-in, private R2 files, and Workers logs.
+React and Vite, Cloudflare Workers Static Assets and Hono, Neon PostgreSQL
+through `pg` (with a Hyperdrive binding in production), Drizzle, Cloudflare
+Queues for background jobs, Better Auth with Google sign-in, private R2 files,
+and Workers logs.
 Keep credentials server-side. Infrastructure and deployment are separate work.
 The public development origin is `http://localhost:5173`, with Google callback
 `http://localhost:5173/api/auth/callback/google`. Existing bindings are described
@@ -136,8 +138,11 @@ those sections once more without it, so the subjects inside can become topics.
 Corrections apply in place with Undo, and a re-read never renames or removes
 a topic the student changed or has work on.
 
-Jobs run from `waitUntil`, from the course status read and from the cron
-sweep, under a lease. One pass runs topic jobs, then reading, then the topic
+Jobs are queue messages (`services/jobs.ts`), queued by the request that
+starts the work and by the course status read, and run under a lease. Work
+that is not finished, such as a long reading or a conversion still processing,
+queues itself again a few seconds later. The hourly cron sweeps up anything a
+message missed. Without a queue binding, work starts after the response. One pass runs topic jobs, then reading, then the topic
 links reading queued.
 
 ## Scopes
@@ -225,7 +230,7 @@ Forget clears them.
 
 Rawi works toward each student's goals on its own (`services/agent/`). A goal
 is a course and usually an assessment, set by the student or made from a dated
-assessment in the syllabus. The agent runs on the cron sweep, after a practice
+assessment in the syllabus. The agent runs on the hourly cron sweep, after a practice
 run or tutor session ends, and when the student chooses Check now on the
 agent page, one run per workspace at a time under a lease.
 
@@ -328,8 +333,9 @@ same cases and read side by side.
 - A replaced version embeds the whole document again, not only changed
   sections. The cost is small.
 - Each database round trip from the development machine takes 100 to 130
-  ms, so a tutor reply needs about 4 seconds to its first word and an answer
-  save takes a few seconds. Planner and progress reads run their queries one
+  ms, so a tutor reply needs 4 to 6 seconds to its first word in development,
+  of which the model takes about one. Production should use Hyperdrive and
+  Smart Placement, which keep round trips short. Planner and progress reads run their queries one
   after another.
 - R2 holds objects from before the database reset that no row points to.
 - The seed gives the winds material a figure with a written description, so

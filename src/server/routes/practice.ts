@@ -11,9 +11,9 @@ import {
   writeInput,
   pageQuery,
 } from '../../shared/contracts/learning';
-import { fillRun, practise } from '../services/questions/practice';
+import { practise } from '../services/questions/practice';
 import { jsonInput, type BackendContext } from '../http';
-import { runAgent } from '../services/agent/loop';
+import { later } from '../services/jobs';
 
 export const practiceRoutes = new Hono<BackendContext>();
 practiceRoutes.post('/courses/:id/practice', async c => {
@@ -24,7 +24,7 @@ practiceRoutes.post('/courses/:id/practice', async c => {
     await jsonInput(c, practiceInput),
   );
   // Questions still to write are written after the response, and join the run as they pass.
-  if (run.pendingItems > 0) c.executionCtx.waitUntil(fillRun(c.env, c.get('workspaceId'), run.id));
+  if (run.pendingItems > 0) later(c, { kind: 'fill', workspaceId: c.get('workspaceId'), runId: run.id });
   return c.json(run);
 });
 practiceRoutes.get('/courses/:id/sets', async c => {
@@ -103,7 +103,7 @@ practiceRoutes.post('/runs/:id/submit', async c => {
     await jsonInput(c, runWriteInput),
     true,
   );
-  c.executionCtx.waitUntil(runAgent(c.env, c.get('workspaceId'), 'session'));
+  later(c, { kind: 'agent', workspaceId: c.get('workspaceId'), trigger: 'session' });
   return c.json(view);
 });
 practiceRoutes.post('/runs/:id/transition', async c =>

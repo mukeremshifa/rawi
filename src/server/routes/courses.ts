@@ -8,6 +8,7 @@ import { outlineCorrection, outlineUndo, scopeInput, scopePatch } from '../../sh
 import * as scopes from '../services/scopes';
 import { jsonInput, type BackendContext } from '../http';
 import { ingestPending } from '../services/knowledge/ingest';
+import { later } from '../services/jobs';
 
 export const coursesRoutes = new Hono<BackendContext>();
 coursesRoutes.get('/courses', async c => {
@@ -45,8 +46,7 @@ coursesRoutes.get('/courses/:id/topics', async c =>
 coursesRoutes.get('/courses/:id/outline', async c => {
   const scope = { workspaceId: c.get('workspaceId'), courseId: uuid.parse(c.req.param('id')) };
   const view = await outline.outlineView(c.get('db'), scope.workspaceId, scope.courseId);
-  if (view.pending) c.executionCtx.waitUntil(jobs.runCourseJobs(c.env, scope));
-  else if (await ingestPending(c.get('db'), scope)) c.executionCtx.waitUntil(jobs.runCourseJobs(c.env, scope));
+  if (view.pending || (await ingestPending(c.get('db'), scope))) later(c, { kind: 'course', ...scope });
   return c.json(view);
 });
 coursesRoutes.post('/courses/:id/outline/corrections', async c =>
@@ -74,7 +74,7 @@ coursesRoutes.post('/courses/:id/outline/undo', async c => {
 coursesRoutes.post('/courses/:id/outline/read', async c => {
   const scope = { workspaceId: c.get('workspaceId'), courseId: uuid.parse(c.req.param('id')) };
   const view = await jobs.readAgain(c.get('socket'), scope);
-  c.executionCtx.waitUntil(jobs.runCourseJobs(c.env, scope));
+  later(c, { kind: 'course', ...scope });
   return c.json(view);
 });
 coursesRoutes.get('/courses/:id/scopes', async c =>

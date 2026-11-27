@@ -11,7 +11,8 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
-import { Client } from '@neondatabase/serverless';
+import pg from 'pg';
+const { Client } = pg;
 import { and, eq, sql } from 'drizzle-orm';
 import { socketDb, transaction } from '../src/server/db/client';
 import * as s from '../src/server/db/schema';
@@ -51,7 +52,7 @@ const env = { ...config } as unknown as BackendBindings;
 // Database round trips, counted at the driver.
 let trips = 0;
 const query = Client.prototype.query;
-Client.prototype.query = function (this: Client, ...a: unknown[]) {
+Client.prototype.query = function (this: pg.Client, ...a: unknown[]) {
   trips++;
   return (query as (...b: unknown[]) => unknown).apply(this, a);
 } as typeof Client.prototype.query;
