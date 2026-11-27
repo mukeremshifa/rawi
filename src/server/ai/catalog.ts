@@ -28,6 +28,8 @@ export interface Route {
   /** `explicit` takes a cache point after the stable prefix, `implicit` reuses one by itself. */
   cache: 'explicit' | 'implicit' | 'none';
   vision: boolean;
+  /** How the route returns structured output: a response schema, or a forced tool call where the provider takes no schema. */
+  structured: 'schema' | 'tool';
   /**
    * Cleared for what a student writes: the pinned providers are known to keep no copy at all,
    * not even prompts a safety filter flags. Bedrock qualifies. Routes without it serve course
@@ -60,6 +62,7 @@ const openrouter = (
   flex: false,
   cache: 'none',
   vision: false,
+  structured: 'schema',
   student: false,
   temperature: true,
   kind: 'text',
@@ -76,7 +79,7 @@ export const ROUTES: Route[] = [
     'anthropic/claude-haiku-5.5',
     ['amazon-bedrock'],
     { input: 0.1, cacheWrite: 0.125, cacheRead: 0.01, output: 0.5, perImage: 0.1 * IMAGE_TOKENS },
-    { cache: 'explicit', vision: true, student: true, temperature: false, reasoning: 'none' },
+    { cache: 'explicit', vision: true, structured: 'tool', student: true, temperature: false, reasoning: 'none' },
   ),
   // The other family at the same price: writes questions, so its checker is a different model.
   openrouter(
@@ -92,7 +95,7 @@ export const ROUTES: Route[] = [
     'anthropic/claude-sonnet-5.5',
     ['amazon-bedrock'],
     { input: 2, cacheWrite: 2.5, cacheRead: 0.1, output: 10, perImage: 2 * IMAGE_TOKENS },
-    { cache: 'explicit', vision: true, student: true, temperature: false, reasoning: 'none' },
+    { cache: 'explicit', vision: true, structured: 'tool', student: true, temperature: false, reasoning: 'none' },
   ),
   // A cheap open-weight fallback for course material when both workhorses are down.
   openrouter(
