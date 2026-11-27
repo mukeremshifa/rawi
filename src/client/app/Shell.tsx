@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { MenuIcon, SearchIcon } from 'lucide-react';
 import type { Course } from '@shared/contracts/workspace';
 
-import { CommandMenu } from '@/app/CommandMenu';
 import { RemindersButton } from '@/app/Reminders';
 import { Sidebar } from '@/app/Sidebar';
 import { UploadTray } from '@/features/materials/queue';
@@ -13,6 +12,9 @@ import { Kbd, modKey } from '@/components/ui/kbd';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useApi } from '@/lib/data';
 import { ShellProvider, type PageMeta } from '@/lib/shell';
+
+// The command menu loads the first time it is opened.
+const CommandMenu = lazy(() => import('@/app/CommandMenu').then(m => ({ default: m.CommandMenu })));
 
 const SECTION: Record<string, string> = {
   syllabus: 'Syllabus',
@@ -117,8 +119,10 @@ export function Shell({
       signingOut={signingOut}
     />
   );
-  const command = (
-    <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} courses={courses.data?.courses} courseId={courseId} />
+  const command = commandOpen && (
+    <Suspense>
+      <CommandMenu open onOpenChange={setCommandOpen} courses={courses.data?.courses} courseId={courseId} />
+    </Suspense>
   );
 
   if (meta?.focus) {

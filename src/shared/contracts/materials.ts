@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { uuid, revision } from './workspace';
 import type { ConversionStatus, ConversionWarning, Pagination } from './document';
 
-export const fileTypes = ['txt', 'md', 'pdf', 'docx', 'pptx'] as const;
+import { fileTypes } from './constants';
+export { fileTypes };
 export const materialFields = z.strictObject({
   title: z.string().trim().min(1).max(200),
   kind: z.enum(['reading', 'slides', 'other']),
