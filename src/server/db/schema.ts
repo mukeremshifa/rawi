@@ -139,6 +139,9 @@ export const preferences = pgTable(
     values: jsonb('values').$type<PreferenceFields>().notNull(),
     timezone: text('timezone').notNull().default('UTC'),
     revision: integer('revision').notNull().default(1),
+    // The pilot terms the student agreed to, and when. Set only by the server.
+    consentVersion: text('consent_version'),
+    consentedAt: timestamp('consented_at', { withTimezone: true }),
     ...timestamps(),
   },
   t => [check('preferences_revision_positive', sql`${t.revision} > 0`)],
@@ -232,7 +235,9 @@ export const materials = pgTable(
       columns: [t.workspaceId, t.courseId, t.id, t.currentVersionId],
       foreignColumns: currentVersionColumns(),
     }),
-    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
+    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete(
+      'cascade',
+    ),
     index('materials_list_idx').on(t.workspaceId, t.courseId, t.archived, t.id),
     check('materials_revision_positive', sql`${t.revision} > 0`),
     check('materials_kind_valid', sql`${t.kind} in ('reading', 'slides', 'other', 'syllabus')`),
@@ -255,7 +260,9 @@ export const fileObjects = pgTable(
   },
   t => [
     unique('objects_scope_unique').on(t.workspaceId, t.courseId, t.id),
-    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
+    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete(
+      'cascade',
+    ),
     check('objects_size_positive', sql`${t.size} > 0`),
     check('objects_role_valid', sql`${t.role} in ('original', 'asset', 'raw')`),
   ],
@@ -306,7 +313,7 @@ export const materialVersions = pgTable(
     foreignKey({
       columns: [t.workspaceId, t.courseId, t.materialId],
       foreignColumns: [materials.workspaceId, materials.courseId, materials.id],
-    }),
+    }).onDelete('cascade'),
     foreignKey({
       columns: [t.workspaceId, t.courseId, t.sourceObjectId],
       foreignColumns: [fileObjects.workspaceId, fileObjects.courseId, fileObjects.id],
@@ -347,7 +354,7 @@ export const blocks = pgTable(
         materialVersions.materialId,
         materialVersions.id,
       ],
-    }),
+    }).onDelete('cascade'),
     unique('blocks_scope_unique').on(t.workspaceId, t.courseId, t.materialId, t.versionId, t.id),
     unique('blocks_ordinal_unique').on(t.versionId, t.ordinal),
     check(
@@ -394,7 +401,7 @@ export const workspaceStorage = pgTable(
   {
     workspaceId: uuid('workspace_id')
       .primaryKey()
-      .references(() => workspaces.id),
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
     usedBytes: bigint('used_bytes', { mode: 'number' }).notNull().default(0),
     reservedBytes: bigint('reserved_bytes', { mode: 'number' }).notNull().default(0),
     pendingCount: integer('pending_count').notNull().default(0),
@@ -426,7 +433,9 @@ export const uploads = pgTable(
     ...timestamps(),
   },
   t => [
-    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
+    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete(
+      'cascade',
+    ),
     foreignKey({
       columns: [t.workspaceId, t.courseId, t.materialId, t.resultVersionId],
       foreignColumns: [
@@ -447,7 +456,7 @@ export const uploadCandidates = pgTable(
     token: uuid('token').primaryKey(),
     uploadId: uuid('upload_id')
       .notNull()
-      .references(() => uploads.id),
+      .references(() => uploads.id, { onDelete: 'cascade' }),
     key: text('key').notNull().unique(),
     state: text('state').$type<'candidate' | 'published' | 'deleting'>().notNull().default('candidate'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -509,7 +518,9 @@ export const learningSets = pgTable(
   },
   t => [
     unique('sets_scope_unique').on(t.workspaceId, t.courseId, t.id),
-    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
+    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete(
+      'cascade',
+    ),
     index('sets_course_idx').on(t.workspaceId, t.courseId, t.archived, t.id),
   ],
 );
@@ -528,7 +539,7 @@ export const setItems = pgTable(
     foreignKey({
       columns: [t.workspaceId, t.courseId, t.setId],
       foreignColumns: [learningSets.workspaceId, learningSets.courseId, learningSets.id],
-    }),
+    }).onDelete('cascade'),
     foreignKey({
       columns: [t.workspaceId, t.courseId, t.questionId],
       foreignColumns: [bankItems.workspaceId, bankItems.courseId, bankItems.id],
@@ -566,7 +577,7 @@ export const learningRuns = pgTable(
     foreignKey({
       columns: [t.workspaceId, t.courseId, t.setId],
       foreignColumns: [learningSets.workspaceId, learningSets.courseId, learningSets.id],
-    }),
+    }).onDelete('cascade'),
     index('runs_expiry_idx').on(t.state, t.deadlineAt, t.id),
     index('runs_workspace_idx').on(t.workspaceId, t.state, t.id),
     check('runs_state_valid', sql`${t.state} in ('active', 'submitted')`),
@@ -591,11 +602,11 @@ export const runAnswers = pgTable(
     foreignKey({
       columns: [t.workspaceId, t.courseId, t.setId, t.runId],
       foreignColumns: [learningRuns.workspaceId, learningRuns.courseId, learningRuns.setId, learningRuns.id],
-    }),
+    }).onDelete('cascade'),
     foreignKey({
       columns: [t.workspaceId, t.courseId, t.setId, t.itemId],
       foreignColumns: [setItems.workspaceId, setItems.courseId, setItems.setId, setItems.id],
-    }),
+    }).onDelete('cascade'),
   ],
 );
 export const learningAttempts = pgTable(
@@ -613,7 +624,7 @@ export const learningAttempts = pgTable(
     foreignKey({
       columns: [t.workspaceId, t.courseId, t.setId, t.runId],
       foreignColumns: [learningRuns.workspaceId, learningRuns.courseId, learningRuns.setId, learningRuns.id],
-    }),
+    }).onDelete('cascade'),
     index('attempts_course_idx').on(t.workspaceId, t.courseId, t.id),
     index('attempts_chronology_idx').on(t.workspaceId, t.courseId, sql`(${t.snapshot}->>'completedAt')`, t.id),
   ],
@@ -657,7 +668,7 @@ export const learningOperations = pgTable(
   {
     workspaceId: uuid('workspace_id')
       .notNull()
-      .references(() => workspaces.id),
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
     id: uuid('id').notNull(),
     fingerprint: text('fingerprint').notNull(),
     result: jsonb('result').$type<unknown>().notNull(),
@@ -676,14 +687,16 @@ export const examConfigs = pgTable(
     ...timestamps(),
   },
   t => [
-    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
+    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete(
+      'cascade',
+    ),
     index('exam_configs_scope_idx').on(t.workspaceId, t.courseId, t.id),
   ],
 );
 export const plannerState = pgTable('planner_state', {
   workspaceId: uuid('workspace_id')
     .primaryKey()
-    .references(() => workspaces.id),
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
   availability: jsonb('availability').$type<Availability>().notNull(),
   revision: integer('revision').notNull().default(1),
 });
@@ -700,7 +713,9 @@ export const assessments = pgTable(
     edited: boolean('edited').notNull().default(true),
   },
   t => [
-    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
+    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete(
+      'cascade',
+    ),
     index('assessments_scope_idx').on(t.workspaceId, t.courseId),
     unique('assessments_scope_unique').on(t.workspaceId, t.courseId, t.id),
   ],
@@ -719,7 +734,9 @@ export const plannedSessions = pgTable(
   },
   t => [
     unique('planned_sessions_scope_unique').on(t.workspaceId, t.courseId, t.id),
-    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
+    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete(
+      'cascade',
+    ),
     index('planned_sessions_scope_idx').on(t.workspaceId, t.courseId),
     foreignKey({
       name: 'planned_assessment_scope_fk',
@@ -736,7 +753,7 @@ export const checkIns = pgTable(
     id: uuid('id').primaryKey(),
     workspaceId: uuid('workspace_id')
       .notNull()
-      .references(() => workspaces.id),
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
     content: jsonb('content').$type<CheckIn>().notNull(),
   },
   t => [
@@ -745,14 +762,14 @@ export const checkIns = pgTable(
       name: 'check_in_course_scope_fk',
       columns: [t.workspaceId, t.courseId],
       foreignColumns: [courses.workspaceId, courses.id],
-    }),
+    }).onDelete('cascade'),
   ],
 );
 export const planProposals = pgTable('plan_proposals', {
   id: uuid('id').primaryKey(),
   workspaceId: uuid('workspace_id')
     .notNull()
-    .references(() => workspaces.id),
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
   baseRevision: integer('base_revision').notNull(),
   proposal: jsonb('proposal').$type<PlanProposal>().notNull(),
   fingerprint: text('fingerprint').notNull(),
@@ -790,7 +807,9 @@ export const tutorSessions = pgTable(
       columns: [t.workspaceId, t.courseId, t.plannedSessionId],
       foreignColumns: [plannedSessions.workspaceId, plannedSessions.courseId, plannedSessions.id],
     }),
-    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
+    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete(
+      'cascade',
+    ),
     index('tutor_sessions_scope_idx').on(t.workspaceId, t.courseId, t.id),
     index('tutor_chronology_idx').on(t.workspaceId, t.courseId, t.createdAt, t.id),
   ],
@@ -815,7 +834,7 @@ export const tutorMessages = pgTable(
     foreignKey({
       columns: [t.workspaceId, t.courseId, t.sessionId],
       foreignColumns: [tutorSessions.workspaceId, tutorSessions.courseId, tutorSessions.id],
-    }),
+    }).onDelete('cascade'),
   ],
 );
 export const reminderStates = pgTable(
@@ -823,7 +842,7 @@ export const reminderStates = pgTable(
   {
     workspaceId: uuid('workspace_id')
       .notNull()
-      .references(() => workspaces.id),
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
     key: text('key').notNull(),
     status: text('status').$type<'read' | 'dismissed'>().notNull(),
   },
@@ -852,7 +871,9 @@ export const aiOperations = pgTable(
   },
   t => [
     unique('ai_operations_scope_unique').on(t.workspaceId, t.id),
-    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
+    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete(
+      'cascade',
+    ),
     index('ai_operations_target_idx').on(t.workspaceId, t.targetId, t.createdAt),
   ],
 );
@@ -878,7 +899,9 @@ export const outlineJobs = pgTable(
     ...timestamps(),
   },
   t => [
-    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }),
+    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete(
+      'cascade',
+    ),
     index('outline_jobs_due_idx').on(t.state, t.nextRunAt),
     index('outline_jobs_course_idx').on(t.workspaceId, t.courseId, t.createdAt),
     check('outline_jobs_kind_valid', sql`${t.kind} in ('read_syllabus', 'assign_topics')`),
@@ -897,7 +920,11 @@ export const outlineChanges = pgTable(
     undone: boolean('undone').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  t => [foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] })],
+  t => [
+    foreignKey({ columns: [t.workspaceId, t.courseId], foreignColumns: [courses.workspaceId, courses.id] }).onDelete(
+      'cascade',
+    ),
+  ],
 );
 
 // Explicit development provenance, never used by startup or authentication.
@@ -906,7 +933,7 @@ export const developmentSeeds = pgTable(
   {
     workspaceId: uuid('workspace_id')
       .notNull()
-      .references(() => workspaces.id),
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
     version: text('version').notNull(),
     anchorDate: date('anchor_date', { mode: 'string' }).notNull(),
     timezone: text('timezone').notNull(),

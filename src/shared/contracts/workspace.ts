@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+/** The version of the pilot terms. A new version asks every student to agree again. */
+export const CONSENT_VERSION = 'pilot-2026-12';
 export const uuid = z.uuid().transform(value => value.toLowerCase());
 export const revision = z.number().int().min(1).max(2147483646);
 export const preferenceFields = z.strictObject({
@@ -95,6 +97,9 @@ export interface Preferences {
   values: PreferenceFields;
   timezone: string;
   revision: number;
+  /** The pilot terms agreed to, or null before agreeing. */
+  consentVersion: string | null;
+  consentedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

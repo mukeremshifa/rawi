@@ -36,6 +36,20 @@
       "when": 1795735271274,
       "tag": "0004_language",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795737592590,
+      "tag": "0005_account_deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795737693003,
+      "tag": "0006_consent",
+      "breakpoints": true
     }
   ]
 }

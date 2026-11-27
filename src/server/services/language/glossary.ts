@@ -25,6 +25,16 @@ const PER_REQUEST = 60;
 /** Terms a glossary shows. */
 const LIMIT = 400;
 
+/**
+ * Whether a definition fact names a term worth a gloss. A symbol of a letter or two, such as "s" or
+ * "n", is left to the formula it belongs to, and a "definition" that only gives a value, such as
+ * "The sample standard deviation is 100 minutes", is a worked number rather than what the term means.
+ */
+export function isTerm(term: string, definition: string) {
+  if (term.trim().length <= 2) return false;
+  return !/\b(is|are|was|equals?)\s+(about\s+|approximately\s+)?[-\d.,]+\s*[\p{L}%]*\.?$/iu.test(definition.trim());
+}
+
 async function definitions(db: Db, workspaceId: string, courseId: string, language: Language) {
   const rows = await db
     .select({
@@ -56,6 +66,7 @@ async function definitions(db: Db, workspaceId: string, courseId: string, langua
   // A term two materials define appears once, glossed where possible.
   const seen = new Map<string, (typeof rows)[number]>();
   for (const r of rows) {
+    if (!isTerm(r.term, r.definition)) continue;
     const key = r.term.trim().toLowerCase();
     const prior = seen.get(key);
     if (!prior || (!prior.gloss && r.gloss)) seen.set(key, r);
