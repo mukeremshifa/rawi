@@ -53,10 +53,10 @@ export function Agent() {
       },
     );
   return (
-    <Page width="narrow">
+    <Page>
       <PageHeader
-        title="What Rawi did and why"
-        description="Rawi checks your courses on its own, decides what helps next and does it. Every step is listed here with its reason. Code makes each decision. AI writes questions when a step needs them, and the short note at the top of a run."
+        title="Rawi agent"
+        description="Every few hours and after each study session, Rawi looks at your courses and does what helps next, such as writing new questions or scheduling a check. Each step is listed below with the reason for it."
         actions={
           <Button onClick={checkNow} disabled={save.busy}>
             {save.busy ? 'Rawi is looking' : 'Check now'}
@@ -70,7 +70,7 @@ export function Agent() {
         title="Runs"
         description={
           totals.runs
-            ? `${totals.actions} ${totals.actions === 1 ? 'step' : 'steps'} in the last ${totals.runs} ${totals.runs === 1 ? 'run' : 'runs'}, ${totals.byCode} decided by code. AI cost ${usd(totals.costMicros)}.`
+            ? `${totals.actions} ${totals.actions === 1 ? 'step' : 'steps'} in the last ${totals.runs} ${totals.runs === 1 ? 'run' : 'runs'}${totals.costMicros ? `, ${usd(totals.costMicros)} of AI use` : ''}.`
             : undefined
         }
       >
@@ -136,7 +136,7 @@ function RunCard({ run, courseName }: { run: AgentRun; courseName: (id: string |
         <p className="text-base">
           {run.summary}
           {run.summaryBy === 'model' && (
-            <span className="text-muted-foreground text-sm"> Written by AI from the steps below.</span>
+            <span className="text-muted-foreground block text-sm">Summary written by AI from the steps below.</span>
           )}
         </p>
       )}

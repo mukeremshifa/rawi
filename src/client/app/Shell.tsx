@@ -38,6 +38,7 @@ function routeCrumbs(pathname: string, course: Course | undefined): Crumb[] {
     '/': 'Home',
     '/courses': 'Courses',
     '/planner': 'Planner',
+    '/agent': 'Rawi agent',
     '/progress': 'Progress',
     '/history': 'Progress',
     '/search': 'Search',

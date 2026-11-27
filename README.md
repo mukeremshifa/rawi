@@ -80,10 +80,10 @@ Before first use, a learner reads what Rawi keeps and where it goes
 (`features/account/Pilot.tsx`), confirms they are 18 or older and agrees to the
 pilot. The server records the terms version and time on the preferences row,
 and a new `CONSENT_VERSION` asks everyone again. The same note stays in
-Settings, Profile. Keep it true of the code when storage, AI routes or deletion
+Settings, Your data. Keep it true of the code when storage, AI routes or deletion
 change.
 
-Delete account, in Settings, Profile, takes a typed DELETE and removes the
+Delete account, in Settings, Your data, takes a typed DELETE and removes the
 account and everything in it (`services/account.ts`). Links between rows that
 guard single deletes elsewhere are cleared first in one transaction, the user
 row cascades to every workspace table, and after the commit the workspace's

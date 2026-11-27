@@ -169,8 +169,8 @@ export function Home() {
             <p className="text-lg font-semibold tracking-tight text-balance">{next.title}</p>
             <p className="text-muted-foreground text-base">{next.reason}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-snug">
-            <span className="text-muted-foreground tabular text-sm">{next.minutes} min</span>
+          <div className="flex flex-wrap items-center gap-snug sm:shrink-0 sm:flex-nowrap">
+            <span className="text-muted-foreground tabular text-sm whitespace-nowrap">{next.minutes} min</span>
             {next.topicId && next.kind !== 'setup' && <GuidedStart courseId={next.courseId} topicId={next.topicId} />}
             <Button asChild size="lg">
               <Link to={next.to}>

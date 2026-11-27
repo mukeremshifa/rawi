@@ -52,7 +52,7 @@ export function DataNote() {
       </ul>
       <h3 className="font-semibold">Deleting it</h3>
       <p>
-        Settings, Profile, Delete account removes your account, everything listed above and your files at once. It
+        Settings, Your data, Delete account removes your account, everything listed above and your files at once. It
         cannot be undone. If you only want to stop, you can also just stop using Rawi.
       </p>
     </div>
