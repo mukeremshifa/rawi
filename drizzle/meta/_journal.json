@@ -50,6 +50,13 @@
       "when": 1795737693003,
       "tag": "0006_consent",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795745965356,
+      "tag": "0007_openrouter_funding",
+      "breakpoints": true
     }
   ]
 }

@@ -19,14 +19,7 @@ MATERIAL_PENDING_LIMIT=10
 # Datalab key for PDF, DOCX and PPTX conversion. Without it those uploads keep only the original.
 DATALAB_API_KEY=
 
-# AI vendors. Each is used when its credentials are present. Without either, outlines use a rules pass
-# and the tutor and question writing report that AI is unavailable.
-# Bedrock: an IAM user allowed only bedrock:InvokeModel and bedrock:InvokeModelWithResponseStream.
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_REGION=us-east-1
-# Vertex: a service account with the Vertex AI User role. Paste the key's private_key in double quotes, as it appears in the JSON key file.
-GOOGLE_VERTEX_PROJECT=
-GOOGLE_VERTEX_LOCATION=global
-GOOGLE_VERTEX_CLIENT_EMAIL=
-GOOGLE_VERTEX_PRIVATE_KEY=
+# AI: every model call goes through OpenRouter. In OpenRouter's privacy settings, enforce zero data
+# retention and exclude safety retention. Without a key, outlines use a rules pass and the tutor and
+# question writing report that AI is unavailable.
+OPENROUTER_API_KEY=

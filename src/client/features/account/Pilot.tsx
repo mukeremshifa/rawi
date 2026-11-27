@@ -37,12 +37,16 @@ export function DataNote() {
       <ul className="list-disc pl-5">
         <li>Your account and study records are kept in a Neon Postgres database, and your files in Cloudflare R2.</li>
         <li>
-          Anything you write, such as tutor questions and answers, goes only to AI models on Amazon Bedrock in the
-          United States, which keeps no copy of it.
+          Every AI request passes through OpenRouter, which keeps no copy of it, and goes only to services that keep no
+          copy either.
         </li>
         <li>
-          Your course materials are converted by Datalab, and read by AI models on Amazon Bedrock and on Google Vertex
-          AI in the United States. Google may keep material it receives for a limited time to check for abuse.
+          Anything you write, such as tutor questions and answers, goes only to AI models on Amazon Bedrock in the
+          United States.
+        </li>
+        <li>
+          Your course materials are converted by Datalab, and read by AI models on Amazon Bedrock and Microsoft Azure,
+          and when those are unavailable on Fireworks or DeepInfra.
         </li>
         <li>Nothing is sold, shown to advertisers, or shared with your instructors or classmates.</li>
       </ul>

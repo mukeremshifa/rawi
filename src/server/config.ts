@@ -19,13 +19,7 @@ type FileBindings = {
   // Document conversion. Server-side only, never logged or sent to the client.
   DATALAB_API_KEY?: string;
   // AI vendors. Server-side only. Each vendor is used when its credentials are present.
-  AWS_ACCESS_KEY_ID?: string;
-  AWS_SECRET_ACCESS_KEY?: string;
-  AWS_REGION?: string;
-  GOOGLE_VERTEX_PROJECT?: string;
-  GOOGLE_VERTEX_LOCATION?: string;
-  GOOGLE_VERTEX_CLIENT_EMAIL?: string;
-  GOOGLE_VERTEX_PRIVATE_KEY?: string;
+  OPENROUTER_API_KEY?: string;
 };
 export type BackendBindings = Omit<Env, (typeof requiredBindings)[number] | keyof FileBindings> &
   Partial<Record<(typeof requiredBindings)[number], string>> &

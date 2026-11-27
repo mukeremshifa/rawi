@@ -278,7 +278,7 @@ export async function run<I, O>(
     const validation = value === null ? 'failed' : 'passed';
     await settle(ctx.db, callId, {
       state: 'settled',
-      chargedMicros: cost(r, result.usage, call.tier),
+      chargedMicros: result.costMicros ?? cost(r, result.usage, call.tier),
       usage: result.usage,
       latencyMs: result.latencyMs,
       ttftMs: result.ttftMs,
@@ -414,7 +414,7 @@ export async function* runStream<I>(
           const value = result.stop === 'end' || result.stop === 'max_tokens' ? task.check(result, input) : null;
           await settle(ctx.db, callId, {
             state: 'settled',
-            chargedMicros: cost(r, result.usage, call.tier),
+            chargedMicros: result.costMicros ?? cost(r, result.usage, call.tier),
             usage: result.usage,
             latencyMs: result.latencyMs,
             ttftMs: result.ttftMs,
@@ -513,8 +513,8 @@ export async function embed(
   if (!r) return null;
   const out: number[][] = [];
   for (let i = 0; i < texts.length; i += 50) {
-    const batch = texts.slice(i, i + 50),
-      chars = batch.reduce((n, t) => n + t.length, 0);
+    const batch = texts.slice(i, i + 50);
+    const estimate = batch.reduce((n, t) => n + estimateTokens(t, language), 0);
     const callId = await reserve(ctx.db, f, {
       workspaceId: ctx.workspaceId,
       operationId: ctx.operationId,
@@ -524,13 +524,13 @@ export async function embed(
       route: r,
       serviceTier: 'standard',
       language,
-      reservedMicros: reservation(r, 0, 0, 'standard', 0, chars),
+      reservedMicros: reservation(r, estimate, 0, 'standard'),
     });
     const started = Date.now();
     try {
       const result = await f.adapters[r.vendor]!.embed(r, batch, purpose, deadline(ctx, 'standard'));
       const usage = {
-        input: result.chars,
+        input: result.tokens,
         cacheRead: 0,
         cacheWrite: 0,
         output: 0,
@@ -540,7 +540,7 @@ export async function embed(
       };
       await settle(ctx.db, callId, {
         state: 'settled',
-        chargedMicros: cost(r, { ...usage, input: 0 }, 'standard', result.chars),
+        chargedMicros: result.costMicros ?? cost(r, usage, 'standard'),
         usage,
         latencyMs: result.latencyMs,
         ttftMs: null,

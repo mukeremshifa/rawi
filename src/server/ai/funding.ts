@@ -3,9 +3,8 @@ import type { BackendBindings } from '../config';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
 import { fundingSources, workspaces } from '../db/schema';
 import { ApiError } from '../errors';
-import { bedrockAdapter } from './adapters/bedrock';
+import { openRouterAdapter } from './adapters/openrouter';
 import type { Adapter } from './adapters/types';
-import { vertexAdapter } from './adapters/vertex';
 import type { Route } from './catalog';
 import type { DataClass, Limits, Vendor } from './types';
 
@@ -15,18 +14,11 @@ import type { DataClass, Limits, Vendor } from './types';
  * and the checks never change when a source is added. Only the resolver reads this table.
  */
 export type SourceRow = typeof fundingSources.$inferSelect;
-export interface BedrockCredentials {
-  vendor: 'bedrock';
-  accessKeyId: string;
-  secretAccessKey: string;
+/** An OpenRouter key. Keys saved for Bedrock or Vertex before the move are ignored when unsealed. */
+export interface Credentials {
+  vendor: 'openrouter';
+  apiKey: string;
 }
-export interface VertexCredentials {
-  vendor: 'vertex';
-  project: string;
-  clientEmail: string;
-  privateKey: string;
-}
-export type Credentials = BedrockCredentials | VertexCredentials;
 /** AES-GCM ciphertext of a `Credentials[]`, never logged or returned. */
 export interface Sealed {
   iv: string;
@@ -85,29 +77,16 @@ async function unseal(env: BackendBindings, sealed: Sealed): Promise<Credentials
 /* ── Adapters ────────────────────────────────────────────────────────────── */
 
 function platformCredentials(env: BackendBindings): Credentials[] {
-  const out: Credentials[] = [];
-  if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY)
-    out.push({ vendor: 'bedrock', accessKeyId: env.AWS_ACCESS_KEY_ID, secretAccessKey: env.AWS_SECRET_ACCESS_KEY });
-  if (env.GOOGLE_VERTEX_PROJECT && env.GOOGLE_VERTEX_CLIENT_EMAIL && env.GOOGLE_VERTEX_PRIVATE_KEY)
-    out.push({
-      vendor: 'vertex',
-      project: env.GOOGLE_VERTEX_PROJECT,
-      clientEmail: env.GOOGLE_VERTEX_CLIENT_EMAIL,
-      privateKey: env.GOOGLE_VERTEX_PRIVATE_KEY,
-    });
-  return out;
+  return env.OPENROUTER_API_KEY ? [{ vendor: 'openrouter', apiKey: env.OPENROUTER_API_KEY }] : [];
 }
 function adaptersOf(credentials: Credentials[]) {
   const out: Partial<Record<Vendor, Adapter>> = {};
-  for (const c of credentials) out[c.vendor] = c.vendor === 'bedrock' ? bedrockAdapter(c) : vertexAdapter(c);
+  for (const c of credentials) if (c.vendor === 'openrouter') out.openrouter = openRouterAdapter(c.apiKey);
   return out;
 }
 
 /** Whether the platform has any vendor configured. Background work without one uses rules. */
-/**
- * Kept per isolate. Adapters are keyed by source and its sealed value, so a Vertex token is signed
- * once an hour rather than per call, and a changed key builds new adapters.
- */
+/** Kept per isolate. Adapters are keyed by source and its sealed value, so a changed key builds new ones. */
 const sources = new Map<string, { at: number; row: SourceRow }>();
 const assigned = new Map<string, { at: number; id: string }>();
 const built = new Map<string, { key: string; adapters: Partial<Record<Vendor, Adapter>> }>();
@@ -190,9 +169,9 @@ export async function fundingFor(
 }
 
 /**
- * Whether a route may serve under a source. Student content goes only to routes that keep no
- * prompts unless the source deliberately widens it: a student's own key or an institution's own
- * account may, and says so where the student can see it.
+ * Whether a route may serve under a source. Every request asks for endpoints that keep no prompts.
+ * What a student writes goes further: only to routes whose pinned providers keep nothing at all.
+ * No source can widen that.
  */
 export function allowed(funding: Funding, r: Route, data: DataClass) {
   const s = funding.source;
@@ -200,7 +179,6 @@ export function allowed(funding: Funding, r: Route, data: DataClass) {
     !!funding.adapters[r.vendor] &&
     s.vendors.includes(r.vendor) &&
     (!s.routes || s.routes.includes(r.id)) &&
-    (s.retention === 'standard' || r.retention === 'none') &&
-    (data === 'institution' || r.retention === 'none' || s.studentRetention === 'standard')
+    (data === 'institution' || r.student)
   );
 }

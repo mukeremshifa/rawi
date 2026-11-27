@@ -3,7 +3,8 @@
  * Nothing here names a model: features ask for a task, and the router picks.
  */
 
-export type Vendor = 'bedrock' | 'vertex';
+/** Every call goes through OpenRouter. Older call records name the clouds Rawi once called directly. */
+export type Vendor = 'openrouter' | 'bedrock' | 'vertex';
 /** ISO 639-1. Tasks, prompts and stored content carry it, so Arabic needs no new seams. */
 export type Language = 'en' | 'ar' | (string & {});
 /**
