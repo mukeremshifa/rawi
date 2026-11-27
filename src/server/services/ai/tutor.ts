@@ -42,9 +42,10 @@ import { toQuestionAttempt } from '../../../shared/domain/marking';
 import { finishTutorText, plainDashes } from '../../../shared/domain/tutor-output';
 import { stageFrom } from '../../../shared/domain/tutor';
 import { resolveQuery, retrieve, type Passage, type Verdict } from '../knowledge/retrieve';
-import { courseSections, type CourseSection } from '../knowledge/course';
-import { liveLinks } from '../outline/links';
-import { learnerState, type SectionState } from '../questions/results';
+import { courseSections, courseSectionsFrom, courseSectionsRead, type CourseSection } from '../knowledge/course';
+import { liveLinksFrom, liveLinksRead } from '../outline/links';
+import { learnerState, learnerStateFrom, learnerStateRead, type SectionState } from '../questions/results';
+import { reads } from '../../db/reads';
 import { isDue, type MasteryLevel } from '../../../shared/domain/mastery';
 import { localISO } from '../../../shared/domain/planner';
 import { draw, type Weighted } from '../questions/bank';
@@ -512,8 +513,8 @@ export async function streamReply(
         return;
       }
     }
-    // A Stop from the student marks the operation cancelled. The reply checks three times a second and
-    // aborts the provider call, keeping what already arrived.
+    // A Stop from the student marks the operation cancelled. The reply checks once a second and aborts
+    // the provider call, keeping what already arrived. Each check is a query, so it is not more often.
     const stop = new AbortController();
     const poll = setInterval(() => {
       void db
@@ -526,7 +527,7 @@ export async function streamReply(
           },
           () => undefined,
         );
-    }, 300);
+    }, 1000);
     // A reply, and a held-back hint written once more, about 2 cents at most.
     const ctx: CallContext = { db, workspaceId, operationId, signal: stop.signal, budget: budget(4, 20_000, 120) };
     // The call is reserved while the turn is prepared, from an upper bound on its size.
@@ -714,8 +715,9 @@ export async function prepare(
   saved: { text: string; action: Action; sessionRevision: number; reply?: 'ar' },
 ) {
   const { db, workspaceId } = ctx;
-  const [[row], latest] = await Promise.all([
-    db
+  // The session with its course and scope, and the latest turns, in one round trip.
+  const first = await reads(db, {
+    row: db
       .select({
         session: tutorSessions,
         course: courses.name,
@@ -733,7 +735,7 @@ export async function prepare(
       .innerJoin(courses, eq(courses.id, tutorSessions.courseId))
       .leftJoin(scopes, eq(scopes.id, tutorSessions.scopeId))
       .where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, sessionId))),
-    db
+    latest: db
       .select({
         ordinal: tutorMessages.ordinal,
         role: tutorMessages.role,
@@ -744,7 +746,9 @@ export async function prepare(
       .where(eq(tutorMessages.sessionId, sessionId))
       .orderBy(desc(tutorMessages.ordinal))
       .limit(RECENT_TURNS + 1),
-  ]);
+  });
+  const [row] = first.row;
+  const latest = first.latest;
   const session = row?.session;
   if (!session || session.archived || session.endedAt)
     throw new ApiError(409, 'session_closed', 'This session is closed.');
@@ -765,13 +769,19 @@ export async function prepare(
     }));
   // The scope's current sections, read live.
   const scopeRow = row.scope;
+  // The course's sections and, for a topic or assessment scope, its topic links, read once together.
+  const sectionsAndLinks = async (): Promise<[CourseSection[], ReturnType<typeof liveLinksFrom>]> => {
+    if (!scopeRow && !session.source) return [[], []];
+    const linked = scopeRow?.kind === 'topic' || scopeRow?.kind === 'assessment';
+    const r = await reads(db, {
+      list: courseSectionsRead(db, owned),
+      ...(linked && { links: liveLinksRead(db, owned) }),
+    });
+    const list = courseSectionsFrom(r.list);
+    return [list, r.links ? liveLinksFrom(r.links, list) : []];
+  };
   const [[list, links], check] = await Promise.all([
-    scopeRow || session.source
-      ? Promise.all([
-          courseSections(db, owned),
-          scopeRow?.kind === 'topic' || scopeRow?.kind === 'assessment' ? liveLinks(db, owned) : Promise.resolve([]),
-        ])
-      : Promise.resolve<[CourseSection[], Awaited<ReturnType<typeof liveLinks>>]>([[], []]),
+    sectionsAndLinks(),
     latestCheck(db, sessionId, latest[0]?.ordinal ?? 0),
   ]);
   let inScope = scopeRow ? list : [];
@@ -800,7 +810,8 @@ export async function prepare(
       : check && asked.context
         ? { ...asked, context: `${check.prompt}\n${asked.context}` }
         : asked;
-  const [found, needs, state, sessionTurns] = await Promise.all([
+  const trackedKeys = tracked.map(s => ({ materialId: s.materialId, key: s.key }));
+  const [found, known] = await Promise.all([
     retrieve(env, ctx, {
       courseId: session.courseId,
       query: resolved.query,
@@ -809,9 +820,10 @@ export async function prepare(
       focus: session.source,
       scope: scopeRow ? { name: scopeRow.name, sectionIds } : null,
     }),
-    // What the scope builds on outside itself, with each section's summary, in one query.
-    sectionIds.size
-      ? db
+    // What the scope builds on outside itself, the learner state and the turn count, in one round trip.
+    reads(db, {
+      ...(sectionIds.size && {
+        needs: db
           .selectDistinct({
             id: sections.id,
             heading: sections.heading,
@@ -821,21 +833,18 @@ export async function prepare(
           })
           .from(prerequisites)
           .innerJoin(sections, eq(sections.id, prerequisites.requiresId))
-          .where(and(inArray(prerequisites.sectionId, [...sectionIds]), sql`${sections.summary} is not null`))
-      : Promise.resolve([]),
-    tracked.length
-      ? learnerState(
-          db,
-          workspaceId,
-          tracked.map(s => ({ materialId: s.materialId, key: s.key })),
-          timezone,
-        )
-      : Promise.resolve([]),
-    db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(tutorMessages)
-      .where(and(eq(tutorMessages.sessionId, sessionId), eq(tutorMessages.role, 'student'))),
+          .where(and(inArray(prerequisites.sectionId, [...sectionIds]), sql`${sections.summary} is not null`)),
+      }),
+      ...(trackedKeys.length && { results: learnerStateRead(db, workspaceId, trackedKeys) }),
+      turns: db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(tutorMessages)
+        .where(and(eq(tutorMessages.sessionId, sessionId), eq(tutorMessages.role, 'student'))),
+    }),
   ]);
+  const needs = known.needs ?? [];
+  const state = trackedKeys.length ? learnerStateFrom(known.results ?? [], trackedKeys, timezone) : [];
+  const sessionTurns = known.turns;
   const required = needs.filter(n => !sectionIds.has(n.id)).slice(0, PREREQUISITES);
   const foundations = required.length
     ? await learnerState(
@@ -1085,8 +1094,9 @@ export async function sessionSections(
     scopeId: string | null;
     source: { versionId: string; blockIds: string[] } | null;
   },
+  scopeRow?: typeof scopes.$inferSelect,
 ): Promise<Weighted[]> {
-  if (session.scopeId) return (await scopeSections(db, session.workspaceId, session.scopeId)).sections;
+  if (session.scopeId) return (await scopeSections(db, session.workspaceId, session.scopeId, scopeRow)).sections;
   return sourceSections(
     await courseSections(db, { workspaceId: session.workspaceId, courseId: session.courseId }),
     session.source,

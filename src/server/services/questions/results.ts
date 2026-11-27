@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { ReadDb, SocketDb, Transaction } from '../../db/client';
+import { reads, type Rows } from '../../db/reads';
 import { bankItems, itemResults, materials, sections, topicSections } from '../../db/schema';
 import type { QuestionAttempt, ReviewDue, TopicMastery } from '../../../shared/domain/types';
 import { isDue, sectionMastery, type SectionMastery } from '../../../shared/domain/mastery';
@@ -109,12 +110,15 @@ export async function learnerState(
   keys: { materialId: string; key: string }[],
   timezone?: string,
 ): Promise<SectionState[]> {
-  if (!keys.length) return [];
+  return keys.length ? learnerStateFrom(await learnerStateRead(db, workspaceId, keys), keys, timezone) : [];
+}
+/** The read behind `learnerState`, for a caller that folds it into its own round trip. Needs at least one key. */
+export function learnerStateRead(db: Db, workspaceId: string, keys: { materialId: string; key: string }[]) {
   const pairs = sql.join(
     keys.map(k => sql`(${k.materialId}::uuid, ${k.key})`),
     sql`, `,
   );
-  const rows = await db
+  return db
     .select({
       materialId: itemResults.materialId,
       key: itemResults.sectionKey,
@@ -136,6 +140,12 @@ export async function learnerState(
     )
     .orderBy(desc(itemResults.at))
     .limit(2000);
+}
+export function learnerStateFrom(
+  rows: Awaited<ReturnType<typeof learnerStateRead>>,
+  keys: { materialId: string; key: string }[],
+  timezone?: string,
+): SectionState[] {
   const recent = Date.now() - 90 * 86_400_000;
   return keys.map(k => {
     const own = rows.filter(r => r.materialId === k.materialId && r.key === k.key);
@@ -160,8 +170,12 @@ export async function learnerState(
  * and its days since study is its most recently answered section.
  */
 export async function topicMastery(db: Db, workspaceId: string, timezone?: string): Promise<TopicMastery[]> {
-  const [rows, links, current] = await Promise.all([
-    db
+  return topicMasteryFrom(await reads(db, topicMasteryReads(db, workspaceId)), timezone);
+}
+/** The reads behind `topicMastery`, for a caller that folds them into its own round trip. */
+export function topicMasteryReads(db: Db, workspaceId: string) {
+  return {
+    results: db
       .select({
         materialId: itemResults.materialId,
         key: itemResults.sectionKey,
@@ -173,7 +187,7 @@ export async function topicMastery(db: Db, workspaceId: string, timezone?: strin
       })
       .from(itemResults)
       .where(and(eq(itemResults.workspaceId, workspaceId), sql`${itemResults.at} > now() - interval '365 days'`)),
-    db
+    links: db
       .select({
         topicId: topicSections.topicId,
         courseId: topicSections.courseId,
@@ -184,7 +198,7 @@ export async function topicMastery(db: Db, workspaceId: string, timezone?: strin
       })
       .from(topicSections)
       .where(eq(topicSections.workspaceId, workspaceId)),
-    db
+    current: db
       .select({ materialId: sections.materialId, key: sections.key })
       .from(sections)
       .innerJoin(
@@ -192,7 +206,12 @@ export async function topicMastery(db: Db, workspaceId: string, timezone?: strin
         and(eq(materials.id, sections.materialId), eq(materials.currentVersionId, sections.versionId)),
       )
       .where(and(eq(sections.workspaceId, workspaceId), eq(materials.archived, false))),
-  ]);
+  };
+}
+export function topicMasteryFrom(
+  { results: rows, links, current }: Rows<ReturnType<typeof topicMasteryReads>>,
+  timezone?: string,
+): TopicMastery[] {
   const grouped = new Map<string, typeof rows>();
   for (const r of rows)
     if (r.materialId && r.key)

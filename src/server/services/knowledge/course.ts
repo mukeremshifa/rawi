@@ -13,7 +13,11 @@ type Db = ReadDb | SocketDb | Transaction;
  * left out, since it describes the course rather than teaching it.
  */
 export async function courseSections(db: Db, scope: Scope) {
-  const rows = await db
+  return courseSectionsFrom(await courseSectionsRead(db, scope));
+}
+/** The read behind `courseSections`, for a caller that folds it into its own round trip. */
+export function courseSectionsRead(db: Db, scope: Scope) {
+  return db
     .select({
       id: sections.id,
       materialId: sections.materialId,
@@ -43,6 +47,8 @@ export async function courseSections(db: Db, scope: Scope) {
         sql`${materials.kind} <> 'syllabus'`,
       ),
     );
+}
+export function courseSectionsFrom(rows: Awaited<ReturnType<typeof courseSectionsRead>>) {
   const order = (r: (typeof rows)[number]) => sequenceNumber(r.title) ?? Number.MAX_SAFE_INTEGER;
   return rows.sort(
     (a, b) =>

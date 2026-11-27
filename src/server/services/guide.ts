@@ -1,10 +1,11 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
-import { aiOperations, preferences, tutorMessages, tutorSessions } from '../db/schema';
+import { aiOperations, preferences, scopes, tutorMessages, tutorSessions } from '../db/schema';
 import type { NextMove } from '../../shared/contracts/tutor';
 import { isDue, type MasteryLevel } from '../../shared/domain/mastery';
 import { localISO } from '../../shared/domain/planner';
-import { learnerState, type SectionState } from './questions/results';
+import { learnerStateFrom, learnerStateRead, type SectionState } from './questions/results';
+import { reads } from '../db/reads';
 import { latestCheck, sessionSections } from './ai/tutor';
 
 /**
@@ -37,23 +38,24 @@ interface Ranked {
 }
 
 /** The session's sections with what the student has shown on each, weakest first. */
-async function ranked(db: Db, session: Session): Promise<{ list: Ranked[]; today: string }> {
-  const [weighted, [prefs]] = await Promise.all([
-    sessionSections(db, session),
-    db
-      .select({ timezone: preferences.timezone })
-      .from(preferences)
-      .where(eq(preferences.workspaceId, session.workspaceId)),
-  ]);
-  const timezone = prefs?.timezone ?? 'UTC',
-    today = localISO(new Date(), timezone);
+export async function ranked(db: Db, session: Session, known: Known = {}): Promise<Ranking> {
+  const weighted = await sessionSections(db, session, known.scope);
   const sections = weighted.map(w => w.section).filter(s => s.tokens > 60);
-  const state = await learnerState(
-    db,
-    session.workspaceId,
-    sections.map(s => ({ materialId: s.materialId, key: s.key })),
-    timezone,
-  );
+  const keys = sections.map(s => ({ materialId: s.materialId, key: s.key }));
+  const prefs =
+    known.timezone !== undefined
+      ? undefined
+      : db
+          .select({ timezone: preferences.timezone })
+          .from(preferences)
+          .where(eq(preferences.workspaceId, session.workspaceId));
+  const r = await reads(db, {
+    ...(prefs && { prefs }),
+    ...(keys.length && { results: learnerStateRead(db, session.workspaceId, keys) }),
+  });
+  const timezone = known.timezone ?? r.prefs?.[0]?.timezone ?? 'UTC',
+    today = localISO(new Date(), timezone);
+  const state = learnerStateFrom(r.results ?? [], keys, timezone);
   // A heading two sections share, such as "A worked example", is named with the heading above it, or its material.
   const name = (s: (typeof sections)[number]) => s.heading || s.title;
   const shared = (s: (typeof sections)[number]) => sections.some(o => o !== s && name(o) === name(s));
@@ -75,26 +77,38 @@ async function ranked(db: Db, session: Session): Promise<{ list: Ranked[]; today
   };
 }
 
-export async function nextMove(db: Db, session: Session): Promise<NextMove | null> {
+/** The session's sections ranked. Work it out once per request and pass it on. */
+export type Ranking = { list: Ranked[]; today: string };
+/** What a caller already read, so ranking does not read it again. */
+export type Known = { scope?: typeof scopes.$inferSelect; timezone?: string };
+
+/** The latest turns, each student turn with the step it took and the section it was about, saved with its reply. */
+export function recentTurns(db: Db, workspaceId: string, sessionId: string) {
+  return db
+    .select({
+      ordinal: tutorMessages.ordinal,
+      role: tutorMessages.role,
+      text: tutorMessages.text,
+      state: tutorMessages.state,
+      provenance: tutorMessages.provenance,
+      step: aiOperations.input,
+    })
+    .from(tutorMessages)
+    .leftJoin(aiOperations, and(eq(aiOperations.id, tutorMessages.operationId), eq(aiOperations.task, 'tutor')))
+    .where(and(eq(tutorMessages.workspaceId, workspaceId), eq(tutorMessages.sessionId, sessionId)))
+    .orderBy(desc(tutorMessages.ordinal))
+    .limit(LOOKBACK);
+}
+
+export async function nextMove(
+  db: Db,
+  session: Session,
+  ranking?: Ranking,
+  turns?: Awaited<ReturnType<typeof recentTurns>>,
+): Promise<NextMove | null> {
   if (session.endedAt || session.archived) return null;
-  const [{ list }, recent] = await Promise.all([
-    ranked(db, session),
-    // A student turn carries the step it took and the section it was about, saved with its reply.
-    db
-      .select({
-        ordinal: tutorMessages.ordinal,
-        role: tutorMessages.role,
-        text: tutorMessages.text,
-        state: tutorMessages.state,
-        provenance: tutorMessages.provenance,
-        step: aiOperations.input,
-      })
-      .from(tutorMessages)
-      .leftJoin(aiOperations, and(eq(aiOperations.id, tutorMessages.operationId), eq(aiOperations.task, 'tutor')))
-      .where(and(eq(tutorMessages.workspaceId, session.workspaceId), eq(tutorMessages.sessionId, session.id)))
-      .orderBy(desc(tutorMessages.ordinal))
-      .limit(LOOKBACK),
-  ]);
+  const { list } = ranking ?? (await ranked(db, session));
+  const recent = turns ?? (await recentTurns(db, session.workspaceId, session.id));
   if (!list.length) return null;
   const posed = recent.findIndex(m => m.provenance?.check);
   const check = posed === -1 ? null : await latestCheck(db, session.id, recent[0]!.ordinal);
@@ -143,8 +157,7 @@ export async function nextMove(db: Db, session: Session): Promise<NextMove | nul
  * The first message of a guided session: what the session will work on and why, from the learner
  * model. Written by code, so it costs nothing and says only what the marks show.
  */
-export async function opening(db: Db, session: Session, focus: string) {
-  const { list } = await ranked(db, session);
+export function opening({ list }: Ranking, focus: string) {
   const due = list.filter(r => r.due).length,
     shaky = list.filter(r => r.state.mastery.level === 'shaky');
   const fresh = list.filter(r => r.state.mastery.level === 'not-checked');
@@ -163,8 +176,8 @@ export async function opening(db: Db, session: Session, focus: string) {
 }
 
 /** The next review date for an ended session: the earliest day a section it worked on comes due, today at the soonest. */
-export async function nextReview(db: Db, session: Session) {
-  const { list, today } = await ranked(db, session);
+export async function nextReview(db: Db, session: Session, ranking?: Ranking) {
+  const { list, today } = ranking ?? (await ranked(db, session));
   const first = list
     .map(r => r.state.mastery.dueOn)
     .filter((d): d is string => !!d)

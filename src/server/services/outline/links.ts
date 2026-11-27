@@ -4,7 +4,8 @@ import type { ReadDb, SocketDb, Transaction } from '../../db/client';
 import type { Citation } from '../../../shared/contracts/document';
 import type { ReadingPlace, TopicDepth } from '../../../shared/contracts/outline';
 import { usableStatus } from '../../../shared/contracts/document';
-import { courseSections } from '../knowledge/course';
+import { courseSectionsFrom, courseSectionsRead, type CourseSection } from '../knowledge/course';
+import { reads, type Rows } from '../../db/reads';
 
 type Db = ReadDb | SocketDb | Transaction;
 type Scope = { workspaceId: string; courseId: string };
@@ -20,19 +21,23 @@ const RANK: Record<TopicDepth, number> = { introduces: 0, covers: 1, mentions: 2
  * first section.
  */
 export async function liveLinks(db: Db, scope: Scope, materialIds?: string[]) {
-  const [rows, list] = await Promise.all([
-    db
-      .select()
-      .from(topicSections)
-      .where(
-        and(
-          eq(topicSections.workspaceId, scope.workspaceId),
-          eq(topicSections.courseId, scope.courseId),
-          materialIds ? inArray(topicSections.materialId, materialIds) : undefined,
-        ),
+  const r = await reads(db, { links: liveLinksRead(db, scope, materialIds), list: courseSectionsRead(db, scope) });
+  return liveLinksFrom(r.links, courseSectionsFrom(r.list));
+}
+/** The read behind `liveLinks`, for a caller that folds it into its own round trip. */
+export function liveLinksRead(db: Db, scope: Scope, materialIds?: string[]) {
+  return db
+    .select()
+    .from(topicSections)
+    .where(
+      and(
+        eq(topicSections.workspaceId, scope.workspaceId),
+        eq(topicSections.courseId, scope.courseId),
+        materialIds ? inArray(topicSections.materialId, materialIds) : undefined,
       ),
-    courseSections(db, scope),
-  ]);
+    );
+}
+export function liveLinksFrom(rows: Awaited<ReturnType<typeof liveLinksRead>>, list: CourseSection[]) {
   const hidden = new Set(
     rows.filter(r => r.sectionKey === WHOLE && r.removed).map(r => `${r.materialId}:${r.topicId}`),
   );
@@ -56,14 +61,18 @@ export async function materialTopics(
   scope: { workspaceId: string; courseId?: string },
   materialIds?: string[],
 ) {
+  return materialTopicsFrom(await reads(db, materialTopicsReads(db, scope, materialIds)));
+}
+/** The reads behind `materialTopics`, for a caller that folds them into its own round trip. */
+export function materialTopicsReads(db: Db, scope: { workspaceId: string; courseId?: string }, materialIds?: string[]) {
   const where = <T extends { workspaceId: AnyColumn; courseId: AnyColumn; materialId: AnyColumn }>(t: T) =>
     and(
       eq(t.workspaceId, scope.workspaceId),
       scope.courseId ? eq(t.courseId, scope.courseId) : undefined,
       materialIds ? inArray(t.materialId, materialIds) : undefined,
     );
-  const [rows, current] = await Promise.all([
-    db
+  return {
+    links: db
       .select({
         topicId: topicSections.topicId,
         materialId: topicSections.materialId,
@@ -72,7 +81,7 @@ export async function materialTopics(
       })
       .from(topicSections)
       .where(where(topicSections)),
-    db
+    current: db
       .select({ materialId: sections.materialId, key: sections.key })
       .from(sections)
       .innerJoin(
@@ -80,7 +89,9 @@ export async function materialTopics(
         and(eq(materials.id, sections.materialId), eq(materials.currentVersionId, sections.versionId)),
       )
       .where(where(sections)),
-  ]);
+  };
+}
+export function materialTopicsFrom({ links: rows, current }: Rows<ReturnType<typeof materialTopicsReads>>) {
   const keys = new Set(current.map(c => `${c.materialId}:${c.key}`));
   const hidden = new Set(rows.filter(r => r.key === WHOLE && r.removed).map(r => `${r.materialId}:${r.topicId}`));
   const out = new Map<string, string[]>();

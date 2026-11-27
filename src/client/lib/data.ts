@@ -7,7 +7,7 @@ import { pathKey } from '@/lib/query';
 /** Read one record. `path: null` waits until the caller has what it needs. */
 export function useApi<T>(
   path: string | null,
-  options: { refetchInterval?: number; refetchIntervalInBackground?: boolean } = {},
+  options: { refetchInterval?: number; refetchIntervalInBackground?: boolean; staleTime?: number } = {},
 ) {
   const { user } = useAccount();
   const qc = useQueryClient();
@@ -19,6 +19,15 @@ export function useApi<T>(
     ...options,
   });
   return { ...query, key, setData: (value: T) => qc.setQueryData(key, value) };
+}
+
+/**
+ * Put a record the server already returned into the cache, so the page that shows it opens without
+ * asking for it again. The page reads it with a `staleTime`, or it would refetch on mount anyway.
+ */
+export function useSeed() {
+  const qc = useQueryClient();
+  return <T>(path: string, value: T) => qc.setQueryData(pathKey(path), value);
 }
 
 /** A cursor-paged list, shown as "Load more" or an infinite list. */

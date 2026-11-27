@@ -1,4 +1,5 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import { getSignedCookie, setSignedCookie } from 'hono/cookie';
 import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
@@ -86,6 +87,32 @@ configured.on(['GET', 'POST'], '/auth/*', async c => {
   return response;
 });
 
+/**
+ * A person's workspace never changes, so its id is kept in a signed cookie bound to the user and the
+ * database is asked only when the cookie is missing or belongs to someone else.
+ */
+const WORKSPACE_COOKIE = 'rawi.workspace';
+async function workspaceOf(c: Context<BackendContext>, userId: string) {
+  const secret = c.env.BETTER_AUTH_SECRET!;
+  const saved = await getSignedCookie(c, secret, WORKSPACE_COOKIE);
+  const [owner, id] = typeof saved === 'string' ? saved.split(':') : [];
+  if (owner === userId && id) return id;
+  const [workspace] = await c
+    .get('db')
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .where(eq(workspaces.ownerUserId, userId));
+  const own = workspace ?? (await service.bootstrap(c.get('socket'), userId)).workspace;
+  await setSignedCookie(c, WORKSPACE_COOKIE, `${userId}:${own.id}`, secret, {
+    path: '/api',
+    httpOnly: true,
+    sameSite: 'Lax',
+    secure: c.env.BETTER_AUTH_URL!.startsWith('https:'),
+    maxAge: 60 * 60 * 24 * 30,
+  });
+  return own.id;
+}
+
 const app = new Hono<BackendContext>();
 app.use('*', async (c, next) => {
   if (!['GET', 'HEAD'].includes(c.req.method) && c.req.header('origin') !== c.env.BETTER_AUTH_URL) {
@@ -103,11 +130,7 @@ app.use('*', async (c, next) => {
   const expectedUser = c.req.header('x-rawi-user');
   if (expectedUser && expectedUser !== session.user.id)
     throw new ApiError(401, 'account_changed', 'Your account changed. Reload your workspace.');
-  if (c.req.path !== '/api/v1/me') {
-    const [workspace] = await c.get('db').select().from(workspaces).where(eq(workspaces.ownerUserId, session.user.id));
-    const own = workspace ?? (await service.bootstrap(c.get('socket'), session.user.id)).workspace;
-    c.set('workspaceId', own.id);
-  }
+  if (c.req.path !== '/api/v1/me') c.set('workspaceId', await workspaceOf(c, session.user.id));
   await next();
 });
 app.route('/', accountRoutes);

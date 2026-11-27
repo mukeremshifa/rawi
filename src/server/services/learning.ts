@@ -1,5 +1,6 @@
 import { transaction } from '../db/client';
-import { and, asc, desc, eq, gt, inArray, lte, ne, sql } from 'drizzle-orm';
+import { reads, type Rows } from '../db/reads';
+import { and, asc, desc, eq, gt, inArray, lte, ne, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   createSetInput,
@@ -45,11 +46,17 @@ export async function operation<T>(
 ): Promise<T> {
   const fingerprint = await hash(JSON.stringify(input));
   return transaction(db, async tx => {
-    await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, workspaceId)).for('update');
-    const [prior] = await tx
-      .select()
-      .from(learningOperations)
-      .where(and(eq(learningOperations.workspaceId, workspaceId), eq(learningOperations.id, id)));
+    // Lock the workspace and look for an earlier run of this request in one round trip.
+    const [found] = await tx
+      .select({ prior: learningOperations })
+      .from(workspaces)
+      .leftJoin(
+        learningOperations,
+        and(eq(learningOperations.workspaceId, workspaces.id), eq(learningOperations.id, id)),
+      )
+      .where(eq(workspaces.id, workspaceId))
+      .for('update', { of: workspaces });
+    const prior = found?.prior;
     if (prior) {
       if (prior.fingerprint !== fingerprint)
         throw new ApiError(
@@ -78,7 +85,7 @@ export async function ownPracticeSet(db: Db, workspaceId: string, id: string) {
   if (set.purpose !== 'practice') throw notFound();
   return set;
 }
-export async function setQuestions(db: Db, workspaceId: string, setId: string) {
+export function setQuestions(db: Db | SocketDb, workspaceId: string, setId: string | SQL) {
   return db
     .select({ id: setItems.id, itemId: bankItems.id, question: bankItems.content })
     .from(setItems)
@@ -221,16 +228,32 @@ export function publicQuestion(q: VersionedQuestion, show: boolean, hinted: bool
 }
 export async function runView(tx: Transaction, workspaceId: string, id: string): Promise<LearningRun> {
   const run = await reconcileRun(tx, await ownRun(tx, workspaceId, id));
-  const set = await ownSet(tx, workspaceId, run.setId);
-  const items = await setQuestions(tx, workspaceId, set.id);
-  const answers = await tx
-    .select()
-    .from(runAnswers)
-    .where(and(eq(runAnswers.workspaceId, workspaceId), eq(runAnswers.runId, id)));
-  const [attempt] = await tx
-    .select({ id: learningAttempts.id })
-    .from(learningAttempts)
-    .where(and(eq(learningAttempts.workspaceId, workspaceId), eq(learningAttempts.runId, id)));
+  return viewOf(run, await reads(tx, runReads(tx, workspaceId, id, run.setId)));
+}
+/** The set, its questions, the answers and any attempt of a run, for one round trip. */
+function runReads(db: Db | SocketDb, workspaceId: string, id: string, setId: string | SQL) {
+  return {
+    set: db
+      .select()
+      .from(learningSets)
+      .where(and(eq(learningSets.workspaceId, workspaceId), eq(learningSets.id, setId))),
+    items: setQuestions(db, workspaceId, setId),
+    answers: db
+      .select()
+      .from(runAnswers)
+      .where(and(eq(runAnswers.workspaceId, workspaceId), eq(runAnswers.runId, id))),
+    attempt: db
+      .select({ id: learningAttempts.id })
+      .from(learningAttempts)
+      .where(and(eq(learningAttempts.workspaceId, workspaceId), eq(learningAttempts.runId, id))),
+  };
+}
+function viewOf(run: typeof learningRuns.$inferSelect, r: Rows<ReturnType<typeof runReads>>): LearningRun {
+  const id = run.id;
+  const [set] = r.set;
+  if (!set) throw notFound();
+  const { items, answers } = r;
+  const [attempt] = r.attempt;
   return {
     id,
     flashcardReview: run.flashcardReview,
@@ -271,8 +294,40 @@ export async function runView(tx: Transaction, workspaceId: string, id: string):
       }),
   };
 }
+/** A run as the page shows it. Passed deadlines are settled first, then everything is read in one round trip. */
 export async function getRun(db: SocketDb, workspaceId: string, id: string) {
-  return transaction(db, tx => runView(tx, workspaceId, id));
+  await settleDeadlines(db, workspaceId, id);
+  const setId = sql`(select ${learningRuns.setId} from ${learningRuns} where ${learningRuns.workspaceId} = ${workspaceId} and ${learningRuns.id} = ${id})`;
+  const r = await reads(db, {
+    run: db
+      .select()
+      .from(learningRuns)
+      .where(and(eq(learningRuns.workspaceId, workspaceId), eq(learningRuns.id, id))),
+    ...runReads(db, workspaceId, id, setId),
+  });
+  const [run] = r.run;
+  if (!run) throw notFound();
+  return viewOf(run, r);
+}
+/**
+ * Expire an exam's passed deadlines in their own transaction, so the expiry stands even when the
+ * write that follows is rejected. A run with nothing due costs one read.
+ */
+async function settleDeadlines(db: SocketDb, workspaceId: string, id: string) {
+  const [run] = await db
+    .select({ state: learningRuns.state, exam: learningRuns.exam, deadlineAt: learningRuns.deadlineAt })
+    .from(learningRuns)
+    .where(and(eq(learningRuns.workspaceId, workspaceId), eq(learningRuns.id, id)));
+  if (!run) throw notFound();
+  const now = Date.now();
+  const due =
+    run.state === 'active' &&
+    !!run.exam &&
+    ((run.deadlineAt && run.deadlineAt.getTime() <= now) ||
+      Object.entries(run.exam.sectionDeadlines).some(
+        ([section, deadline]) => new Date(deadline).getTime() <= now && !run.exam!.lockedSectionIds.includes(section),
+      ));
+  if (due) await transaction(db, async tx => void (await reconcileRun(tx, await ownRun(tx, workspaceId, id))));
 }
 export async function startRun(
   db: SocketDb,
@@ -295,12 +350,14 @@ export async function startRun(
   });
 }
 async function saveBatch(tx: Transaction, run: typeof learningRuns.$inferSelect, input: z.infer<typeof runWriteInput>) {
-  const all = await setQuestions(tx, run.workspaceId, run.setId);
+  const { all, answers } = await reads(tx, {
+    all: setQuestions(tx, run.workspaceId, run.setId),
+    answers: tx.select().from(runAnswers).where(eq(runAnswers.runId, run.id)),
+  });
   const items = all.filter(item => !run.flashcardReview || run.flashcardReview.itemIds.includes(item.id));
   if (run.exam && input.position !== run.position)
     throw new ApiError(400, 'exam_navigation', 'Use exam navigation to change position.');
   if (input.position >= items.length) throw new ApiError(400, 'invalid_input', 'Choose a question in this run.');
-  const answers = await tx.select().from(runAnswers).where(eq(runAnswers.runId, run.id));
   for (const entry of input.answers) {
     const item = items.find(i => i.id === entry.itemId);
     if (!item) throw notFound();
@@ -374,7 +431,7 @@ export async function writeRun(
   submit: boolean,
 ) {
   // Commit deadline reconciliation even when the following write is rejected.
-  await getRun(db, workspaceId, id);
+  await settleDeadlines(db, workspaceId, id);
   return operation(
     db,
     workspaceId,

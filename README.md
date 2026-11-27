@@ -333,10 +333,12 @@ same cases and read side by side.
 - A replaced version embeds the whole document again, not only changed
   sections. The cost is small.
 - Each database round trip from the development machine takes 100 to 130
-  ms, so a tutor reply needs 4 to 6 seconds to its first word in development,
-  of which the model takes about one. Production should use Hyperdrive and
-  Smart Placement, which keep round trips short. Planner and progress reads run their queries one
-  after another.
+  ms, and opening a connection takes several, so a request spends close to a
+  second on the database in development. Production should use Hyperdrive and
+  Smart Placement, which keep both short. Independent reads are batched into
+  one statement with `reads` (`src/server/db/reads.ts`), so a page costs one to
+  three round trips. A tutor reply still makes about a dozen before its first
+  word, and needs about 3.5 seconds to it in development.
 - R2 holds objects from before the database reset that no row points to.
 - The seed gives the winds material a figure with a written description, so
   figure retrieval is measured. Describing a real image with the vision route

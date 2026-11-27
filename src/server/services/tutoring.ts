@@ -12,12 +12,14 @@ import {
   scopes,
   runAnswers,
   learningRuns,
+  preferences,
 } from '../db/schema';
 import { citationBlocks, validateCitation } from './materials';
 import { spansText } from '../../shared/domain/document-text';
 import { operation, attempt } from './learning';
 import { queueReply, recoverReplies } from './ai/tutor';
-import { nextMove, nextReview, opening } from './guide';
+import { nextMove, nextReview, opening, ranked, recentTurns, type Ranking } from './guide';
+import { reads } from '../db/reads';
 import { summariseTutorTurns } from '../../shared/domain/tutor-summary';
 import type { writeInput } from '../../shared/contracts/learning';
 import { bumpPlanner } from './planning';
@@ -72,38 +74,69 @@ export async function listSessions(db: Db, workspaceId: string, courseId: string
     nextCursor: rows.length > limit ? rows[limit - 1]!.id : null,
   };
 }
-export async function detail(db: Db, workspaceId: string, id: string, cursor = -1) {
-  const session = await ownSession(db, workspaceId, id);
-  const [pending] = await db
-    .select({ id: aiOperations.id })
-    .from(aiOperations)
-    .where(
-      and(
-        eq(aiOperations.workspaceId, workspaceId),
-        eq(aiOperations.targetId, id),
-        eq(aiOperations.task, 'tutor'),
-        inArray(aiOperations.state, ['queued', 'running']),
+export async function detail(db: Db, workspaceId: string, id: string, cursor = -1, ranking?: Ranking) {
+  // The session, its messages, and what the guide needs to start from, in one round trip.
+  const r = await reads(db, {
+    session: db
+      .select()
+      .from(tutorSessions)
+      .where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.id, id))),
+    pending: db
+      .select({ id: aiOperations.id })
+      .from(aiOperations)
+      .where(
+        and(
+          eq(aiOperations.workspaceId, workspaceId),
+          eq(aiOperations.targetId, id),
+          eq(aiOperations.task, 'tutor'),
+          inArray(aiOperations.state, ['queued', 'running']),
+        ),
+      )
+      .orderBy(desc(aiOperations.createdAt))
+      .limit(1),
+    messages: db
+      .select()
+      .from(tutorMessages)
+      .where(
+        and(
+          eq(tutorMessages.workspaceId, workspaceId),
+          eq(tutorMessages.sessionId, id),
+          gt(tutorMessages.ordinal, cursor),
+        ),
+      )
+      .orderBy(asc(tutorMessages.ordinal))
+      .limit(51),
+    turns: recentTurns(db, workspaceId, id),
+    scope: db
+      .select()
+      .from(scopes)
+      .where(
+        and(
+          eq(scopes.workspaceId, workspaceId),
+          sql`${scopes.id} = (select ${tutorSessions.scopeId} from ${tutorSessions} where ${tutorSessions.id} = ${id})`,
+        ),
       ),
-    )
-    .orderBy(desc(aiOperations.createdAt))
-    .limit(1);
-  const rows = await db
-    .select()
-    .from(tutorMessages)
-    .where(
-      and(
-        eq(tutorMessages.workspaceId, workspaceId),
-        eq(tutorMessages.sessionId, id),
-        gt(tutorMessages.ordinal, cursor),
-      ),
-    )
-    .orderBy(asc(tutorMessages.ordinal))
-    .limit(51);
+    prefs: db
+      .select({ timezone: preferences.timezone })
+      .from(preferences)
+      .where(eq(preferences.workspaceId, workspaceId)),
+  });
+  const [row] = r.session;
+  if (!row) throw notFound();
+  const { workspaceId: _workspace, ...session } = row;
+  const [pending] = r.pending;
+  const rows = r.messages;
   // The guide reads the learner model, so a failure there leaves the session readable without a next step.
   const full = { ...session, workspaceId };
+  const known = { scope: r.scope[0], timezone: r.prefs[0]?.timezone ?? 'UTC' };
+  const rank =
+    ranking ??
+    (!session.endedAt && (pending || session.archived)
+      ? undefined
+      : await ranked(db, full, known).catch(() => undefined));
   const [next, review] = await Promise.all([
-    pending ? null : nextMove(db, full).catch(() => null),
-    session.endedAt ? nextReview(db, full).catch(() => null) : null,
+    pending || !rank ? null : nextMove(db, full, rank, r.turns).catch(() => null),
+    session.endedAt && rank ? nextReview(db, full, rank).catch(() => null) : null,
   ]);
   return {
     session,
@@ -122,30 +155,38 @@ export async function createSession(
   input: z.infer<typeof newTutorInput>,
 ) {
   return operation(db, workspaceId, input.id, { action: 'tutor-session', courseId, input }, async tx => {
-    await getCourse(tx, workspaceId, courseId);
-    // A session is about a topic, or about a source that may sit in no topic.
-    let topicId = input.topicId ?? null,
-      topicLabel: string | null = null;
-    if (input.topicId) {
-      const [topic] = await tx
-        .select()
+    // The course, the topic and the planned session it names, checked in one round trip.
+    const own = await reads(tx, {
+      course: tx
+        .select({ id: courses.id })
+        .from(courses)
+        .where(and(eq(courses.workspaceId, workspaceId), eq(courses.id, courseId))),
+      topic: tx
+        .select({ title: topics.title })
         .from(topics)
-        .where(and(eq(topics.workspaceId, workspaceId), eq(topics.courseId, courseId), eq(topics.id, input.topicId)));
-      topicLabel = topic?.title ?? null;
-    }
-    if (input.plannedSessionId) {
-      const [planned] = await tx
-        .select()
+        .where(
+          and(
+            eq(topics.workspaceId, workspaceId),
+            eq(topics.courseId, courseId),
+            input.topicId ? eq(topics.id, input.topicId) : sql`false`,
+          ),
+        ),
+      planned: tx
+        .select({ content: plannedSessions.content })
         .from(plannedSessions)
         .where(
           and(
             eq(plannedSessions.workspaceId, workspaceId),
             eq(plannedSessions.courseId, courseId),
-            eq(plannedSessions.id, input.plannedSessionId),
+            input.plannedSessionId ? eq(plannedSessions.id, input.plannedSessionId) : sql`false`,
           ),
-        );
-      if (!planned || planned.content.activity !== 'tutor') throw notFound();
-    }
+        ),
+    });
+    if (!own.course.length) throw notFound();
+    // A session is about a topic, or about a source that may sit in no topic.
+    let topicId = input.topicId ?? null,
+      topicLabel: string | null = own.topic[0]?.title ?? null;
+    if (input.plannedSessionId && own.planned[0]?.content.activity !== 'tutor') throw notFound();
     if (input.source) {
       await validateCitation(tx, workspaceId, courseId, input.source);
       if (!topicId) {
@@ -189,16 +230,16 @@ export async function createSession(
       topicId ??= scope.topicId;
       topicLabel ??= scope.name;
     } else if (topicId) {
-      // A topic session works on the topic's scope, made on first use like any topic scope.
-      await tx
+      // A topic session works on the topic's scope, made on first use like any topic scope. One round trip either way.
+      const insert = tx
         .insert(scopes)
         .values({ id: crypto.randomUUID(), workspaceId, courseId, name: topicLabel ?? 'Topic', kind: 'topic', topicId })
-        .onConflictDoNothing();
-      const [scope] = await tx
-        .select({ id: scopes.id })
-        .from(scopes)
-        .where(and(eq(scopes.courseId, courseId), eq(scopes.kind, 'topic'), eq(scopes.topicId, topicId)));
-      scopeId = scope?.id ?? null;
+        .onConflictDoNothing()
+        .returning({ id: scopes.id });
+      const found = await tx.execute(
+        sql`with made as (${insert.getSQL()}) select id from made union all select ${scopes.id} from ${scopes} where ${scopes.courseId} = ${courseId} and ${scopes.kind} = 'topic' and ${scopes.topicId} = ${topicId} limit 1`,
+      );
+      scopeId = (found.rows[0] as { id: string } | undefined)?.id ?? null;
     }
     const focus = input.source ? await citationBlocks(tx, workspaceId, courseId, input.source) : null;
     const heading = focus?.blocks.find(b => b.type === 'heading');
@@ -228,7 +269,9 @@ export async function createSession(
       .onConflictDoNothing()
       .returning();
     if (!saved) throw notFound();
-    if (input.guided)
+    // The ranking written into the opening is the one the first step comes from.
+    const ranking = input.guided ? await ranked(tx, saved) : undefined;
+    if (ranking)
       await tx.insert(tutorMessages).values({
         id: crypto.randomUUID(),
         workspaceId,
@@ -237,11 +280,11 @@ export async function createSession(
         ordinal: 0,
         role: 'tutor',
         state: 'complete',
-        text: await opening(tx, saved, topicLabel ?? title),
+        text: opening(ranking, topicLabel ?? title),
         operationId: crypto.randomUUID(),
         provenance: { model: 'none', stage: 'orient', citations: [], droppedCitations: 0 },
       });
-    return detail(tx, workspaceId, saved.id);
+    return detail(tx, workspaceId, saved.id, -1, ranking);
   });
 }
 /**

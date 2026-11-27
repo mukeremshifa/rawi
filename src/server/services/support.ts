@@ -1,6 +1,5 @@
-import { agentReminders } from './agent/loop';
+import { agentRemindersFrom, agentRemindersRead } from './agent/loop';
 import { isDated } from '../../shared/domain/types';
-import { transaction } from '../db/client';
 import { and, asc, eq, ilike, sql } from 'drizzle-orm';
 import {
   courses,
@@ -9,10 +8,9 @@ import {
   tutorSessions,
   learningAttempts,
   topics,
-  preferences,
   reminderStates,
 } from '../db/schema';
-import { planningData } from './planning';
+import { planningWith } from './planning';
 import { addDays } from '../../shared/domain/planner';
 import { zonedParts } from '../../shared/contracts/planner';
 import { operation } from './learning';
@@ -75,10 +73,18 @@ export async function search(db: ReadDb, workspaceId: string, query: string) {
   );
   return { results: found, limitPerCategory: 10 };
 }
-async function reminders(tx: Transaction, workspaceId: string) {
-  const data = await planningData(tx, workspaceId);
+/** Reminders in one round trip: the plan, what the agent sent, and what was read or dismissed. */
+async function reminders(db: ReadDb | SocketDb | Transaction, workspaceId: string) {
+  const { data, prefs, extra } = await planningWith(
+    db,
+    workspaceId,
+    {},
+    {
+      agent: agentRemindersRead(db, workspaceId),
+      states: db.select().from(reminderStates).where(eq(reminderStates.workspaceId, workspaceId)),
+    },
+  );
   const today = zonedParts(new Date(), data.timezone).date;
-  const [prefs] = await tx.select().from(preferences).where(eq(preferences.workspaceId, workspaceId));
   const settings = prefs!.values.reminders,
     last = addDays(today, settings.days);
   const active = new Set(data.courses.filter(c => !c.archived).map(c => c.id));
@@ -122,18 +128,13 @@ async function reminders(tx: Transaction, workspaceId: string) {
         to: `/course/${d.courseId}/practice`,
       });
   // What the agent sent, such as a goal countdown or a check without support.
-  rows.push(...(await agentReminders(tx, workspaceId, today)));
-  const states = await tx.select().from(reminderStates).where(eq(reminderStates.workspaceId, workspaceId));
+  rows.push(...agentRemindersFrom(extra.agent, today));
   return rows
-    .map(r => ({ ...r, status: states.find(s => s.key === r.key)?.status }))
+    .map(r => ({ ...r, status: extra.states.find(s => s.key === r.key)?.status }))
     .sort((a, b) => a.date.localeCompare(b.date) || a.key.localeCompare(b.key));
 }
 export async function notifications(db: SocketDb, workspaceId: string) {
-  return transaction(
-    db,
-    async tx => ({ reminders: (await reminders(tx, workspaceId)).filter(r => r.status !== 'dismissed') }),
-    { isolationLevel: 'repeatable read' },
-  );
+  return { reminders: (await reminders(db, workspaceId)).filter(r => r.status !== 'dismissed') };
 }
 export async function markReminder(
   db: SocketDb,

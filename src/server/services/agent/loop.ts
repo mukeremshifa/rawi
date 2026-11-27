@@ -413,8 +413,13 @@ export async function agentView(db: ReadDb | SocketDb, workspaceId: string, limi
 }
 
 /** Reminders the agent sent, for the reminders list: from their day, for three days. */
-export async function agentReminders(db: ReadDb | SocketDb | Transaction, workspaceId: string, today: string) {
-  const rows = await db
+/**
+ * What the agent asked to be reminded of, from two days ago to today. The read takes a day either
+ * side of that in UTC, so it needs no timezone and can share a round trip, and `agentRemindersFrom`
+ * keeps the student's own days.
+ */
+export function agentRemindersRead(db: ReadDb | SocketDb | Transaction, workspaceId: string) {
+  return db
     .select({
       id: agentActions.id,
       courseId: agentActions.courseId,
@@ -427,20 +432,24 @@ export async function agentReminders(db: ReadDb | SocketDb | Transaction, worksp
       and(
         eq(agentActions.workspaceId, workspaceId),
         eq(agentActions.notify, true),
-        lte(agentActions.remindOn, today),
-        gte(agentActions.remindOn, addDays(today, -2)),
+        sql`${agentActions.remindOn} between current_date - 3 and current_date + 1`,
       ),
     )
-    .orderBy(desc(agentActions.at))
-    .limit(20);
-  return rows.map(r => {
-    const input = (r.input ?? {}) as { title?: string; to?: string };
-    return {
-      key: `agent:${r.id}`,
-      title: input.title ?? r.reason,
-      date: r.remindOn!,
-      category: 'From Rawi',
-      to: input.to ?? '/agent',
-    };
-  });
+    .orderBy(desc(agentActions.at));
+}
+export function agentRemindersFrom(rows: Awaited<ReturnType<typeof agentRemindersRead>>, today: string) {
+  const from = addDays(today, -2);
+  return rows
+    .filter(r => r.remindOn && r.remindOn >= from && r.remindOn <= today)
+    .slice(0, 20)
+    .map(r => {
+      const input = (r.input ?? {}) as { title?: string; to?: string };
+      return {
+        key: `agent:${r.id}`,
+        title: input.title ?? r.reason,
+        date: r.remindOn!,
+        category: 'From Rawi',
+        to: input.to ?? '/agent',
+      };
+    });
 }
