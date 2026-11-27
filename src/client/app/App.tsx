@@ -14,6 +14,8 @@ import { LoadingState } from '@/components/states';
 import { useConfirm } from '@/components/ui/alert-dialog';
 
 import { Onboarding } from '@/features/account/AccountSettings';
+import { Consent } from '@/features/account/Pilot';
+import { CONSENT_VERSION } from '@shared/contracts/workspace';
 import { safeReturnTo } from '@/app/return-to';
 import { UploadQueueProvider } from '@/features/materials/queue';
 import { AccountContext } from '@/lib/account';
@@ -217,6 +219,10 @@ export function App() {
   const settings = (
     <Settings
       onProfile={user => setMe(previous => (previous?.user.id === user.id ? { ...previous, user } : previous))}
+      onDeleted={() => {
+        clear();
+        channel.current?.postMessage({ type: 'signed-out' });
+      }}
       onPreferences={preferences =>
         setMe(previous =>
           previous?.workspace.id === preferences.workspaceId ? { ...previous, preferences } : previous,
@@ -240,7 +246,15 @@ export function App() {
     <AccountContext.Provider value={me}>
       <DraftBoundary key={me.user.id}>
         <UploadQueueProvider>
-          {!me.preferences.values.onboardingCompleted ? (
+          {me.preferences.consentVersion !== CONSENT_VERSION ? (
+            <Consent
+              onAgreed={account => {
+                currentAccount.current = account;
+                setMe(account);
+              }}
+              onSignOut={() => void signOut()}
+            />
+          ) : !me.preferences.values.onboardingCompleted ? (
             <Onboarding
               onSaved={account => {
                 currentAccount.current = account;

@@ -74,6 +74,20 @@ page stays open. Leaving, reloading or signing out warns about unsaved work.
 Sign-out must reach the server and invalidates other open tabs. Connectivity
 failures do not establish sign-out or open a cached account.
 
+Before first use, a learner reads what Rawi keeps and where it goes
+(`features/account/Pilot.tsx`), confirms they are 18 or older and agrees to the
+pilot. The server records the terms version and time on the preferences row,
+and a new `CONSENT_VERSION` asks everyone again. The same note stays in
+Settings, Profile. Keep it true of the code when storage, AI routes or deletion
+change.
+
+Delete account, in Settings, Profile, takes a typed DELETE and removes the
+account and everything in it (`services/account.ts`). Links between rows that
+guard single deletes elsewhere are cleared first in one transaction, the user
+row cascades to every workspace table, and after the commit the workspace's
+files are removed from storage by prefix. Files that fail to delete are logged
+under the workspace id.
+
 There is no offline workspace, device-storage screen or JSON import/export flow.
 Original uploaded files remain available through authorized material downloads.
 
@@ -317,6 +331,5 @@ same cases and read side by side.
   figure retrieval is measured. Describing a real image with the vision route
   still needs an uploaded document with figures to check.
 - Deferred: an embedding route that keeps no prompts, so Arabic questions are
-  searched through an English rewrite and text search. Request rate limiting waits for deployment work, and
-  account deletion for launch preparation. Also voice, chart specs, shared
+  searched through an English rewrite and text search. Request rate limiting waits for deployment work. Also voice, chart specs, shared
   question pools, organisation policy, illustrations and a topic map.

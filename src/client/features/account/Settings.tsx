@@ -1,3 +1,4 @@
+import { DataNote, DeleteAccount } from '@/features/account/Pilot';
 import { useMemo, useState, type ReactNode } from 'react';
 import { NavLink, Navigate, useParams } from 'react-router-dom';
 import { preferencesPatch, type Me, type Preferences, type PreferenceFields } from '@shared/contracts/workspace';
@@ -52,8 +53,10 @@ const TIMEZONES = (() => {
 export function Settings({
   onProfile,
   onPreferences,
+  onDeleted,
 }: {
   onProfile: (user: Me['user']) => void;
+  onDeleted: () => void;
   onPreferences: (value: Preferences) => void;
 }) {
   const { section = 'profile' } = useParams();
@@ -85,7 +88,15 @@ export function Settings({
         </nav>
         <div className="min-w-0 flex-1">
           {section === 'profile' ? (
-            <ProfileSection onSaved={onProfile} />
+            <>
+              <ProfileSection onSaved={onProfile} />
+              <Group title="Your data" description="What Rawi keeps, where it goes, and how to delete it.">
+                <div className="py-snug">
+                  <DataNote />
+                </div>
+              </Group>
+              <DeleteAccount onDeleted={onDeleted} />
+            </>
           ) : section === 'ai' ? (
             <AiSection />
           ) : (
