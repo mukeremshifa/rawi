@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { CONSENT_VERSION, type Me } from '@shared/contracts/workspace';
+import type { Me } from '@shared/contracts/workspace';
+import { CONSENT_VERSION } from '@shared/contracts/constants';
 
 import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui/button';

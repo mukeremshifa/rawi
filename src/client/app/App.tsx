@@ -2,9 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import type { Me } from '@shared/contracts/workspace';
 import { authClient, RequestError, request, setActiveAccount } from '@/lib/api';
-import { CourseLibrary } from '@/features/courses/Courses';
-import { Home } from '@/features/home/Home';
-import { CourseOverview } from '@/features/courses/CourseOverview';
 import { DraftBoundary, hasUnsavedEdits } from '@/lib/hooks';
 import { Shell } from '@/app/Shell';
 import { CheckingScreen, ConnectionBanner, SignInScreen, UnavailableScreen } from '@/app/AuthScreens';
@@ -13,14 +10,20 @@ import { Page } from '@/components/layout';
 import { LoadingState } from '@/components/states';
 import { useConfirm } from '@/components/ui/alert-dialog';
 
-import { Onboarding } from '@/features/account/AccountSettings';
-import { Consent } from '@/features/account/Pilot';
-import { CONSENT_VERSION } from '@shared/contracts/workspace';
+import { CONSENT_VERSION } from '@shared/contracts/constants';
 import { safeReturnTo } from '@/app/return-to';
 import { UploadQueueProvider } from '@/features/materials/queue';
 import { AccountContext } from '@/lib/account';
 import { queryClient } from '@/lib/query';
-// Each area of the product loads when it is first opened. Home and the course pages ship with the shell.
+// Each area of the product loads when it is first opened, Home included, so the shell arrives first.
+// Consent and first-run setup are seen once, so they load only for an account that needs them.
+const Onboarding = lazy(() => import('@/features/account/AccountSettings').then(m => ({ default: m.Onboarding })));
+const Consent = lazy(() => import('@/features/account/Pilot').then(m => ({ default: m.Consent })));
+const Home = lazy(() => import('@/features/home/Home').then(m => ({ default: m.Home })));
+const CourseLibrary = lazy(() => import('@/features/courses/Courses').then(m => ({ default: m.CourseLibrary })));
+const CourseOverview = lazy(() =>
+  import('@/features/courses/CourseOverview').then(m => ({ default: m.CourseOverview })),
+);
 const CourseSettings = lazy(() =>
   import('@/features/courses/CourseSettings').then(m => ({ default: m.CourseSettings })),
 );
@@ -253,95 +256,97 @@ export function App() {
     <AccountContext.Provider value={me}>
       <DraftBoundary key={me.user.id}>
         <UploadQueueProvider>
-          {me.preferences.consentVersion !== CONSENT_VERSION ? (
-            <Consent
-              onAgreed={account => {
-                currentAccount.current = account;
-                setMe(account);
-              }}
-              onSignOut={() => void signOut()}
-            />
-          ) : !me.preferences.values.onboardingCompleted ? (
-            <Onboarding
-              onSaved={account => {
-                currentAccount.current = account;
-                setMe(account);
-              }}
-            />
-          ) : (
-            <Shell
-              onSignOut={() => void signOut()}
-              signingOut={busy}
-              banner={
-                error && (
-                  <ConnectionBanner
-                    message={error}
-                    busy={busy}
-                    onRetry={() => void (failed === 'sign-out' ? signOut() : refresh())}
-                  />
-                )
-              }
-            >
-              <Suspense
-                fallback={
-                  <Page>
-                    <LoadingState lines={4} />
-                  </Page>
+          <Suspense fallback={<CheckingScreen />}>
+            {me.preferences.consentVersion !== CONSENT_VERSION ? (
+              <Consent
+                onAgreed={account => {
+                  currentAccount.current = account;
+                  setMe(account);
+                }}
+                onSignOut={() => void signOut()}
+              />
+            ) : !me.preferences.values.onboardingCompleted ? (
+              <Onboarding
+                onSaved={account => {
+                  currentAccount.current = account;
+                  setMe(account);
+                }}
+              />
+            ) : (
+              <Shell
+                onSignOut={() => void signOut()}
+                signingOut={busy}
+                banner={
+                  error && (
+                    <ConnectionBanner
+                      message={error}
+                      busy={busy}
+                      onRetry={() => void (failed === 'sign-out' ? signOut() : refresh())}
+                    />
+                  )
                 }
               >
-                <Routes>
-                  {Kit && (
+                <Suspense
+                  fallback={
+                    <Page>
+                      <LoadingState lines={4} />
+                    </Page>
+                  }
+                >
+                  <Routes>
+                    {Kit && (
+                      <Route
+                        path="/dev/kit"
+                        element={
+                          <Suspense>
+                            <Kit />
+                          </Suspense>
+                        }
+                      />
+                    )}
+                    <Route path="/sign-in" element={<Navigate replace to={returnTo} />} />
+                    <Route path="/storage" element={<Navigate replace to="/settings" />} />
+                    <Route path="/history" element={<Progress />} />
+                    <Route path="/welcome" element={<Navigate replace to="/courses" />} />
+                    <Route path="/course/:id/syllabus" element={<CourseRedirect />} />
+                    <Route path="/course/:id/settings" element={<CourseSettings key={location.pathname} />} />
+                    <Route path="/planner/availability" element={<Navigate replace to="/planner?availability=1" />} />
+                    <Route path="/settings/:section" element={settings} />
+                    <Route path="/course/:id/progress/topic/:topicId" element={<TopicRedirect />} />
+                    <Route path="/" element={<Home />} />
+                    <Route path="/ai/:id" element={<AiOperation key={location.pathname} />} />
+                    <Route path="/search" element={<Search />} />
+                    <Route path="/notifications" element={<Notifications />} />
+                    <Route path="/data" element={<Navigate replace to="/settings" />} />
+                    <Route path="/planner" element={<Planner />} />
+                    <Route path="/agent" element={<Agent />} />
+                    <Route path="/progress" element={<Progress />} />
+                    <Route path="/course/:id/progress" element={<CourseRedirect />} />
+                    <Route path="/course/:id/overview" element={<CourseRedirect />} />
+                    <Route path="/courses" element={<CourseLibrary />} />
+                    <Route path="/courses/new" element={<Navigate replace to="/courses?new=1" />} />
+                    <Route path="/course/:id" element={<CourseOverview key={location.pathname} />} />
+                    <Route path="/course/:id/materials" element={<Materials key={location.pathname} />} />
+                    <Route path="/course/:id/glossary" element={<Glossary key={location.pathname} />} />
+                    <Route path="/materials/:materialId" element={<MaterialReader key={location.pathname} />} />
                     <Route
-                      path="/dev/kit"
-                      element={
-                        <Suspense>
-                          <Kit />
-                        </Suspense>
-                      }
+                      path="/materials/:materialId/versions/:versionId"
+                      element={<MaterialReader key={location.pathname} />}
                     />
-                  )}
-                  <Route path="/sign-in" element={<Navigate replace to={returnTo} />} />
-                  <Route path="/storage" element={<Navigate replace to="/settings" />} />
-                  <Route path="/history" element={<Progress />} />
-                  <Route path="/welcome" element={<Navigate replace to="/courses" />} />
-                  <Route path="/course/:id/syllabus" element={<CourseRedirect />} />
-                  <Route path="/course/:id/settings" element={<CourseSettings key={location.pathname} />} />
-                  <Route path="/planner/availability" element={<Navigate replace to="/planner?availability=1" />} />
-                  <Route path="/settings/:section" element={settings} />
-                  <Route path="/course/:id/progress/topic/:topicId" element={<TopicRedirect />} />
-                  <Route path="/" element={<Home />} />
-                  <Route path="/ai/:id" element={<AiOperation key={location.pathname} />} />
-                  <Route path="/search" element={<Search />} />
-                  <Route path="/notifications" element={<Notifications />} />
-                  <Route path="/data" element={<Navigate replace to="/settings" />} />
-                  <Route path="/planner" element={<Planner />} />
-                  <Route path="/agent" element={<Agent />} />
-                  <Route path="/progress" element={<Progress />} />
-                  <Route path="/course/:id/progress" element={<CourseRedirect />} />
-                  <Route path="/course/:id/overview" element={<CourseRedirect />} />
-                  <Route path="/courses" element={<CourseLibrary />} />
-                  <Route path="/courses/new" element={<Navigate replace to="/courses?new=1" />} />
-                  <Route path="/course/:id" element={<CourseOverview key={location.pathname} />} />
-                  <Route path="/course/:id/materials" element={<Materials key={location.pathname} />} />
-                  <Route path="/course/:id/glossary" element={<Glossary key={location.pathname} />} />
-                  <Route path="/materials/:materialId" element={<MaterialReader key={location.pathname} />} />
-                  <Route
-                    path="/materials/:materialId/versions/:versionId"
-                    element={<MaterialReader key={location.pathname} />}
-                  />
-                  <Route path="/course/:id/tutor" element={<TutorLibrary key={location.pathname} />} />
-                  <Route path="/tutor/:id" element={<Tutor key={location.pathname} />} />
-                  <Route path="/course/:id/exams" element={<Exams key={location.pathname} />} />
-                  <Route path="/course/:id/practice" element={<Practice key={location.pathname} />} />
-                  <Route path="/sets/:id" element={<PracticeSet key={location.pathname} />} />
-                  <Route path="/runs/:id" element={<Run key={location.pathname} />} />
-                  <Route path="/attempts/:id" element={<AttemptReview key={location.pathname} />} />
-                  <Route path="/settings" element={settings} />
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </Suspense>
-            </Shell>
-          )}
+                    <Route path="/course/:id/tutor" element={<TutorLibrary key={location.pathname} />} />
+                    <Route path="/tutor/:id" element={<Tutor key={location.pathname} />} />
+                    <Route path="/course/:id/exams" element={<Exams key={location.pathname} />} />
+                    <Route path="/course/:id/practice" element={<Practice key={location.pathname} />} />
+                    <Route path="/sets/:id" element={<PracticeSet key={location.pathname} />} />
+                    <Route path="/runs/:id" element={<Run key={location.pathname} />} />
+                    <Route path="/attempts/:id" element={<AttemptReview key={location.pathname} />} />
+                    <Route path="/settings" element={settings} />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </Suspense>
+              </Shell>
+            )}
+          </Suspense>
         </UploadQueueProvider>
       </DraftBoundary>
     </AccountContext.Provider>

@@ -14,6 +14,22 @@ export default defineConfig({
       '/api': { target: 'http://127.0.0.1:8788', changeOrigin: false },
     },
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        // The framework changes only when it is upgraded, so it is its own file and stays cached
+        // across deploys while the app's own code changes.
+        advancedChunks: {
+          groups: [
+            {
+              name: 'framework',
+              test: /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom|@tanstack)[\\/]/,
+            },
+          ],
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       '@shared': fileURLToPath(new URL('./src/shared', import.meta.url)),

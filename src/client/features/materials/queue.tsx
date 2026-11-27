@@ -11,14 +11,8 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from 'lucide-react';
-import {
-  fileTypes,
-  uploadInput,
-  type Material,
-  type MaterialVersion,
-  type UploadState,
-  type UploadTicket,
-} from '@shared/contracts/materials';
+import type { Material, MaterialVersion, UploadState, UploadTicket } from '@shared/contracts/materials';
+import type { fileTypes } from '@shared/contracts/constants';
 
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -162,6 +156,8 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       const { id, courseId, file, material } = item;
       update(id, { stage: 'preparing', progress: 0, error: undefined, retryable: undefined });
       try {
+        // The upload check is loaded with the first upload, so the validation library stays out of the first screen.
+        const { uploadInput } = await import('@shared/contracts/materials');
         const body = (requestId: string) =>
           uploadInput.parse({
             title: item.title,

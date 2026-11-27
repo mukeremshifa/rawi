@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FileIcon, UploadIcon, XIcon } from 'lucide-react';
-import { fileTypes } from '@shared/contracts/materials';
+import { fileTypes } from '@shared/contracts/constants';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
