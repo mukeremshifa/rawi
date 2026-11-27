@@ -55,7 +55,11 @@ export interface Retrieval {
   /** Current materials not yet searchable, so absent evidence may only mean not read yet. */
   pending: string[];
   via: string[];
-  /** Evidence was found, but none of it in the scope. The reply says so and points to where it is. */
+  /**
+   * Evidence was found beyond the scope and the reply leans on it: some passages lie outside the scope,
+   * and the scope's own passages are missing or do not cover the question. Each passage says whether
+   * it is in the scope, so the reply names the ones that are not.
+   */
   outsideScope: boolean;
 }
 
@@ -490,9 +494,12 @@ export async function retrieve(env: BackendBindings, ctx: CallContext, opts: Ret
     .join('\n')
     .toLowerCase();
   const scopeShare = judged.length ? judged.filter(w => mentions(scoped, w)).length / judged.length : 1;
+  // Only passages actually from outside the scope can make a reply go beyond it. When every passage is
+  // in the scope, thin coverage is a gap in the materials, which the verdict already reports.
   const outsideScope =
     !!opts.scope &&
     (verdict === 'sufficient' || verdict === 'partial') &&
+    passages.some(p => !p.focus && !p.inScope) &&
     (scopeShare < 0.6 || names(opts.query, opts.language).some(w => !mentions(scoped, w)));
   return {
     passages,
