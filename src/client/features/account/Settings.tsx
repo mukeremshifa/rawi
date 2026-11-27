@@ -472,7 +472,7 @@ const usd = (n: number) => `$${n.toFixed(n < 1 ? 3 : 2)}`;
  */
 function AiSection() {
   const data = useApi<Funding>('/v1/ai/funding');
-  const status = useApi<Status>('/v1/ai/status');
+  const status = useApi<Status>('/v1/ai/status', { staleTime: 5 * 60_000 });
   const save = useSave();
   const [apiKey, setApiKey] = useState('');
   const [cap, setCap] = useState<number | null>(null);

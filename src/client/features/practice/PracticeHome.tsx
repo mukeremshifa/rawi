@@ -59,7 +59,7 @@ export function Practice() {
   const planned = params.get('plannedSessionId');
   const outline = useApi<OutlineView>(`/v1/courses/${id}/outline`);
   const saved = useApi<{ scopes: ScopeSummary[] }>(`/v1/courses/${id}/scopes`);
-  const status = useApi<AiStatusView>('/v1/ai/status');
+  const status = useApi<AiStatusView>('/v1/ai/status', { staleTime: 5 * 60_000 });
   const runs = useApiPages<{ id: string; title: string; startedAt: string }, 'runs'>(
     `/v1/courses/${id}/runs?limit=100`,
     'runs',

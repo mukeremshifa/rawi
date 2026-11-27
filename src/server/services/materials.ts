@@ -1,5 +1,5 @@
 import { transaction } from '../db/client';
-import { and, asc, desc, eq, exists, gt, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, inArray, ne, sql, type SQL } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { createMaterialInput, materialPatch, materialListInput } from '../../shared/contracts/materials';
 import { materials, materialVersions, blocks, ingestJobs, topicSections, topics, courses } from '../db/schema';
@@ -20,13 +20,14 @@ import { markdownBlocks, MARKDOWN_ADAPTER_VERSION } from './documents/markdown';
 import type { ReadDb, SocketDb, Transaction } from '../db/client';
 import { ApiError, conflict, notFound } from '../errors';
 import { getCourse } from './workspace';
-import { materialTopics } from './outline/links';
+import { materialTopics, materialTopicsFrom, materialTopicsReads } from './outline/links';
+import { reads, type Rows } from '../db/reads';
 import { afterVersionReady } from './outline/queue';
 
 type Db = ReadDb | SocketDb | Transaction;
 /** Provider submissions per version, across the first attempt and retries. */
 export const MAX_CONVERSION_ATTEMPTS = 3;
-export const materialScope = (workspaceId: string, id: string) =>
+export const materialScope = (workspaceId: string, id: string | SQL) =>
   and(eq(materials.workspaceId, workspaceId), eq(materials.id, id));
 export async function hash(value: string | Uint8Array) {
   const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
@@ -59,19 +60,35 @@ export async function ownMaterial(db: Db, workspaceId: string, id: string) {
   return row;
 }
 export async function materialDetail(db: Db, workspaceId: string, id: string) {
-  const row = await ownMaterial(db, workspaceId, id);
-  const links = await materialTopics(db, { workspaceId, courseId: row.courseId }, [id]);
-  const [version] = row.currentVersionId
-    ? await db
-        .select({ status: materialVersions.status, readiness: ingestJobs.readiness })
-        .from(materialVersions)
-        .leftJoin(ingestJobs, eq(ingestJobs.versionId, materialVersions.id))
-        .where(eq(materialVersions.id, row.currentVersionId))
-    : [];
+  const detail = materialDetailFrom(await reads(db, materialDetailReads(db, workspaceId, id)));
+  if (!detail) throw notFound();
+  return detail;
+}
+/**
+ * The reads behind `materialDetail`: the material, its current version's status, and its topics. The id
+ * may be a subquery, such as a course's syllabus.
+ */
+export function materialDetailReads(db: Db, workspaceId: string, id: string | SQL) {
+  const current = sql`(select ${materials.currentVersionId} from ${materials} where ${materialScope(workspaceId, id)})`;
+  return {
+    material: db.select().from(materials).where(materialScope(workspaceId, id)),
+    version: db
+      .select({ status: materialVersions.status, readiness: ingestJobs.readiness })
+      .from(materialVersions)
+      .leftJoin(ingestJobs, eq(ingestJobs.versionId, materialVersions.id))
+      .where(eq(materialVersions.id, current)),
+    ...materialTopicsReads(db, { workspaceId }, [id]),
+  };
+}
+/** The detail from `materialDetailReads`, or null when the material is not there. */
+export function materialDetailFrom(r: Rows<ReturnType<typeof materialDetailReads>>) {
+  const [row] = r.material;
+  if (!row) return null;
+  const [version] = r.version;
   const { createFingerprint: _private, workspaceId: _workspace, ...visible } = row;
   return {
     ...visible,
-    topicIds: links.get(id) ?? [],
+    topicIds: materialTopicsFrom(r).get(row.id) ?? [],
     status: version?.status ?? null,
     readiness: version?.readiness ?? null,
   };

@@ -1,5 +1,5 @@
 import { QueryClient, type QueryKey } from '@tanstack/react-query';
-import { RequestError } from '@/lib/api';
+import { onWrite, RequestError } from '@/lib/api';
 
 /** Codes where retrying a read cannot help. */
 const FINAL = new Set(['unauthenticated', 'account_changed', 'not_found', 'forbidden', 'invalid_input']);
@@ -11,14 +11,19 @@ const FINAL = new Set(['unauthenticated', 'account_changed', 'not_found', 'forbi
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Cached data shows at once and refreshes in the background on every visit.
-      staleTime: 0,
+      // Going back to a page within 30 seconds shows what it had, without asking again. Writes mark
+      // everything stale (below), so data a write could have changed is fetched again on the next visit.
+      staleTime: 30_000,
       refetchOnWindowFocus: false,
       retry: (count, error) => count < 2 && !(error instanceof RequestError && FINAL.has(error.code)),
     },
     mutations: { retry: false },
   },
 });
+
+// Any accepted write may change what other pages show, so everything cached becomes stale. Pages
+// on screen are not refetched here: each write still refetches what it changes by its own keys.
+onWrite(() => void queryClient.invalidateQueries({ refetchType: 'none' }));
 
 /**
  * Keys mirror API paths, so a key and the path it reads never disagree and a

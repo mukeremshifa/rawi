@@ -11,6 +11,9 @@ import { Hint } from '@/components/ui/tooltip';
 import { useApi, useSave } from '@/lib/data';
 import { keys } from '@/lib/query';
 
+// Reminders change slowly: every few minutes while the page is open, and when you come back to it.
+const REMINDERS = { refetchInterval: 5 * 60_000, refetchOnWindowFocus: true };
+
 export const REMINDER_CATEGORY: Record<string, string> = {
   Assessment: 'Assessment',
   'Planned study': 'Planned study',
@@ -19,7 +22,7 @@ export const REMINDER_CATEGORY: Record<string, string> = {
 
 /** The reminder list, shared by the header popover and the full page. */
 export function ReminderList({ onNavigate, limit }: { onNavigate?: () => void; limit?: number }) {
-  const data = useApi<NotificationsView>('/v1/notifications', { refetchInterval: 60_000 });
+  const data = useApi<NotificationsView>('/v1/notifications', REMINDERS);
   const save = useSave();
   if (data.isPending) return <LoadingState lines={3} label="Loading reminders" />;
   if (data.error) return <ErrorState error={data.error} onRetry={() => void data.refetch()} />;
@@ -99,7 +102,7 @@ export function ReminderList({ onNavigate, limit }: { onNavigate?: () => void; l
 /** The header bell. Shows a dot while anything is unread. */
 export function RemindersButton() {
   const [open, setOpen] = useState(false);
-  const data = useApi<NotificationsView>('/v1/notifications', { refetchInterval: 60_000 });
+  const data = useApi<NotificationsView>('/v1/notifications', REMINDERS);
   const unread = data.data?.reminders.filter(r => r.status !== 'read').length ?? 0;
   return (
     <Popover open={open} onOpenChange={setOpen}>

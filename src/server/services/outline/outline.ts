@@ -3,6 +3,7 @@ import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
   assessments,
   courses,
+  materials,
   materialVersions,
   outlineChanges,
   outlineJobs,
@@ -24,10 +25,20 @@ import {
 import type { PlannedAssessment, AssessmentType } from '../../../shared/domain/types';
 import { ApiError, conflict, notFound } from '../../errors';
 import { operation } from '../learning';
-import { materialDetail, ownMaterial, publicVersion } from '../materials';
+import { materialDetailFrom, materialDetailReads, ownMaterial, publicVersion } from '../materials';
 import { bumpPlanner } from '../planning';
-import { getCourse } from '../workspace';
-import { liveLinks, readingPlaces, readyMaterials, setCover } from './links';
+import { publicCourse } from '../workspace';
+import {
+  liveLinks,
+  liveLinksFrom,
+  liveLinksRead,
+  readingPlacesFrom,
+  readyMaterialsFrom,
+  readyMaterialsRead,
+  setCover,
+} from './links';
+import { courseSectionsFrom, courseSectionsRead } from '../knowledge/course';
+import { reads } from '../../db/reads';
 import { normalTitle } from './provider';
 
 type Db = ReadDb | SocketDb | Transaction;
@@ -35,52 +46,68 @@ type Scope = { workspaceId: string; courseId: string };
 type TopicRow = typeof topics.$inferSelect;
 type LinkRow = typeof topicSections.$inferSelect;
 
+/** Everything the course page shows about the outline, read in one round trip. */
 export async function outlineView(db: Db, workspaceId: string, courseId: string) {
-  const course = await getCourse(db, workspaceId, courseId);
-  const scope = { workspaceId, courseId };
-  const rows = await db
-    .select()
-    .from(topics)
-    .where(and(eq(topics.workspaceId, workspaceId), eq(topics.courseId, courseId)))
-    .orderBy(asc(topics.order), asc(topics.id));
-  const [places, links, requires] = await Promise.all([
-    readingPlaces(db, scope),
-    liveLinks(db, scope),
-    db
+  const own = <T extends { workspaceId: AnyPgColumn; courseId: AnyPgColumn }>(t: T) =>
+    and(eq(t.workspaceId, workspaceId), eq(t.courseId, courseId));
+  const syllabusId = sql`(select ${courses.syllabusMaterialId} from ${courses} where ${and(eq(courses.workspaceId, workspaceId), eq(courses.id, courseId))})`;
+  const syl = materialDetailReads(db, workspaceId, syllabusId);
+  const r = await reads(db, {
+    course: db
+      .select()
+      .from(courses)
+      .where(and(eq(courses.workspaceId, workspaceId), eq(courses.id, courseId))),
+    topics: db.select().from(topics).where(own(topics)).orderBy(asc(topics.order), asc(topics.id)),
+    links: liveLinksRead(db, { workspaceId, courseId }),
+    sections: courseSectionsRead(db, { workspaceId, courseId }),
+    requires: db
       .select({ sectionId: prerequisites.sectionId, requiresId: prerequisites.requiresId })
       .from(prerequisites)
-      .where(and(eq(prerequisites.workspaceId, workspaceId), eq(prerequisites.courseId, courseId))),
-  ]);
+      .where(own(prerequisites)),
+    jobs: db.select().from(outlineJobs).where(own(outlineJobs)).orderBy(desc(outlineJobs.createdAt)).limit(30),
+    assessments: db.select().from(assessments).where(own(assessments)),
+    ready: readyMaterialsRead(db, { workspaceId, courseId }),
+    syllabusVersion: db
+      .select()
+      .from(materialVersions)
+      .where(
+        eq(
+          materialVersions.id,
+          sql`(select ${materials.currentVersionId} from ${materials} where ${materials.workspaceId} = ${workspaceId} and ${materials.id} = ${syllabusId})`,
+        ),
+      ),
+    syllabus: syl.material,
+    syllabusStatus: syl.version,
+    syllabusLinks: syl.links,
+    syllabusSections: syl.current,
+  });
+  const [courseRow] = r.course;
+  if (!courseRow) throw notFound();
+  const course = publicCourse(courseRow);
+  const rows = r.topics;
+  const links = liveLinksFrom(r.links, courseSectionsFrom(r.sections));
+  const places = readingPlacesFrom(links);
   const titles = new Map(links.map(l => [l.section.materialId, l.section.title]));
-  const buildsOn = topicDependencies(links, requires);
-  let syllabus: {
-    material: Awaited<ReturnType<typeof materialDetail>>;
-    version: ReturnType<typeof publicVersion> | null;
-  } | null = null;
-  if (course.syllabusMaterialId) {
-    const material = await materialDetail(db, workspaceId, course.syllabusMaterialId);
-    const [version] = material.currentVersionId
-      ? await db.select().from(materialVersions).where(eq(materialVersions.id, material.currentVersionId))
-      : [];
-    syllabus = { material, version: version ? publicVersion(version) : null };
-  }
-  const jobs = await db
-    .select()
-    .from(outlineJobs)
-    .where(and(eq(outlineJobs.workspaceId, workspaceId), eq(outlineJobs.courseId, courseId)))
-    .orderBy(desc(outlineJobs.createdAt))
-    .limit(30);
+  const buildsOn = topicDependencies(links, r.requires);
+  const material = course.syllabusMaterialId
+    ? materialDetailFrom({
+        material: r.syllabus,
+        version: r.syllabusStatus,
+        links: r.syllabusLinks,
+        current: r.syllabusSections,
+      })
+    : null;
+  const [version] = r.syllabusVersion;
+  const syllabus = material ? { material, version: version ? publicVersion(version) : null } : null;
+  const jobs = r.jobs;
   const open = jobs.filter(j => j.state === 'queued' || j.state === 'running');
   const pending = open.find(j => j.kind === 'read_syllabus')?.kind ?? open[0]?.kind ?? null;
   const finished = jobs.find(j => j.state === 'failed' || (j.state === 'done' && j.result));
-  const assessmentRows = await db
-    .select()
-    .from(assessments)
-    .where(and(eq(assessments.workspaceId, workspaceId), eq(assessments.courseId, courseId)));
+  const assessmentRows = r.assessments;
   return {
     course,
     pending,
-    readyMaterials: (await readyMaterials(db, scope, course.syllabusMaterialId)).length,
+    readyMaterials: readyMaterialsFrom(r.ready, course.syllabusMaterialId).length,
     syllabus,
     topics: rows.map(t => ({
       ...t,

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne, sql, type AnyColumn } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { materials, materialVersions, sections, topics, topicSections } from '../../db/schema';
 import type { ReadDb, SocketDb, Transaction } from '../../db/client';
 import type { Citation } from '../../../shared/contracts/document';
@@ -64,7 +64,11 @@ export async function materialTopics(
   return materialTopicsFrom(await reads(db, materialTopicsReads(db, scope, materialIds)));
 }
 /** The reads behind `materialTopics`, for a caller that folds them into its own round trip. */
-export function materialTopicsReads(db: Db, scope: { workspaceId: string; courseId?: string }, materialIds?: string[]) {
+export function materialTopicsReads(
+  db: Db,
+  scope: { workspaceId: string; courseId?: string },
+  materialIds?: (string | SQL)[],
+) {
   const where = <T extends { workspaceId: AnyColumn; courseId: AnyColumn; materialId: AnyColumn }>(t: T) =>
     and(
       eq(t.workspaceId, scope.workspaceId),
@@ -110,8 +114,11 @@ export function materialTopicsFrom({ links: rows, current }: Rows<ReturnType<typ
 
 /** Where to read each topic: its sections in reading order, straight to the heading. */
 export async function readingPlaces(db: Db, scope: Scope) {
+  return readingPlacesFrom(await liveLinks(db, scope));
+}
+export function readingPlacesFrom(links: ReturnType<typeof liveLinksFrom>) {
   const out = new Map<string, ReadingPlace[]>();
-  for (const link of await liveLinks(db, scope)) {
+  for (const link of links) {
     const list = out.get(link.topicId) ?? [];
     if (list.some(p => p.materialId === link.section.materialId && p.sectionKey === link.section.key)) continue;
     list.push({
@@ -265,7 +272,10 @@ export async function setCover(tx: Transaction, scope: Scope & { materialId: str
 
 /** Ready materials of the course that are not the syllabus, with their current versions. */
 export async function readyMaterials(db: Db, scope: Scope, syllabusId: string | null) {
-  const rows = await db
+  return readyMaterialsFrom(await readyMaterialsRead(db, scope), syllabusId);
+}
+export function readyMaterialsRead(db: Db, scope: Scope) {
+  return db
     .select({
       id: materials.id,
       title: materials.title,
@@ -283,5 +293,7 @@ export async function readyMaterials(db: Db, scope: Scope, syllabusId: string | 
         ne(materials.kind, 'syllabus'),
       ),
     );
+}
+export function readyMaterialsFrom(rows: Awaited<ReturnType<typeof readyMaterialsRead>>, syllabusId: string | null) {
   return rows.filter(r => usableStatus(r.status) && r.id !== syllabusId);
 }

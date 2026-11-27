@@ -16,7 +16,7 @@ import {
 } from '../db/schema';
 import { citationBlocks, validateCitation } from './materials';
 import { spansText } from '../../shared/domain/document-text';
-import { operation, attempt } from './learning';
+import { operation, attempt, readRun } from './learning';
 import { queueReply, recoverReplies } from './ai/tutor';
 import { nextMove, nextReview, opening, ranked, recentTurns, type Ranking } from './guide';
 import { reads } from '../db/reads';
@@ -138,12 +138,18 @@ export async function detail(db: Db, workspaceId: string, id: string, cursor = -
     pending || !rank ? null : nextMove(db, full, rank, r.turns).catch(() => null),
     session.endedAt && rank ? nextReview(db, full, rank).catch(() => null) : null,
   ]);
+  const messages = rows.slice(0, 50);
+  // The questions the tutor asked in these messages come with them, so the page does not ask for each.
+  const runIds = [...new Set(messages.flatMap(m => (m.provenance?.check ? [m.provenance.check.runId] : [])))];
+  const runs = [];
+  for (const runId of runIds) runs.push(await readRun(db, workspaceId, runId).catch(() => null));
   return {
     session,
     next,
     nextReview: review,
     summary: session.endedAt ? await sessionSummary(db, workspaceId, session) : null,
-    messages: rows.slice(0, 50).map(({ workspaceId: _w, courseId: _c, sessionId: _s, ...m }) => m),
+    messages: messages.map(({ workspaceId: _w, courseId: _c, sessionId: _s, ...m }) => m),
+    runs: runs.filter(r => r !== null),
     nextCursor: rows.length > 50 ? rows[49]!.ordinal : null,
     pendingReply: pending?.id ?? null,
   };

@@ -56,6 +56,7 @@ export function App() {
     authBusy = useRef(false);
   const currentAccount = useRef<Me | null>(null);
   const sessionRequest = useRef<AbortController | null>(null);
+  const checkedAt = useRef(0);
   const channel = useRef<BroadcastChannel | null>(null);
   const location = useLocation();
   const confirm = useConfirm();
@@ -84,6 +85,7 @@ export function App() {
       // A different account must never see the previous account's cache.
       if (currentAccount.current && currentAccount.current.user.id !== account.user.id) queryClient.clear();
       setActiveAccount(account.user.id);
+      checkedAt.current = Date.now();
       currentAccount.current = account;
       setMe(account);
       setState('authenticated');
@@ -104,8 +106,13 @@ export function App() {
       clear();
       channel.current?.postMessage({ type: 'signed-out' });
     };
+    // Coming back to the tab checks the account again, at most once a minute. Focus and becoming
+    // visible usually fire together, and another tab's sign-out arrives on the channel below at once.
+    const returned = () => {
+      if (Date.now() - checkedAt.current > 60_000) void refresh();
+    };
     const visible = () => {
-      if (document.visibilityState === 'visible') void refresh();
+      if (document.visibilityState === 'visible') returned();
     };
     if ('BroadcastChannel' in window) {
       channel.current = new BroadcastChannel('rawi-online-auth');
@@ -121,7 +128,7 @@ export function App() {
     void refresh();
     window.addEventListener('rawi-account-invalid', invalid);
     window.addEventListener('online', refresh);
-    window.addEventListener('focus', refresh);
+    window.addEventListener('focus', returned);
     document.addEventListener('visibilitychange', visible);
     return () => {
       ++epoch.current;
@@ -129,7 +136,7 @@ export function App() {
       sessionRequest.current?.abort();
       window.removeEventListener('rawi-account-invalid', invalid);
       window.removeEventListener('online', refresh);
-      window.removeEventListener('focus', refresh);
+      window.removeEventListener('focus', returned);
       document.removeEventListener('visibilitychange', visible);
       channel.current?.close();
     };
