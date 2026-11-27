@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { CheckInPrompt, ShortList, courseName, timeOfDay, type ProgressData } from '@/features/progress/parts';
 import { useAccount } from '@/lib/account';
 import { errorMessage, request } from '@/lib/api';
-import { useApi } from '@/lib/data';
+import { useApi, useSeed } from '@/lib/data';
 import { cn } from '@/lib/utils';
 
 /**
@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 function GuidedStart({ courseId, topicId }: { courseId: string; topicId: string }) {
   const { user } = useAccount();
   const navigate = useNavigate();
+  const seed = useSeed();
   const [id] = useState(() => crypto.randomUUID());
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
@@ -35,6 +36,7 @@ function GuidedStart({ courseId, topicId }: { courseId: string; topicId: string 
         { id, guided: true, topicId },
         'POST',
       );
+      seed(`/v1/tutor/${d.session.id}`, d);
       navigate(`/tutor/${d.session.id}`);
     } catch (e) {
       setError(errorMessage(e));

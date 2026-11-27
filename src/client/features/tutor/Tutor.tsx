@@ -65,7 +65,7 @@ import { useAccount } from '@/lib/account';
 import { errorMessage, request, streamEvents } from '@/lib/api';
 import type { AiStatusView, ReplyEvent } from '../../../server/api-types';
 import type { ScopeView } from '@shared/contracts/outline';
-import { useApi, useApiPages, useSave } from '@/lib/data';
+import { useApi, useApiPages, useSave, useSeed } from '@/lib/data';
 import { useUnsentGuard } from '@/lib/hooks';
 import { activityKeys, keys } from '@/lib/query';
 import { usePageMeta } from '@/lib/shell';
@@ -271,6 +271,7 @@ function NewSessionDialog({
   const [topicId, setTopicId] = useState(params.get('topicId') ?? '');
   const body = useRef<unknown>(null);
   const save = useSave();
+  const seed = useSeed();
   const allow = useUnsentGuard((open && !!title) || save.pending);
   const historical =
     params.get('attemptId') && topicId && outline.data && !outline.data.topics.some(t => t.id === topicId);
@@ -322,6 +323,7 @@ function NewSessionDialog({
         onSuccess: d => {
           body.current = null;
           allow();
+          seed(`/v1/tutor/${d.session.id}`, d);
           navigate(`/tutor/${d.session.id}`);
         },
       },
@@ -408,7 +410,8 @@ export function Tutor() {
   const { id = '' } = useParams();
   const { user } = useAccount();
   const confirm = useConfirm();
-  const data = useApi<TutorDetail>(`/v1/tutor/${id}`);
+  // A new session arrives with its detail, so it is not read again straight away.
+  const data = useApi<TutorDetail>(`/v1/tutor/${id}`, { staleTime: 5_000 });
   const save = useSave();
   const [text, setText] = useState('');
   const [action, setAction] = useState('message');

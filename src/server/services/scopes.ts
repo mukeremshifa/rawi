@@ -11,8 +11,9 @@ import type {
   scopePatch,
   TopicDepth,
 } from '../../shared/contracts/outline';
-import { courseSections, type CourseSection } from './knowledge/course';
-import { liveLinks } from './outline/links';
+import { courseSections, courseSectionsFrom, courseSectionsRead, type CourseSection } from './knowledge/course';
+import { liveLinksFrom, liveLinksRead } from './outline/links';
+import { reads } from '../db/reads';
 import { getCourse } from './workspace';
 import { operation } from './learning';
 
@@ -124,8 +125,7 @@ export async function listScopes(db: Db, workspaceId: string, courseId: string) 
     .where(and(eq(scopes.workspaceId, workspaceId), eq(scopes.courseId, courseId), eq(scopes.archived, false)))
     .orderBy(desc(sql`coalesce(${scopes.lastUsedAt}, ${scopes.createdAt})`))
     .limit(100);
-  const resolved = await Promise.all(rows.map(row => resolveRow(db, row)));
-  return { scopes: resolved.map(r => summary(r.row, r.name, r.sections.length)) };
+  return { scopes: (await resolveRows(db, rows)).map(r => summary(r.row, r.name, r.sections.length)) };
 }
 
 async function ownScope(db: Db, workspaceId: string, id: string) {
@@ -138,33 +138,59 @@ async function ownScope(db: Db, workspaceId: string, id: string) {
 }
 
 /** A scope's current sections, weighted for allotting questions, and what it saved that is gone. */
-async function resolveRow(db: Db, row: Row, all?: CourseSection[]) {
-  const scope = { workspaceId: row.workspaceId, courseId: row.courseId };
-  const list = all ?? (await courseSections(db, scope));
+async function resolveRow(db: Db, row: Row) {
+  return (await resolveRows(db, [row]))[0]!;
+}
+/** Resolve scopes of one course together: what they read is fetched once, in one round trip. */
+async function resolveRows(db: Db, rows: Row[]) {
+  if (!rows.length) return [];
+  const scope = { workspaceId: rows[0]!.workspaceId, courseId: rows[0]!.courseId };
+  const topicIds = rows.flatMap(r => (r.kind === 'topic' && r.topicId ? [r.topicId] : []));
+  const assessmentIds = rows.flatMap(r => (r.kind === 'assessment' && r.assessmentId ? [r.assessmentId] : []));
+  const r = await reads(db, {
+    list: courseSectionsRead(db, scope),
+    links: liveLinksRead(db, scope),
+    topics: db
+      .select({ id: topics.id, title: topics.title })
+      .from(topics)
+      .where(topicIds.length ? inArray(topics.id, topicIds) : sql`false`),
+    assessments: db
+      .select({ id: assessments.id, content: assessments.content })
+      .from(assessments)
+      .where(assessmentIds.length ? inArray(assessments.id, assessmentIds) : sql`false`),
+  });
+  const list = courseSectionsFrom(r.list);
+  const links = liveLinksFrom(r.links, list);
+  return rows.map(row => resolved(row, list, links, r.topics, r.assessments));
+}
+function resolved(
+  row: Row,
+  list: CourseSection[],
+  links: ReturnType<typeof liveLinksFrom>,
+  topicRows: { id: string; title: string }[],
+  assessmentRows: { id: string; content: { title: string; topicIds: string[] } }[],
+) {
   const size = (s: CourseSection) => Math.min(2, Math.max(0.5, Math.sqrt(s.tokens / 300)));
   let name = row.name;
   let chosen: { section: CourseSection; weight: number }[] = [];
   const missing: ScopeSection[] = [];
-  const byTopic = async (topicIds: string[]) => {
+  const byTopic = (topicIds: string[]) => {
     const best = new Map<string, number>();
-    for (const l of await liveLinks(db, scope))
+    for (const l of links)
       if (topicIds.includes(l.topicId))
         best.set(l.section.id, Math.max(best.get(l.section.id) ?? 0, DEPTH_WEIGHT[l.depth]));
     return list.filter(s => best.has(s.id)).map(s => ({ section: s, weight: best.get(s.id)! * size(s) }));
   };
   if (row.kind === 'topic' && row.topicId) {
-    const [topic] = await db.select({ title: topics.title }).from(topics).where(eq(topics.id, row.topicId));
+    const topic = topicRows.find(t => t.id === row.topicId);
     name = topic?.title ?? name;
-    chosen = await byTopic([row.topicId]);
+    chosen = byTopic([row.topicId]);
   } else if (row.kind === 'assessment' && row.assessmentId) {
-    const [a] = await db
-      .select({ content: assessments.content })
-      .from(assessments)
-      .where(eq(assessments.id, row.assessmentId));
+    const a = assessmentRows.find(x => x.id === row.assessmentId);
     name = a?.content.title ?? name;
     // An assessment with no topics recorded covers the whole course until the student says otherwise.
     chosen = a?.content.topicIds.length
-      ? await byTopic(a.content.topicIds)
+      ? byTopic(a.content.topicIds)
       : list.map(s => ({ section: s, weight: size(s) }));
   } else if (row.kind === 'sections') {
     for (const want of row.sections) {
@@ -182,9 +208,12 @@ export async function resolveScope(db: SocketDb, workspaceId: string, id: string
   await db.update(scopes).set({ lastUsedAt: new Date() }).where(eq(scopes.id, id));
   return resolveRow(db, row);
 }
-/** The scope's sections, read inside the caller's transaction without marking the scope used. */
-export async function scopeSections(db: Db, workspaceId: string, id: string) {
-  return resolveRow(db, await ownScope(db, workspaceId, id));
+/**
+ * The scope's sections, read inside the caller's transaction without marking the scope used. A
+ * caller that already read the scope's row, checked against the workspace, passes it to save a query.
+ */
+export async function scopeSections(db: Db, workspaceId: string, id: string, row?: Row) {
+  return resolveRow(db, row?.id === id && row.workspaceId === workspaceId ? row : await ownScope(db, workspaceId, id));
 }
 
 /**

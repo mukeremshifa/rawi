@@ -14,6 +14,9 @@ export function createAuth(env: BackendBindings, db: SocketDb | ReadDb, transact
     trustedOrigins: [env.BETTER_AUTH_URL!],
     socialProviders: { google: { clientId: env.GOOGLE_CLIENT_ID!, clientSecret: env.GOOGLE_CLIENT_SECRET! } },
     account: { accountLinking: { enabled: false } },
+    // Most requests read the session from a signed cookie instead of the database. A signed-out or
+    // deleted session can stay readable for up to five minutes on another device.
+    session: { cookieCache: { enabled: true, maxAge: 5 * 60 } },
     advanced: { useSecureCookies: env.BETTER_AUTH_URL!.startsWith('https:') },
     // App logs carry a request ID and a safe error code, never provider or SQL details.
     logger: { disabled: true },
