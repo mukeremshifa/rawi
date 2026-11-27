@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { Attempt, StudyMaterial, StudyTopic } from '../../shared/domain/types';
 import { planWeek, replacedByPlan, addDays } from '../../shared/domain/planner';
@@ -24,6 +24,9 @@ import {
   topics,
   learningAttempts,
   learningRuns,
+  learningSets,
+  runAnswers,
+  setItems,
   materials,
   materialVersions,
   bankItems,
@@ -423,10 +426,26 @@ export async function progress(db: SocketDb, workspaceId: string) {
         .from(tutorSessions)
         .where(and(eq(tutorSessions.workspaceId, workspaceId), eq(tutorSessions.completedLearning, true))),
       runs: db
-        .select({ id: learningRuns.id, courseId: learningRuns.courseId, title: learningRuns.title })
+        .select({
+          id: learningRuns.id,
+          courseId: learningRuns.courseId,
+          title: learningRuns.title,
+          startedAt: learningRuns.startedAt,
+          // Qualified by hand: inside a subquery a bare column name would resolve to the inner table.
+          answered: sql<number>`(select count(*)::int from ${runAnswers} a where a.run_id = "learning_runs"."id" and a.response->>'kind' <> 'none')`,
+          total: sql<number>`(select count(*)::int from ${setItems} i where i.set_id = "learning_runs"."set_id")`,
+        })
         .from(learningRuns)
-        .where(and(eq(learningRuns.workspaceId, workspaceId), eq(learningRuns.state, 'active')))
-        .orderBy(asc(learningRuns.id))
+        // The questions a tutor session posed live in the session, not among runs to resume.
+        .innerJoin(learningSets, eq(learningSets.id, learningRuns.setId))
+        .where(
+          and(
+            eq(learningRuns.workspaceId, workspaceId),
+            eq(learningRuns.state, 'active'),
+            ne(learningSets.purpose, 'tutor'),
+          ),
+        )
+        .orderBy(desc(learningRuns.startedAt), asc(learningRuns.id))
         .limit(100),
       looseSessions: db
         .select({ courseId: tutorSessions.courseId, source: tutorSessions.source })
@@ -521,7 +540,7 @@ export async function progress(db: SocketDb, workspaceId: string) {
     mastery: data.mastery,
     mistakes: recurringMistakes(data.attempts, id => data.questions.find(q => q.id === id)?.prompt),
     attempts: data.attempts,
-    runs,
+    runs: runs.map(r => ({ ...r, startedAt: r.startedAt.toISOString() })),
     sessions: data.sessions.filter(s => s.date === now.date),
     assessments: data.assessments.filter(isDated).filter(a => a.date >= now.date),
     checkIns: data.checkIns.filter(c => zonedParts(new Date(c.at), data.timezone).date === now.date),

@@ -47,7 +47,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Field, FieldError } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { ShortList, TopicReadiness, type ProgressData } from '@/features/progress/parts';
+import { ShortList, TopicStatus, type ProgressData } from '@/features/progress/parts';
 import { QueueRow, unsettled, useUploadQueue } from '@/features/materials/queue';
 import { ACCEPT, MAX_BATCH, checkFile, dragHasFiles, hashFile, titleFromName } from '@/features/materials/upload';
 import { useApi, useSave } from '@/lib/data';
@@ -136,10 +136,82 @@ export function CourseOverview() {
     info = course.data.course;
   const run = row.runs.find(r => r.courseId === id);
   const topics = row.topics.filter(t => t.courseId === id);
-  const recent = row.attempts
-    .filter(a => a.courseId === id && a.completedAt)
-    .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))
+  // Finished practice and finished tutor sessions, newest first.
+  const recent = [
+    ...row.attempts
+      .filter(a => a.courseId === id && a.completedAt)
+      .map(a => ({
+        key: a.id,
+        to: `/attempts/${a.id}`,
+        title: a.title,
+        at: a.completedAt!,
+        kind: MODE_LABEL[a.mode],
+        score: a.marksAvailable ? `${a.marksAwarded}/${a.marksAvailable}` : null,
+      })),
+    ...row.tutorActivity
+      .filter(s => s.courseId === id && s.completedAt)
+      .map(s => ({
+        key: s.id,
+        to: `/tutor/${s.id}`,
+        title: s.title,
+        at: String(s.completedAt),
+        kind: 'Tutor session',
+        score: null,
+      })),
+  ]
+    .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, 5);
+  const secure = row.mastery.filter(m => m.courseId === id && m.level === 'secure').length;
+  const studyNow = (
+    <div className="grid gap-section lg:grid-cols-3">
+      <Section title="Due for review">
+        <ShortList
+          empty="Nothing due."
+          items={row.due
+            .filter(d => d.courseId === id)
+            .slice(0, 6)
+            .map(d => ({
+              key: d.topicId,
+              to: `/course/${id}/practice?topicId=${d.topicId}`,
+              title: row.topics.find(t => t.id === d.topicId)?.title ?? 'Topic',
+              meta:
+                d.daysSince === 0
+                  ? 'Studied today, and part of it is due again'
+                  : d.daysSince === 1
+                    ? '1 day since you studied it'
+                    : `${d.daysSince} days since you studied it`,
+            }))}
+        />
+      </Section>
+      <Section title="Upcoming assessments">
+        <ShortList
+          empty="None planned."
+          items={row.assessments
+            .filter(a => a.courseId === id)
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .map(a => ({ key: a.id, to: '/planner', title: a.title, trailing: <DueLabel date={a.date} /> }))}
+        />
+      </Section>
+      <Section title="Recent activity">
+        <ShortList
+          empty="Nothing finished yet."
+          items={recent.map(a => ({
+            key: a.key,
+            to: a.to,
+            title: a.title,
+            meta: `${a.kind} · ${formatRelative(a.at)}`,
+            trailing: a.score ? <span className="tabular text-muted-foreground text-sm">{a.score}</span> : undefined,
+          }))}
+        />
+      </Section>
+    </div>
+  );
+  const uploads = view && (
+    <div className="grid gap-base md:grid-cols-2">
+      <SyllabusSlot view={view} onChanged={() => void outline.refetch()} onView={outline.setData} />
+      <MaterialsTarget courseId={id} />
+    </div>
+  );
   const archive = async () => {
     if (
       !info.archived &&
@@ -220,79 +292,25 @@ export function CourseOverview() {
         }
       />
       {save.error && <ErrorState title="The course was not updated" detail={save.error} onRetry={save.retry} />}
+      {/* What to study comes first. Adding files leads only while the course has no topics. */}
+      {view && !topics.length && uploads}
+      {topics.length > 0 && studyNow}
       {outline.error ? (
         <ErrorState error={outline.error} onRetry={() => void outline.refetch()} />
       ) : !view ? (
         <LoadingState lines={4} label="Loading the outline" />
       ) : (
-        <>
-          <div className="grid gap-base md:grid-cols-2">
-            <SyllabusSlot view={view} onChanged={() => void outline.refetch()} onView={outline.setData} />
-            <MaterialsTarget courseId={id} />
-          </div>
-          <OutlineSection
-            view={view}
-            onView={next => {
-              outline.setData(next);
-              void data.refetch();
-            }}
-          />
-        </>
+        <OutlineSection
+          view={view}
+          summary={topics.length ? `${secure} secure` : undefined}
+          status={topicId => <TopicStatus row={row} topicId={topicId} />}
+          onView={next => {
+            outline.setData(next);
+            void data.refetch();
+          }}
+        />
       )}
-      {topics.length > 0 && (
-        <Section
-          title="Topic readiness"
-          description={`${row.mastery.filter(m => m.courseId === id && m.level === 'secure').length} of ${topics.length} topics secure, ${row.evidence.filter(e => e.courseId === id && (e.level === 'independent-once' || e.level === 'retained')).length} answered unaided in exams`}
-        >
-          <TopicReadiness row={row} courseId={id} />
-        </Section>
-      )}
-      <div className="grid gap-section lg:grid-cols-3">
-        <Section title="Due for review">
-          <ShortList
-            empty="Nothing due."
-            items={row.due
-              .filter(d => d.courseId === id)
-              .slice(0, 6)
-              .map(d => ({
-                key: d.topicId,
-                to: `/course/${id}/practice?topicId=${d.topicId}`,
-                title: row.topics.find(t => t.id === d.topicId)?.title ?? 'Topic',
-                meta:
-                  d.daysSince === 0
-                    ? 'Studied today, and part of it is due again'
-                    : d.daysSince === 1
-                      ? '1 day since you studied it'
-                      : `${d.daysSince} days since you studied it`,
-              }))}
-          />
-        </Section>
-        <Section title="Upcoming assessments">
-          <ShortList
-            empty="None planned."
-            items={row.assessments
-              .filter(a => a.courseId === id)
-              .sort((a, b) => a.date.localeCompare(b.date))
-              .map(a => ({ key: a.id, to: '/planner', title: a.title, trailing: <DueLabel date={a.date} /> }))}
-          />
-        </Section>
-        <Section title="Recent activity">
-          <ShortList
-            empty="No finished practice yet."
-            items={recent.map(a => ({
-              key: a.id,
-              to: `/attempts/${a.id}`,
-              title: a.title,
-              meta: `${MODE_LABEL[a.mode]} · ${formatRelative(a.completedAt!)}`,
-              trailing: a.marksAvailable ? (
-                <span className="tabular text-muted-foreground text-sm">
-                  {a.marksAwarded}/{a.marksAvailable}
-                </span>
-              ) : undefined,
-            }))}
-          />
-        </Section>
-      </div>
+      {view && topics.length > 0 && uploads}
     </Page>
   );
 }
@@ -535,7 +553,19 @@ function MaterialsTarget({ courseId }: { courseId: string }) {
  * The outline, grouped by week or unit. Corrections apply in place: rename,
  * merge, remove, add and reorder, each with one toast and Undo.
  */
-function OutlineSection({ view, onView }: { view: OutlineView; onView: (view: OutlineView) => void }) {
+function OutlineSection({
+  view,
+  summary,
+  status: topicStatus,
+  onView,
+}: {
+  view: OutlineView;
+  /** Added to the topic count, such as how many are secure. */
+  summary?: string;
+  /** Each topic's readiness, shown under it. */
+  status?: (topicId: string) => ReactNode;
+  onView: (view: OutlineView) => void;
+}) {
   const save = useSave();
   const [renaming, setRenaming] = useState<string | null>(null);
   const [merging, setMerging] = useState<OutlineTopic | null>(null);
@@ -582,7 +612,11 @@ function OutlineSection({ view, onView }: { view: OutlineView; onView: (view: Ou
   return (
     <Section
       title="Outline"
-      description={empty ? undefined : `${view.topics.length} ${view.topics.length === 1 ? 'topic' : 'topics'}`}
+      description={
+        empty
+          ? undefined
+          : `${view.topics.length} ${view.topics.length === 1 ? 'topic' : 'topics'}${summary ? `, ${summary}` : ''}`
+      }
       actions={
         !empty && (
           <>
@@ -663,6 +697,7 @@ function OutlineSection({ view, onView }: { view: OutlineView; onView: (view: Ou
                       <span className="text-base font-medium">{topic.title}</span>
                     )}
                     {topic.summary && <span className="text-muted-foreground text-sm">{topic.summary}</span>}
+                    {topicStatus?.(topic.id)}
                     {topic.buildsOn.length > 0 && (
                       <span className="text-muted-foreground text-sm">
                         Builds on{' '}

@@ -73,7 +73,10 @@ const UNAIDED_AFTER = 3;
 const GLOSSARY_AFTER = 2;
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-const inDays = (n: number) => (n === 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n} days`);
+/** A calendar date as people write it, such as 29 November. */
+const dayName = (date: string) =>
+  new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+export const inDays = (n: number) => (n === 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n} days`);
 
 export function decide(input: PolicyInput): Decision[] {
   const out: Decision[] = [];
@@ -92,7 +95,7 @@ export function decide(input: PolicyInput): Decision[] {
         tool: 'set_goal',
         courseId: c.courseId,
         key: `goal:${a.id}`,
-        reason: `${a.title} in ${c.name} is ${inDays(days)}, on ${a.date}, so Rawi set it as a goal.`,
+        reason: `${a.title} in ${c.name} is ${inDays(days)}, on ${dayName(a.date)}, so Rawi set it as a goal.`,
         input: { assessmentId: a.id, title: a.title, date: a.date },
       });
       wantsPlan.push(`${a.title} is ${inDays(days)}`);
@@ -108,7 +111,7 @@ export function decide(input: PolicyInput): Decision[] {
           tool: 'close_goal',
           courseId: c.courseId,
           key: `close:${g.id}`,
-          reason: `${g.title} was on ${g.date}, so Rawi closed the goal.`,
+          reason: `${g.title} was on ${dayName(g.date)}, so Rawi closed the goal.`,
           input: { goalId: g.id },
         });
         continue;
@@ -159,7 +162,7 @@ export function decide(input: PolicyInput): Decision[] {
         tool: 'schedule_check',
         courseId: c.courseId,
         key: `unaided:${s.materialId}:${s.key}:${s.on}`,
-        reason: `The answer on "${s.heading}" was right, with language support. Rawi scheduled a check without support for ${on}, so the section counts once it is answered alone.`,
+        reason: `The answer on "${s.heading}" was right, with language support. Rawi scheduled a check without support for ${dayName(on)}, so the section counts once it is answered alone.`,
         input: {
           materialId: s.materialId,
           key: s.key,

@@ -87,6 +87,9 @@ const GROUNDING_LABEL: Record<string, string> = {
   translated: 'Explained in your language from the cited sources. Rawi cannot check a translation word for word',
 };
 
+/** A reply that says it went beyond the materials, so its attached passages are not its source. */
+const beyond = (grounding?: string | null) => grounding === 'general' || grounding === 'insufficient';
+
 /** Tutor sessions for a course, and New session in a dialog. */
 export function TutorLibrary() {
   const { id = '' } = useParams();
@@ -168,7 +171,14 @@ export function TutorLibrary() {
                 key={s.id}
                 to={`/tutor/${s.id}`}
                 title={s.title}
-                meta={`${s.topicLabel ?? 'Not in the outline'} · ${STAGE_LABEL[s.stage]}${s.endedAt ? ' · Ended' : ''}`}
+                meta={[
+                  // The title is usually the topic already, so the topic is named only when it differs.
+                  s.topicLabel && s.topicLabel !== s.title ? s.topicLabel : s.topicLabel ? null : 'Not in the outline',
+                  STAGE_LABEL[s.stage],
+                  s.endedAt ? 'Ended' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
                 trailing={formatRelative(s.updatedAt)}
               />
             ))}
@@ -668,12 +678,11 @@ export function Tutor() {
             const body = tutor ? renderCitations(m.text, citations.length) : m.text;
             return (
               <li key={m.id} className="flex flex-col gap-1.5">
-                <span className="text-muted-foreground text-sm font-medium">
-                  {tutor
-                    ? m.provenance?.model && m.provenance.model !== 'none'
-                      ? m.provenance.model
-                      : 'Tutor'
-                    : 'You'}
+                <span
+                  className="text-muted-foreground text-sm font-medium"
+                  title={tutor && m.provenance?.model && m.provenance.model !== 'none' ? m.provenance.model : undefined}
+                >
+                  {tutor ? 'Tutor' : 'You'}
                 </span>
                 <div dir="auto" className={cn(tutor ? 'font-serif' : 'bg-surface rounded-lg border px-4 py-3')}>
                   <Prose
@@ -701,7 +710,9 @@ export function Tutor() {
                 {tutor && (
                   <div className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-sm">
                     {m.provenance?.grounding && <span>{GROUNDING_LABEL[m.provenance.grounding]}</span>}
-                    {m.provenance?.outsideScope && <span>From outside what you are working on</span>}
+                    {m.provenance?.outsideScope && !beyond(m.provenance.grounding) && (
+                      <span>From outside what you are working on</span>
+                    )}
                     {citations.length > 0 && (
                       <button
                         type="button"
@@ -709,9 +720,14 @@ export function Tutor() {
                         onClick={() => setPanel({ kind: 'source', message: m, index: 0 })}
                       >
                         {m.provenance?.attachedSources === citations.length
-                          ? citations.length === 1
-                            ? 'Where this may come from'
-                            : `${citations.length} places this may come from`
+                          ? beyond(m.provenance.grounding)
+                            ? // The reply did not draw on these, so they are offered as reading, not as its source.
+                              citations.length === 1
+                              ? 'A related passage in your materials'
+                              : `${citations.length} related passages in your materials`
+                            : citations.length === 1
+                              ? 'Where this may come from'
+                              : `${citations.length} places this may come from`
                           : citations.length === 1
                             ? '1 source'
                             : `${citations.length} sources`}
