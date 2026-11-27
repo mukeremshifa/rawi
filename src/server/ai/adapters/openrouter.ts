@@ -22,7 +22,10 @@ type OrUsage = {
   cost?: number;
 };
 type Choice = {
-  message?: { content?: string | null };
+  message?: {
+    content?: string | null;
+    tool_calls?: { function?: { name?: string; arguments?: string } }[];
+  };
   delta?: { content?: string | null };
   finish_reason?: string | null;
 };
@@ -47,6 +50,9 @@ export function parseJson(text: string): unknown {
   }
 }
 
+/** The tool a structured answer is returned through, on routes that take tools rather than a schema. */
+const TOOL = 'record_result';
+
 /** Tokens a reasoning route may spend thinking, on top of the task's own output cap. */
 const REASONING_ROOM = 2048;
 
@@ -56,8 +62,12 @@ function body(route: Route, req: ModelRequest, stream: boolean) {
     route.cache === 'explicit' && req.cache !== 'none'
       ? { cache_control: { type: 'ephemeral' as const, ...(req.cache === 'long' ? { ttl: '1h' as const } : {}) } }
       : {};
+  const instructions =
+    req.schema && route.structured === 'tool'
+      ? `${req.system}\nReturn your answer only by calling the ${TOOL} tool.`
+      : req.system;
   const system: Part[] = [
-    { type: 'text', text: req.system, ...(req.context ? {} : cachePoint) },
+    { type: 'text', text: instructions, ...(req.context ? {} : cachePoint) },
     ...(req.context ? [{ type: 'text' as const, text: req.context, ...cachePoint }] : []),
   ];
   const messages: Message[] = [
@@ -82,9 +92,27 @@ function body(route: Route, req: ModelRequest, stream: boolean) {
     max_tokens: req.maxOutput + (route.reasoning === 'low' ? REASONING_ROOM : 0),
     ...(route.temperature && req.temperature !== undefined ? { temperature: req.temperature } : {}),
     ...(route.reasoning ? { reasoning: { effort: route.reasoning, exclude: true } } : {}),
-    ...(req.schema
-      ? { response_format: { type: 'json_schema', json_schema: { name: 'result', strict: false, schema: req.schema } } }
-      : {}),
+    // Structured output as a forced tool call where the provider takes no response schema, as Bedrock does not.
+    ...(req.schema && route.structured === 'tool'
+      ? {
+          tools: [
+            {
+              type: 'function',
+              function: { name: TOOL, description: 'Return the result in this shape.', parameters: req.schema },
+            },
+          ],
+          // Bedrock takes no forced choice for these models, so the instructions ask for the tool, and a
+          // reply in plain text is still read as JSON and checked by the task.
+          tool_choice: 'auto',
+        }
+      : req.schema
+        ? {
+            response_format: {
+              type: 'json_schema',
+              json_schema: { name: 'result', strict: false, schema: req.schema },
+            },
+          }
+        : {}),
     provider: {
       only: route.providers,
       order: route.providers,
@@ -114,7 +142,13 @@ const usageOf = (u: OrUsage | undefined): Usage => {
 /** OpenRouter reports cost in dollars. The meter keeps micro-dollars. */
 const microsOf = (u: OrUsage | undefined) => (typeof u?.cost === 'number' ? Math.ceil(u.cost * 1_000_000) : undefined);
 const stopOf = (reason: string | null | undefined): ModelResult['stop'] =>
-  reason === 'stop' ? 'end' : reason === 'length' ? 'max_tokens' : reason === 'content_filter' ? 'refusal' : 'other';
+  reason === 'stop' || reason === 'tool_calls'
+    ? 'end'
+    : reason === 'length'
+      ? 'max_tokens'
+      : reason === 'content_filter'
+        ? 'refusal'
+        : 'other';
 
 export function openRouterAdapter(apiKey: string): Adapter {
   async function send(path: string, payload: unknown, signal?: AbortSignal) {
@@ -143,7 +177,9 @@ export function openRouterAdapter(apiKey: string): Adapter {
       const started = Date.now();
       const j = (await (await send('/chat/completions', body(route, req, false), signal)).json()) as Chunk;
       if (j.error) throw new ProviderError(`openrouter_error: ${String(j.error.message).slice(0, 200)}`, false);
-      const text = j.choices?.[0]?.message?.content ?? '';
+      const message = j.choices?.[0]?.message;
+      const args = message?.tool_calls?.find(c => c.function?.name === TOOL)?.function?.arguments;
+      const text = args ?? message?.content ?? '';
       return {
         text,
         ...(req.schema ? { json: parseJson(text) } : {}),
