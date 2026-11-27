@@ -297,6 +297,10 @@ function viewOf(run: typeof learningRuns.$inferSelect, r: Rows<ReturnType<typeof
 /** A run as the page shows it. Passed deadlines are settled first, then everything is read in one round trip. */
 export async function getRun(db: SocketDb, workspaceId: string, id: string) {
   await settleDeadlines(db, workspaceId, id);
+  return readRun(db, workspaceId, id);
+}
+/** A run as it is stored, without settling deadlines. For runs that cannot have any, such as a tutor's check. */
+export async function readRun(db: Db | SocketDb, workspaceId: string, id: string) {
   const setId = sql`(select ${learningRuns.setId} from ${learningRuns} where ${learningRuns.workspaceId} = ${workspaceId} and ${learningRuns.id} = ${id})`;
   const r = await reads(db, {
     run: db

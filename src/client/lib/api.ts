@@ -13,6 +13,11 @@ export function setActiveAccount(userId: string | null) {
   }
   activeUser = userId;
 }
+/** Called after every write the server accepts. The cache uses it to mark what it holds as stale. */
+let written = () => {};
+export function onWrite(fn: () => void) {
+  written = fn;
+}
 export class RequestError extends Error {
   constructor(
     public code: string,
@@ -68,6 +73,7 @@ export async function request<T>(
     );
   }
   const result = (await response.json()) as T;
+  if (method !== 'GET') written();
   if (signal?.aborted) throw new DOMException('Request cancelled', 'AbortError');
   if ((userId || path === '/v1/me') && (generation !== accountGeneration || (userId && userId !== activeUser)))
     throw new RequestError('account_changed', 'Your account changed. Reload your workspace.');
@@ -123,6 +129,9 @@ export async function streamEvents<E>(
       buffer = buffer.slice(at + 1);
       if (line) onEvent(JSON.parse(line) as E);
     }
-    if (done) return;
+    if (done) {
+      written();
+      return;
+    }
   }
 }

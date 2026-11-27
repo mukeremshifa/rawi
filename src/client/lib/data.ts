@@ -7,7 +7,15 @@ import { pathKey } from '@/lib/query';
 /** Read one record. `path: null` waits until the caller has what it needs. */
 export function useApi<T>(
   path: string | null,
-  options: { refetchInterval?: number; refetchIntervalInBackground?: boolean; staleTime?: number } = {},
+  options: {
+    refetchInterval?: number;
+    refetchIntervalInBackground?: boolean;
+    refetchOnWindowFocus?: boolean;
+    staleTime?: number;
+    /** A copy another response already carried, used until it goes stale. */
+    initialData?: T;
+    initialDataUpdatedAt?: number;
+  } = {},
 ) {
   const { user } = useAccount();
   const qc = useQueryClient();

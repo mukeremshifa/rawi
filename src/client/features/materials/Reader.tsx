@@ -140,8 +140,11 @@ export function MaterialReader() {
     setPolling(v?.status === 'pending' || v?.status === 'processing');
   }, [v?.status]);
   const usable = v?.status === 'ready' || v?.status === 'partial';
+  // The material already says whether its current version is readable, so its text is asked for
+  // alongside the version, not after it.
+  const readable = v ? usable : selected === m?.currentVersionId && (m?.status === 'ready' || m?.status === 'partial');
   const pages = useApiPages<DocumentBlock, 'blocks'>(
-    usable ? `/v1/materials/${materialId}/versions/${v.id}/blocks?limit=500` : null,
+    readable ? `/v1/materials/${materialId}/versions/${selected}/blocks?limit=500` : null,
     'blocks',
   );
   // The whole document loads page by page, so contents and deep links see every block.

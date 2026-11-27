@@ -82,6 +82,8 @@ export type TutorDetail = {
   summary?: ReturnType<typeof import('../domain/tutor-summary').summariseTutorTurns> | null;
   session: TutorSession;
   messages: TutorMessage[];
+  /** The question runs the messages' checks belong to, so each check opens without its own request. */
+  runs?: import('./learning').LearningRun[];
   nextCursor: number | null;
   pendingReply: string | null;
 };

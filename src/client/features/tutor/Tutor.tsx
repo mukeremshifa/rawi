@@ -94,7 +94,7 @@ export function TutorLibrary() {
   const [status, setStatus] = useState<'active' | 'archived'>('active');
   const [query, setQuery] = useState('');
   const sessions = useApiPages<TutorSession, 'sessions'>(`/v1/courses/${id}/tutor`, 'sessions');
-  const ai = useApi<AiStatusView>('/v1/ai/status');
+  const ai = useApi<AiStatusView>('/v1/ai/status', { staleTime: 5 * 60_000 });
   const fromContext = !!(params.get('blockIds') || params.get('attemptId'));
   // A link that names a topic, such as a suggestion on the home page, opens the new session form on it.
   const [creating, setCreating] = useState(fromContext || !!params.get('topicId'));
@@ -422,7 +422,7 @@ export function Tutor() {
   const [review, setReview] = useState<TutorDetail | null>(null);
   const pending = useRef<Write | null>(null);
   const end = useRef<HTMLDivElement>(null);
-  const status = useApi<AiStatusView>('/v1/ai/status');
+  const status = useApi<AiStatusView>('/v1/ai/status', { staleTime: 5 * 60_000 });
   // The reply streams in after the question is saved. A reload resumes by reading the saved session.
   const [live, setLive] = useState<{ op: string; text: string; error?: string; stopping?: boolean } | null>(null);
   const started = useRef<string | null>(null);
@@ -692,6 +692,8 @@ export function Tutor() {
                   <CheckCard
                     runId={m.provenance.check.runId}
                     itemId={m.provenance.check.itemId}
+                    initial={data.data.runs?.find(r => r.id === m.provenance!.check!.runId)}
+                    initialAt={data.dataUpdatedAt}
                     closed={closed}
                     onChecked={() => void data.refetch()}
                   />
@@ -1046,16 +1048,21 @@ export function Tutor() {
 function CheckCard({
   runId,
   itemId,
+  initial,
+  initialAt,
   closed,
   onChecked,
 }: {
   runId: string;
   itemId: string;
+  /** The run as the session detail carried it. */
+  initial?: LearningRun;
+  initialAt: number;
   closed: boolean;
   onChecked: () => void;
 }) {
   const { user } = useAccount();
-  const run = useApi<LearningRun>(`/v1/runs/${runId}`);
+  const run = useApi<LearningRun>(`/v1/runs/${runId}`, { initialData: initial, initialDataUpdatedAt: initialAt });
   const [draft, setDraft] = useState<AnswerValue>();
   const [checking, setChecking] = useState(false),
     [error, setError] = useState('');
