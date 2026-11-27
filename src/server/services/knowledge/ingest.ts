@@ -10,7 +10,7 @@ import {
   materialVersions,
   sections,
 } from '../../db/schema';
-import { socketDb, transaction, type ReadDb, type SocketDb, type Transaction } from '../../db/client';
+import { databaseUrl, socketDb, transaction, type ReadDb, type SocketDb, type Transaction } from '../../db/client';
 import type { BackendBindings } from '../../config';
 import { ApiError } from '../../errors';
 import { AiFailed, embed, funding, run, type CallContext } from '../../ai/engine';
@@ -105,7 +105,7 @@ export async function ingestPending(db: ReadDb | SocketDb, scope: Scope) {
 /** Advance a course's ingest jobs for up to about twenty seconds. Safe to call from `waitUntil`. */
 export async function runIngest(env: BackendBindings, scope: Scope) {
   if (!env.DATABASE_URL) return;
-  const connection = socketDb(env.DATABASE_URL);
+  const connection = socketDb(databaseUrl(env));
   const deadline = Date.now() + 20_000;
   try {
     while (Date.now() < deadline) {

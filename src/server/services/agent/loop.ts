@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
 import type { BackendBindings } from '../../config';
-import { socketDb, type ReadDb, type SocketDb, type Transaction } from '../../db/client';
+import { databaseUrl, socketDb, type ReadDb, type SocketDb, type Transaction } from '../../db/client';
 import {
   agentActions,
   agentRuns,
@@ -284,7 +284,7 @@ export async function runAgentWith(env: BackendBindings, db: SocketDb, workspace
 /** A run on its own connection, for work started after a response. Failures are logged, never thrown. */
 export async function runAgent(env: BackendBindings, workspaceId: string, trigger: AgentTrigger) {
   if (!env.DATABASE_URL) return null;
-  const connection = socketDb(env.DATABASE_URL);
+  const connection = socketDb(databaseUrl(env));
   try {
     return await runAgentWith(env, connection.db, workspaceId, trigger);
   } catch (error) {

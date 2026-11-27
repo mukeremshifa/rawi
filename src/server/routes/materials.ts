@@ -13,9 +13,9 @@ import * as uploadService from '../services/uploads';
 import * as conversion from '../services/conversion';
 import { limits } from '../services/storage';
 import * as outline from '../services/outline/outline';
-import * as jobs from '../services/outline/jobs';
 import { coversInput } from '../../shared/contracts/outline';
 import { jsonInput, type BackendContext } from '../http';
+import { later } from '../services/jobs';
 
 export const materialsRoutes = new Hono<BackendContext>();
 materialsRoutes.get('/courses/:id/materials', async c =>
@@ -37,7 +37,7 @@ materialsRoutes.post('/courses/:id/materials', async c => {
     await jsonInput(c, createMaterialInput),
     limits(c.env).text,
   );
-  c.executionCtx.waitUntil(jobs.runCourseJobs(c.env, { workspaceId: c.get('workspaceId'), courseId }));
+  later(c, { kind: 'course', workspaceId: c.get('workspaceId'), courseId });
   return c.json(material);
 });
 materialsRoutes.get('/materials/:id/covers', async c =>
@@ -86,7 +86,7 @@ materialsRoutes.get('/materials/:id/versions/:versionId', async c => {
     uuid.parse(c.req.param('id')),
     uuid.parse(c.req.param('versionId')),
   );
-  if (conversion.conversionDue(row)) c.executionCtx.waitUntil(conversion.advance(c.env, row.id));
+  if (conversion.conversionDue(row)) later(c, { kind: 'conversion', versionId: row.id });
   return c.json(materialService.publicVersion(row));
 });
 materialsRoutes.post('/materials/:id/versions/:versionId/convert', async c => {
@@ -97,7 +97,7 @@ materialsRoutes.post('/materials/:id/versions/:versionId/convert', async c => {
     uuid.parse(c.req.param('id')),
     uuid.parse(c.req.param('versionId')),
   );
-  c.executionCtx.waitUntil(conversion.advance(c.env, version.id));
+  later(c, { kind: 'conversion', versionId: version.id });
   return c.json(version);
 });
 // Images are served through the Worker with private caching, because signed URLs expire while someone reads.
@@ -180,12 +180,10 @@ materialsRoutes.post('/uploads/:id/finalize', async c => {
     c.get('workspaceId'),
     uuid.parse(c.req.param('id')),
   );
-  // Conversion starts outside the publish transaction. The cron sweep catches anything this misses.
+  // Conversion starts outside the publish transaction, as a queued job. The hourly sweep catches anything this misses.
   if (upload.state === 'ready' && upload.resultVersionId) {
-    c.executionCtx.waitUntil(conversion.advance(c.env, upload.resultVersionId));
-    c.executionCtx.waitUntil(
-      jobs.runCourseJobs(c.env, { workspaceId: c.get('workspaceId'), courseId: upload.courseId }),
-    );
+    later(c, { kind: 'conversion', versionId: upload.resultVersionId });
+    later(c, { kind: 'course', workspaceId: c.get('workspaceId'), courseId: upload.courseId });
   }
   return c.json(upload);
 });

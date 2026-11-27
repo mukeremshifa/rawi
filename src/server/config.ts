@@ -1,3 +1,4 @@
+import type { JobMessage } from './services/jobs';
 export const requiredBindings = [
   'DATABASE_URL',
   'BETTER_AUTH_SECRET',
@@ -20,6 +21,10 @@ type FileBindings = {
   DATALAB_API_KEY?: string;
   // AI vendors. Server-side only. Each vendor is used when its credentials are present.
   OPENROUTER_API_KEY?: string;
+  /** Pools database connections near the database in production. Development connects directly. */
+  HYPERDRIVE?: Hyperdrive;
+  /** Background jobs. Without it, work starts after the response and the cron sweeps up the rest. */
+  JOBS?: Queue<JobMessage>;
 };
 export type BackendBindings = Omit<Env, (typeof requiredBindings)[number] | keyof FileBindings> &
   Partial<Record<(typeof requiredBindings)[number], string>> &

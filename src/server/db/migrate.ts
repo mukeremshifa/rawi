@@ -1,4 +1,4 @@
-import { migrate } from 'drizzle-orm/neon-serverless/migrator';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { socketDb } from './client';
 
 try {

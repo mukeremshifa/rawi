@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { BackendBindings } from '../../config';
-import { socketDb, transaction, type ReadDb, type SocketDb, type Transaction } from '../../db/client';
+import { databaseUrl, socketDb, transaction, type ReadDb, type SocketDb, type Transaction } from '../../db/client';
 import {
   aiCalls,
   aiOperations,
@@ -320,7 +320,7 @@ const notesTask: Task<NotesInput, string> = {
  */
 export async function rememberSession(env: BackendBindings, workspaceId: string, sessionId: string) {
   if (!env.DATABASE_URL) return;
-  const connection = socketDb(env.DATABASE_URL);
+  const connection = socketDb(databaseUrl(env));
   try {
     const db = connection.db;
     const [row] = await db
@@ -433,7 +433,7 @@ const NUDGE =
   'Try working it out from the question again. Which idea in your material does it depend on, and what does that idea say?';
 
 /** A connection for a reply. Several queries run at once before the model starts, so it holds a few. */
-export const replyConnection = (env: BackendBindings) => socketDb(env.DATABASE_URL!, 5);
+export const replyConnection = (env: BackendBindings) => socketDb(databaseUrl(env), 5);
 
 /**
  * Run the queued reply for one student message and publish it. Runs on its own connection,
@@ -1249,7 +1249,7 @@ async function sessionLanguage(db: SocketDb, session: typeof tutorSessions.$infe
 
 /** Fold turns older than the recent window into the session's summary. */
 async function summariseOlder(env: BackendBindings, workspaceId: string, sessionId: string) {
-  const connection = socketDb(env.DATABASE_URL!);
+  const connection = socketDb(databaseUrl(env));
   try {
     const db = connection.db;
     const [session] = await db

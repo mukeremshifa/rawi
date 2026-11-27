@@ -12,6 +12,11 @@
   },
   "observability": { "enabled": true },
   "r2_buckets": [{ "binding": "MATERIALS_BUCKET", "bucket_name": "rawi-materials-development", "remote": true }],
-  "triggers": { "crons": ["*/15 * * * *"] },
+  // Hourly: queued jobs carry the work, and the sweep only catches what they missed.
+  "triggers": { "crons": ["0 * * * *"] },
+  "queues": {
+    "producers": [{ "binding": "JOBS", "queue": "rawi-jobs" }],
+    "consumers": [{ "queue": "rawi-jobs", "max_batch_size": 1, "max_retries": 5 }],
+  },
   "dev": { "ip": "127.0.0.1", "port": 8788 },
 }

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { configurationProblems } from './config';
 import { createAuth } from './auth';
-import { readDb, socketDb } from './db/client';
+import { databaseUrl, socketDb } from './db/client';
 import { ApiError, notFound } from './errors';
 import * as service from './services/workspace';
 import { workspaces } from './db/schema';
@@ -67,11 +67,11 @@ configured.use('*', async (c, next) => {
   const missing = configurationProblems(c.env);
   if (missing.length)
     throw new ApiError(503, 'not_configured', 'Your workspace is temporarily unavailable. Please try again.');
-  const connection = socketDb(c.env.DATABASE_URL!);
+  const connection = socketDb(databaseUrl(c.env));
   try {
     c.set('socket', connection.db);
     c.set('auth', createAuth(c.env, connection.db));
-    c.set('db', readDb(c.env.DATABASE_URL!));
+    c.set('db', connection.db);
     await next();
   } finally {
     await connection.close();
