@@ -38,7 +38,7 @@ import { TimeField } from '@/components/ui/time-field';
 import { useApi, useSave } from '@/lib/data';
 import { useUnsentGuard } from '@/lib/hooks';
 import { keys } from '@/lib/query';
-import { cn } from '@/lib/utils';
+import { cn, browserZone } from '@/lib/utils';
 
 type Data = PlannerView;
 type SessionDraft = {
@@ -151,11 +151,25 @@ export function Planner() {
     locked: true,
     status: 'planned',
   });
+  const device = browserZone();
   return (
     <Page width="wide" className="max-w-6xl">
       <PageHeader
         title="Planner"
-        description={`Times are in ${r.timezone.replace(/_/g, ' ')}.`}
+        description={
+          <>
+            Times are in {r.timezone.replace(/_/g, ' ')}.
+            {device && device !== r.timezone && (
+              <>
+                {' '}
+                This device is on {device.replace(/_/g, ' ')}.{' '}
+                <Link className="text-primary hover:underline" to="/settings/study">
+                  Change the timezone
+                </Link>
+              </>
+            )}
+          </>
+        }
         actions={
           <>
             <Button variant="secondary" onClick={() => setAvailabilityOpen(true)}>

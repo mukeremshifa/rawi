@@ -1,3 +1,4 @@
+import { browserZone } from '@/lib/utils';
 import { useRef, useState } from 'react';
 import type { Me, Preferences } from '@shared/contracts/workspace';
 import { Button } from '@/components/ui/button';
@@ -11,13 +12,6 @@ import { NumberField } from '@/components/ui/number-field';
 import { RadioCards } from '@/components/ui/radio-group';
 
 /** The browser's time zone, so days, streaks and review dates follow the student's own calendar from the start. */
-const browserZone = () => {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
-  } catch {
-    return undefined;
-  }
-};
 
 export function Onboarding({ onSaved }: { onSaved: (account: Me) => void }) {
   const account = useAccount();

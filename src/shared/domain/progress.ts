@@ -159,8 +159,8 @@ export function deriveAllEvidence(
 
 /** Why a review was suggested. Topics come due under the mastery ladder in `mastery.ts`. */
 export function reviewReason(daysSince: number): string {
-  const when = daysSince === 0 ? 'today' : daysSince === 1 ? '1 day ago' : `${daysSince} days ago`;
-  return `Last worked ${when}. Reviews come further apart each day you answer a topic right without a hint, and sooner after a miss.`;
+  const when = daysSince === 0 ? 'earlier today' : daysSince === 1 ? 'yesterday' : `${daysSince} days ago`;
+  return `You last studied this topic ${when}. Reviews come further apart each time you answer it right without a hint, and sooner after a miss.`;
 }
 
 /* ── Recurring mistakes ───────────────────────────────────────────────── */

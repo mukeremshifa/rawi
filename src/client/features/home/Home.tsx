@@ -4,7 +4,7 @@ import { ArrowRightIcon, CheckCircle2Icon, CircleIcon, GraduationCapIcon } from 
 import type { TutorDetail } from '@shared/contracts/tutor';
 import type { PlannerView } from '../../../server/api-types';
 
-import { ACTIVITY_LABEL, DueLabel, SESSION_STATUS_LABEL } from '@/components/domain';
+import { ACTIVITY_LABEL, DueLabel, SESSION_STATUS_LABEL, formatRelativeInline } from '@/components/domain';
 import { Page, PageHeader, Section } from '@/components/layout';
 import { ErrorState, PageLoading } from '@/components/states';
 import { Badge } from '@/components/ui/badge';
@@ -211,8 +211,8 @@ export function Home() {
             items={row.runs.slice(0, 5).map(r => ({
               key: r.id,
               to: `/runs/${r.id}`,
-              title: r.title,
-              meta: courseName(row, r.courseId),
+              title: courseName(row, r.courseId),
+              meta: `${r.title} · ${r.answered} of ${r.total} answered · started ${formatRelativeInline(r.startedAt)}`,
               trailing: <ArrowRightIcon className="text-muted-foreground size-4" aria-hidden />,
             }))}
           />

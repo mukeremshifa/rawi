@@ -153,6 +153,12 @@ export function formatRelative(iso: string): string {
   return formatDate(iso);
 }
 
+/** `formatRelative` for the middle of a sentence: "started today", but "started Nov 2, 2026". */
+export function formatRelativeInline(iso: string): string {
+  const text = formatRelative(iso);
+  return /^(Today|Yesterday|Last week|\d+ days ago)$/.test(text) ? text.charAt(0).toLowerCase() + text.slice(1) : text;
+}
+
 /** mm:ss, for exam timers. */
 export function formatClock(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000));

@@ -16,8 +16,8 @@ import {
 } from '../../db/schema';
 import { ApiError } from '../../errors';
 import { budget, run } from '../../ai/engine';
-import { addDays, localISO, weekStart } from '../../../shared/domain/planner';
-import { codeSummary, decide, type Decision, type PolicyCourse } from '../../../shared/domain/agent';
+import { addDays, daysBetweenDates, localISO, weekStart } from '../../../shared/domain/planner';
+import { codeSummary, decide, inDays, type Decision, type PolicyCourse } from '../../../shared/domain/agent';
 import type { AgentAction, AgentObservation, AgentRun, AgentTrigger, AgentView } from '../../../shared/contracts/agent';
 import { topicMastery } from '../questions/results';
 import { listGoals } from './goals';
@@ -426,8 +426,18 @@ export function agentRemindersRead(db: ReadDb | SocketDb | Transaction, workspac
       reason: agentActions.reason,
       input: agentActions.input,
       remindOn: agentActions.remindOn,
+      // A countdown names its goal in its key, so it can be counted from today and dropped once the goal is gone.
+      countdown: sql<boolean>`${agentActions.key} like 'countdown:%'`,
+      goal: { title: studyGoals.title, date: studyGoals.date, status: studyGoals.status },
     })
     .from(agentActions)
+    .leftJoin(
+      studyGoals,
+      and(
+        eq(studyGoals.workspaceId, agentActions.workspaceId),
+        sql`${agentActions.key} like 'countdown:%' and ${studyGoals.id}::text = split_part(${agentActions.key}, ':', 2)`,
+      ),
+    )
     .where(
       and(
         eq(agentActions.workspaceId, workspaceId),
@@ -441,12 +451,14 @@ export function agentRemindersFrom(rows: Awaited<ReturnType<typeof agentReminder
   const from = addDays(today, -2);
   return rows
     .filter(r => r.remindOn && r.remindOn >= from && r.remindOn <= today)
+    .filter(r => !r.countdown || (r.goal?.status === 'active' && !!r.goal.date && r.goal.date >= today))
     .slice(0, 20)
     .map(r => {
       const input = (r.input ?? {}) as { title?: string; to?: string };
+      const goal = r.countdown && r.goal?.date ? r.goal : null;
       return {
         key: `agent:${r.id}`,
-        title: input.title ?? r.reason,
+        title: goal ? `${goal.title} ${inDays(daysBetweenDates(today, goal.date!))}` : (input.title ?? r.reason),
         date: r.remindOn!,
         category: 'From Rawi',
         to: input.to ?? '/agent',

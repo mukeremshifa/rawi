@@ -4,7 +4,7 @@ import type { ProgressView } from '../../../server/api-types';
 import type { CheckInMood } from '@shared/domain/types';
 import { formatMinutes as clock } from '@shared/domain/planner';
 
-import { MOOD_LABEL, formatMinutes, formatRelative } from '@/components/domain';
+import { MOOD_LABEL, formatMinutes, formatRelative, formatRelativeInline } from '@/components/domain';
 import { EvidenceMeter, MasteryMeter } from '@/components/Meter';
 import { Button } from '@/components/ui/button';
 import { Field, FieldError } from '@/components/ui/field';
@@ -36,6 +36,29 @@ export function courseName(row: ProgressData, id: string) {
   return row.courses.find(c => c.id === id)?.name ?? 'Course';
 }
 
+/** One topic's mastery, when it was last studied, and a way to practise it, in a line. */
+export function TopicStatus({ row, topicId }: { row: ProgressData; topicId: string }) {
+  const evidence = row.evidence.find(e => e.topicId === topicId);
+  const mastery = row.mastery.find(m => m.topicId === topicId);
+  const last = lastStudied(evidence?.lastWorkedAt, mastery?.lastDay);
+  const courseId = row.topics.find(t => t.id === topicId)?.courseId;
+  return (
+    <span className="flex flex-wrap items-center gap-x-snug gap-y-1 text-sm">
+      <MasteryMeter
+        level={mastery?.level ?? 'not-checked'}
+        secure={mastery?.secure ?? 0}
+        sections={mastery?.sections ?? 0}
+      />
+      {last && <span className="text-muted-foreground">Studied {formatRelativeInline(last)}</span>}
+      {courseId && (
+        <Link className="text-primary hover:underline" to={`/course/${courseId}/practice?topicId=${topicId}`}>
+          Practise
+        </Link>
+      )}
+    </span>
+  );
+}
+
 /**
  * Topic readiness: each topic's mastery from all its marked answers, its
  * evidence from unaided exam work, when it was last studied, and a way to
@@ -53,7 +76,13 @@ export function TopicReadiness({
   emptyAction?: React.ReactNode;
 }) {
   const archived = new Set(row.courses.filter(c => c.archived).map(c => c.id));
-  const topics = row.topics.filter(t => (courseId ? t.courseId === courseId : !archived.has(t.courseId)));
+  // Across courses, each course's topics stay together, in outline order.
+  const order = new Map(row.courses.map((c, i) => [c.id, i]));
+  const topics = row.topics
+    .filter(t => (courseId ? t.courseId === courseId : !archived.has(t.courseId)))
+    .map((t, i) => ({ t, i }))
+    .sort((a, b) => (order.get(a.t.courseId) ?? 0) - (order.get(b.t.courseId) ?? 0) || a.i - b.i)
+    .map(({ t }) => t);
   return (
     <Table>
       <TableHeader>
