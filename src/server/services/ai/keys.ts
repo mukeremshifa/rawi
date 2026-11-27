@@ -12,29 +12,13 @@ import { forgetFunding, seal, type Credentials } from '../../ai/funding';
  * the cap the student sets can block one.
  */
 export const ownKeyInput = z.strictObject({
-  credentials: z.discriminatedUnion('vendor', [
-    z.strictObject({
-      vendor: z.literal('bedrock'),
-      accessKeyId: z
-        .string()
-        .trim()
-        .regex(/^[A-Z0-9]{16,128}$/, 'Enter the access key ID as AWS shows it.'),
-      secretAccessKey: z.string().trim().min(20).max(256),
-    }),
-    z.strictObject({
-      vendor: z.literal('vertex'),
-      project: z.string().trim().min(3).max(100),
-      clientEmail: z.string().trim().email().max(320),
-      privateKey: z
-        .string()
-        .trim()
-        .min(100)
-        .max(8000)
-        .refine(k => k.includes('PRIVATE KEY'), 'Paste the private_key value from the JSON key file.'),
-    }),
-  ]),
-  // Deliberate and visible: lets routes that keep prompts receive what the student writes.
-  studentRetention: z.enum(['none', 'standard']),
+  credentials: z.strictObject({
+    vendor: z.literal('openrouter'),
+    apiKey: z
+      .string()
+      .trim()
+      .regex(/^sk-or-[A-Za-z0-9_-]{20,200}$/, 'Paste the OpenRouter key, which starts with sk-or-.'),
+  }),
   monthlyCapUsd: z.number().min(1).max(10_000).nullable(),
 });
 export const useSourceInput = z.strictObject({ source: z.enum(['own', 'platform']) });
@@ -61,7 +45,6 @@ export async function fundingView(db: ReadDb | SocketDb, workspaceId: string) {
       ? {
           vendor: own.vendors[0]!,
           active: own.active,
-          studentRetention: own.studentRetention,
           monthlyCapUsd: own.limits.monthlyMicros === null ? null : own.limits.monthlyMicros / 1e6,
           savedAt: own.updatedAt.toISOString(),
         }
@@ -75,10 +58,7 @@ export async function saveOwnKey(
   workspaceId: string,
   input: z.infer<typeof ownKeyInput>,
 ) {
-  const credentials: Credentials =
-    input.credentials.vendor === 'vertex'
-      ? { ...input.credentials, privateKey: input.credentials.privateKey.replace(/\\n/g, '\n') }
-      : input.credentials;
+  const credentials: Credentials = input.credentials;
   const sealed = await seal(env, [credentials]);
   const values = {
     kind: 'user' as const,
@@ -93,8 +73,9 @@ export async function saveOwnKey(
       concurrent: 4,
     },
     perWorkspace: null,
-    retention: 'standard' as const,
-    studentRetention: input.studentRetention,
+    // Requests keep no prompts, and student writing goes only to cleared routes, whatever the key.
+    retention: 'none' as const,
+    studentRetention: 'none' as const,
     active: true,
     updatedAt: new Date(),
   };

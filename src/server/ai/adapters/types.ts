@@ -26,6 +26,8 @@ export interface ModelResult {
   /** Parsed structured output, when a schema was given and the reply parsed. */
   json?: unknown;
   usage: Usage;
+  /** What the gateway charged, in micro-dollars, when it says. The engine prefers it to its own estimate. */
+  costMicros?: number;
   stop: 'end' | 'max_tokens' | 'refusal' | 'other';
   latencyMs: number;
   ttftMs: number | null;
@@ -54,7 +56,7 @@ export interface Adapter {
     texts: string[],
     purpose: 'document' | 'query',
     signal?: AbortSignal,
-  ): Promise<{ vectors: number[][]; chars: number; latencyMs: number }>;
+  ): Promise<{ vectors: number[][]; tokens: number; costMicros?: number; latencyMs: number }>;
 }
 
 /** Statuses that mean the request was refused before any generation. */

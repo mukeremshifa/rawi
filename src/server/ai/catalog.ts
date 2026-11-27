@@ -1,165 +1,135 @@
 import type { Language, ServiceTier, Skill, Usage, Vendor } from './types';
 
 /**
- * Every model route Rawi can call, with its price and what it supports. Prices are dollars per
- * million units, which is micro-dollars per unit. Which route serves a skill is the order in
- * `PREFERENCE`. The router skips routes that are unconfigured for the funding source, unhealthy,
- * too small for the request or outside the source's data rules.
+ * Every model route Rawi can call, all through OpenRouter. A route names the model and the
+ * providers it may run on, in order, and every request is restricted to endpoints that keep no
+ * prompts. Which route serves a skill is the order in `PREFERENCE`. The router skips routes that
+ * are unconfigured for the funding source, unhealthy, too small for the request or not cleared for
+ * student writing.
  *
- * Prices were checked on 10 October 2026 against the AWS Price List API and the Cloud Billing
- * catalog. Anthropic and OpenAI models on Bedrock refuse calls from the development account, so
- * none is listed. Adding one is a row here and a place in `PREFERENCE`.
+ * Prices are dollars per million units, which is micro-dollars per unit, read from OpenRouter on
+ * 27 November 2026 for the pinned providers. They bound a reservation before a call. The settled
+ * charge is what OpenRouter reports.
  */
 export interface Route {
   id: string;
   vendor: Vendor;
-  /** The vendor's model id or inference profile. */
+  /** OpenRouter's model id. */
   model: string;
+  /** Provider slugs the request may run on, tried in order. Nothing else is used. */
+  providers: string[];
+  /** The providers, as recorded on each call. */
   region: string;
-  price: { input: number; cacheWrite: number; cacheRead: number; output: number; perImage?: number; perChar?: number };
+  price: { input: number; cacheWrite: number; cacheRead: number; output: number; perImage?: number };
   /** Input tokens the route accepts. */
   context: number;
-  /** Flex costs half on both vendors where it exists. */
+  /** A discounted lane for background work. None of the pinned providers offers one yet. */
   flex: boolean;
-  /** `explicit` needs a cache point, `implicit` reuses a stable prefix by itself. */
+  /** `explicit` takes a cache point after the stable prefix, `implicit` reuses one by itself. */
   cache: 'explicit' | 'implicit' | 'none';
-  /** Bedrock open-weight and Nova take a forced tool, Gemini takes a JSON schema. */
-  structured: 'tool' | 'schema';
   vision: boolean;
-  /** Bedrock keeps no prompts. Vertex logs prompts for abuse monitoring unless an exception is granted. */
-  retention: 'none' | 'standard';
-  /** Request fields that keep reasoning short on models that think by default. */
-  reasoning?: 'gpt-oss-low' | 'gemini-off';
+  /**
+   * Cleared for what a student writes: the pinned providers are known to keep no copy at all,
+   * not even prompts a safety filter flags. Bedrock qualifies. Routes without it serve course
+   * material only.
+   */
+  student: boolean;
+  /** Whether the model takes a temperature. Reasoning models set their own. */
+  temperature: boolean;
+  /** How much the model may think before answering. Off unless a task gains from it. */
+  reasoning?: 'none' | 'low';
   kind: 'text' | 'embed';
+  /** Embedding size, for embedding routes. Must match the vector column. */
+  dimensions?: number;
 }
 
-const bedrock = (id: string, model: string, price: Route['price'], extra: Partial<Route> = {}): Route => ({
+const openrouter = (
+  id: string,
+  model: string,
+  providers: string[],
+  price: Route['price'],
+  extra: Partial<Route> = {},
+): Route => ({
   id,
-  vendor: 'bedrock',
+  vendor: 'openrouter',
   model,
-  region: 'us-east-1',
+  providers,
+  region: providers.join(','),
   price,
-  context: 128_000,
+  context: 200_000,
   flex: false,
   cache: 'none',
-  structured: 'tool',
   vision: false,
-  retention: 'none',
-  kind: 'text',
-  ...extra,
-});
-const vertex = (id: string, model: string, price: Route['price'], extra: Partial<Route> = {}): Route => ({
-  id,
-  vendor: 'vertex',
-  model,
-  region: 'global',
-  price,
-  context: 1_000_000,
-  flex: false,
-  cache: 'implicit',
-  structured: 'schema',
-  vision: true,
-  retention: 'standard',
-  reasoning: 'gemini-off',
+  student: false,
+  temperature: true,
   kind: 'text',
   ...extra,
 });
 
+/** An image costs roughly this many input tokens on the routes that read them. */
+const IMAGE_TOKENS = 1600;
+
 export const ROUTES: Route[] = [
-  bedrock(
-    'qwen3-32b',
-    'qwen.qwen3-32b-v1:0',
-    { input: 0.15, cacheWrite: 0, cacheRead: 0, output: 0.6 },
-    { flex: true, context: 32_000 },
+  // The workhorse for anything a student writes, and the solving check. On Bedrock, which keeps no prompts.
+  openrouter(
+    'claude-haiku-5.5',
+    'anthropic/claude-haiku-5.5',
+    ['amazon-bedrock'],
+    { input: 0.1, cacheWrite: 0.125, cacheRead: 0.01, output: 0.5, perImage: 0.1 * IMAGE_TOKENS },
+    { cache: 'explicit', vision: true, student: true, temperature: false, reasoning: 'none' },
   ),
-  bedrock(
-    'gpt-oss-20b',
-    'openai.gpt-oss-20b-1:0',
-    { input: 0.07, cacheWrite: 0, cacheRead: 0, output: 0.3 },
-    { flex: true, reasoning: 'gpt-oss-low' },
+  // The other family at the same price: writes questions, so its checker is a different model.
+  openrouter(
+    'gpt-6-luna',
+    'openai/gpt-6-luna',
+    ['azure'],
+    { input: 0.1, cacheWrite: 0, cacheRead: 0.01, output: 0.5, perImage: 0.1 * IMAGE_TOKENS },
+    { cache: 'implicit', vision: true, temperature: false, reasoning: 'none' },
   ),
-  bedrock(
-    'gpt-oss-120b',
-    'openai.gpt-oss-120b-1:0',
-    { input: 0.15, cacheWrite: 0, cacheRead: 0, output: 0.6 },
-    { flex: true, reasoning: 'gpt-oss-low' },
+  // Escalation, and the fallback for student writing when the workhorse is down.
+  openrouter(
+    'claude-sonnet-5.5',
+    'anthropic/claude-sonnet-5.5',
+    ['amazon-bedrock'],
+    { input: 2, cacheWrite: 2.5, cacheRead: 0.1, output: 10, perImage: 2 * IMAGE_TOKENS },
+    { cache: 'explicit', vision: true, student: true, temperature: false, reasoning: 'none' },
   ),
-  bedrock('mistral-large-3', 'mistral.mistral-large-3-675b-instruct', {
-    input: 0.5,
-    cacheWrite: 0,
-    cacheRead: 0,
-    output: 1.5,
-  }),
-  bedrock(
-    'nova-lite',
-    'us.amazon.nova-lite-v1:0',
-    { input: 0.06, cacheWrite: 0, cacheRead: 0.015, output: 0.24 },
-    { cache: 'explicit', vision: true, context: 300_000 },
+  // A cheap open-weight fallback for course material when both workhorses are down.
+  openrouter(
+    'deepseek-v4.1-flash',
+    'deepseek/deepseek-v4.1-flash',
+    ['fireworks', 'deepinfra'],
+    { input: 0.15, cacheWrite: 0, cacheRead: 0.03, output: 0.6 },
+    { cache: 'implicit', reasoning: 'none' },
   ),
-  bedrock(
-    'nova-micro',
-    'us.amazon.nova-micro-v1:0',
-    { input: 0.035, cacheWrite: 0, cacheRead: 0.00875, output: 0.14 },
-    { cache: 'explicit' },
-  ),
-  // Candidates for chat, priced on 15 November 2026 from the AWS Price List API. A route serves
-  // nothing until it has a place in `PREFERENCE`. `dev/measure.ts --chat ID` tries one.
-  bedrock(
-    'nova-2-lite',
-    'us.amazon.nova-2-lite-v1:0',
-    { input: 0.33, cacheWrite: 0, cacheRead: 0.0825, output: 2.75 },
-    { cache: 'explicit', vision: true, context: 300_000 },
-  ),
-  bedrock(
-    'nova-pro',
-    'us.amazon.nova-pro-v1:0',
-    { input: 0.8, cacheWrite: 0, cacheRead: 0.2, output: 3.2 },
-    { cache: 'explicit', vision: true, context: 300_000, flex: true },
-  ),
-  bedrock('qwen3-next-80b', 'qwen.qwen3-next-80b-a3b', { input: 0.14, cacheWrite: 0, cacheRead: 0, output: 1.2 }),
-  bedrock(
-    'minimax-m2.5',
-    'minimax.minimax-m2.5',
-    { input: 0.3, cacheWrite: 0, cacheRead: 0, output: 1.2 },
-    { flex: true },
-  ),
-  bedrock('deepseek-v3.2', 'deepseek.v3.2', { input: 0.62, cacheWrite: 0, cacheRead: 0, output: 1.85 }, { flex: true }),
-  bedrock('glm-5', 'zai.glm-5', { input: 1.0, cacheWrite: 0, cacheRead: 0, output: 3.2 }, { flex: true }),
-  vertex('gemini-2.5-flash-lite', 'gemini-2.5-flash-lite', { input: 0.1, cacheWrite: 0, cacheRead: 0.01, output: 0.4 }),
-  vertex('gemini-3.1-flash-lite', 'gemini-3.1-flash-lite', {
-    input: 0.25,
-    cacheWrite: 0,
-    cacheRead: 0.025,
-    output: 1.5,
-  }),
-  // Priced per character. Batches many texts per call, which keeps ingest within subrequest limits.
-  vertex(
-    'text-multilingual-embedding-002',
-    'text-multilingual-embedding-002',
-    { input: 0, cacheWrite: 0, cacheRead: 0, output: 0, perChar: 0.025 },
-    { region: 'us-central1', kind: 'embed', cache: 'none', vision: false, reasoning: undefined, context: 2_000 },
+  // Multilingual embeddings on Bedrock, so a student's own question can be embedded too.
+  openrouter(
+    'titan-embed-v2',
+    'amazon/titan-embed-text-v2',
+    ['amazon-bedrock'],
+    { input: 0.02, cacheWrite: 0, cacheRead: 0, output: 0 },
+    { kind: 'embed', student: true, context: 8_000, dimensions: 1024 },
   ),
 ];
 
 /**
- * Routes for each skill, most preferred first. A failed check moves to the next one. These are
- * the cheapest routes that passed the reviewed cases on 11 October 2026: Nova Lite and Qwen3 32B
- * cite and keep the reply format, gpt-oss-20b reads structure, Gemini 3.1 Flash-Lite writes
- * well-formed questions, and Mistral Large 3 solves them from the source most reliably.
+ * Routes for each skill, most preferred first. A failed check moves to the next one. GPT-6 Luna
+ * writes questions and Claude Haiku solves them, so the check is by a different model family.
+ * Claude Sonnet is the last resort where one call decides a lot.
  */
 export const PREFERENCE: Record<Skill, string[]> = {
-  chat: ['nova-lite', 'qwen3-32b', 'gpt-oss-120b'],
-  extract: ['gpt-oss-20b', 'qwen3-32b', 'gemini-2.5-flash-lite', 'gpt-oss-120b'],
-  write: ['gemini-3.1-flash-lite', 'qwen3-32b'],
-  check: ['mistral-large-3', 'gemini-3.1-flash-lite', 'gpt-oss-120b'],
-  vision: ['gemini-2.5-flash-lite', 'nova-lite'],
-  embed: ['text-multilingual-embedding-002'],
+  chat: ['claude-haiku-5.5', 'claude-sonnet-5.5'],
+  extract: ['claude-haiku-5.5', 'gpt-6-luna', 'deepseek-v4.1-flash', 'claude-sonnet-5.5'],
+  write: ['gpt-6-luna', 'claude-haiku-5.5', 'deepseek-v4.1-flash'],
+  check: ['claude-haiku-5.5', 'gpt-6-luna', 'claude-sonnet-5.5'],
+  vision: ['claude-haiku-5.5', 'gpt-6-luna'],
+  embed: ['titan-embed-v2'],
 };
 
 export const route = (id: string) => ROUTES.find(r => r.id === id);
 
-/** Micro-dollars for a settled call. Flex halves the token prices. */
-export function cost(r: Route, usage: Usage, tier: ServiceTier, chars = 0) {
+/** Micro-dollars for a call, from list prices. Used to reserve, and to settle when no cost is reported. */
+export function cost(r: Route, usage: Usage, tier: ServiceTier) {
   const f = tier === 'flex' && r.flex ? 0.5 : 1;
   return Math.ceil(
     f *
@@ -167,8 +137,7 @@ export function cost(r: Route, usage: Usage, tier: ServiceTier, chars = 0) {
         usage.cacheWrite * r.price.cacheWrite +
         usage.cacheRead * r.price.cacheRead +
         (usage.output + usage.reasoning) * r.price.output) +
-      usage.images * (r.price.perImage ?? 0) +
-      chars * (r.price.perChar ?? 0),
+      usage.images * (r.price.perImage ?? 0),
   );
 }
 
@@ -180,19 +149,23 @@ export function estimateTokens(text: string, language: Language) {
   return Math.ceil(text.length / (language === 'en' ? 3 : 1.5)) + 50;
 }
 
-/** The reservation: every input token at full price plus the task's own output cap. */
-export function reservation(
-  r: Route,
-  inputTokens: number,
-  outputCap: number,
-  tier: ServiceTier,
-  images = 0,
-  chars = 0,
-) {
+/**
+ * The reservation: every input token at the dearer of the input and cache-write prices, since a
+ * cached prefix is written at a premium, plus the task's own output cap.
+ */
+export function reservation(r: Route, inputTokens: number, outputCap: number, tier: ServiceTier, images = 0) {
+  const writes = r.price.cacheWrite > r.price.input;
   return cost(
     r,
-    { input: inputTokens, cacheWrite: 0, cacheRead: 0, output: outputCap, reasoning: 0, audioSeconds: 0, images },
+    {
+      input: writes ? 0 : inputTokens,
+      cacheWrite: writes ? inputTokens : 0,
+      cacheRead: 0,
+      output: outputCap,
+      reasoning: 0,
+      audioSeconds: 0,
+      images,
+    },
     tier,
-    chars,
   );
 }

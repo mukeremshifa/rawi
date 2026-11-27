@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** The version of the pilot terms. A new version asks every student to agree again. */
-export const CONSENT_VERSION = 'pilot-2026-12';
+export const CONSENT_VERSION = 'pilot-2026-12-openrouter';
 export const uuid = z.uuid().transform(value => value.toLowerCase());
 export const revision = z.number().int().min(1).max(2147483646);
 export const preferenceFields = z.strictObject({

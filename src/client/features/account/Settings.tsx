@@ -5,7 +5,7 @@ import { preferencesPatch, type Me, type Preferences, type PreferenceFields } fr
 
 import { MOTION_LABEL, READING_SIZE_LABEL, THEME_LABEL } from '@/components/domain';
 import { Page, PageHeader, SectionHeader } from '@/components/layout';
-import { ErrorState, Notice, PageLoading, SaveIndicator } from '@/components/states';
+import { ErrorState, PageLoading, SaveIndicator } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { CheckboxRow } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
@@ -25,7 +25,6 @@ import { RadioGroup } from '@/components/ui/radio-group';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import { useAccount } from '@/lib/account';
 import { request, errorMessage } from '@/lib/api';
 import { useApi, useSave } from '@/lib/data';
@@ -456,9 +455,8 @@ type Funding = {
   using: 'platform' | 'institution' | 'user';
   fallback: string;
   ownKey: {
-    vendor: 'bedrock' | 'vertex';
+    vendor: string;
     active: boolean;
-    studentRetention: 'none' | 'standard';
     monthlyCapUsd: number | null;
     savedAt: string;
   } | null;
@@ -467,37 +465,28 @@ type Status = {
   allowance: { todayUsd: number; dailyUsd: number | null; monthUsd: number; monthlyUsd: number | null } | null;
 };
 const usd = (n: number) => `$${n.toFixed(n < 1 ? 3 : 2)}`;
-const EMPTY_KEY = { accessKeyId: '', secretAccessKey: '', project: '', clientEmail: '', privateKey: '' };
 
 /**
- * Who pays for AI work. A student can add their own Bedrock or Vertex key. It is stored sealed and
- * never shown again. Allowing routes that keep prompts for what they write is a separate, visible choice.
+ * Who pays for AI work. A student can add their own OpenRouter key. It is stored sealed and never
+ * shown again. Every request still goes only to services that keep no copy.
  */
 function AiSection() {
   const data = useApi<Funding>('/v1/ai/funding');
   const status = useApi<Status>('/v1/ai/status');
   const save = useSave();
-  const [vendor, setVendor] = useState<'bedrock' | 'vertex'>('bedrock');
-  const [fields, setFields] = useState(EMPTY_KEY);
-  const [wide, setWide] = useState(false);
+  const [apiKey, setApiKey] = useState('');
   const [cap, setCap] = useState<number | null>(null);
-  const dirty = Object.values(fields).some(Boolean);
+  const dirty = !!apiKey;
   useUnsentGuard(dirty || save.pending);
   if (data.isPending) return <PageLoading label="Loading AI settings" />;
   if (data.error) return <ErrorState error={data.error} onRetry={() => void data.refetch()} />;
   const f = data.data;
   const done = (value: Funding) => {
     data.setData(value);
-    setFields(EMPTY_KEY);
+    setApiKey('');
     void status.refetch();
   };
-  const credentials =
-    vendor === 'bedrock'
-      ? { vendor, accessKeyId: fields.accessKeyId, secretAccessKey: fields.secretAccessKey }
-      : { vendor, project: fields.project, clientEmail: fields.clientEmail, privateKey: fields.privateKey };
   const a = status.data?.allowance;
-  const set = (key: keyof typeof EMPTY_KEY) => (e: { target: { value: string } }) =>
-    setFields(v => ({ ...v, [key]: e.target.value }));
   return (
     <div className="flex flex-col gap-section">
       <Group
@@ -524,7 +513,7 @@ function AiSection() {
           <Field
             layout="row"
             label="Use my own key"
-            description={`${f.ownKey.vendor === 'bedrock' ? 'AWS Bedrock' : 'Google Vertex'} key saved ${new Date(f.ownKey.savedAt).toLocaleDateString()}.`}
+            description={`OpenRouter key saved ${new Date(f.ownKey.savedAt).toLocaleDateString()}.`}
           >
             <Switch
               checked={f.ownKey.active}
@@ -538,12 +527,6 @@ function AiSection() {
           </Field>
         )}
       </Group>
-      {f.ownKey?.studentRetention === 'standard' && (
-        <Notice>
-          Your key lets services that keep a copy of prompts receive what you write to the tutor. Save the key again to
-          change this.
-        </Notice>
-      )}
       <form
         onSubmit={e => {
           e.preventDefault();
@@ -551,7 +534,7 @@ function AiSection() {
             {
               path: '/v1/ai/funding/key',
               method: 'PUT',
-              body: { credentials, studentRetention: wide ? 'standard' : 'none', monthlyCapUsd: cap },
+              body: { credentials: { vendor: 'openrouter', apiKey }, monthlyCapUsd: cap },
             },
             { id: 'key', onSuccess: done },
           );
@@ -559,7 +542,7 @@ function AiSection() {
       >
         <Group
           title={f.ownKey ? 'Replace your key' : 'Add your own key'}
-          description="Your key is stored encrypted and never shown again. Rawi records what each request costs, and stops only at the cap you set."
+          description="An OpenRouter key. It is stored encrypted and never shown again. Rawi records what each request costs, stops only at the cap you set, and still sends what you write only to services that keep no copy."
           footer={
             <>
               {f.ownKey && (
@@ -583,58 +566,11 @@ function AiSection() {
             </>
           }
         >
-          <Field layout="row" label="Service">
-            <SegmentedControl
-              aria-label="Service"
-              value={vendor}
-              onValueChange={setVendor}
-              options={[
-                { value: 'bedrock', label: 'AWS Bedrock' },
-                { value: 'vertex', label: 'Google Vertex' },
-              ]}
-            />
+          <Field layout="row" label="OpenRouter key" description="Starts with sk-or-." required>
+            <Input type="password" autoComplete="off" value={apiKey} onChange={e => setApiKey(e.target.value)} />
           </Field>
-          {vendor === 'bedrock' ? (
-            <>
-              <Field layout="row" label="Access key ID" required>
-                <Input autoComplete="off" value={fields.accessKeyId} onChange={set('accessKeyId')} />
-              </Field>
-              <Field layout="row" label="Secret access key" required>
-                <Input
-                  type="password"
-                  autoComplete="off"
-                  value={fields.secretAccessKey}
-                  onChange={set('secretAccessKey')}
-                />
-              </Field>
-            </>
-          ) : (
-            <>
-              <Field layout="row" label="Project ID" required>
-                <Input autoComplete="off" value={fields.project} onChange={set('project')} />
-              </Field>
-              <Field layout="row" label="Service account email" required>
-                <Input autoComplete="off" value={fields.clientEmail} onChange={set('clientEmail')} />
-              </Field>
-              <Field
-                layout="row"
-                label="Private key"
-                description="The private_key value from the JSON key file."
-                required
-              >
-                <Textarea rows={4} autoComplete="off" value={fields.privateKey} onChange={set('privateKey')} />
-              </Field>
-            </>
-          )}
           <Field layout="row" label="Monthly cap" description="In US dollars. Leave empty for no cap.">
             <NumberField value={cap} onValueChange={n => setCap(n ?? null)} min={1} max={10000} />
-          </Field>
-          <Field
-            layout="row"
-            label="Allow services that keep prompts"
-            description="Off keeps what you write on services that keep no copy. On widens the choice for your own content."
-          >
-            <Switch checked={wide} onCheckedChange={setWide} />
           </Field>
         </Group>
       </form>
