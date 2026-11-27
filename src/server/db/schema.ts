@@ -1193,7 +1193,7 @@ export const knowledgeChunks = pgTable(
     language: text('language').$type<Language>().notNull(),
     tokens: integer('tokens').notNull(),
     search: tsvector('search').notNull(),
-    embedding: vector('embedding', { dimensions: 768 }),
+    embedding: vector('embedding', { dimensions: 1024 }),
     embeddingModel: text('embedding_model'),
     // `figure` is a generated description of a figure, never the material's own words.
     kind: text('kind').$type<'text' | 'figure'>().notNull().default('text'),
