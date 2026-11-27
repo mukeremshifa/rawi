@@ -57,6 +57,13 @@
       "when": 1795745965356,
       "tag": "0007_openrouter_funding",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795747347276,
+      "tag": "0008_embedding_1024",
+      "breakpoints": true
     }
   ]
 }

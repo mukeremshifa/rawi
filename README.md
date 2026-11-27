@@ -273,17 +273,25 @@ needs: a skill (chat, extract, write, check, vision or embed), its data class,
 lane, output cap, cache policy and attempts. `catalog.ts` lists routes with
 prices and the preferred order for each skill. Features never name a model.
 
-Funding sources are rows in `funding_sources`. The `platform` row uses the
-credentials in `.dev.vars` and allows $2 a day and $20 a month per workspace.
-A student can add their own Bedrock or Vertex key in Settings. Keys are sealed
-with a key derived from `BETTER_AUTH_SECRET`, so rotating that secret retires
-them. Student content goes only to routes that keep no prompts. The one
-embedding route keeps prompts, so under the platform source a student's
-question is searched by text alone. Search by meaning runs under a source that
-allows it, such as a student's own key with that setting on.
+Every model call goes through OpenRouter (`adapters/openrouter.ts`). A route in
+`catalog.ts` names an OpenRouter model and the providers it may run on, and
+every request asks for endpoints that keep no prompts. What a student writes
+goes further: only to routes marked `student`, whose providers keep nothing at
+all, which today means Claude on Amazon Bedrock. Google models on Vertex are
+left out, since Google may keep prompts its safety filters flag. Claude Haiku
+5.5 serves the tutor, digests and the solving check, GPT-6 Luna writes
+questions so a different model family checks them, Claude Sonnet 5.5 is the
+last resort, and Titan Text Embeddings v2 (1024 dimensions) embeds both
+material and student questions. In OpenRouter's privacy settings, enforce zero
+data retention and exclude safety retention.
 
-Every provider call is a row in `ai_calls`, reserved before sending and
-settled from usage after. An uncertain outcome stays charged and is never
+Funding sources are rows in `funding_sources`. The `platform` row uses
+`OPENROUTER_API_KEY` and allows $0.50 a day and $5 a month per workspace. A
+student can add their own OpenRouter key in Settings. Keys are sealed with a
+key derived from `BETTER_AUTH_SECRET`, so rotating that secret retires them.
+
+Every provider call is a row in `ai_calls`, reserved from list prices before
+sending and settled from the cost OpenRouter reports. An uncertain outcome stays charged and is never
 retried automatically.
 
 ## Development seed and measurement
@@ -316,10 +324,7 @@ same cases and read side by side.
 
 ## Remaining work
 
-- Owner decisions: prices and plan numbers. Tutor replies stay on Nova Lite in
-  development and move to a frontier model for production. Nothing a student writes goes to a vendor that keeps prompts, so
-  student-facing work stays on Bedrock. Anthropic models on Bedrock are refused
-  for this account's country, checked on 15 November 2026.
+- Owner decisions: prices and plan numbers.
 - A replaced version embeds the whole document again, not only changed
   sections. The cost is small.
 - Each database round trip from the development machine takes 100 to 130
@@ -330,6 +335,7 @@ same cases and read side by side.
 - The seed gives the winds material a figure with a written description, so
   figure retrieval is measured. Describing a real image with the vision route
   still needs an uploaded document with figures to check.
-- Deferred: an embedding route that keeps no prompts, so Arabic questions are
-  searched through an English rewrite and text search. Request rate limiting waits for deployment work. Also voice, chart specs, shared
+- Student questions can now be embedded, so the English rewrite of an Arabic
+  question may no longer be needed. Check Arabic search by meaning before
+  retiring it. Request rate limiting waits for deployment work. Also voice, chart specs, shared
   question pools, organisation policy, illustrations and a topic map.
